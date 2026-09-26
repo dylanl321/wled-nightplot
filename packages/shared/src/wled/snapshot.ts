@@ -1,3 +1,5 @@
+import type { RangeSpan } from "../range.ts";
+
 export type WledSnapshot = {
   name: string;
   firmware: string;
@@ -7,6 +9,7 @@ export type WledSnapshot = {
   on: boolean | null;
   brightness: number | null;
   segmentColor: string | null;
+  segments: RangeSpan[];
 };
 
 export function parseWledPayload(body: unknown): WledSnapshot | null {
@@ -40,7 +43,25 @@ export function parseWledPayload(body: unknown): WledSnapshot | null {
     on,
     brightness,
     segmentColor,
+    segments: parseSegments(state, count),
   };
+}
+
+/** WLED stop is exclusive. Missing start/stop on a listed seg uses the strip defaults. */
+function parseSegments(
+  state: Record<string, unknown> | null,
+  ledCount: number,
+): RangeSpan[] {
+  if (!state || !Array.isArray(state.seg)) return [];
+  const out: RangeSpan[] = [];
+  for (const raw of state.seg) {
+    if (!isRecord(raw)) continue;
+    const start = typeof raw.start === "number" ? raw.start : 0;
+    const stop = typeof raw.stop === "number" ? raw.stop : ledCount;
+    if (!Number.isFinite(start) || !Number.isFinite(stop) || stop <= start) continue;
+    out.push({ start, stop });
+  }
+  return out;
 }
 
 function looksLikeWled(info: Record<string, unknown>, root: Record<string, unknown>): boolean {

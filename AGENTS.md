@@ -43,7 +43,7 @@ Fresh schema when persistence arrives. Do not migrate old Nightplot SQLite.
 
 ## Slices
 
-Work the CONFIG series in order. R1 is Discover + connect. Do not implement Preview / Apply / All Off / Element ranges until that ticket is the one you are on.
+Work the CONFIG series in order. R2 is snapshot + declared Elements. Do not implement Preview / Apply-to-controller / All Off / Test live until that ticket is the one you are on.
 
 See `docs/PLANE.md` for Plane coordinates, REST-only rules, state ids, and comment duties.
 

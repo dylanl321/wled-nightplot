@@ -24,9 +24,11 @@ CONFIG tickets are serial. R0 is skeleton only. Do not start the next slice in t
 | --- | --- |
 | CONFIG-1 | R0 — Skeleton + catalogs + UI template import |
 | CONFIG-2 | R1 — Discover + connect Lights |
+| CONFIG-3 | R2 — Snapshot + visualize ranges / Elements |
 
 Issue id for CONFIG-1: `298cb9ff-bacb-4c20-83c6-54d5ba8f5747`.  
-Issue id for CONFIG-2: `70d76b1b-ba37-4181-8e90-138cdddb3b57`.
+Issue id for CONFIG-2: `70d76b1b-ba37-4181-8e90-138cdddb3b57`.  
+Issue id for CONFIG-3: `d2a9a037-4b96-4f86-b6b1-3141a0a9bb8f`.
 
 ## States
 

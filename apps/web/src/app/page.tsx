@@ -28,7 +28,7 @@ export default async function LightsPage() {
     <AppShell lights={lights.lights} lightCount={lights.lights.length} nav="lights">
       <LightsHome lights={lights.lights} unenrolled={lights.unenrolled} />
       <p className="px-5 pb-6 text-[11px] tracking-[0.14em] text-quiet uppercase sm:px-8">
-        configure · r1 · WLED snapshot live · discover wired
+        configure · r2 · inspect + edit ranges
       </p>
     </AppShell>
   );

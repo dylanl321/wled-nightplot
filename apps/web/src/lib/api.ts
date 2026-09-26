@@ -33,8 +33,23 @@ export async function postJson<T>(
   path: string,
   body?: unknown,
 ): Promise<{ ok: true; status: number; data: T } | { ok: false; status: number; data: ApiFail }> {
+  return sendJson<T>(path, "POST", body);
+}
+
+export async function patchJson<T>(
+  path: string,
+  body?: unknown,
+): Promise<{ ok: true; status: number; data: T } | { ok: false; status: number; data: ApiFail }> {
+  return sendJson<T>(path, "PATCH", body);
+}
+
+async function sendJson<T>(
+  path: string,
+  method: "POST" | "PATCH",
+  body?: unknown,
+): Promise<{ ok: true; status: number; data: T } | { ok: false; status: number; data: ApiFail }> {
   const res = await fetch(apiUrl(path), {
-    method: "POST",
+    method,
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
@@ -64,7 +79,7 @@ export async function postPlaceholder(
   return {
     error: body.error ?? "not_implemented",
     action: body.action ?? path,
-    slice: body.slice ?? "R1",
+    slice: body.slice ?? "R2",
     message: body.message ?? "This action is not wired.",
   };
 }

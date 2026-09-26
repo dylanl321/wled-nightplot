@@ -92,10 +92,17 @@ function LightRow({ light }: { light: LightView }) {
     : light.on
       ? `Online · on${pct !== null ? ` · ${pct}%` : ""}`
       : "Online · off";
+  const elementLine =
+    light.elementCount === 0
+      ? `${light.ledCount} LEDs · no Elements`
+      : `${light.ledCount} LEDs · ${light.elementCount} Element${
+          light.elementCount === 1 ? "" : "s"
+        }`;
 
   return (
-    <div
+    <Link
       id={`light-${light.id}`}
+      href={`/lights/${light.id}`}
       className="grid items-center gap-5 rounded-xl border border-border bg-card px-[18px] py-4 md:grid-cols-[200px_minmax(0,1fr)]"
     >
       <div className="flex flex-col gap-1.5">
@@ -106,9 +113,12 @@ function LightRow({ light }: { light: LightView }) {
         <span className="font-mono text-[11px] leading-4 text-quiet">
           {light.displayHost}
           <br />
-          {light.ledCount} LEDs
+          {elementLine}
           {light.firmware ? ` · ${light.firmware}` : ""}
         </span>
+        {light.driftLabel ? (
+          <span className="text-xs text-primary">{light.driftLabel}</span>
+        ) : null}
       </div>
       <StripBeads
         id={`rack-${light.id}`}
@@ -122,7 +132,7 @@ function LightRow({ light }: { light: LightView }) {
         brightness={unreachable ? 1 : 0.8}
         ariaLabel={`${light.name} strip`}
       />
-    </div>
+    </Link>
   );
 }
 

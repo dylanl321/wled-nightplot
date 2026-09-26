@@ -76,7 +76,7 @@ export function DiscoverPanel({
       setNotice(res.data.message ?? "Nothing added.");
       return;
     }
-    router.push("/");
+    router.push(`/lights/${res.data.light.id}`);
     router.refresh();
   }
 

@@ -4,7 +4,7 @@ Configure spine for home LED strips. Discover a controller, enroll it as a **Lig
 
 This is not a playback desk. It does not ship Yard, Tonight, Studio, Scene, or Show chrome.
 
-R1 wires Discover and connect. Preview, Apply, and All Off are still placeholders and do not talk to hardware.
+R2 wires snapshot, Inspect, and declared Elements. Preview, Apply to the controller, Blink, All Off, and Delete are still placeholders and do not talk to hardware.
 
 ## Run
 
@@ -31,9 +31,9 @@ pnpm test
 pnpm dev:demo
 ```
 
-or type `127.0.0.1:48210` on Add a Light and **Check and add**.
+or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light for Inspect, then **Edit ranges** to declare Elements. Save declared writes the store only — Apply to the fixture is R4.
 
-Enrolled Lights persist in `data/lights.json` (override with `NIGHTPLOT_STORE_PATH`). Find Lights also probes `NIGHTPLOT_DISCOVERY_TARGETS` (comma-separated `host` / `host:port`).
+Enrolled Lights and declared Elements persist in `data/lights.json` (override with `NIGHTPLOT_STORE_PATH`). Find Lights also probes `NIGHTPLOT_DISCOVERY_TARGETS` (comma-separated `host` / `host:port`).
 
 ## API
 
@@ -41,18 +41,29 @@ Enrolled Lights persist in `data/lights.json` (override with `NIGHTPLOT_STORE_PA
 | --- | --- | --- |
 | GET | `/health` | Slice + liveness |
 | GET | `/api/catalogs` | Controller / strip / discovery seams |
-| GET | `/api/lights` | Enrolled Lights (live snapshot or grey + last-seen) and unenrolled tray |
+| GET | `/api/lights` | Enrolled Lights (live snapshot or grey + last-seen), declared Elements, unenrolled tray |
+| GET | `/api/lights/:id` | Inspect payload: identity, declared Elements, reported segments, drift |
+| PATCH | `/api/lights/:id/elements` | Save declared ranges. 422 on invert / overlap / over-ledCount. Does not write WLED. |
 | POST | `/api/discover` | LAN find (mDNS, SSDP, env targets). Does not enroll. |
 | GET | `/api/discover` | Last find/probe rows |
 | POST | `/api/discover/probe` | `{ host }` — one address. Public IPs refused before HTTP. |
 | POST | `/api/lights` | `{ host }` — enroll. Fails closed without a WLED snapshot. Duplicate host → 409. |
 | POST | `/api/preview` `/api/apply` `/api/all-off` | 501 placeholders |
 
+## UI
+
+| Path | What |
+| --- | --- |
+| `/` | Lights rack + unenrolled tray |
+| `/discover` | Find / type an address / add |
+| `/lights/:id` | Inspect — identity + StripBeads + declared vs reported |
+| `/lights/:id?mode=ranges` | Edit ranges — draft save, overlap/invert/over-ledCount block save |
+
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `apps/web` | Quiet-utility Lights rack, Discover, `StripBeads` |
+| `apps/web` | Quiet-utility Lights rack, Discover, Light Inspect / Edit ranges, `StripBeads` |
 | `apps/server` | Discover/connect, JSON store, WLED snapshot client |
 | `packages/shared` | LAN guard, WLED parse, catalogs, Light / Element types |
 | `docs/ui/` | Nightplot Configure v2 prototype. See [docs/ui/README.md](docs/ui/README.md). |

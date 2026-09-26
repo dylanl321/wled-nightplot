@@ -1,10 +1,15 @@
+import { randomUUID } from "node:crypto";
 import {
   CURRENT_SLICE,
   catalogSnapshot,
   decideProbeAddress,
   normalizeHostKey,
+  validateDeclaredRanges,
   type DiscoverRow,
+  type DraftRange,
+  type Element,
   type HostPort,
+  type Light,
   type LightView,
   type LightsPayload,
   type WledSnapshot,
@@ -13,11 +18,11 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { CollectFn } from "./discovery/collect.ts";
 import {
+  lightDetail,
   lightFromSnapshot,
   markUnreachable,
   refusedRow,
   rowFromProbe,
-  toLightView,
 } from "./domain.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
 import type { ProbeFn } from "./wled/client.ts";
@@ -182,7 +187,54 @@ export function createApp(deps: AppDeps) {
     const light = lightFromSnapshot(decision.target, outcome.snapshot, nowIso());
     deps.store.upsert(light);
     session.rows = session.rows.filter((row) => row.key !== light.hostKey);
-    return c.json({ light: toLightView(light, outcome.snapshot) }, 201);
+    return c.json({ light: lightDetail(light, outcome.snapshot, []).light }, 201);
+  });
+
+  app.get("/api/lights/:id", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    const { light, live } = await refreshOne(stored);
+    return c.json(lightDetail(light, live, deps.store.elementsFor(light.id)));
+  });
+
+  app.patch("/api/lights/:id/elements", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    const { light, live } = await refreshOne(stored);
+    const drafts = await readElementsBody(c);
+    if (!drafts) {
+      return c.json({ error: "invalid", message: "Send { elements: [{ label, start, stop }] }." }, 400);
+    }
+    const issues = validateDeclaredRanges(drafts, light.ledCount);
+    if (issues.length > 0) {
+      return c.json(
+        {
+          error: issues[0]!.code,
+          message: issues[0]!.message,
+          issues,
+        },
+        422,
+      );
+    }
+    const existingIds = new Set(deps.store.elementsFor(light.id).map((element) => element.id));
+    const elements: Element[] = drafts.map((draft, index) => ({
+      id:
+        draft.id && existingIds.has(draft.id)
+          ? draft.id
+          : draft.id && looksLikeId(draft.id)
+            ? draft.id
+            : randomUUID(),
+      lightId: light.id,
+      label: draft.label.trim() || `Element ${index + 1}`,
+      start: draft.start,
+      stop: draft.stop,
+    }));
+    deps.store.replaceElements(light.id, elements);
+    return c.json(lightDetail(light, live, elements));
   });
 
   function notWired(action: string) {
@@ -198,26 +250,34 @@ export function createApp(deps: AppDeps) {
   app.post("/api/apply", (c) => c.json(notWired("apply"), 501));
   app.post("/api/all-off", (c) => c.json(notWired("all-off"), 501));
 
+  async function refreshOne(
+    stored: Light,
+  ): Promise<{ light: Light; live: WledSnapshot | null }> {
+    const target: HostPort = { hostname: stored.hostname, port: stored.port };
+    const outcome = await deps.probe(target);
+    if (outcome.kind === "found") {
+      const next = lightFromSnapshot(target, outcome.snapshot, nowIso(), stored);
+      deps.store.replace(next);
+      return { light: next, live: outcome.snapshot };
+    }
+    const next = markUnreachable(stored);
+    deps.store.replace(next);
+    return { light: next, live: null };
+  }
+
   async function listLights(): Promise<LightsPayload> {
     const stored = deps.store.load();
     const views: LightView[] = [];
+    const allElements = deps.store.loadElements();
     for (const light of stored) {
-      const target: HostPort = { hostname: light.hostname, port: light.port };
-      const outcome = await deps.probe(target);
-      if (outcome.kind === "found") {
-        const next = lightFromSnapshot(target, outcome.snapshot, nowIso(), light);
-        deps.store.replace(next);
-        views.push(toLightView(next, outcome.snapshot));
-      } else {
-        const next = markUnreachable(light);
-        deps.store.replace(next);
-        views.push(toLightView(next, null));
-      }
+      const { light: next, live } = await refreshOne(light);
+      const elements = allElements.filter((element) => element.lightId === next.id);
+      views.push(lightDetail(next, live, elements).light);
     }
     const enrolled = new Set(views.map((light) => light.hostKey));
     return {
       lights: views,
-      elements: [],
+      elements: deps.store.loadElements(),
       unenrolled: session.rows.filter(
         (row) => row.status === "found" && !enrolled.has(row.key),
       ),
@@ -251,7 +311,33 @@ export function createApp(deps: AppDeps) {
     return { host: host.trim() };
   }
 
+  async function readElementsBody(
+    c: { req: { json: () => Promise<unknown> } },
+  ): Promise<DraftRange[] | null> {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") return null;
+    const raw = (body as { elements?: unknown }).elements;
+    if (!Array.isArray(raw)) return null;
+    const drafts: DraftRange[] = [];
+    for (const item of raw) {
+      if (!item || typeof item !== "object") return null;
+      const row = item as { id?: unknown; label?: unknown; start?: unknown; stop?: unknown };
+      if (typeof row.start !== "number" || typeof row.stop !== "number") return null;
+      drafts.push({
+        id: typeof row.id === "string" ? row.id : undefined,
+        label: typeof row.label === "string" ? row.label : "",
+        start: row.start,
+        stop: row.stop,
+      });
+    }
+    return drafts;
+  }
+
   return app;
+}
+
+function looksLikeId(id: string): boolean {
+  return id.length > 0 && !id.startsWith("draft-");
 }
 
 function emptySnap(): WledSnapshot {
@@ -264,5 +350,6 @@ function emptySnap(): WledSnapshot {
     on: null,
     brightness: null,
     segmentColor: null,
+    segments: [],
   };
 }

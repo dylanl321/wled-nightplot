@@ -15,5 +15,5 @@ export const wledController: ControllerDescriptor = {
     allOff: false,
   },
   notes:
-    "Discover and snapshot are live. Blink, Preview, Apply, and All Off are not. Not Hardware Done.",
+    "Discover and snapshot (including reported segments) are live. Blink, Preview, Apply, and All Off are not. Not Hardware Done.",
 };

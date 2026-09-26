@@ -1,4 +1,5 @@
 import type { BeadColor } from "./bead.ts";
+import type { RangeDisplay, ReportedRail } from "./drift.ts";
 
 export type LightReachability = "online" | "no-answer";
 
@@ -39,6 +40,16 @@ export type Element = {
 export type LightView = Light & {
   bead: BeadColor;
   displayHost: string;
+  elementCount: number;
+  driftLabel: string | null;
+};
+
+export type LightDetail = {
+  light: LightView;
+  elements: Element[];
+  reported: ReportedRail[];
+  display: RangeDisplay;
+  snapshotAt: string | null;
 };
 
 export const emptyLightsPayload = {

@@ -16,3 +16,7 @@ export function brightnessPct(bri: number | null): number | null {
   if (bri === null) return null;
   return Math.round((bri / 255) * 100);
 }
+
+export function snapshotLabel(iso: string | null, now = Date.now()): string {
+  return lastSeenLabel(iso, now).replace(/^last seen/, "Snapshot");
+}

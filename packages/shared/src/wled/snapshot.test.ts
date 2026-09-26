@@ -26,7 +26,26 @@ describe("parseWledPayload", () => {
       ledCount: 60,
       on: true,
       segmentColor: "#ffa000",
+      segments: [{ start: 0, stop: 60 }],
     });
+  });
+
+  it("reads reported segment bounds from state.seg", () => {
+    const snap = parseWledPayload({
+      ...wledJson,
+      state: {
+        on: true,
+        bri: 128,
+        seg: [
+          { start: 0, stop: 24, col: [[255, 160, 0]] },
+          { start: 24, stop: 55, col: [[255, 160, 0]] },
+        ],
+      },
+    });
+    expect(snap?.segments).toEqual([
+      { start: 0, stop: 24 },
+      { start: 24, stop: 55 },
+    ]);
   });
 
   it("rejects HTML or a non-WLED JSON box", () => {

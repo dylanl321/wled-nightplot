@@ -16,9 +16,18 @@ export type {
   DiscoveryMechanismId,
 } from "./discovery/types.ts";
 export {
+  buildRangeDisplay,
+  type DeclaredRail,
+  type DisplayRegion,
+  type DriftNote,
+  type RangeDisplay,
+  type ReportedRail,
+} from "./drift.ts";
+export {
   emptyLightsPayload,
   type Element,
   type Light,
+  type LightDetail,
   type LightReachability,
   type LightView,
   type LightsPayload,
@@ -32,7 +41,21 @@ export {
   type AddressDecision,
   type HostPort,
 } from "./net/address.ts";
-export { elementLength, rangesOverlap } from "./range.ts";
+export {
+  elementLength,
+  firstFreeRange,
+  intervalDifference,
+  isWholeIndex,
+  rangeLabel,
+  rangesOverlap,
+  symmetricDifference,
+  unionIntervals,
+  validateDeclaredRanges,
+  type DraftRange,
+  type RangeErrorCode,
+  type RangeIssue,
+  type RangeSpan,
+} from "./range.ts";
 export { getStrip, listStrips } from "./strip/catalog.ts";
 export type { StripChannel, StripDriverDescriptor } from "./strip/types.ts";
 export { ws281xStrip } from "./strip/ws281x.ts";

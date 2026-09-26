@@ -16,6 +16,7 @@ const snapshot = {
   on: true,
   brightness: 128,
   segmentColor: "#ffa000",
+  segments: [{ start: 0, stop: 60 }],
 };
 
 function testApp(overrides: Partial<AppDeps> = {}) {
@@ -34,13 +35,13 @@ function testApp(overrides: Partial<AppDeps> = {}) {
 }
 
 describe("configure server", () => {
-  it("reports health for R1", async () => {
+  it("reports health for R2", async () => {
     const { app } = testApp();
     const res = await app.request("/health");
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({
       ok: true,
-      slice: "R1",
+      slice: "R2",
     });
   });
 
@@ -228,6 +229,132 @@ describe("real WLED HTTP probe", () => {
     });
     expect(ok.status).toBe(201);
     expect(store.load()).toHaveLength(1);
+  });
+});
+
+describe("declared Elements", () => {
+  it("persists a valid draft and returns declared vs reported drift", async () => {
+    const { app, store } = testApp();
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.72" }),
+    });
+    const created = (await enroll.json()) as { light: { id: string } };
+    const id = created.light.id;
+
+    const save = await app.request(`/api/lights/${id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [
+          { label: "Left run", start: 0, stop: 24 },
+          { label: "Right run", start: 24, stop: 50 },
+        ],
+      }),
+    });
+    expect(save.status).toBe(200);
+    const detail = (await save.json()) as {
+      elements: { label: string; start: number; stop: number }[];
+      reported: { start: number; stop: number; differs: boolean }[];
+      display: { notes: { text: string }[]; regions: { kind: string; start: number; stop: number }[] };
+      light: { elementCount: number; driftLabel: string | null };
+    };
+    expect(detail.elements).toEqual([
+      expect.objectContaining({ label: "Left run", start: 0, stop: 24 }),
+      expect.objectContaining({ label: "Right run", start: 24, stop: 50 }),
+    ]);
+    expect(store.elementsFor(id)).toHaveLength(2);
+    expect(detail.reported).toEqual([{ start: 0, stop: 60, differs: true }]);
+    expect(detail.display.regions).toContainEqual({ kind: "drift", start: 50, stop: 60 });
+    expect(detail.light.elementCount).toBe(2);
+    expect(detail.light.driftLabel).toMatch(/reports|not on the controller/);
+
+    const restarted = testApp({ store });
+    const again = await restarted.app.request(`/api/lights/${id}`);
+    const againBody = (await again.json()) as { elements: { label: string }[] };
+    expect(againBody.elements.map((element) => element.label)).toEqual([
+      "Left run",
+      "Right run",
+    ]);
+  });
+
+  it("refuses invert, overlap, and over-ledCount drafts without writing", async () => {
+    const { app, store } = testApp();
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "10.0.0.8" }),
+    });
+    const { light } = (await enroll.json()) as { light: { id: string } };
+
+    const invert = await app.request(`/api/lights/${light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: [{ label: "Peak", start: 40, stop: 10 }] }),
+    });
+    expect(invert.status).toBe(422);
+    const invertBody = (await invert.json()) as { error: string; message: string };
+    expect(invertBody.error).toBe("invert");
+    expect(invertBody.message).toMatch(/inverted/);
+
+    const overlap = await app.request(`/api/lights/${light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [
+          { label: "Peak", start: 10, stop: 40 },
+          { label: "Right run", start: 30, stop: 60 },
+        ],
+      }),
+    });
+    expect(overlap.status).toBe(422);
+    expect(((await overlap.json()) as { error: string }).error).toBe("overlap");
+
+    const over = await app.request(`/api/lights/${light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: [{ label: "Right run", start: 50, stop: 80 }] }),
+    });
+    expect(over.status).toBe(422);
+    expect(((await over.json()) as { error: string }).error).toBe("over-ledCount");
+    expect(store.elementsFor(light.id)).toEqual([]);
+  });
+
+  it("keeps unreachable Inspect honest — grey, last-seen, no last colour or last report", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
+    const file = join(dir, "lights.json");
+    const online = testApp({ store: new FileLightsStore(file) });
+    const enroll = await online.app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.40" }),
+    });
+    const { light } = (await enroll.json()) as { light: { id: string } };
+    await online.app.request(`/api/lights/${light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: [{ label: "Door", start: 0, stop: 60 }] }),
+    });
+
+    const offline = testApp({
+      store: new FileLightsStore(file),
+      probe: async () => ({
+        kind: "probe-failed",
+        reason: "192.168.1.40 didn’t return a snapshot in 3 s.",
+      }),
+    });
+    const res = await offline.app.request(`/api/lights/${light.id}`);
+    const body = (await res.json()) as {
+      light: { bead: string; reachability: string; lastSeenAt: string | null };
+      reported: unknown[];
+      display: { notes: { text: string }[] };
+    };
+    expect(body.light.reachability).toBe("no-answer");
+    expect(body.light.bead).toBe("unknown");
+    expect(body.light.lastSeenAt).toBe("2026-09-26T18:00:00.000Z");
+    expect(body.reported).toEqual([]);
+    expect(body.display.notes[0]?.text).toBe("No current report to compare.");
   });
 });
 

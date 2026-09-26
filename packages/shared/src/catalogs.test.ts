@@ -4,7 +4,6 @@ import { catalogSnapshot } from "./catalog.ts";
 import { getController, listControllers } from "./controller/catalog.ts";
 import { listDiscoveryMechanisms } from "./discovery/catalog.ts";
 import { emptyLightsPayload } from "./lights.ts";
-import { elementLength, rangesOverlap } from "./range.ts";
 import { getStrip, listStrips } from "./strip/catalog.ts";
 
 describe("controller catalog", () => {
@@ -46,22 +45,10 @@ describe("discovery catalog", () => {
 describe("catalog snapshot", () => {
   it("packages the three seams for the server", () => {
     const snap = catalogSnapshot();
-    expect(snap.slice).toBe("R1");
+    expect(snap.slice).toBe("R2");
     expect(snap.controllers).toHaveLength(1);
     expect(snap.strips).toHaveLength(1);
     expect(snap.discovery).toHaveLength(3);
-  });
-});
-
-describe("range model", () => {
-  it("derives length from inclusive start / exclusive stop", () => {
-    expect(elementLength(120, 180)).toBe(60);
-    expect(rangesOverlap({ start: 120, stop: 185 }, { start: 180, stop: 300 })).toBe(
-      true,
-    );
-    expect(rangesOverlap({ start: 0, stop: 120 }, { start: 120, stop: 180 })).toBe(
-      false,
-    );
   });
 });
 

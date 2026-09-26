@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 — R2 Snapshot + Elements (CONFIG-3)
+
+- Light Inspect shows identity and a linear `StripBeads` rail of `ledCount` (glowing beads from the v2 template).
+- Elements are contiguous ranges: label, start inclusive, stop exclusive, length derived. Inspect / Edit ranges are modes on one strip.
+- Declared brackets sit above the beads; reported WLED segments sit below. Coverage drift is labeled on the dual rails.
+- Overlap, invert, and over-ledCount are editor errors: they paint red on the beads and block save of an invalid draft with a reason.
+- Unreachable Lights stay grey with last-seen. No last colour and no last reported range are invented.
+- Declared Elements persist with the Light store. Save declared writes Nightplot only. Apply to the controller is omitted as a working action (disabled, reason R4).
+- Preview / Blink / All Off / Delete stay placeholders.
+
 ## 0.2.0 — R1 Discover + connect (CONFIG-2)
 
 - Address probe and LAN find (mDNS / SSDP / optional `NIGHTPLOT_DISCOVERY_TARGETS`) are live. Public and other disallowed addresses are refused before any HTTP.

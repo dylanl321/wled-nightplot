@@ -9,7 +9,8 @@ type AppShellProps = {
   children: ReactNode;
   lights?: LightView[];
   lightCount: number;
-  nav: "lights" | "discover";
+  nav: "lights" | "discover" | "light";
+  activeLightId?: string;
 };
 
 export function AppShell({
@@ -17,6 +18,7 @@ export function AppShell({
   lights = [],
   lightCount,
   nav,
+  activeLightId,
 }: AppShellProps) {
   const online = lights.filter((light) => light.reachability === "online" && light.on).length;
   const missing = lights.filter((light) => light.reachability === "no-answer").length;
@@ -43,8 +45,12 @@ export function AppShell({
           {lights.map((light) => (
             <Link
               key={light.id}
-              href={`/#light-${light.id}`}
-              className="flex flex-col gap-1.5 rounded-md px-2.5 py-2.5 hover:bg-secondary/60"
+              href={`/lights/${light.id}`}
+              className={cn(
+                "flex flex-col gap-1.5 rounded-md px-2.5 py-2.5 hover:bg-secondary/60",
+                activeLightId === light.id &&
+                  "bg-secondary font-medium shadow-[inset_2px_0_0_#d4a574]",
+              )}
             >
               <div className="flex items-center gap-2">
                 <span

@@ -1,12 +1,16 @@
 import { randomUUID } from "node:crypto";
 import {
+  buildRangeDisplay,
   displayHost,
   normalizeHostKey,
+  validateDeclaredRanges,
   type BeadColor,
   type DiscoverRow,
   type DiscoverVia,
+  type Element,
   type HostPort,
   type Light,
+  type LightDetail,
   type LightView,
   type WledSnapshot,
 } from "@nightplot/shared";
@@ -47,11 +51,41 @@ export function markUnreachable(light: Light): Light {
   };
 }
 
-export function toLightView(light: Light, live: WledSnapshot | null): LightView {
+export function toLightView(
+  light: Light,
+  live: WledSnapshot | null,
+  extras: { elementCount: number; driftLabel: string | null } = {
+    elementCount: 0,
+    driftLabel: null,
+  },
+): LightView {
   return {
     ...light,
     displayHost: displayHost({ hostname: light.hostname, port: light.port }),
     bead: beadFor(light, live),
+    elementCount: extras.elementCount,
+    driftLabel: extras.driftLabel,
+  };
+}
+
+export function lightDetail(
+  light: Light,
+  live: WledSnapshot | null,
+  elements: Element[],
+): LightDetail {
+  const reachable = light.reachability === "online" && live !== null;
+  const reported = reachable ? (live?.segments ?? []) : [];
+  const issues = validateDeclaredRanges(elements, light.ledCount);
+  const display = buildRangeDisplay(elements, reported, issues, { reachable });
+  return {
+    light: toLightView(light, live, {
+      elementCount: elements.length,
+      driftLabel: display.notes[0]?.text ?? null,
+    }),
+    elements,
+    reported: display.reported,
+    display,
+    snapshotAt: reachable ? light.lastSeenAt : null,
   };
 }
 
