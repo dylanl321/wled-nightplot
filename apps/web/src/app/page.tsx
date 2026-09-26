@@ -1,4 +1,6 @@
 import type { LightsPayload } from "@nightplot/shared";
+
+export const dynamic = "force-dynamic";
 import { AppShell } from "@/components/app-shell";
 import { LightsHome } from "@/components/lights-home";
 import { ServerDown } from "@/components/server-down";

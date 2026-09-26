@@ -153,7 +153,7 @@ function UnenrolledTray({ rows }: { rows: DiscoverRow[] }) {
           <div className="flex flex-col gap-0.5">
             <span>{row.name ?? "WLED"} is on this network but not added</span>
             <span className="font-mono text-[11px] text-quiet">
-              {row.displayHost} · found via {row.via}
+              {row.displayHost} · found via {row.via === "targets" ? "listed address" : row.via}
             </span>
           </div>
           <Link href="/discover" className="text-primary sm:ml-auto">

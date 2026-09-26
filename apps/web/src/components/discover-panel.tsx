@@ -219,7 +219,7 @@ function FoundCard({
         <span className="font-mono text-xs text-muted-foreground">
           {row.displayHost}
         </span>
-        <span className="ml-auto text-xs text-online">Answered · via {row.via}</span>
+        <span className="ml-auto text-xs text-online">Answered · via {viaLabel(row.via)}</span>
       </div>
       <div className="rounded-lg bg-card p-3.5">
         <MiniStrip
@@ -233,7 +233,7 @@ function FoundCard({
         <Fact label="LEDs" value={row.ledCount != null ? String(row.ledCount) : "—"} />
         <Fact label="Firmware" value={row.firmware ?? "—"} />
         <Fact label="MAC" value={row.mac ?? "—"} />
-        <Fact label="Via" value={row.via} />
+        <Fact label="Via" value={viaLabel(row.via)} />
       </div>
       <div className="flex items-center gap-2.5">
         <Button
@@ -247,6 +247,14 @@ function FoundCard({
       </div>
     </div>
   );
+}
+
+function viaLabel(via: string): string {
+  if (via === "mdns") return "mDNS";
+  if (via === "ssdp") return "SSDP";
+  if (via === "address-probe") return "typed address";
+  if (via === "targets") return "listed address";
+  return via;
 }
 
 function Fact({ label, value }: { label: string; value: string }) {

@@ -1,4 +1,6 @@
 import type { DiscoverRow, LightsPayload } from "@nightplot/shared";
+
+export const dynamic = "force-dynamic";
 import { AppShell } from "@/components/app-shell";
 import { DiscoverPanel } from "@/components/discover-panel";
 import { ServerDown } from "@/components/server-down";
