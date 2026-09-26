@@ -3,6 +3,7 @@ import {
   buildSafeWrite,
   parseWledCfg,
   safeFieldsMatch,
+  safeInfoNameLagNote,
   safeRefuseReason,
   transitionUnitsFromMs,
 } from "./safe.ts";
@@ -86,5 +87,12 @@ describe("safe write", () => {
     ).toMatch(/global current limit/);
     const write = buildSafeWrite({ currentLimitMa: 850 }, partial.fingerprint);
     expect(write.ok).toBe(false);
+  });
+});
+
+describe("safeInfoNameLagNote", () => {
+  it("names the info/cfg split instead of staying silent", () => {
+    expect(safeInfoNameLagNote("Porch rail", "WLED")).toMatch(/\/json\/info still reports “WLED”/);
+    expect(safeInfoNameLagNote("Porch rail", "Porch rail")).toBeNull();
   });
 });

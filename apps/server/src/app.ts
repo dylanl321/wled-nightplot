@@ -17,8 +17,11 @@ import {
   parseHexColor,
   parseWledCfg,
   readdressContinuity,
+  applyResolvedName,
   buildSafeWrite,
+  resolveLightName,
   safeFieldsMatch,
+  safeInfoNameLagNote,
   safeRefuseReason,
   shortMac,
   validateDeclaredRanges,
@@ -707,8 +710,22 @@ export function createApp(deps: AppDeps) {
     }
     const reread = await readSafe(light, snap?.firmware ?? light.firmware);
     const matched = safeFieldsMatch(built.sent, reread.settings);
-    const { light: next, live: nextSnap } = await refreshOne(stored);
+    const { light: refreshed, live: nextSnap } = await refreshOne(stored);
+    let next = refreshed;
+    if (matched && typeof built.sent.displayName === "string") {
+      const resolved = resolveLightName({
+        infoName: nextSnap?.name ?? refreshed.name,
+        cfgName: reread.settings.displayName,
+        existing: refreshed,
+      });
+      next = applyResolvedName(refreshed, resolved);
+      deps.store.replace(next);
+    }
     const detail = await decorateDetail(next, nextSnap);
+    const lagNote =
+      matched && built.sent.displayName
+        ? safeInfoNameLagNote(reread.settings.displayName, nextSnap?.name)
+        : null;
     const result = {
       status: matched ? ("matched" as const) : ("mismatch" as const),
       matched,
@@ -716,7 +733,7 @@ export function createApp(deps: AppDeps) {
       read: reread.settings,
       fingerprint: reread.fingerprint,
       message: matched
-        ? "Controller reports the Safe settings we sent."
+        ? ["Controller reports the Safe settings we sent.", lagNote].filter(Boolean).join(" ")
         : "Wrote, but /json/cfg did not match. Not treating as success.",
       caption: reread.caption,
     };

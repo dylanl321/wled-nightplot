@@ -45,7 +45,7 @@ Fresh schema when persistence arrives. Do not migrate old Nightplot SQLite.
 
 ## Slices
 
-Work the CONFIG series in order. R6 is Safe settings (the small WledSafeSettings set, fingerprint-gated). Do not start the next CONFIG ticket in the same run.
+Work the CONFIG series in order. R6 is Safe settings (the small WledSafeSettings set, fingerprint-gated). Gaps (CONFIG-9, CONFIG-11, …) are not the next R-slice. Do not start the next CONFIG ticket in the same run.
 
 See `docs/PLANE.md` for Plane coordinates, REST-only rules, state ids, and comment duties.
 

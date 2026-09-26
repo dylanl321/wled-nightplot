@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.2 — Safe settings rename uses the cfg name (CONFIG-11)
+
+- After a successful display-name write, the enrolled Light title (rack, rail, Inspect) uses the name from `/json/cfg` immediately.
+- Real WLED may keep the old `/json/info` name until reboot. Nightplot does not wait, and does not silently keep the stale title. If info still lags, the write result and Inspect say so.
+- A later probe that sees info catch up (or move to a different name) follows `/json/info` again.
+- Fixture: `NIGHTPLOT_FIXTURE_INFO_NAME_LAG=1` or `POST /nightplot/info-name-lag` `{ "on": true }` keeps `/json/info` stale after a cfg rename. Turning lag off copies cfg → info (reboot-shaped).
+
 ## 0.7.1 — Discovery uses advertised ports (CONFIG-9)
 
 - SSDP candidates take host and port from LOCATION. No LOCATION → listed as needs host:port, not a fake :80 Add.

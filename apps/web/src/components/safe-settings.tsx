@@ -4,6 +4,7 @@ import {
   fieldLabel,
   transitionMs,
   transitionUnitsFromMs,
+  type LightDetail,
   type SafeRead,
   type SafeWriteResult,
   type WledSafeSettings,
@@ -14,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { fetchJson, postJson } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type SafePayload = {
+type SafePayload = LightDetail & {
   safe: SafeRead;
   safeWrite?: SafeWriteResult;
   message?: string;
@@ -23,9 +24,11 @@ type SafePayload = {
 export function SafeSettingsPanel({
   lightId,
   unreachable,
+  onUpdated,
 }: {
   lightId: string;
   unreachable: boolean;
+  onUpdated?: (detail: LightDetail) => void;
 }) {
   const [read, setRead] = useState<SafeRead | null>(null);
   const [draft, setDraft] = useState<WledSafeSettings | null>(null);
@@ -81,6 +84,10 @@ export function SafeSettingsPanel({
       setDraft({ ...payload.safe.settings });
     }
     if (payload.safeWrite) setResult(payload.safeWrite);
+    if (payload.light) onUpdated?.(payload);
+    if (res.ok) {
+      window.dispatchEvent(new Event("nightplot:lights-changed"));
+    }
     if (!res.ok) {
       setNotice(payload.message ?? payload.safeWrite?.message ?? "Safe settings were not written.");
     }
@@ -122,7 +129,7 @@ export function SafeSettingsPanel({
           <SafeField
             present={fields.includes("displayName")}
             label="Display name"
-            hint="Shown on the Light and in WLED."
+            hint="Shown on this Light. WLED’s /json/info name can wait until reboot."
           >
             <Input
               value={draft.displayName ?? ""}

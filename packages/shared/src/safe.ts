@@ -257,6 +257,17 @@ export function safeFieldsMatch(
   return requestedFields(sent).every((key) => read[key] === sent[key]);
 }
 
+/** Honest copy when metal `/json/info` still has the pre-rename name. */
+export function safeInfoNameLagNote(
+  cfgName: string | null | undefined,
+  infoName: string | null | undefined,
+): string | null {
+  if (typeof cfgName !== "string" || !cfgName.trim()) return null;
+  if (typeof infoName !== "string" || !infoName.trim()) return null;
+  if (cfgName.trim() === infoName.trim()) return null;
+  return `/json/info still reports “${infoName.trim()}” until reboot. The title uses the name from /json/cfg.`;
+}
+
 export function requestedFields(draft: Partial<WledSafeSettings>): SafeFieldKey[] {
   return SAFE_FIELDS.filter((key) => draft[key] !== undefined && draft[key] !== null);
 }

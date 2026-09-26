@@ -296,6 +296,12 @@ export function LightDetail({
           {light.firmware ? ` · ${light.firmware}` : ""}
           {` · ${light.ledCount} LEDs`}
         </p>
+        {light.staleInfoName ? (
+          <p className="text-[12px] text-quiet">
+            /json/info still reports {light.staleInfoName} until reboot. The title uses the name
+            from /json/cfg.
+          </p>
+        ) : null}
       </header>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -388,7 +394,14 @@ export function LightDetail({
       </div>
 
       {mode === "safe" ? (
-        <SafeSettingsPanel lightId={light.id} unreachable={unreachable} />
+        <SafeSettingsPanel
+          lightId={light.id}
+          unreachable={unreachable}
+          onUpdated={(next) => {
+            setDetail(next);
+            router.refresh();
+          }}
+        />
       ) : mode === "inspect" ? (
         <InspectFacts
           detail={detail}

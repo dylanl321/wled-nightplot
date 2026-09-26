@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp, type AppDeps } from "./app.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
+import { createFixtureBox } from "./wled-fixture-box.ts";
+import { createWledCfgReader, createWledCfgWriter } from "./wled/cfg.ts";
 import { probeWled, type ProbeFn } from "./wled/client.ts";
 import type { ReadLiveFn, WriteStateFn } from "./wled/live.ts";
 
@@ -26,8 +28,10 @@ function memoryBox() {
   let bri = 128;
   let color = "#ffa000";
   let segs = [{ start: 0, stop: 60 }];
+  let name = snapshot.name;
   const snap = () => ({
     ...snapshot,
+    name,
     on,
     brightness: bri,
     segmentColor: color,
@@ -65,6 +69,9 @@ function memoryBox() {
     probe: (async () => ({ kind: "found" as const, snapshot: snap() })) satisfies ProbeFn,
     leds,
     segs,
+    setName(next: string) {
+      name = next;
+    },
   };
 }
 
@@ -369,6 +376,53 @@ describe("real WLED HTTP probe", () => {
     });
     expect(ok.status).toBe(201);
     expect(store.load()).toHaveLength(1);
+  });
+
+  it("enrolls from the fixture and prefers cfg when info name lags", async () => {
+    const box = createFixtureBox({ name: "WLED", infoNameLag: true });
+    server = box.listen(0, "127.0.0.1");
+    const port = await listenReady(server);
+
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
+    const store = new FileLightsStore(join(dir, "lights.json"));
+    const app = createApp({
+      store,
+      probe: (target) => probeWled(target, fetch, 500),
+      write: async () => true,
+      readLive: async () => ({ source: "fixture", leds: [] }),
+      readCfg: createWledCfgReader(),
+      writeCfg: createWledCfgWriter(),
+      collect: async () => [],
+    });
+
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: `127.0.0.1:${port}` }),
+    });
+    expect(enroll.status).toBe(201);
+    const id = ((await enroll.json()) as { light: { id: string; name: string } }).light.id;
+
+    const renamed = await app.request(`/api/lights/${id}/safe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { displayName: "Porch rail" } }),
+    });
+    expect(renamed.status).toBe(200);
+    const body = (await renamed.json()) as {
+      light: { name: string; staleInfoName: string | null };
+      safe: { settings: { displayName: string } };
+    };
+    expect(body.safe.settings.displayName).toBe("Porch rail");
+    expect(body.light.name).toBe("Porch rail");
+    expect(body.light.staleInfoName).toBe("WLED");
+    expect(box.info.name).toBe("WLED");
+    expect(box.cfg.id.name).toBe("Porch rail");
+
+    const listed = (await (await app.request("/api/lights")).json()) as {
+      lights: { name: string }[];
+    };
+    expect(listed.lights[0]?.name).toBe("Porch rail");
   });
 });
 
@@ -990,15 +1044,62 @@ describe("safe settings", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
+      light: { name: string };
       safeWrite: { matched: boolean; caption: string };
       safe: { settings: { displayName: string; bootBrightness: number } };
     };
     expect(body.safeWrite.matched).toBe(true);
     expect(body.safe.settings.displayName).toBe("Porch rail");
+    expect(body.light.name).toBe("Porch rail");
     expect(body.safe.settings.bootBrightness).toBe(180);
     expect(cfg.cfg.id.name).toBe("Porch rail");
     expect(cfg.cfg.def.on).toBe(false);
     expect(body.safeWrite.caption).toMatch(/Not Hardware Done/);
+  });
+
+  it("uses the cfg name for the Light title when /json/info still lags", async () => {
+    const { app, store, box, cfg } = testApp();
+    const id = await enroll(app);
+    const res = await app.request(`/api/lights/${id}/safe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { displayName: "Porch rail" } }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      light: { name: string; nameSource: string; staleInfoName: string | null };
+      safeWrite: { matched: boolean; message: string };
+      safe: { settings: { displayName: string } };
+    };
+    expect(body.safeWrite.matched).toBe(true);
+    expect(body.safe.settings.displayName).toBe("Porch rail");
+    expect(cfg.cfg.id.name).toBe("Porch rail");
+    expect(body.light.name).toBe("Porch rail");
+    expect(body.light.nameSource).toBe("cfg");
+    expect(body.light.staleInfoName).toBe("WLED");
+    expect(body.safeWrite.message).toMatch(/\/json\/info still reports “WLED”/);
+    expect(store.findById(id)?.name).toBe("Porch rail");
+
+    const listed = (await (await app.request("/api/lights")).json()) as {
+      lights: { id: string; name: string; staleInfoName: string | null }[];
+    };
+    const row = listed.lights.find((light) => light.id === id);
+    expect(row?.name).toBe("Porch rail");
+    expect(row?.staleInfoName).toBe("WLED");
+
+    const inspect = (await (await app.request(`/api/lights/${id}`)).json()) as {
+      light: { name: string; nameSource: string; staleInfoName: string | null };
+    };
+    expect(inspect.light.name).toBe("Porch rail");
+    expect(inspect.light.nameSource).toBe("cfg");
+
+    box.setName("Porch rail");
+    const caughtUp = (await (await app.request(`/api/lights/${id}`)).json()) as {
+      light: { name: string; nameSource: string; staleInfoName: string | null };
+    };
+    expect(caughtUp.light.name).toBe("Porch rail");
+    expect(caughtUp.light.nameSource).toBe("info");
+    expect(caughtUp.light.staleInfoName).toBeNull();
   });
 
   it("refuses unsupported firmware without writing", async () => {
@@ -1025,5 +1126,21 @@ function listen(server: Server): Promise<number> {
       if (addr && typeof addr === "object") resolve(addr.port);
       else reject(new Error("no port"));
     });
+  });
+}
+
+function listenReady(server: Server): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const done = () => {
+      const addr = server.address();
+      if (addr && typeof addr === "object") resolve(addr.port);
+      else reject(new Error("no port"));
+    };
+    if (server.listening) {
+      done();
+      return;
+    }
+    server.once("listening", done);
+    server.once("error", reject);
   });
 }

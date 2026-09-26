@@ -93,10 +93,16 @@ export {
   type Element,
   type Light,
   type LightDetail,
+  type LightNameSource,
   type LightReachability,
   type LightView,
   type LightsPayload,
 } from "./lights.ts";
+export {
+  applyResolvedName,
+  resolveLightName,
+  type LightNameResolution,
+} from "./name.ts";
 export {
   decideProbeAddress,
   displayHost,
@@ -132,6 +138,7 @@ export {
   SAFE_FIELDS,
   safeCaption,
   safeFieldsMatch,
+  safeInfoNameLagNote,
   safeRefuseReason,
   transitionMs,
   transitionUnitsFromMs,

@@ -8,12 +8,22 @@ import type { WledSnapshot } from "./wled/snapshot.ts";
 
 export type LightReachability = "online" | "no-answer";
 
+/** Where the enrolled display name last came from. */
+export type LightNameSource = "info" | "cfg";
+
 /**
  * A Light is one enrolled controller + one strip.
  */
 export type Light = {
   id: string;
   name: string;
+  /**
+   * `cfg` after a successful Safe settings rename while `/json/info` still lags.
+   * Cleared back to `info` when the snapshot name catches up or moves.
+   */
+  nameSource?: LightNameSource;
+  /** `/json/info` name we last saw while preferring a cfg name. */
+  staleInfoName?: string | null;
   controllerKind: string;
   stripKind: string;
   hostname: string;

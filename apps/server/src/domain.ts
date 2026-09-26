@@ -3,6 +3,7 @@ import {
   buildRangeDisplay,
   displayHost,
   normalizeHostKey,
+  resolveLightName,
   validateDeclaredRanges,
   type BeadColor,
   type DiscoverRow,
@@ -22,9 +23,15 @@ export function lightFromSnapshot(
   now: string,
   existing?: Light,
 ): Light {
+  const resolved = resolveLightName({
+    infoName: snapshot.name,
+    existing,
+  });
   return {
     id: existing?.id ?? randomUUID(),
-    name: snapshot.name,
+    name: resolved.name,
+    nameSource: resolved.nameSource,
+    staleInfoName: resolved.staleInfoName,
     controllerKind: "wled",
     stripKind: "ws281x",
     hostname: target.hostname,

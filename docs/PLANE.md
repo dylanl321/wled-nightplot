@@ -35,6 +35,7 @@ Gaps (not the next R-slice; do not fold into an R-ticket):
 | Issue | Title (as filed) |
 | --- | --- |
 | CONFIG-9 | SSDP/mDNS discovery hardcodes port 80 |
+| CONFIG-11 | Metal name lag after Safe settings rename (`/json/info` vs `/json/cfg`) |
 
 Issue id for CONFIG-1: `298cb9ff-bacb-4c20-83c6-54d5ba8f5747`.  
 Issue id for CONFIG-2: `70d76b1b-ba37-4181-8e90-138cdddb3b57`.  
@@ -43,7 +44,8 @@ Issue id for CONFIG-4: `59cd7b64-86a6-49e6-bafe-400b6cc3037f`.
 Issue id for CONFIG-5: `94623fba-a991-4240-a0dc-29dae5e2da7b`.  
 Issue id for CONFIG-6: `8425ad37-8a35-42d1-81c8-5f7306d833bb`.  
 Issue id for CONFIG-7: `2c54b44a-5342-4819-9217-ce23177eba4f`.  
-Issue id for CONFIG-9: `8dc7e136-2149-4dc1-9940-fd01a9202350`.
+Issue id for CONFIG-9: `8dc7e136-2149-4dc1-9940-fd01a9202350`.  
+Issue id for CONFIG-11: `3ab014bd-a807-4cf6-8edb-1dd9a75950c1`.
 
 ## States
 
