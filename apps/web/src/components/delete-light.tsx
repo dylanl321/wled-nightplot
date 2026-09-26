@@ -156,7 +156,7 @@ export function DeleteLight({
         ) : (
           <div className="relative h-10 w-full overflow-hidden rounded-lg border border-[#3a4150] bg-[#1a1d24] sm:w-[220px]">
             <div
-              className="absolute inset-y-0 left-0 bg-[#3a2226]"
+              className="absolute inset-y-0 left-0 bg-[#5a2f33]"
               style={{
                 width: progress.total
                   ? `${Math.round((progress.done / progress.total) * 100)}%`

@@ -13,7 +13,7 @@ import {
 } from "@nightplot/shared";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DeleteLight } from "@/components/delete-light";
 import { StripBeads, type StripSpan } from "@/components/strip-beads";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,20 @@ export function LightDetail({
 
   const light = detail.light;
   const unreachable = light.reachability === "no-answer";
+
+  useEffect(() => {
+    function onLightsChanged() {
+      void fetchJson<LightDetailPayload>(`/api/lights/${initial.light.id}`)
+        .then((next) => {
+          setDetail(next);
+        })
+        .catch(() => {
+          /* keep the open Light */
+        });
+    }
+    window.addEventListener("nightplot:lights-changed", onLightsChanged);
+    return () => window.removeEventListener("nightplot:lights-changed", onLightsChanged);
+  }, [initial.light.id]);
 
   function goMode(next: "inspect" | "ranges" | "live") {
     setMode(next);

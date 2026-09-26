@@ -9,7 +9,8 @@ import {
   type LightView,
 } from "@nightplot/shared";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { postJson } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -32,6 +33,11 @@ export function AllOffControl({ size, lights, sessions }: AllOffControlProps) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<AllOffResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const live = sessions[0] ?? null;
   const liveName =
@@ -72,6 +78,7 @@ export function AllOffControl({ size, lights, sessions }: AllOffControlProps) {
     }
     setResult(res.data);
     setPhase("result");
+    window.dispatchEvent(new Event("nightplot:lights-changed"));
     router.refresh();
   }
 
@@ -97,15 +104,20 @@ export function AllOffControl({ size, lights, sessions }: AllOffControlProps) {
 
   return (
     <>
-      {confirming ? (
-        <div
-          className={cn(
-            "fixed inset-0 z-20 bg-[rgba(8,9,12,0.62)]",
-            size === "sidebar" ? "hidden lg:block lg:left-[248px]" : "lg:hidden",
-          )}
-          aria-hidden
-        />
-      ) : null}
+      {mounted && confirming
+        ? createPortal(
+            <div
+              data-all-off-overlay=""
+              className={
+                size === "sidebar"
+                  ? "pointer-events-none fixed top-0 right-0 bottom-0 left-[248px] z-40 bg-black/60 max-lg:hidden"
+                  : "pointer-events-none fixed inset-0 z-40 bg-black/60 lg:hidden"
+              }
+              aria-hidden
+            />,
+            document.body,
+          )
+        : null}
       <div
         className={cn(
           "relative z-30 flex flex-col gap-3",
@@ -135,7 +147,6 @@ export function AllOffControl({ size, lights, sessions }: AllOffControlProps) {
             </div>
             <Button
               type="button"
-              variant="allOff"
               className="h-11 w-full bg-destructive text-primary-foreground hover:bg-[#c45c5c]"
               disabled={busy}
               onClick={() => void run()}
