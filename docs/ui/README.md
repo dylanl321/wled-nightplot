@@ -44,4 +44,4 @@ python3 -m http.server 43182 --directory docs/ui
 - Product words: Lights, Elements, Preview, Apply, Blink, All Off.
 - Do not import Yard, Tonight, Studio, Scene, Show, Schedule, or Devices-as-noun chrome.
 
-The prototype’s populated racks (Eave front, Porch rail, Garage) are direction frames. The running app only shows Lights that were enrolled. Inspect and Edit ranges follow this bead language; Test live / Apply-to-controller are later tickets.
+The prototype’s populated racks (Eave front, Porch rail, Garage) are direction frames. The running app only shows Lights that were enrolled. Inspect, Edit ranges, and Test live follow this bead language. Apply-to-controller and All Off orchestration are later tickets. A fixture readback is not Hardware Done.

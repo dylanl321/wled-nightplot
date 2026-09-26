@@ -3,15 +3,19 @@ import {
   CURRENT_SLICE,
   catalogSnapshot,
   decideProbeAddress,
+  fixtureCaption,
   normalizeHostKey,
+  parseHexColor,
   validateDeclaredRanges,
   type DiscoverRow,
   type DraftRange,
   type Element,
   type HostPort,
   type Light,
+  type LightDetail,
   type LightView,
   type LightsPayload,
+  type LiveEndKind,
   type WledSnapshot,
 } from "@nightplot/shared";
 import { Hono } from "hono";
@@ -24,13 +28,17 @@ import {
   refusedRow,
   rowFromProbe,
 } from "./domain.ts";
+import { createLiveEngine } from "./live/engine.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
 import type { ProbeFn } from "./wled/client.ts";
+import type { ReadLiveFn, WriteStateFn } from "./wled/live.ts";
 
 export type AppDeps = {
   store: FileLightsStore;
   probe: ProbeFn;
   collect: CollectFn;
+  write: WriteStateFn;
+  readLive: ReadLiveFn;
   now?: () => Date;
 };
 
@@ -38,6 +46,11 @@ export function createApp(deps: AppDeps) {
   const app = new Hono();
   const session: { rows: DiscoverRow[] } = { rows: [] };
   const nowIso = () => (deps.now ?? (() => new Date()))().toISOString();
+  const live = createLiveEngine({
+    write: deps.write,
+    readLive: deps.readLive,
+    findLight: (id) => deps.store.findById(id),
+  });
 
   app.use(
     "*",
@@ -195,8 +208,8 @@ export function createApp(deps: AppDeps) {
     if (!stored) {
       return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
     }
-    const { light, live } = await refreshOne(stored);
-    return c.json(lightDetail(light, live, deps.store.elementsFor(light.id)));
+    const { light, live: snap } = await refreshOne(stored);
+    return c.json(await decorateDetail(light, snap));
   });
 
   app.patch("/api/lights/:id/elements", async (c) => {
@@ -204,7 +217,7 @@ export function createApp(deps: AppDeps) {
     if (!stored) {
       return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
     }
-    const { light, live } = await refreshOne(stored);
+    const { light, live: snap } = await refreshOne(stored);
     const drafts = await readElementsBody(c);
     if (!drafts) {
       return c.json({ error: "invalid", message: "Send { elements: [{ label, start, stop }] }." }, 400);
@@ -234,21 +247,171 @@ export function createApp(deps: AppDeps) {
       stop: draft.stop,
     }));
     deps.store.replaceElements(light.id, elements);
-    return c.json(lightDetail(light, live, elements));
+    return c.json(await decorateDetail(light, snap, elements));
   });
 
-  function notWired(action: string) {
+  app.get("/api/lights/:id/live", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    const { light, live: snap } = await refreshOne(stored);
+    return c.json(await decorateDetail(light, snap));
+  });
+
+  app.post("/api/lights/:id/preview", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    const { light, live: snap } = await refreshOne(stored);
+    const body = await readPreviewBody(c);
+    const result = await live.startPreview({
+      light,
+      live: snap,
+      elements: deps.store.elementsFor(light.id),
+      elementId: body.elementId,
+      color: body.color,
+      brightness: body.brightness,
+    });
+    if (!result.ok) return c.json(result, result.status);
+    return c.json({
+      ...(await decorateDetail(light, snap)),
+      session: result.session,
+      liveLeds: result.live?.leds ?? null,
+      liveCaption: result.caption,
+      reported: result.reported,
+    });
+  });
+
+  app.post("/api/lights/:id/preview/end", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const restore = (body as { restore?: unknown }).restore;
+    const kind: LiveEndKind = restore === false ? "cancel-without-restore" : "complete";
+    return endLive(c.req.param("id"), kind);
+  });
+
+  app.post("/api/lights/:id/preview/seen", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    const body = await c.req.json().catch(() => null);
+    const seen = body && typeof body === "object" ? (body as { seen?: unknown }).seen : null;
+    if (seen !== "yes" && seen !== "no") {
+      return c.json({ error: "invalid", message: "Send { seen: \"yes\" | \"no\" }." }, 400);
+    }
+    const session = live.seen(stored.id, seen);
+    if (!session) {
+      return c.json({ error: "not_found", message: "Nothing live on this Light." }, 404);
+    }
+    const { light, live: snap } = await refreshOne(stored);
+    return c.json(await decorateDetail(light, snap));
+  });
+
+  app.post("/api/lights/:id/blink", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    const { light, live: snap } = await refreshOne(stored);
+    const body = await readPreviewBody(c);
+    const result = await live.startBlink({
+      light,
+      live: snap,
+      elements: deps.store.elementsFor(light.id),
+      elementId: body.elementId,
+    });
+    if (!result.ok) return c.json(result, result.status);
+    return c.json({
+      ...(await decorateDetail(light, snap)),
+      session: result.session,
+      liveLeds: result.live?.leds ?? null,
+      liveCaption: result.caption,
+      reported: result.reported,
+    });
+  });
+
+  app.post("/api/lights/:id/blink/end", async (c) => endLive(c.req.param("id"), "complete"));
+
+  app.post("/api/discover/blink", async (c) => {
+    const body = await readHostBody(c);
+    if (!body) return c.json({ error: "invalid", message: "Send { host }." }, 400);
+    const decision = decideProbeAddress(body.host);
+    if (!decision.ok) {
+      return c.json({ error: decision.reasonCode, message: decision.reason }, 403);
+    }
+    const outcome = await deps.probe(decision.target);
+    if (outcome.kind !== "found") {
+      return c.json({ error: outcome.kind, message: outcome.reason }, 422);
+    }
+    const result = await live.identifyHost(
+      decision.target,
+      outcome.snapshot.ledCount,
+      outcome.snapshot,
+    );
+    if (!result.ok) return c.json(result, result.status);
+    return c.json({
+      pulsed: result.live,
+      restored: result.restored ?? false,
+      caption: result.caption,
+      reported: result.reported,
+    });
+  });
+
+  async function endLive(id: string, kind: LiveEndKind) {
+    const stored = deps.store.findById(id);
+    if (!stored) {
+      return new Response(
+        JSON.stringify({ error: "not_found", message: "That Light is not on Lights." }),
+        { status: 404, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const result = await live.end(id, kind);
+    if (!result.ok) {
+      return new Response(JSON.stringify(result), {
+        status: result.status,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const { light, live: snap } = await refreshOne(stored);
+    const detail = await decorateDetail(light, snap);
+    return Response.json({ ...detail, restored: result.restored ?? false });
+  }
+
+  function notWired(action: string, message: string) {
     return {
       error: "not_implemented",
       action,
       slice: CURRENT_SLICE,
-      message: `${action} is a placeholder. Nothing was sent to hardware.`,
+      message,
     };
   }
 
-  app.post("/api/preview", (c) => c.json(notWired("preview"), 501));
-  app.post("/api/apply", (c) => c.json(notWired("apply"), 501));
-  app.post("/api/all-off", (c) => c.json(notWired("all-off"), 501));
+  app.post("/api/preview", (c) =>
+    c.json(
+      notWired(
+        "preview",
+        "Preview lives on a Light (Test live). This root path is not Apply.",
+      ),
+      400,
+    ),
+  );
+  app.post("/api/apply", (c) =>
+    c.json(
+      notWired("apply", "Durable apply to the controller is R4. Nothing was sent."),
+      501,
+    ),
+  );
+  app.post("/api/all-off", (c) =>
+    c.json(
+      notWired(
+        "all-off",
+        "All Off would end a live Preview without restoring. That orchestration is R5. Nothing was sent.",
+      ),
+      501,
+    ),
+  );
 
   async function refreshOne(
     stored: Light,
@@ -281,10 +444,35 @@ export function createApp(deps: AppDeps) {
       unenrolled: session.rows.filter(
         (row) => row.status === "found" && !enrolled.has(row.key),
       ),
+      sessions: live.list().map((item) => ({
+        lightId: item.lightId,
+        kind: item.kind,
+        label: item.target.label,
+      })),
       note:
         views.length === 0
           ? "No Lights are enrolled."
           : undefined,
+    };
+  }
+
+  async function decorateDetail(
+    light: Light,
+    snap: WledSnapshot | null,
+    elements?: Element[],
+  ): Promise<LightDetail> {
+    const detail = lightDetail(light, snap, elements ?? deps.store.elementsFor(light.id));
+    const liveRead = snap ? await live.read(light) : null;
+    const current = live.get(light.id);
+    return {
+      ...detail,
+      session: current ?? null,
+      liveLeds: liveRead?.leds ?? null,
+      liveCaption: liveRead
+        ? fixtureCaption(liveRead.source)
+        : current
+          ? fixtureCaption(current.source)
+          : null,
     };
   }
 
@@ -331,6 +519,19 @@ export function createApp(deps: AppDeps) {
       });
     }
     return drafts;
+  }
+
+  async function readPreviewBody(c: { req: { json: () => Promise<unknown> } }) {
+    const body = await c.req.json().catch(() => ({}));
+    if (!body || typeof body !== "object") {
+      return { elementId: null as string | null, color: undefined, brightness: undefined };
+    }
+    const row = body as { elementId?: unknown; color?: unknown; brightness?: unknown };
+    return {
+      elementId: typeof row.elementId === "string" ? row.elementId : null,
+      color: typeof row.color === "string" ? parseHexColor(row.color) ?? undefined : undefined,
+      brightness: typeof row.brightness === "number" ? row.brightness : undefined,
+    };
   }
 
   return app;

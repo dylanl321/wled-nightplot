@@ -11,6 +11,7 @@ type AppShellProps = {
   lightCount: number;
   nav: "lights" | "discover" | "light";
   activeLightId?: string;
+  sessions?: { lightId: string; kind: "preview" | "blink"; label: string }[];
 };
 
 export function AppShell({
@@ -19,11 +20,14 @@ export function AppShell({
   lightCount,
   nav,
   activeLightId,
+  sessions = [],
 }: AppShellProps) {
   const online = lights.filter((light) => light.reachability === "online" && light.on).length;
   const missing = lights.filter((light) => light.reachability === "no-answer").length;
-  const allOffCaption =
-    lightCount === 0
+  const live = sessions.find((item) => item.kind === "preview");
+  const allOffCaption = live
+    ? `A Preview is live. All Off would end it without restoring (R5).`
+    : lightCount === 0
       ? "No Lights to turn off yet"
       : missing
         ? `${online} on · ${missing} not answering`
@@ -64,16 +68,20 @@ export function AppShell({
                 <span
                   className={cn(
                     "ml-auto text-[11px]",
-                    light.reachability === "no-answer"
-                      ? "text-destructive"
-                      : "text-muted-foreground",
+                    sessions.find((item) => item.lightId === light.id)
+                      ? "text-online"
+                      : light.reachability === "no-answer"
+                        ? "text-destructive"
+                        : "text-muted-foreground",
                   )}
                 >
-                  {light.reachability === "no-answer"
-                    ? "No answer"
-                    : light.on
-                      ? "On"
-                      : "Off"}
+                  {sessions.find((item) => item.lightId === light.id)
+                    ? "Preview"
+                    : light.reachability === "no-answer"
+                      ? "No answer"
+                      : light.on
+                        ? "On"
+                        : "Off"}
                 </span>
               </div>
               <MiniStrip

@@ -9,11 +9,11 @@ export const wledController: ControllerDescriptor = {
   capabilities: {
     discover: true,
     snapshot: true,
-    blink: false,
-    preview: false,
+    blink: true,
+    preview: true,
     apply: false,
     allOff: false,
   },
   notes:
-    "Discover and snapshot (including reported segments) are live. Blink, Preview, Apply, and All Off are not. Not Hardware Done.",
+    "Discover, snapshot, Preview, and Blink are live. Preview writes a temporary look and reads /json/live back. Blink pulses then restores. Apply and All Off are not. A fixture readback is software-green — not Hardware Done.",
 };

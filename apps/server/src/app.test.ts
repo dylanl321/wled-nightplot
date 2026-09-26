@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createApp, type AppDeps } from "./app.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
 import { probeWled, type ProbeFn } from "./wled/client.ts";
+import type { ReadLiveFn, WriteStateFn } from "./wled/live.ts";
 
 const snapshot = {
   name: "WLED",
@@ -19,38 +20,79 @@ const snapshot = {
   segments: [{ start: 0, stop: 60 }],
 };
 
+function memoryBox() {
+  const leds = Array.from({ length: 60 }, () => "#ffa000");
+  let on = true;
+  let bri = 128;
+  let color = "#ffa000";
+  const snap = () => ({ ...snapshot, on, brightness: bri, segmentColor: color });
+  const write: WriteStateFn = async (_target, body) => {
+    if (typeof body.on === "boolean") on = body.on;
+    if (typeof body.bri === "number") bri = body.bri;
+    if (body.seg) {
+      for (const seg of body.seg) {
+        const rgb = seg.col[0] ?? [255, 160, 0];
+        const hex = `#${rgb
+          .slice(0, 3)
+          .map((n) => n.toString(16).padStart(2, "0"))
+          .join("")}`;
+        color = hex;
+        for (let i = seg.start; i < seg.stop && i < leds.length; i += 1) {
+          leds[i] = hex;
+        }
+      }
+    }
+    return true;
+  };
+  const readLive: ReadLiveFn = async () => ({
+    source: "fixture",
+    leds: on ? leds.slice() : leds.map(() => "#000000"),
+  });
+  return {
+    write,
+    readLive,
+    probe: (async () => ({ kind: "found" as const, snapshot: snap() })) satisfies ProbeFn,
+    leds,
+  };
+}
+
 function testApp(overrides: Partial<AppDeps> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
   const store = overrides.store ?? new FileLightsStore(join(dir, "lights.json"));
-  const probe: ProbeFn =
-    overrides.probe ??
-    (async () => ({ kind: "found", snapshot }));
+  const box = memoryBox();
+  const probe: ProbeFn = overrides.probe ?? box.probe;
   const app = createApp({
     store,
     probe,
+    write: overrides.write ?? box.write,
+    readLive: overrides.readLive ?? box.readLive,
     collect: overrides.collect ?? (async () => []),
     now: overrides.now ?? (() => new Date("2026-09-26T18:00:00.000Z")),
   });
-  return { app, store, dir };
+  return { app, store, dir, box };
 }
 
 describe("configure server", () => {
-  it("reports health for R2", async () => {
+  it("reports health for R3", async () => {
     const { app } = testApp();
     const res = await app.request("/health");
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({
       ok: true,
-      slice: "R2",
+      slice: "R3",
     });
   });
 
-  it("keeps Preview / Apply / All Off unwired", async () => {
+  it("keeps Apply and All Off unwired; root Preview is not Apply", async () => {
     const { app } = testApp();
-    for (const path of ["/api/preview", "/api/apply", "/api/all-off"]) {
-      const res = await app.request(path, { method: "POST" });
-      expect(res.status).toBe(501);
-    }
+    const apply = await app.request("/api/apply", { method: "POST" });
+    expect(apply.status).toBe(501);
+    expect(((await apply.json()) as { message: string }).message).toMatch(/R4/);
+    const allOff = await app.request("/api/all-off", { method: "POST" });
+    expect(allOff.status).toBe(501);
+    expect(((await allOff.json()) as { message: string }).message).toMatch(/without restoring/);
+    const preview = await app.request("/api/preview", { method: "POST" });
+    expect(preview.status).toBe(400);
   });
 });
 
@@ -219,6 +261,8 @@ describe("real WLED HTTP probe", () => {
     const app = createApp({
       store,
       probe: (target) => probeWled(target, fetch, 500),
+      write: async () => true,
+      readLive: async () => ({ source: "controller", leds: [] }),
       collect: async () => [],
     });
 
@@ -355,6 +399,117 @@ describe("declared Elements", () => {
     expect(body.light.lastSeenAt).toBe("2026-09-26T18:00:00.000Z");
     expect(body.reported).toEqual([]);
     expect(body.display.notes[0]?.text).toBe("No current report to compare.");
+  });
+});
+
+describe("preview + blink", () => {
+  async function enroll(app: ReturnType<typeof testApp>["app"]) {
+    const res = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.72" }),
+    });
+    const body = (await res.json()) as { light: { id: string } };
+    await app.request(`/api/lights/${body.light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [
+          { label: "Left run", start: 0, stop: 24 },
+          { label: "Right run", start: 24, stop: 50 },
+        ],
+      }),
+    });
+    return body.light.id;
+  }
+
+  it("previews a range, reads it back, then restores", async () => {
+    const { app, box } = testApp();
+    const id = await enroll(app);
+    const detail = (await (
+      await app.request(`/api/lights/${id}`)
+    ).json()) as { elements: { id: string; label: string }[] };
+    const right = detail.elements.find((element) => element.label === "Right run");
+
+    const preview = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elementId: right?.id,
+        color: "#4f7dff",
+        brightness: 180,
+      }),
+    });
+    expect(preview.status).toBe(200);
+    const live = (await preview.json()) as {
+      session: { kind: string; target: { label: string } };
+      liveLeds: string[];
+      liveCaption: string;
+    };
+    expect(live.session.kind).toBe("preview");
+    expect(live.session.target.label).toBe("Right run");
+    expect(live.liveLeds.slice(24, 50).every((led) => led === "#4f7dff")).toBe(true);
+    expect(live.liveLeds[0]).toBe("#ffa000");
+    expect(live.liveCaption).toMatch(/Not Hardware Done/);
+    expect(box.leds[24]).toBe("#4f7dff");
+
+    const ended = await app.request(`/api/lights/${id}/preview/end`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(ended.status).toBe(200);
+    const after = (await ended.json()) as { restored: boolean; session: null };
+    expect(after.restored).toBe(true);
+    expect(after.session).toBeNull();
+    expect(box.leds[24]).toBe("#ffa000");
+  });
+
+  it("blinks then restores, and refuses both when offline", async () => {
+    const { app, box } = testApp();
+    const id = await enroll(app);
+    const blink = await app.request(`/api/lights/${id}/blink`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(blink.status).toBe(200);
+    const pulsing = (await blink.json()) as { session: { kind: string }; liveLeds: string[] };
+    expect(pulsing.session.kind).toBe("blink");
+    expect(pulsing.liveLeds[0]).toBe("#f4f1ea");
+    expect(box.leds[0]).toBe("#f4f1ea");
+
+    const ended = await app.request(`/api/lights/${id}/blink/end`, { method: "POST" });
+    expect(ended.status).toBe(200);
+    expect(((await ended.json()) as { restored: boolean }).restored).toBe(true);
+    expect(box.leds[0]).toBe("#ffa000");
+
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
+    const file = join(dir, "lights.json");
+    const online = testApp({ store: new FileLightsStore(file) });
+    const offlineId = await enroll(online.app);
+    const offline = testApp({
+      store: new FileLightsStore(file),
+      probe: async () => ({
+        kind: "probe-failed",
+        reason: "no answer",
+      }),
+    });
+    const refused = await offline.app.request(`/api/lights/${offlineId}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ color: "#4f7dff" }),
+    });
+    expect(refused.status).toBe(422);
+    expect(((await refused.json()) as { error: string; message: string }).error).toBe(
+      "offline",
+    );
+    const blinkOff = await offline.app.request(`/api/lights/${offlineId}/blink`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(blinkOff.status).toBe(422);
   });
 });
 

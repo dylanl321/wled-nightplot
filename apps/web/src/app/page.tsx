@@ -25,10 +25,15 @@ export default async function LightsPage() {
   }
 
   return (
-    <AppShell lights={lights.lights} lightCount={lights.lights.length} nav="lights">
+    <AppShell
+      lights={lights.lights}
+      lightCount={lights.lights.length}
+      nav="lights"
+      sessions={lights.sessions}
+    >
       <LightsHome lights={lights.lights} unenrolled={lights.unenrolled} />
       <p className="px-5 pb-6 text-[11px] tracking-[0.14em] text-quiet uppercase sm:px-8">
-        configure · r2 · inspect + edit ranges
+        configure · r3 · test live
       </p>
     </AppShell>
   );

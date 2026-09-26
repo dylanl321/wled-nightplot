@@ -13,6 +13,7 @@ import { useMemo, useState } from "react";
 import { StripBeads, type StripSpan } from "@/components/strip-beads";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TestLivePanel, liveBeadColor } from "@/components/test-live";
 import { fetchJson, patchJson } from "@/lib/api";
 import { brightnessPct, lastSeenLabel, snapshotLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -22,10 +23,10 @@ export function LightDetail({
   mode: initialMode,
 }: {
   initial: LightDetailPayload;
-  mode: "inspect" | "ranges";
+  mode: "inspect" | "ranges" | "live";
 }) {
   const router = useRouter();
-  const [mode, setMode] = useState<"inspect" | "ranges">(initialMode);
+  const [mode, setMode] = useState<"inspect" | "ranges" | "live">(initialMode);
   const [detail, setDetail] = useState(initial);
   const [draft, setDraft] = useState<Element[]>(initial.elements);
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -37,10 +38,14 @@ export function LightDetail({
   const light = detail.light;
   const unreachable = light.reachability === "no-answer";
 
-  function goMode(next: "inspect" | "ranges") {
+  function goMode(next: "inspect" | "ranges" | "live") {
     setMode(next);
     const path =
-      next === "ranges" ? `/lights/${light.id}?mode=ranges` : `/lights/${light.id}`;
+      next === "ranges"
+        ? `/lights/${light.id}?mode=ranges`
+        : next === "live"
+          ? `/lights/${light.id}?mode=live`
+          : `/lights/${light.id}`;
     window.history.replaceState(null, "", path);
   }
   const issues = useMemo(
@@ -66,7 +71,7 @@ export function LightDetail({
       start: rail.start,
       stop: rail.stop,
       label: rail.label,
-      sel: mode === "ranges" && rail.id === selectedId,
+      sel: (mode === "ranges" || mode === "live") && rail.id === selectedId,
       error: rail.error,
       differs: rail.differs,
     }));
@@ -198,6 +203,9 @@ export function LightDetail({
           <ModeButton active={mode === "ranges"} onClick={() => goMode("ranges")}>
             Edit ranges
           </ModeButton>
+          <ModeButton active={mode === "live"} onClick={() => goMode("live")}>
+            Test live
+          </ModeButton>
         </div>
         <div className="flex items-center gap-3 text-xs text-quiet sm:ml-auto">
           <span>{unreachable ? lastSeenLabel(light.lastSeenAt) : snapshotLabel(detail.snapshotAt)}</span>
@@ -214,7 +222,13 @@ export function LightDetail({
 
       <div className="flex flex-col gap-2 rounded-[14px] border border-border bg-[#07080a] px-3 py-3 sm:px-5">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-quiet">
-          <span className="text-[#c9c3b8]">{mode === "ranges" ? "Draft" : "Last snapshot"}</span>
+          <span className={mode === "live" ? "text-online" : "text-[#c9c3b8]"}>
+            {mode === "ranges"
+              ? "Draft"
+              : mode === "live"
+                ? "What the strip reports"
+                : "Last snapshot"}
+          </span>
           {mode === "ranges" ? (
             <>
               <span className="inline-flex items-center gap-1.5 text-primary">
@@ -235,12 +249,30 @@ export function LightDetail({
             count={Math.max(light.ledCount, 1)}
             perRow={Math.min(Math.max(light.ledCount, 1), 100)}
             pitch={pitch}
-            color={() => light.bead}
-            brightness={unreachable ? 1 : 0.8}
+            color={(index) =>
+              mode === "live" ? liveBeadColor(index, detail, light.bead) : light.bead
+            }
+            brightness={
+              unreachable
+                ? 1
+                : mode === "live" && detail.session
+                  ? Math.max(0.35, (detail.session.brightness ?? 180) / 255)
+                  : 0.8
+            }
             rgbw={light.rgbw}
             declared={declared}
-            reported={display.reported}
-            regions={display.regions}
+            reported={mode === "live" ? [] : display.reported}
+            regions={
+              mode === "live"
+                ? [
+                    {
+                      kind: "sel",
+                      start: selected?.start ?? 0,
+                      stop: selected?.stop ?? light.ledCount,
+                    },
+                  ]
+                : display.regions
+            }
             handles={mode === "ranges" && Boolean(selected)}
             ariaLabel={`${light.name} strip, ${light.ledCount} LEDs`}
           />
@@ -252,6 +284,14 @@ export function LightDetail({
           detail={detail}
           status={status}
           unreachable={unreachable}
+        />
+      ) : mode === "live" ? (
+        <TestLivePanel
+          detail={detail}
+          unreachable={unreachable}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onDetail={setDetail}
         />
       ) : (
         <EditRanges
@@ -306,7 +346,7 @@ export function LightDetail({
       ) : null}
 
       <p className="text-[11px] tracking-[0.14em] text-quiet uppercase">
-        configure · r2 · inspect + edit ranges
+        configure · r3 · test live
       </p>
     </div>
   );

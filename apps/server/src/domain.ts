@@ -86,6 +86,9 @@ export function lightDetail(
     reported: display.reported,
     display,
     snapshotAt: reachable ? light.lastSeenAt : null,
+    session: null,
+    liveLeds: null,
+    liveCaption: null,
   };
 }
 

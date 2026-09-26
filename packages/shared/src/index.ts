@@ -1,5 +1,32 @@
 export { isLitBead, isUnknownBead, type BeadColor } from "./bead.ts";
 export { catalogSnapshot, CURRENT_SLICE, type CatalogSnapshot } from "./catalog.ts";
+export {
+  BLINK_COLOR,
+  BLINK_PULSE_MS,
+  PREVIEW_SWATCHES,
+  beadsFromLive,
+  blinkRefuseReason,
+  colorsMatch,
+  countRangeMatches,
+  fixtureCaption,
+  hexToRgb,
+  parseHexColor,
+  parseLiveLeds,
+  previewRefuseReason,
+  proofLadder,
+  resolveLiveTarget,
+  rgbToHex,
+  shouldRestoreOnEnd,
+  type LiveEndKind,
+  type LiveRead,
+  type LiveRestoreSnapshot,
+  type LiveSession,
+  type LiveSessionKind,
+  type LiveSource,
+  type LiveTarget,
+  type ProofRung,
+  type SeenByYou,
+} from "./live.ts";
 export { getController, listControllers } from "./controller/catalog.ts";
 export { wledController } from "./controller/wled.ts";
 export type {

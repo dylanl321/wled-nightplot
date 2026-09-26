@@ -1,5 +1,6 @@
 import type { BeadColor } from "./bead.ts";
 import type { RangeDisplay, ReportedRail } from "./drift.ts";
+import type { LiveSession } from "./live.ts";
 
 export type LightReachability = "online" | "no-answer";
 
@@ -50,6 +51,9 @@ export type LightDetail = {
   reported: ReportedRail[];
   display: RangeDisplay;
   snapshotAt: string | null;
+  session: LiveSession | null;
+  liveLeds: (string | null)[] | null;
+  liveCaption: string | null;
 };
 
 export const emptyLightsPayload = {
@@ -64,4 +68,5 @@ export type LightsPayload = {
   elements: Element[];
   unenrolled: import("./discovery/types.ts").DiscoverRow[];
   note?: string;
+  sessions?: { lightId: string; kind: import("./live.ts").LiveSessionKind; label: string }[];
 };

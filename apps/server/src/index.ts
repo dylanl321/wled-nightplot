@@ -4,6 +4,7 @@ import { createCollector } from "./discovery/collect.ts";
 import { createApp } from "./app.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
 import { createWledProbe } from "./wled/client.ts";
+import { createWledLiveReader, createWledWriter } from "./wled/live.ts";
 
 const port = Number.parseInt(process.env.NIGHTPLOT_API_PORT ?? "43181", 10);
 const hostname = process.env.NIGHTPLOT_API_HOST ?? "127.0.0.1";
@@ -14,6 +15,8 @@ const storePath = resolve(
 const app = createApp({
   store: new FileLightsStore(storePath),
   probe: createWledProbe(),
+  write: createWledWriter(),
+  readLive: createWledLiveReader(),
   collect: createCollector({
     targets: process.env.NIGHTPLOT_DISCOVERY_TARGETS,
   }),

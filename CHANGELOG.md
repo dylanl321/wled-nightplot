@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 — R3 Test live (CONFIG-4)
+
+- Test live sits on the same Light strip as Inspect / Edit ranges. Pick one Element, or the whole strip.
+- Preview writes a temporary solid colour and brightness, then the beads follow `/json/live` readback. Ending restores the previous look. Preview is not Apply.
+- Preview disabled shows a one-line reason (offline, no target, Blink already running).
+- Blink Identify pulses, then restores on completion or error. Discover can Blink a candidate the same way.
+- Proof ladder: Sent → Controller reports → a person confirms. Fixture readback is captioned software-green — not Hardware Done.
+- Apply stays R4 (501 / disabled). All Off stays R5; the UI states that a live Preview would end without restoring.
+
 ## 0.3.0 — R2 Snapshot + Elements (CONFIG-3)
 
 - Light Inspect shows identity and a linear `StripBeads` rail of `ledCount` (glowing beads from the v2 template).

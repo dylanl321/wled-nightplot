@@ -17,8 +17,9 @@ export function DiscoverPanel({
   const router = useRouter();
   const [address, setAddress] = useState("");
   const [rows, setRows] = useState<DiscoverRow[]>(initialCandidates);
-  const [busy, setBusy] = useState<"scan" | "probe" | "add" | null>(null);
+  const [busy, setBusy] = useState<"scan" | "probe" | "add" | "blink" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   const found = useMemo(
     () => rows.filter((row) => row.status === "found"),
@@ -32,6 +33,7 @@ export function DiscoverPanel({
   async function scan() {
     setBusy("scan");
     setNotice(null);
+    setInfo(null);
     const res = await postJson<{ candidates: DiscoverRow[] }>("/api/discover");
     setBusy(null);
     if (!res.ok) {
@@ -52,6 +54,7 @@ export function DiscoverPanel({
     }
     setBusy("probe");
     setNotice(null);
+    setInfo(null);
     const res = await postJson<{ candidate: DiscoverRow }>("/api/discover/probe", {
       host,
     });
@@ -70,6 +73,7 @@ export function DiscoverPanel({
   async function addHost(host: string) {
     setBusy("add");
     setNotice(null);
+    setInfo(null);
     const res = await postJson<{ light: LightView }>("/api/lights", { host });
     setBusy(null);
     if (!res.ok) {
@@ -78,6 +82,26 @@ export function DiscoverPanel({
     }
     router.push(`/lights/${res.data.light.id}`);
     router.refresh();
+  }
+
+  async function blinkHost(host: string) {
+    setBusy("blink");
+    setNotice(null);
+    setInfo(null);
+    const res = await postJson<{ caption?: string; restored?: boolean }>(
+      "/api/discover/blink",
+      { host },
+    );
+    setBusy(null);
+    if (!res.ok) {
+      setNotice(res.data.message ?? "Blink did not run.");
+      return;
+    }
+    setInfo(
+      res.data.caption
+        ? `Blink pulsed and ${res.data.restored ? "restored" : "did not restore"}. ${res.data.caption}`
+        : "Blink pulsed.",
+    );
   }
 
   return (
@@ -105,6 +129,7 @@ export function DiscoverPanel({
           row={row}
           busy={busy !== null}
           onAdd={() => void addHost(row.displayHost)}
+          onBlink={() => void blinkHost(row.displayHost)}
         />
       ))}
 
@@ -193,6 +218,9 @@ export function DiscoverPanel({
         </p>
       ) : null}
 
+      {info ? (
+        <p className="max-w-[520px] text-[13px] leading-5 text-primary">{info}</p>
+      ) : null}
       {notice ? (
         <div className="max-w-[520px] rounded-md border-l-2 border-destructive bg-[#1a1113] px-3 py-3">
           <p className="font-medium text-destructive">Nothing added</p>
@@ -207,10 +235,12 @@ function FoundCard({
   row,
   busy,
   onAdd,
+  onBlink,
 }: {
   row: DiscoverRow;
   busy: boolean;
   onAdd: () => void;
+  onBlink: () => void;
 }) {
   return (
     <div className="flex flex-col gap-3.5 rounded-xl border border-[#3a4150] bg-[#12141a] p-[18px]">
@@ -235,10 +265,14 @@ function FoundCard({
         <Fact label="MAC" value={row.mac ?? "—"} />
         <Fact label="Via" value={viaLabel(row.via)} />
       </div>
-      <div className="flex items-center gap-2.5">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <Button type="button" variant="outline" disabled={busy} onClick={onBlink}>
+          Blink it
+        </Button>
+        <span className="text-xs text-quiet">3 s pulse, then back to how it was</span>
         <Button
           type="button"
-          className="ml-auto"
+          className="sm:ml-auto"
           disabled={busy}
           onClick={onAdd}
         >

@@ -15,7 +15,9 @@ export default async function LightPage({
   searchParams: Promise<{ mode?: string }>;
 }) {
   const { id } = await params;
-  const mode = (await searchParams).mode === "ranges" ? "ranges" : "inspect";
+  const requested = (await searchParams).mode;
+  const mode =
+    requested === "ranges" ? "ranges" : requested === "live" ? "live" : "inspect";
   let lights: LightsPayload | null = null;
   let detail: LightDetailPayload | null = null;
   let missing = false;
@@ -60,6 +62,7 @@ export default async function LightPage({
       lightCount={lights.lights.length}
       nav="light"
       activeLightId={id}
+      sessions={lights.sessions}
     >
       <LightDetail initial={detail} mode={mode} />
     </AppShell>

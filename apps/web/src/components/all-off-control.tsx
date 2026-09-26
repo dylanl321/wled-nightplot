@@ -44,8 +44,8 @@ export function AllOffControl({ size, caption }: AllOffControlProps) {
       {open ? (
         <div className="flex flex-col gap-2 rounded-lg border border-border bg-card px-3 py-3">
           <p className="text-[12px] leading-5 text-muted-foreground">
-            All Off cancels live output and does not restore it. That path is
-            not wired. Confirming still sends nothing to a strip.
+            A live Preview would end without restoring its colour. All Off
+            orchestration is R5. Confirming still sends nothing to a strip.
           </p>
           <div className="flex flex-col gap-2">
             <Button
