@@ -271,8 +271,8 @@ export function TestLivePanel({
         </div>
       ) : (
         <p className="text-[12px] text-quiet">
-          Preview is temporary. Range Apply lives on Edit ranges. All Off would end a
-          Preview without restoring — that path is R5.
+          Preview is temporary. Range Apply lives on Edit ranges. All Off, on the
+          rail, ends a Preview without restoring.
         </p>
       )}
     </div>

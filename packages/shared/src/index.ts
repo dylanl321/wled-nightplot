@@ -16,6 +16,26 @@ export {
   type ReaddressDecision,
   type ReaddressStep,
 } from "./apply.ts";
+export {
+  allOffConfirmCopy,
+  allOffDockCaption,
+  allOffRetryLabel,
+  allOffRowLabel,
+  allOffSummary,
+  buildDeleteChecks,
+  canDelete,
+  deleteProgress,
+  deleteRefuseReason,
+  manageCaption,
+  type AllOffCancelled,
+  type AllOffLiveHint,
+  type AllOffResult,
+  type AllOffRow,
+  type AllOffRowStatus,
+  type DeleteCheck,
+  type DeleteCheckKey,
+  type DeleteCheckStatus,
+} from "./manage.ts";
 export { isLitBead, isUnknownBead, type BeadColor } from "./bead.ts";
 export { catalogSnapshot, CURRENT_SLICE, type CatalogSnapshot } from "./catalog.ts";
 export {

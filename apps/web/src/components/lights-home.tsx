@@ -98,6 +98,10 @@ function LightRow({ light }: { light: LightView }) {
       : `${light.ledCount} LEDs · ${light.elementCount} Element${
           light.elementCount === 1 ? "" : "s"
         }`;
+  const segmentLine =
+    light.segmentCount === null
+      ? "segments unknown"
+      : `${light.segmentCount} segment${light.segmentCount === 1 ? "" : "s"}`;
 
   return (
     <Link
@@ -114,6 +118,7 @@ function LightRow({ light }: { light: LightView }) {
           {light.displayHost}
           <br />
           {elementLine}
+          {` · ${segmentLine}`}
           {light.firmware ? ` · ${light.firmware}` : ""}
         </span>
         {light.driftLabel ? (

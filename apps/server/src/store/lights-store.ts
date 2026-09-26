@@ -51,6 +51,16 @@ export class FileLightsStore {
     );
   }
 
+  remove(id: string): boolean {
+    const { lights, elements } = this.read();
+    if (!lights.some((light) => light.id === id)) return false;
+    this.write(
+      lights.filter((light) => light.id !== id),
+      elements.filter((element) => element.lightId !== id),
+    );
+    return true;
+  }
+
   replaceElements(lightId: string, next: Element[]): void {
     const { lights, elements } = this.read();
     this.write(lights, [

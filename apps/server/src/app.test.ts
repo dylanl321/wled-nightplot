@@ -85,24 +85,21 @@ function testApp(overrides: Partial<AppDeps> = {}) {
 }
 
 describe("configure server", () => {
-  it("reports health for R4", async () => {
+  it("reports health for R5", async () => {
     const { app } = testApp();
     const res = await app.request("/health");
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({
       ok: true,
-      slice: "R4",
+      slice: "R5",
     });
   });
 
-  it("keeps root Apply off the Light path; All Off stays R5", async () => {
+  it("keeps root Apply off the Light path; root Preview is not Apply", async () => {
     const { app } = testApp();
     const apply = await app.request("/api/apply", { method: "POST" });
     expect(apply.status).toBe(400);
     expect(((await apply.json()) as { message: string }).message).toMatch(/lights\/:id\/apply/);
-    const allOff = await app.request("/api/all-off", { method: "POST" });
-    expect(allOff.status).toBe(501);
-    expect(((await allOff.json()) as { message: string }).message).toMatch(/without restoring/);
     const preview = await app.request("/api/preview", { method: "POST" });
     expect(preview.status).toBe(400);
   });
@@ -754,6 +751,126 @@ describe("apply + re-address", () => {
     expect(refused.status).toBe(422);
     expect(((await refused.json()) as { error: string }).error).toBe("mac-mismatch");
     expect(store.findById(id)?.hostKey).toBe("192.168.1.44:80");
+  });
+});
+
+describe("all-off + delete", () => {
+  async function enrollHost(app: ReturnType<typeof testApp>["app"], host: string) {
+    const res = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host }),
+    });
+    const body = (await res.json()) as { light: { id: string } };
+    await app.request(`/api/lights/${body.light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [{ label: "Left run", start: 0, stop: 24 }],
+      }),
+    });
+    return body.light.id;
+  }
+
+  it("cancels a Preview without restoring, then powers off", async () => {
+    const { app, box } = testApp();
+    const id = await enrollHost(app, "192.168.1.72");
+    await app.request(`/api/lights/${id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ color: "#4f7dff", brightness: 180 }),
+    });
+    expect(box.leds[0]).toBe("#4f7dff");
+    const res = await app.request("/api/all-off", { method: "POST" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      restored: boolean;
+      cancelled: { kind: string; label: string }[];
+      rows: { status: string; detail: string }[];
+      caption: string;
+    };
+    expect(body.restored).toBe(false);
+    expect(body.cancelled[0]?.kind).toBe("preview");
+    expect(body.rows[0]?.status).toBe("off");
+    expect(body.caption).toMatch(/Not Hardware Done/);
+    expect(box.leds[0]).toBe("#4f7dff");
+    const live = await app.request(`/api/lights/${id}`);
+    expect(((await live.json()) as { session: null }).session).toBeNull();
+  });
+
+  it("retries only Lights that failed All Off", async () => {
+    const boxes = new Map<string, ReturnType<typeof memoryBox>>();
+    const boxFor = (host: string) => {
+      const existing = boxes.get(host);
+      if (existing) return existing;
+      const next = memoryBox();
+      boxes.set(host, next);
+      return next;
+    };
+    let fail73 = true;
+    const { app } = testApp({
+      write: async (target, body) => {
+        if (target.hostname === "192.168.1.73" && fail73) return false;
+        return boxFor(target.hostname).write(target, body);
+      },
+      readLive: (target, count) => boxFor(target.hostname).readLive(target, count),
+      probe: async (target) => boxFor(target.hostname).probe(),
+    });
+    const keep = await enrollHost(app, "192.168.1.72");
+    const fail = await enrollHost(app, "192.168.1.73");
+    const first = await app.request("/api/all-off", { method: "POST" });
+    const firstBody = (await first.json()) as {
+      rows: { lightId: string; status: string }[];
+      failedIds: string[];
+    };
+    expect(firstBody.failedIds).toEqual([fail]);
+    expect(firstBody.rows.find((row) => row.lightId === keep)?.status).toBe("off");
+    expect(firstBody.rows.find((row) => row.lightId === fail)?.status).toBe("failed");
+    fail73 = false;
+    const retry = await app.request("/api/all-off", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightIds: firstBody.failedIds }),
+    });
+    const retryBody = (await retry.json()) as { rows: { lightId: string; status: string }[] };
+    expect(retryBody.rows).toHaveLength(1);
+    expect(retryBody.rows[0]?.lightId).toBe(fail);
+    expect(retryBody.rows[0]?.status).toBe("off");
+  });
+
+  it("refuses Delete until every check is complete", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
+    const file = join(dir, "lights.json");
+    const online = testApp({ store: new FileLightsStore(file) });
+    const id = await enrollHost(online.app, "192.168.1.72");
+    const offline = testApp({
+      store: new FileLightsStore(file),
+      probe: async () => ({ kind: "probe-failed", reason: "no answer" }),
+    });
+    const locked = await offline.app.request(`/api/lights/${id}/delete-checks`);
+    const lockedBody = (await locked.json()) as {
+      checks: { key: string; status: string }[];
+    };
+    expect(lockedBody.checks.filter((check) => check.status === "ok")).toHaveLength(2);
+    const refused = await offline.app.request(`/api/lights/${id}`, { method: "DELETE" });
+    expect(refused.status).toBe(422);
+    expect(((await refused.json()) as { message: string }).message).toMatch(/I understand/);
+
+    await online.app.request(`/api/lights/${id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ color: "#4f7dff" }),
+    });
+    const live = await online.app.request(`/api/lights/${id}`, { method: "DELETE" });
+    expect(live.status).toBe(422);
+
+    await online.app.request(`/api/lights/${id}/preview/end`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    const ok = await online.app.request(`/api/lights/${id}`, { method: "DELETE" });
+    expect(ok.status).toBe(200);
+    expect(online.store.findById(id)).toBeUndefined();
   });
 });
 

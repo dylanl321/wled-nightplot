@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 — R5 Manage a few + All Off (CONFIG-6)
+
+- Lights remains the manage surface: name, address, online, on, ledCount, and live segment count (unknown when the Light is not answering).
+- All Off lives on the rail (desktop) and thumb bar (phone), including empty and error screens. One press runs it when nothing is live.
+- If Preview or Blink is live, confirm expands in place. Confirming cancels without restoring, then powers off each reachable enrolled Light.
+- The result lists each Light by what it reported. Retry targets only the failed ids. Fixture readback is captioned — not Hardware Done.
+- Delete Light is a check that runs (Elements, live sessions, controller state). The button fills n of m and stays locked until every check is complete. Unknown or partial impact is not safe; there is no “I understand” override.
+- Safe settings stay parked for CONFIG-7 / R6.
+
 ## 0.5.0 — R4 Apply ranges + re-address (CONFIG-5)
 
 - Edit ranges Apply writes declared Element ranges to the controller, then re-reads the snapshot. Success only when reported ranges match what was sent.

@@ -56,8 +56,13 @@ export function markUnreachable(light: Light): Light {
 export function toLightView(
   light: Light,
   live: WledSnapshot | null,
-  extras: { elementCount: number; driftLabel: string | null } = {
+  extras: {
+    elementCount: number;
+    segmentCount: number | null;
+    driftLabel: string | null;
+  } = {
     elementCount: 0,
+    segmentCount: null,
     driftLabel: null,
   },
 ): LightView {
@@ -66,6 +71,7 @@ export function toLightView(
     displayHost: displayHost({ hostname: light.hostname, port: light.port }),
     bead: beadFor(light, live),
     elementCount: extras.elementCount,
+    segmentCount: extras.segmentCount,
     driftLabel: extras.driftLabel,
   };
 }
@@ -82,6 +88,7 @@ export function lightDetail(
   return {
     light: toLightView(light, live, {
       elementCount: elements.length,
+      segmentCount: reachable ? (live?.segments.length ?? 0) : null,
       driftLabel: display.notes[0]?.text ?? null,
     }),
     elements,

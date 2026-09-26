@@ -1,18 +1,26 @@
 import { randomUUID } from "node:crypto";
 import {
   CURRENT_SLICE,
+  allOffSummary,
   applyCaption,
   applyOutcome,
   applyRefuseReason,
+  buildDeleteChecks,
+  canDelete,
   catalogSnapshot,
+  deleteRefuseReason,
   decideProbeAddress,
   displayHost,
   fixtureCaption,
+  manageCaption,
   normalizeHostKey,
   parseHexColor,
   readdressContinuity,
   shortMac,
   validateDeclaredRanges,
+  type AllOffCancelled,
+  type AllOffResult,
+  type AllOffRow,
   type DiscoverRow,
   type DraftRange,
   type Element,
@@ -599,15 +607,150 @@ export function createApp(deps: AppDeps) {
       400,
     ),
   );
-  app.post("/api/all-off", (c) =>
-    c.json(
-      notWired(
-        "all-off",
-        "All Off would end a live Preview without restoring. That orchestration is R5. Nothing was sent.",
-      ),
-      501,
-    ),
-  );
+  app.post("/api/all-off", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const rawIds =
+      body && typeof body === "object" ? (body as { lightIds?: unknown }).lightIds : undefined;
+    const lightIds = Array.isArray(rawIds)
+      ? rawIds.filter((id): id is string => typeof id === "string")
+      : undefined;
+    return c.json(await runAllOff(lightIds));
+  });
+
+  app.get("/api/lights/:id/delete-checks", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    return c.json(await deleteImpact(stored));
+  });
+
+  app.delete("/api/lights/:id", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    const impact = await deleteImpact(stored);
+    if (!canDelete(impact.checks)) {
+      return c.json(
+        {
+          error: "checks_incomplete",
+          message: deleteRefuseReason(impact.checks),
+          ...impact,
+        },
+        422,
+      );
+    }
+    deps.store.remove(stored.id);
+    return c.json({
+      deleted: true,
+      lightId: stored.id,
+      message: `${stored.name} is no longer on Lights. The controller was not changed.`,
+      caption: impact.caption,
+    });
+  });
+
+  async function runAllOff(lightIds?: string[]): Promise<AllOffResult> {
+    const enrolled = deps.store.load();
+    const targets = lightIds?.length
+      ? enrolled.filter((light) => lightIds.includes(light.id))
+      : enrolled;
+    const cancelled: AllOffCancelled[] = [];
+    for (const session of live.list()) {
+      if (lightIds?.length && !lightIds.includes(session.lightId)) continue;
+      const owner = enrolled.find((light) => light.id === session.lightId);
+      await live.end(session.lightId, "cancel-without-restore");
+      cancelled.push({
+        lightId: session.lightId,
+        kind: session.kind,
+        label: session.target.label,
+        name: owner?.name ?? session.target.label,
+      });
+    }
+    const rows: AllOffRow[] = [];
+    let sawFixture = false;
+    for (const stored of targets) {
+      const dest: HostPort = { hostname: stored.hostname, port: stored.port };
+      const { light, live: snap } = await refreshOne(stored);
+      const liveRead = snap ? await live.read(light) : null;
+      if (liveRead?.source === "fixture") sawFixture = true;
+      if (light.reachability !== "online" || !snap) {
+        rows.push({
+          lightId: light.id,
+          name: light.name,
+          status: "unknown",
+          detail: `no answer from ${displayHost(dest)} in 3 s`,
+        });
+        continue;
+      }
+      if (snap.on === false) {
+        rows.push({
+          lightId: light.id,
+          name: light.name,
+          status: "already-off",
+          detail: "was already off",
+        });
+        continue;
+      }
+      const written = await deps.write(dest, { on: false });
+      const reread = await deps.probe(dest);
+      if (!written || reread.kind !== "found") {
+        rows.push({
+          lightId: light.id,
+          name: light.name,
+          status: "failed",
+          detail: "The controller did not take off.",
+        });
+        continue;
+      }
+      const next = lightFromSnapshot(dest, reread.snapshot, nowIso(), light);
+      deps.store.replace(next);
+      if (reread.snapshot.on === false) {
+        rows.push({
+          lightId: next.id,
+          name: next.name,
+          status: "off",
+          detail: "reports on: false",
+        });
+      } else {
+        rows.push({
+          lightId: next.id,
+          name: next.name,
+          status: "failed",
+          detail: "still reports on",
+        });
+      }
+    }
+    const failedIds = rows
+      .filter((row) => row.status === "failed" || row.status === "unknown")
+      .map((row) => row.lightId);
+    return {
+      cancelled,
+      restored: false,
+      rows,
+      failedIds,
+      message: allOffSummary(rows, cancelled),
+      caption: manageCaption(sawFixture ? "fixture" : "controller"),
+    };
+  }
+
+  async function deleteImpact(stored: Light) {
+    const { light, live: snap } = await refreshOne(stored);
+    const elements = deps.store.elementsFor(light.id);
+    const session = live.get(light.id);
+    const checks = buildDeleteChecks({
+      elementLabels: elements.map((element) => element.label),
+      sessionLabel: session?.target.label ?? null,
+      reachable: light.reachability === "online" && snap !== null,
+      reportedOn: snap?.on ?? null,
+    });
+    const liveRead = snap ? await live.read(light) : null;
+    return {
+      checks,
+      caption: manageCaption(liveRead?.source === "fixture" ? "fixture" : "controller"),
+      light: (await decorateDetail(light, snap, elements)).light,
+    };
+  }
 
   async function refreshOne(
     stored: Light,
@@ -660,9 +803,16 @@ export function createApp(deps: AppDeps) {
     const detail = lightDetail(light, snap, elements ?? deps.store.elementsFor(light.id));
     const liveRead = snap ? await live.read(light) : null;
     const current = live.get(light.id);
+    const elems = elements ?? deps.store.elementsFor(light.id);
     return {
       ...detail,
       session: current ?? null,
+      deleteChecks: buildDeleteChecks({
+        elementLabels: elems.map((element) => element.label),
+        sessionLabel: current?.target.label ?? null,
+        reachable: light.reachability === "online" && snap !== null,
+        reportedOn: snap?.on ?? null,
+      }),
       liveLeds: liveRead?.leds ?? null,
       liveCaption: liveRead
         ? fixtureCaption(liveRead.source)

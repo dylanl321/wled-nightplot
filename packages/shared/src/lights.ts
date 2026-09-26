@@ -2,6 +2,7 @@ import type { ApplyResult } from "./apply.ts";
 import type { BeadColor } from "./bead.ts";
 import type { RangeDisplay, ReportedRail } from "./drift.ts";
 import type { LiveSession } from "./live.ts";
+import type { AllOffResult, DeleteCheck } from "./manage.ts";
 import type { WledSnapshot } from "./wled/snapshot.ts";
 
 export type LightReachability = "online" | "no-answer";
@@ -46,6 +47,7 @@ export type LightView = Light & {
   bead: BeadColor;
   displayHost: string;
   elementCount: number;
+  segmentCount: number | null;
   driftLabel: string | null;
 };
 
@@ -59,6 +61,7 @@ export type LightDetail = {
   liveLeds: (string | null)[] | null;
   liveCaption: string | null;
   apply?: ApplyResult | null;
+  deleteChecks?: DeleteCheck[] | null;
 };
 
 export const emptyLightsPayload = {
@@ -74,4 +77,5 @@ export type LightsPayload = {
   unenrolled: import("./discovery/types.ts").DiscoverRow[];
   note?: string;
   sessions?: { lightId: string; kind: import("./live.ts").LiveSessionKind; label: string }[];
+  allOff?: AllOffResult | null;
 };

@@ -4,7 +4,7 @@ Configure spine for home LED strips. Discover a controller, enroll it as a **Lig
 
 This is not a playback desk. It does not ship Yard, Tonight, Studio, Scene, or Show chrome.
 
-R4 wires Apply of declared Element ranges (write, then re-read) and re-address from a fresh snapshot. Preview stays temporary. All Off orchestration is still a later ticket.
+R5 wires All Off from every screen and Delete Light as a check that must complete. Preview stays temporary. Safe settings are still a later ticket.
 
 ## Run
 
@@ -31,7 +31,7 @@ pnpm test
 pnpm dev:demo
 ```
 
-or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light for Inspect, then **Edit ranges** to declare Elements, then **Apply** (writes ranges, then reads them back) or **Test live** to Preview or Blink. Re-address from Inspect probes first and switches only on the same MAC. The fixture is a software stub — not Hardware Done.
+or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light for Inspect, then **Edit ranges** to declare Elements, then **Apply** (writes ranges, then reads them back) or **Test live** to Preview or Blink. **All Off** is on the rail / thumb bar — one press if nothing is live; confirm in place if Preview or Blink is running (cancel without restore). **Remove this Light** on Inspect runs three checks and refuses until they complete. The fixture is a software stub — not Hardware Done.
 
 Enrolled Lights and declared Elements persist in `data/lights.json` (override with `NIGHTPLOT_STORE_PATH`). Find Lights also probes `NIGHTPLOT_DISCOVERY_TARGETS` (comma-separated `host` / `host:port`).
 
@@ -48,7 +48,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | POST | `/api/lights/:id/apply` | Write declared ranges, re-read snapshot. 200 only on match. 409 keeps the failure. |
 | POST | `/api/lights/:id/readdress` | `{ host }` — probe first, same-MAC continuity, persist address + last-good snapshot. |
 | POST | `/api/lights/:id/preview` | Temporary colour/brightness on one Element. Reads `/json/live`. |
-| POST | `/api/lights/:id/preview/end` | Restore previous look (`restore: false` is the All Off contract, unused here). |
+| POST | `/api/lights/:id/preview/end` | Restore previous look (`restore: false` cancels without restore). |
 | POST | `/api/lights/:id/preview/seen` | Person rung: `{ seen: "yes" \| "no" }`. Not Hardware Done. |
 | POST | `/api/lights/:id/blink` | Identify pulse. Restore with `/blink/end` (UI does this after 3 s). |
 | POST | `/api/discover/blink` | `{ host }` — pulse a candidate, then restore. |
@@ -57,15 +57,17 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | POST | `/api/discover/probe` | `{ host }` — one address. Public IPs refused before HTTP. |
 | POST | `/api/lights` | `{ host }` — enroll. Fails closed without a WLED snapshot. Duplicate host → 409. |
 | POST | `/api/apply` | 400 — use `/api/lights/:id/apply` |
-| POST | `/api/all-off` | 501 — All Off is R5 |
+| POST | `/api/all-off` | Cancel live sessions without restore, then `{ on: false }` each enrolled Light. Body `{ lightIds }` retries only those. |
+| GET | `/api/lights/:id/delete-checks` | Elements / live sessions / controller state. Unknown is not safe. |
+| DELETE | `/api/lights/:id` | 422 until every check is `ok`. Does not write the controller. |
 
 ## UI
 
 | Path | What |
 | --- | --- |
-| `/` | Lights rack + unenrolled tray |
+| `/` | Lights rack + unenrolled tray. All Off on the rail / thumb bar |
 | `/discover` | Find / type an address / add |
-| `/lights/:id` | Inspect — identity + StripBeads + declared vs reported |
+| `/lights/:id` | Inspect — identity + StripBeads + declared vs reported + Delete checks |
 | `/lights/:id?mode=ranges` | Edit ranges — draft save, Apply write+reread, failed Apply stays |
 | `/lights/:id?mode=live` | Test live — Preview / Blink, proof ladder, `/json/live` beads |
 
@@ -73,8 +75,8 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 
 | Path | What |
 | --- | --- |
-| `apps/web` | Quiet-utility Lights rack, Discover, Inspect / Edit ranges / Test live, `StripBeads` |
-| `apps/server` | Discover/connect, JSON store, WLED snapshot + Preview/Blink + Apply ranges + fixture |
+| `apps/web` | Quiet-utility Lights rack, Discover, Inspect / Edit ranges / Test live, All Off, Delete, `StripBeads` |
+| `apps/server` | Discover/connect, JSON store, WLED snapshot + Preview/Blink + Apply + All Off + Delete + fixture |
 | `packages/shared` | LAN guard, WLED parse, catalogs, Light / Element types |
 | `docs/ui/` | Nightplot Configure v2 prototype. See [docs/ui/README.md](docs/ui/README.md). |
 | `docs/PLANE.md` | CONFIG tickets, REST-only Plane duties. |

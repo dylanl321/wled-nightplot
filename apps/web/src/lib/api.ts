@@ -43,9 +43,16 @@ export async function patchJson<T>(
   return sendJson<T>(path, "PATCH", body);
 }
 
+export async function deleteJson<T>(
+  path: string,
+  body?: unknown,
+): Promise<{ ok: true; status: number; data: T } | { ok: false; status: number; data: ApiFail }> {
+  return sendJson<T>(path, "DELETE", body);
+}
+
 async function sendJson<T>(
   path: string,
-  method: "POST" | "PATCH",
+  method: "POST" | "PATCH" | "DELETE",
   body?: unknown,
 ): Promise<{ ok: true; status: number; data: T } | { ok: false; status: number; data: ApiFail }> {
   const res = await fetch(apiUrl(path), {
@@ -59,27 +66,4 @@ async function sendJson<T>(
   const data = (await res.json().catch(() => ({}))) as T & ApiFail;
   if (!res.ok) return { ok: false, status: res.status, data };
   return { ok: true, status: res.status, data };
-}
-
-export type PlaceholderResponse = {
-  error: string;
-  action: string;
-  slice: string;
-  message: string;
-};
-
-export async function postPlaceholder(
-  path: string,
-): Promise<PlaceholderResponse> {
-  const res = await fetch(apiUrl(path), {
-    method: "POST",
-    headers: { Accept: "application/json" },
-  });
-  const body = (await res.json().catch(() => ({}))) as PlaceholderResponse;
-  return {
-    error: body.error ?? "not_implemented",
-    action: body.action ?? path,
-    slice: body.slice ?? "R4",
-    message: body.message ?? "This action is not wired.",
-  };
 }

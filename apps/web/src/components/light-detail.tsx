@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { DeleteLight } from "@/components/delete-light";
 import { StripBeads, type StripSpan } from "@/components/strip-beads";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -447,8 +448,16 @@ export function LightDetail({
         <p className="text-[13px] text-destructive">{notice}</p>
       ) : null}
 
+      {mode === "inspect" ? (
+        <DeleteLight
+          lightId={light.id}
+          name={light.name}
+          initialChecks={detail.deleteChecks}
+        />
+      ) : null}
+
       <p className="text-[11px] tracking-[0.14em] text-quiet uppercase">
-        configure · r4 · apply
+        configure · r5 · all off
       </p>
     </div>
   );
@@ -507,6 +516,9 @@ function InspectFacts({
             {" in "}
             <span className="text-foreground">{detail.elements.length}</span>
             {detail.elements.length === 1 ? " Element" : " Elements"}.
+            {light.segmentCount === null
+              ? " Segments unknown."
+              : ` ${light.segmentCount} segment${light.segmentCount === 1 ? "" : "s"} reported.`}
             {light.firmware ? ` ${light.firmware}.` : null}
           </p>
           {detail.elements.length === 0 ? (

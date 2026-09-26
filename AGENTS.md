@@ -43,7 +43,7 @@ Fresh schema when persistence arrives. Do not migrate old Nightplot SQLite.
 
 ## Slices
 
-Work the CONFIG series in order. R4 is Apply ranges and re-address. Do not implement All Off orchestration or Delete until CONFIG-6 / R5.
+Work the CONFIG series in order. R5 is manage a few + All Off. Do not implement Safe settings (CONFIG-7 / R6) in the same run.
 
 See `docs/PLANE.md` for Plane coordinates, REST-only rules, state ids, and comment duties.
 
