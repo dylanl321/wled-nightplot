@@ -18,6 +18,7 @@ describe("controller catalog", () => {
     expect(wled?.capabilities.blink).toBe(true);
     expect(wled?.capabilities.apply).toBe(true);
     expect(wled?.capabilities.allOff).toBe(true);
+    expect(wled?.capabilities.safe).toBe(true);
     expect(listControllers().map((entry) => entry.id)).toEqual(["wled"]);
   });
 });
@@ -46,7 +47,7 @@ describe("discovery catalog", () => {
 describe("catalog snapshot", () => {
   it("packages the three seams for the server", () => {
     const snap = catalogSnapshot();
-    expect(snap.slice).toBe("R5");
+    expect(snap.slice).toBe("R6");
     expect(snap.controllers).toHaveLength(1);
     expect(snap.strips).toHaveLength(1);
     expect(snap.discovery).toHaveLength(3);

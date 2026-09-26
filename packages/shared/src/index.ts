@@ -124,4 +124,22 @@ export {
 export { getStrip, listStrips } from "./strip/catalog.ts";
 export type { StripChannel, StripDriverDescriptor } from "./strip/types.ts";
 export { ws281xStrip } from "./strip/ws281x.ts";
+export {
+  buildSafeWrite,
+  fieldLabel,
+  parseWledCfg,
+  requestedFields,
+  SAFE_FIELDS,
+  safeCaption,
+  safeFieldsMatch,
+  safeRefuseReason,
+  transitionMs,
+  transitionUnitsFromMs,
+  validateSafeDraft,
+  type SafeFieldKey,
+  type SafeFingerprint,
+  type SafeRead,
+  type SafeWriteResult,
+  type WledSafeSettings,
+} from "./safe.ts";
 export { parseWledPayload, type WledSnapshot } from "./wled/snapshot.ts";

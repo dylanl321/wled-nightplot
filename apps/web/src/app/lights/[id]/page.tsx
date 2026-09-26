@@ -17,7 +17,13 @@ export default async function LightPage({
   const { id } = await params;
   const requested = (await searchParams).mode;
   const mode =
-    requested === "ranges" ? "ranges" : requested === "live" ? "live" : "inspect";
+    requested === "ranges"
+      ? "ranges"
+      : requested === "live"
+        ? "live"
+        : requested === "safe"
+          ? "safe"
+          : "inspect";
   let lights: LightsPayload | null = null;
   let detail: LightDetailPayload | null = null;
   let missing = false;

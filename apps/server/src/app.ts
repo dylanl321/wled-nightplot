@@ -15,7 +15,11 @@ import {
   manageCaption,
   normalizeHostKey,
   parseHexColor,
+  parseWledCfg,
   readdressContinuity,
+  buildSafeWrite,
+  safeFieldsMatch,
+  safeRefuseReason,
   shortMac,
   validateDeclaredRanges,
   type AllOffCancelled,
@@ -31,6 +35,8 @@ import {
   type LightsPayload,
   type LiveEndKind,
   type ReaddressStep,
+  type SafeRead,
+  type WledSafeSettings,
   type WledSnapshot,
 } from "@nightplot/shared";
 import { Hono } from "hono";
@@ -46,6 +52,7 @@ import {
 import { createLiveEngine } from "./live/engine.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
 import type { ProbeFn } from "./wled/client.ts";
+import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
 import { applyRangesWrite, type ReadLiveFn, type WriteStateFn } from "./wled/live.ts";
 
 export type AppDeps = {
@@ -54,6 +61,8 @@ export type AppDeps = {
   collect: CollectFn;
   write: WriteStateFn;
   readLive: ReadLiveFn;
+  readCfg: ReadCfgFn;
+  writeCfg: WriteCfgFn;
   now?: () => Date;
 };
 
@@ -617,6 +626,101 @@ export function createApp(deps: AppDeps) {
     return c.json(await runAllOff(lightIds));
   });
 
+  app.get("/api/lights/:id/safe", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    const { light, live: snap } = await refreshOne(stored);
+    const safe = await readSafe(light, snap?.firmware ?? light.firmware);
+    return c.json({
+      ...(await decorateDetail(light, snap)),
+      safe,
+    });
+  });
+
+  app.post("/api/lights/:id/safe", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    const { light, live: snap } = await refreshOne(stored);
+    const dest: HostPort = { hostname: light.hostname, port: light.port };
+    const safe = await readSafe(light, snap?.firmware ?? light.firmware);
+    const draft = await readSafeBody(c);
+    if (!draft) {
+      return c.json({ error: "invalid", message: "Send { settings } with Safe settings fields." }, 400);
+    }
+    const reason = safeRefuseReason({
+      reachable: light.reachability === "online" && snap !== null,
+      read: safe,
+      busyKind: live.get(light.id)?.kind ?? null,
+      draft,
+    });
+    if (reason) {
+      return c.json(
+        {
+          error: "refused",
+          message: reason,
+          safe,
+          safeWrite: {
+            status: "refused" as const,
+            matched: false,
+            sent: draft,
+            read: safe.settings,
+            fingerprint: safe.fingerprint,
+            message: reason,
+            caption: safe.caption,
+          },
+        },
+        422,
+      );
+    }
+    const built = buildSafeWrite(draft, safe.fingerprint);
+    if (!built.ok) {
+      return c.json({ error: "refused", message: built.message, safe }, 422);
+    }
+    const written = await deps.writeCfg(dest, built.body);
+    if (!written) {
+      return c.json(
+        {
+          error: "write-failed",
+          message: "The controller did not take Safe settings. Nothing else changed.",
+          safe,
+          safeWrite: {
+            status: "failed" as const,
+            matched: false,
+            sent: built.sent,
+            read: safe.settings,
+            fingerprint: safe.fingerprint,
+            message: "The controller did not take Safe settings. Nothing else changed.",
+            caption: safe.caption,
+          },
+        },
+        422,
+      );
+    }
+    const reread = await readSafe(light, snap?.firmware ?? light.firmware);
+    const matched = safeFieldsMatch(built.sent, reread.settings);
+    const { light: next, live: nextSnap } = await refreshOne(stored);
+    const detail = await decorateDetail(next, nextSnap);
+    const result = {
+      status: matched ? ("matched" as const) : ("mismatch" as const),
+      matched,
+      sent: built.sent,
+      read: reread.settings,
+      fingerprint: reread.fingerprint,
+      message: matched
+        ? "Controller reports the Safe settings we sent."
+        : "Wrote, but /json/cfg did not match. Not treating as success.",
+      caption: reread.caption,
+    };
+    if (!matched) {
+      return c.json({ ...detail, safe: reread, safeWrite: result }, 409);
+    }
+    return c.json({ ...detail, safe: reread, safeWrite: result });
+  });
+
   app.get("/api/lights/:id/delete-checks", async (c) => {
     const stored = deps.store.findById(c.req.param("id"));
     if (!stored) {
@@ -732,6 +836,35 @@ export function createApp(deps: AppDeps) {
       message: allOffSummary(rows, cancelled),
       caption: manageCaption(sawFixture ? "fixture" : "controller"),
     };
+  }
+
+  async function readSafe(light: Light, firmware: string | null): Promise<SafeRead> {
+    const dest: HostPort = { hostname: light.hostname, port: light.port };
+    const raw = await deps.readCfg(dest);
+    const liveRead = await live.read(light);
+    const source = liveRead?.source === "fixture" ? "fixture" : "controller";
+    if (raw === null) {
+      return parseWledCfg(null, firmware, source);
+    }
+    return parseWledCfg(raw, firmware, source);
+  }
+
+  async function readSafeBody(
+    c: { req: { json: () => Promise<unknown> } },
+  ): Promise<Partial<WledSafeSettings> | null> {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") return null;
+    const raw = (body as { settings?: unknown }).settings;
+    if (!raw || typeof raw !== "object") return null;
+    const row = raw as Record<string, unknown>;
+    const draft: Partial<WledSafeSettings> = {};
+    if (typeof row.displayName === "string") draft.displayName = row.displayName;
+    if (typeof row.turnOnAtBoot === "boolean") draft.turnOnAtBoot = row.turnOnAtBoot;
+    if (typeof row.bootBrightness === "number") draft.bootBrightness = row.bootBrightness;
+    if (typeof row.bootPreset === "number") draft.bootPreset = row.bootPreset;
+    if (typeof row.defaultTransition === "number") draft.defaultTransition = row.defaultTransition;
+    if (typeof row.currentLimitMa === "number") draft.currentLimitMa = row.currentLimitMa;
+    return draft;
   }
 
   async function deleteImpact(stored: Light) {

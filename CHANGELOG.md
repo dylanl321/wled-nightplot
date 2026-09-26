@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0 — R6 Safe settings (CONFIG-7)
+
+- Safe settings live on an enrolled Light (Inspect → Safe settings): display name, turn-on-at-boot, boot brightness, boot preset, default transition, global current limit.
+- Read and write go through `/json/cfg`. The fingerprint is the set of those fields this firmware actually exposed. Unsupported firmware is refused closed — nothing is written.
+- A field this parser does not understand is not on the writable form and is not sent. Fixture `/json/cfg` is software-green, not Hardware Done.
+
 ## 0.6.0 — R5 Manage a few + All Off (CONFIG-6)
 
 - Lights remains the manage surface: name, address, online, on, ledCount, and live segment count (unknown when the Light is not answering).

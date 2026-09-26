@@ -4,7 +4,8 @@ export type ControllerCapability =
   | "blink"
   | "preview"
   | "apply"
-  | "allOff";
+  | "allOff"
+  | "safe";
 
 /**
  * A controller member talks to hardware.

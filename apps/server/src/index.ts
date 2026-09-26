@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { createCollector } from "./discovery/collect.ts";
 import { createApp } from "./app.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
+import { createWledCfgReader, createWledCfgWriter } from "./wled/cfg.ts";
 import { createWledProbe } from "./wled/client.ts";
 import { createWledLiveReader, createWledWriter } from "./wled/live.ts";
 
@@ -17,6 +18,8 @@ const app = createApp({
   probe: createWledProbe(),
   write: createWledWriter(),
   readLive: createWledLiveReader(),
+  readCfg: createWledCfgReader(),
+  writeCfg: createWledCfgWriter(),
   collect: createCollector({
     targets: process.env.NIGHTPLOT_DISCOVERY_TARGETS,
   }),

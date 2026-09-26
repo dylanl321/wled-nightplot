@@ -3,6 +3,7 @@ import type { BeadColor } from "./bead.ts";
 import type { RangeDisplay, ReportedRail } from "./drift.ts";
 import type { LiveSession } from "./live.ts";
 import type { AllOffResult, DeleteCheck } from "./manage.ts";
+import type { SafeRead, SafeWriteResult } from "./safe.ts";
 import type { WledSnapshot } from "./wled/snapshot.ts";
 
 export type LightReachability = "online" | "no-answer";
@@ -62,6 +63,8 @@ export type LightDetail = {
   liveCaption: string | null;
   apply?: ApplyResult | null;
   deleteChecks?: DeleteCheck[] | null;
+  safe?: SafeRead | null;
+  safeWrite?: SafeWriteResult | null;
 };
 
 export const emptyLightsPayload = {

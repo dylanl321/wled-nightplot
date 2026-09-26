@@ -15,6 +15,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { DeleteLight } from "@/components/delete-light";
+import { SafeSettingsPanel } from "@/components/safe-settings";
 import { StripBeads, type StripSpan } from "@/components/strip-beads";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,10 +29,10 @@ export function LightDetail({
   mode: initialMode,
 }: {
   initial: LightDetailPayload;
-  mode: "inspect" | "ranges" | "live";
+  mode: "inspect" | "ranges" | "live" | "safe";
 }) {
   const router = useRouter();
-  const [mode, setMode] = useState<"inspect" | "ranges" | "live">(initialMode);
+  const [mode, setMode] = useState<"inspect" | "ranges" | "live" | "safe">(initialMode);
   const [detail, setDetail] = useState(initial);
   const [draft, setDraft] = useState<Element[]>(initial.elements);
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -63,14 +64,16 @@ export function LightDetail({
     return () => window.removeEventListener("nightplot:lights-changed", onLightsChanged);
   }, [initial.light.id]);
 
-  function goMode(next: "inspect" | "ranges" | "live") {
+  function goMode(next: "inspect" | "ranges" | "live" | "safe") {
     setMode(next);
     const path =
       next === "ranges"
         ? `/lights/${light.id}?mode=ranges`
         : next === "live"
           ? `/lights/${light.id}?mode=live`
-          : `/lights/${light.id}`;
+          : next === "safe"
+            ? `/lights/${light.id}?mode=safe`
+            : `/lights/${light.id}`;
     window.history.replaceState(null, "", path);
   }
   const issues = useMemo(
@@ -306,6 +309,9 @@ export function LightDetail({
           <ModeButton active={mode === "live"} onClick={() => goMode("live")}>
             Test live
           </ModeButton>
+          <ModeButton active={mode === "safe"} onClick={() => goMode("safe")}>
+            Safe settings
+          </ModeButton>
         </div>
         <div className="flex items-center gap-3 text-xs text-quiet sm:ml-auto">
           <span>{unreachable ? lastSeenLabel(light.lastSeenAt) : snapshotLabel(detail.snapshotAt)}</span>
@@ -327,7 +333,9 @@ export function LightDetail({
               ? "Draft"
               : mode === "live"
                 ? "What the strip reports"
-                : "Last snapshot"}
+                : mode === "safe"
+                  ? "Last snapshot"
+                  : "Last snapshot"}
           </span>
           {mode === "ranges" ? (
             <>
@@ -379,7 +387,9 @@ export function LightDetail({
         </div>
       </div>
 
-      {mode === "inspect" ? (
+      {mode === "safe" ? (
+        <SafeSettingsPanel lightId={light.id} unreachable={unreachable} />
+      ) : mode === "inspect" ? (
         <InspectFacts
           detail={detail}
           status={status}
@@ -395,6 +405,7 @@ export function LightDetail({
           }}
           onHost={setAddressHost}
           onCheck={() => void readdress()}
+          onSafe={() => goMode("safe")}
         />
       ) : mode === "live" ? (
         <TestLivePanel
@@ -471,7 +482,7 @@ export function LightDetail({
       ) : null}
 
       <p className="text-[11px] tracking-[0.14em] text-quiet uppercase">
-        configure · r5 · all off
+        configure · r6 · safe settings
       </p>
     </div>
   );
@@ -488,6 +499,7 @@ function InspectFacts({
   onToggleAddress,
   onHost,
   onCheck,
+  onSafe,
 }: {
   detail: LightDetailPayload;
   status: string;
@@ -499,6 +511,7 @@ function InspectFacts({
   onToggleAddress: () => void;
   onHost: (value: string) => void;
   onCheck: () => void;
+  onSafe: () => void;
 }) {
   const light = detail.light;
   const pct = brightnessPct(light.brightness);
@@ -545,6 +558,9 @@ function InspectFacts({
         <FactCard eyebrow="How it’s doing">
           <p className="leading-[1.55] text-[#c9c3b8]">{how}</p>
           <p className="text-[12px] text-quiet">{status}</p>
+          <button type="button" onClick={onSafe} className="text-[13px] text-foreground">
+            Safe settings
+          </button>
         </FactCard>
       </div>
       {addressOpen ? (

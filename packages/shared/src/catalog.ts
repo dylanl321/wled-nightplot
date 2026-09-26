@@ -2,7 +2,7 @@ import { listControllers } from "./controller/catalog.ts";
 import { listDiscoveryMechanisms } from "./discovery/catalog.ts";
 import { listStrips } from "./strip/catalog.ts";
 
-export const CURRENT_SLICE = "R5" as const;
+export const CURRENT_SLICE = "R6" as const;
 
 export function catalogSnapshot() {
   return {

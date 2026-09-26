@@ -13,7 +13,8 @@ export const wledController: ControllerDescriptor = {
     preview: true,
     apply: true,
     allOff: true,
+    safe: true,
   },
   notes:
-    "Discover through All Off are live on WLED. All Off cancels Preview/Blink without restoring, then powers off each reachable Light. A fixture report is software-green — not Hardware Done.",
+    "Discover through Safe settings are live on WLED. Safe settings write only /json/cfg fields this firmware actually exposed. A fixture report is software-green — not Hardware Done.",
 };

@@ -33,7 +33,7 @@ export default async function LightsPage() {
     >
       <LightsHome lights={lights.lights} unenrolled={lights.unenrolled} />
       <p className="px-5 pb-6 text-[11px] tracking-[0.14em] text-quiet uppercase sm:px-8">
-        configure · r5 · all off
+        configure · r6 · safe settings
       </p>
     </AppShell>
   );

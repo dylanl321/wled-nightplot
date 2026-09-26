@@ -4,7 +4,7 @@ Configure spine for home LED strips. Discover a controller, enroll it as a **Lig
 
 This is not a playback desk. It does not ship Yard, Tonight, Studio, Scene, or Show chrome.
 
-R5 wires All Off from every screen and Delete Light as a check that must complete. Preview stays temporary. Safe settings are still a later ticket.
+R6 wires the small Safe settings set on an enrolled Light, gated by the firmware’s `/json/cfg` fingerprint. Unsupported firmware is refused — nothing is written.
 
 ## Run
 
@@ -31,7 +31,7 @@ pnpm test
 pnpm dev:demo
 ```
 
-or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light for Inspect, then **Edit ranges** to declare Elements, then **Apply** (writes ranges, then reads them back) or **Test live** to Preview or Blink. **All Off** is on the rail / thumb bar — one press if nothing is live; confirm in place if Preview or Blink is running (cancel without restore). **Remove this Light** on Inspect runs three checks and refuses until they complete. The fixture is a software stub — not Hardware Done.
+or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light for Inspect, then **Edit ranges** to declare Elements, then **Apply**, **Test live** to Preview or Blink, or **Safe settings** for the small `/json/cfg` set. **All Off** is on the rail / thumb bar. **Remove this Light** on Inspect runs three checks and refuses until they complete. The fixture is a software stub — not Hardware Done.
 
 Enrolled Lights and declared Elements persist in `data/lights.json` (override with `NIGHTPLOT_STORE_PATH`). Find Lights also probes `NIGHTPLOT_DISCOVERY_TARGETS` (comma-separated `host` / `host:port`).
 
@@ -60,6 +60,8 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | POST | `/api/all-off` | Cancel live sessions without restore, then `{ on: false }` each enrolled Light. Body `{ lightIds }` retries only those. |
 | GET | `/api/lights/:id/delete-checks` | Elements / live sessions / controller state. Unknown is not safe. |
 | DELETE | `/api/lights/:id` | 422 until every check is `ok`. Does not write the controller. |
+| GET | `/api/lights/:id/safe` | Fingerprinted Safe settings from `/json/cfg`. Empty fingerprint → refuse. |
+| POST | `/api/lights/:id/safe` | `{ settings }` — write only understood fields, then reread. 422 if unsupported. |
 
 ## UI
 
@@ -68,6 +70,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | `/` | Lights rack + unenrolled tray. All Off on the rail / thumb bar |
 | `/discover` | Find / type an address / add |
 | `/lights/:id` | Inspect — identity + StripBeads + declared vs reported + Delete checks |
+| `/lights/:id?mode=safe` | Safe settings — name, boot, transition, current limit; refuse if unsupported |
 | `/lights/:id?mode=ranges` | Edit ranges — draft save, Apply write+reread, failed Apply stays |
 | `/lights/:id?mode=live` | Test live — Preview / Blink, proof ladder, `/json/live` beads |
 
@@ -75,8 +78,8 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 
 | Path | What |
 | --- | --- |
-| `apps/web` | Quiet-utility Lights rack, Discover, Inspect / Edit ranges / Test live, All Off, Delete, `StripBeads` |
-| `apps/server` | Discover/connect, JSON store, WLED snapshot + Preview/Blink + Apply + All Off + Delete + fixture |
+| `apps/web` | Quiet-utility Lights rack, Discover, Inspect / Edit ranges / Test live / Safe settings, All Off, Delete, `StripBeads` |
+| `apps/server` | Discover/connect, JSON store, WLED snapshot + live + Apply + All Off + Delete + Safe settings + fixture |
 | `packages/shared` | LAN guard, WLED parse, catalogs, Light / Element types |
 | `docs/ui/` | Nightplot Configure v2 prototype. See [docs/ui/README.md](docs/ui/README.md). |
 | `docs/PLANE.md` | CONFIG tickets, REST-only Plane duties. |

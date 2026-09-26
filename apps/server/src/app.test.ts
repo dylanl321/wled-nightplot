@@ -68,30 +68,66 @@ function memoryBox() {
   };
 }
 
+function memoryCfg(name = "WLED") {
+  const cfg: {
+    id: { name: string };
+    def: { on: boolean; bri: number; ps: number };
+    light: { tr: { dur: number } };
+    hw: { led: { maxpwr: number } };
+  } = {
+    id: { name },
+    def: { on: true, bri: 128, ps: 0 },
+    light: { tr: { dur: 7 } },
+    hw: { led: { maxpwr: 850 } },
+  };
+  return {
+    cfg,
+    read: async () => structuredClone(cfg),
+    write: async (_target: unknown, body: Record<string, unknown>) => {
+      const next = body as {
+        id?: { name?: unknown };
+        def?: { on?: unknown; bri?: unknown; ps?: unknown };
+        light?: { tr?: { dur?: unknown } };
+        hw?: { led?: { maxpwr?: unknown } };
+      };
+      if (typeof next.id?.name === "string") cfg.id.name = next.id.name;
+      if (typeof next.def?.on === "boolean") cfg.def.on = next.def.on;
+      if (typeof next.def?.bri === "number") cfg.def.bri = next.def.bri;
+      if (typeof next.def?.ps === "number") cfg.def.ps = next.def.ps;
+      if (typeof next.light?.tr?.dur === "number") cfg.light.tr.dur = next.light.tr.dur;
+      if (typeof next.hw?.led?.maxpwr === "number") cfg.hw.led.maxpwr = next.hw.led.maxpwr;
+      return true;
+    },
+  };
+}
+
 function testApp(overrides: Partial<AppDeps> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
   const store = overrides.store ?? new FileLightsStore(join(dir, "lights.json"));
   const box = memoryBox();
+  const cfg = memoryCfg();
   const probe: ProbeFn = overrides.probe ?? box.probe;
   const app = createApp({
     store,
     probe,
     write: overrides.write ?? box.write,
     readLive: overrides.readLive ?? box.readLive,
+    readCfg: overrides.readCfg ?? cfg.read,
+    writeCfg: overrides.writeCfg ?? cfg.write,
     collect: overrides.collect ?? (async () => []),
     now: overrides.now ?? (() => new Date("2026-09-26T18:00:00.000Z")),
   });
-  return { app, store, dir, box };
+  return { app, store, dir, box, cfg };
 }
 
 describe("configure server", () => {
-  it("reports health for R5", async () => {
+  it("reports health for R6", async () => {
     const { app } = testApp();
     const res = await app.request("/health");
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({
       ok: true,
-      slice: "R5",
+      slice: "R6",
     });
   });
 
@@ -272,6 +308,8 @@ describe("real WLED HTTP probe", () => {
       probe: (target) => probeWled(target, fetch, 500),
       write: async () => true,
       readLive: async () => ({ source: "controller", leds: [] }),
+      readCfg: async () => null,
+      writeCfg: async () => false,
       collect: async () => [],
     });
 
@@ -871,6 +909,63 @@ describe("all-off + delete", () => {
     const ok = await online.app.request(`/api/lights/${id}`, { method: "DELETE" });
     expect(ok.status).toBe(200);
     expect(online.store.findById(id)).toBeUndefined();
+  });
+});
+
+describe("safe settings", () => {
+  async function enroll(app: ReturnType<typeof testApp>["app"]) {
+    const res = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.72" }),
+    });
+    return ((await res.json()) as { light: { id: string } }).light.id;
+  }
+
+  it("writes understood fields and rereads a match", async () => {
+    const { app, cfg } = testApp();
+    const id = await enroll(app);
+    const res = await app.request(`/api/lights/${id}/safe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        settings: {
+          displayName: "Porch rail",
+          turnOnAtBoot: false,
+          bootBrightness: 180,
+          bootPreset: 2,
+          defaultTransition: 10,
+          currentLimitMa: 1200,
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      safeWrite: { matched: boolean; caption: string };
+      safe: { settings: { displayName: string; bootBrightness: number } };
+    };
+    expect(body.safeWrite.matched).toBe(true);
+    expect(body.safe.settings.displayName).toBe("Porch rail");
+    expect(body.safe.settings.bootBrightness).toBe(180);
+    expect(cfg.cfg.id.name).toBe("Porch rail");
+    expect(cfg.cfg.def.on).toBe(false);
+    expect(body.safeWrite.caption).toMatch(/Not Hardware Done/);
+  });
+
+  it("refuses unsupported firmware without writing", async () => {
+    const { app, cfg } = testApp({
+      readCfg: async () => ({ vid: 1903252, rev: [1, 0] }),
+    });
+    const id = await enroll(app);
+    const before = structuredClone(cfg.cfg);
+    const res = await app.request(`/api/lights/${id}/safe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { displayName: "Nope" } }),
+    });
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as { message: string }).message).toMatch(/isn’t a shape we write/);
+    expect(cfg.cfg).toEqual(before);
   });
 });
 
