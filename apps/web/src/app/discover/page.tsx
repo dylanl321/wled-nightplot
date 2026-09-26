@@ -1,19 +1,47 @@
+import type { DiscoverRow, LightsPayload } from "@nightplot/shared";
 import { AppShell } from "@/components/app-shell";
-import { DiscoverForm } from "@/components/discover-form";
+import { DiscoverPanel } from "@/components/discover-panel";
+import { ServerDown } from "@/components/server-down";
+import { fetchJson } from "@/lib/api";
 
-export default function DiscoverPage() {
+export default async function DiscoverPage() {
+  let lights: LightsPayload | null = null;
+  let session: { candidates: DiscoverRow[] } | null = null;
+  let error: string | undefined;
+
+  try {
+    [lights, session] = await Promise.all([
+      fetchJson<LightsPayload>("/api/lights"),
+      fetchJson<{ candidates: DiscoverRow[] }>("/api/discover"),
+    ]);
+  } catch (caught) {
+    error = caught instanceof Error ? caught.message : "Unknown error";
+  }
+
+  if (!lights) {
+    return (
+      <AppShell lightCount={0} nav="discover">
+        <ServerDown detail={error} />
+      </AppShell>
+    );
+  }
+
   return (
-    <AppShell lightCount={0} nav="discover">
+    <AppShell lights={lights.lights} lightCount={lights.lights.length} nav="discover">
       <div className="mx-auto flex w-full max-w-[880px] flex-1 flex-col gap-6 px-5 py-8 sm:px-8">
         <div className="flex flex-col gap-1">
           <h1 className="text-[26px] font-semibold tracking-[-0.01em]">
             Add a Light
           </h1>
           <p className="text-muted-foreground">
-            Find Lights is not wired. Nothing is being scanned on this network.
+            Looking on this link. Controllers appear as each one answers. Type
+            an address if the find comes back empty.
           </p>
         </div>
-        <DiscoverForm />
+        <DiscoverPanel
+          initialCandidates={session?.candidates ?? []}
+          enrolled={lights.lights}
+        />
       </div>
     </AppShell>
   );

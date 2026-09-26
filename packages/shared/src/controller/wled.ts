@@ -5,15 +5,15 @@ export const wledController: ControllerDescriptor = {
   label: "WLED",
   chip: "WLED",
   implementation: "registered",
-  wired: false,
+  wired: true,
   capabilities: {
-    discover: false,
-    snapshot: false,
+    discover: true,
+    snapshot: true,
     blink: false,
     preview: false,
     apply: false,
     allOff: false,
   },
   notes:
-    "First controller member. Protocol, snapshot, blink, and live output are later slices. Registered is not Hardware Done.",
+    "Discover and snapshot are live. Blink, Preview, Apply, and All Off are not. Not Hardware Done.",
 };

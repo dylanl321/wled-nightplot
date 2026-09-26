@@ -1,0 +1,140 @@
+import { randomUUID } from "node:crypto";
+import {
+  displayHost,
+  normalizeHostKey,
+  type BeadColor,
+  type DiscoverRow,
+  type DiscoverVia,
+  type HostPort,
+  type Light,
+  type LightView,
+  type WledSnapshot,
+} from "@nightplot/shared";
+import type { ProbeOutcome } from "./wled/client.ts";
+
+export function lightFromSnapshot(
+  target: HostPort,
+  snapshot: WledSnapshot,
+  now: string,
+  existing?: Light,
+): Light {
+  return {
+    id: existing?.id ?? randomUUID(),
+    name: snapshot.name,
+    controllerKind: "wled",
+    stripKind: "ws281x",
+    hostname: target.hostname,
+    port: target.port,
+    hostKey: normalizeHostKey(target),
+    mac: snapshot.mac,
+    firmware: snapshot.firmware,
+    ledCount: snapshot.ledCount,
+    rgbw: snapshot.rgbw,
+    reachability: "online",
+    lastSeenAt: now,
+    on: snapshot.on,
+    brightness: snapshot.brightness,
+    enrolledAt: existing?.enrolledAt ?? now,
+  };
+}
+
+export function markUnreachable(light: Light): Light {
+  return {
+    ...light,
+    reachability: "no-answer",
+    on: null,
+    brightness: null,
+  };
+}
+
+export function toLightView(light: Light, live: WledSnapshot | null): LightView {
+  return {
+    ...light,
+    displayHost: displayHost({ hostname: light.hostname, port: light.port }),
+    bead: beadFor(light, live),
+  };
+}
+
+function beadFor(light: Light, live: WledSnapshot | null): BeadColor {
+  if (light.reachability === "no-answer" || !live) return "unknown";
+  if (live.on === false) return null;
+  return live.segmentColor;
+}
+
+export function rowFromProbe(
+  target: HostPort,
+  via: DiscoverVia,
+  outcome: ProbeOutcome,
+  now: string,
+  enrolled: boolean,
+): DiscoverRow {
+  const key = normalizeHostKey(target);
+  const base = {
+    key,
+    hostname: target.hostname,
+    port: target.port,
+    displayHost: displayHost(target),
+    via,
+    foundAt: now,
+  };
+  if (enrolled) {
+    return {
+      ...base,
+      status: "already-added",
+      reason: "Already added",
+      reasonCode: "already-added",
+      name: null,
+      ledCount: null,
+      firmware: null,
+      mac: null,
+      on: null,
+      bead: null,
+    };
+  }
+  if (outcome.kind === "found") {
+    return {
+      ...base,
+      status: "found",
+      reason: null,
+      reasonCode: null,
+      name: outcome.snapshot.name,
+      ledCount: outcome.snapshot.ledCount,
+      firmware: outcome.snapshot.firmware,
+      mac: outcome.snapshot.mac,
+      on: outcome.snapshot.on,
+      bead: outcome.snapshot.on ? outcome.snapshot.segmentColor : null,
+    };
+  }
+  return {
+    ...base,
+    status: "rejected",
+    reason: outcome.reason,
+    reasonCode: outcome.kind,
+    name: null,
+    ledCount: null,
+    firmware: null,
+    mac: null,
+    on: null,
+    bead: null,
+  };
+}
+
+export function refusedRow(raw: string, via: DiscoverVia, now: string, reason: string): DiscoverRow {
+  return {
+    key: raw.trim().toLowerCase() || "refused",
+    hostname: raw.trim(),
+    port: 0,
+    displayHost: raw.trim(),
+    via,
+    status: "rejected",
+    reason,
+    reasonCode: "disallowed-address",
+    name: null,
+    ledCount: null,
+    firmware: null,
+    mac: null,
+    on: null,
+    bead: null,
+    foundAt: now,
+  };
+}

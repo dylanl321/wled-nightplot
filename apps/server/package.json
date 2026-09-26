@@ -6,13 +6,15 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "fixture": "tsx src/wled-fixture.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.6",
     "@nightplot/shared": "workspace:*",
-    "hono": "^4.11.3"
+    "hono": "^4.11.3",
+    "multicast-dns": "^7.2.5"
   },
   "devDependencies": {
     "@types/node": "^20.19.0",

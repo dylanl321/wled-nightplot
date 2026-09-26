@@ -4,21 +4,21 @@ const mechanisms: readonly DiscoveryMechanism[] = [
   {
     id: "mdns",
     label: "mDNS",
-    implementation: "placeholder",
-    notes: "Controllers appear as each one answers. Not wired in R0.",
+    implementation: "registered",
+    notes: "Looks for _wled._tcp on the link. Empty is honest when the network hides mDNS.",
   },
   {
     id: "ssdp",
     label: "SSDP",
-    implementation: "placeholder",
-    notes: "Secondary find path. Not wired in R0.",
+    implementation: "registered",
+    notes: "Short M-SEARCH for WLED. Secondary find path.",
   },
   {
     id: "address-probe",
     label: "Address probe",
-    implementation: "placeholder",
+    implementation: "registered",
     notes:
-      "Type host or host:port. Public internet addresses must be refused before probing. Not wired in R0.",
+      "Type host or host:port. Public internet addresses are refused before probing.",
   },
 ];
 

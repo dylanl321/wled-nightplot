@@ -28,14 +28,14 @@ One code basis. Do not fork the Lights / Elements / live stack per vendor or str
 | --- | --- | --- |
 | Controller | WLED | `packages/shared/src/controller/` |
 | Strip / driver | WS281x | `packages/shared/src/strip/` |
-| Discovery | mDNS / SSDP / address probe (placeholders) | `packages/shared/src/discovery/` |
+| Discovery | mDNS / SSDP / address probe | `packages/shared/src/discovery/` |
 
 New controllers or strip types register a member. They do not rewrite the rack.
 
 Layout:
 
 - `apps/web` — Quiet-utility shell (Next.js)
-- `apps/server` — catalogs + placeholder actions
+- `apps/server` — catalogs, Discover/connect, JSON Light store, placeholder live actions
 - `packages/shared` — types and catalogs
 - `docs/ui/` — v2 prototype (visual source of truth)
 
@@ -43,7 +43,7 @@ Fresh schema when persistence arrives. Do not migrate old Nightplot SQLite.
 
 ## Slices
 
-Work the CONFIG series in order. R0 is this skeleton. Do not implement Discover / Preview / Apply / All Off logic beyond placeholders until that ticket is the one you are on.
+Work the CONFIG series in order. R1 is Discover + connect. Do not implement Preview / Apply / All Off / Element ranges until that ticket is the one you are on.
 
 See `docs/PLANE.md` for Plane coordinates, REST-only rules, state ids, and comment duties.
 

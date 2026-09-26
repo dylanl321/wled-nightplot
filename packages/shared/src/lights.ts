@@ -1,20 +1,27 @@
+import type { BeadColor } from "./bead.ts";
+
 export type LightReachability = "online" | "no-answer";
 
 /**
  * A Light is one enrolled controller + one strip.
- * R0 does not persist Lights. This type is the seam for enrollment (R1+).
  */
 export type Light = {
   id: string;
   name: string;
   controllerKind: string;
   stripKind: string;
-  host: string;
+  hostname: string;
+  port: number;
+  hostKey: string;
+  mac: string | null;
+  firmware: string | null;
   ledCount: number;
+  rgbw: boolean;
   reachability: LightReachability;
   lastSeenAt: string | null;
-  /** `null` when we cannot honestly say. */
   on: boolean | null;
+  brightness: number | null;
+  enrolledAt: string;
 };
 
 /**
@@ -28,10 +35,22 @@ export type Element = {
   stop: number;
 };
 
-export const emptyLightsPayload = {
-  lights: [] as Light[],
-  elements: [] as Element[],
-  note: "No Lights are enrolled. Discover is not wired.",
+/** Live view: bead colour comes from the current snapshot, never a stored last colour. */
+export type LightView = Light & {
+  bead: BeadColor;
+  displayHost: string;
 };
 
-export type LightsPayload = typeof emptyLightsPayload;
+export const emptyLightsPayload = {
+  lights: [] as LightView[],
+  elements: [] as Element[],
+  unenrolled: [] as import("./discovery/types.ts").DiscoverRow[],
+  note: "No Lights are enrolled.",
+};
+
+export type LightsPayload = {
+  lights: LightView[];
+  elements: Element[];
+  unenrolled: import("./discovery/types.ts").DiscoverRow[];
+  note?: string;
+};

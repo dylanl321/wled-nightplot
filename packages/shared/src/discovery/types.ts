@@ -1,10 +1,42 @@
+import type { BeadColor } from "../bead.ts";
+
+export type DiscoveryMechanismId = "mdns" | "ssdp" | "address-probe";
+
 /**
- * How candidates are found. R0 only registers the slots.
- * Nothing is scanned; a stub here is not a live find.
+ * How candidates are found.
+ * `registered` means the mechanism can collect or probe. Empty results are honest.
  */
 export type DiscoveryMechanism = {
-  id: string;
+  id: DiscoveryMechanismId;
   label: string;
-  implementation: "placeholder";
+  implementation: "registered" | "placeholder";
   notes: string;
+};
+
+export type DiscoverVia = "mdns" | "ssdp" | "address-probe" | "targets";
+
+export type DiscoverReasonCode =
+  | "disallowed-address"
+  | "probe-failed"
+  | "not-wled"
+  | "already-added";
+
+export type DiscoverStatus = "found" | "rejected" | "already-added";
+
+export type DiscoverRow = {
+  key: string;
+  hostname: string;
+  port: number;
+  displayHost: string;
+  via: DiscoverVia;
+  status: DiscoverStatus;
+  reason: string | null;
+  reasonCode: DiscoverReasonCode | null;
+  name: string | null;
+  ledCount: number | null;
+  firmware: string | null;
+  mac: string | null;
+  on: boolean | null;
+  bead: BeadColor | null;
+  foundAt: string;
 };

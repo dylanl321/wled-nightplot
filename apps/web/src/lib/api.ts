@@ -24,6 +24,28 @@ export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T>
   return body;
 }
 
+export type ApiFail = {
+  error?: string;
+  message?: string;
+};
+
+export async function postJson<T>(
+  path: string,
+  body?: unknown,
+): Promise<{ ok: true; status: number; data: T } | { ok: false; status: number; data: ApiFail }> {
+  const res = await fetch(apiUrl(path), {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = (await res.json().catch(() => ({}))) as T & ApiFail;
+  if (!res.ok) return { ok: false, status: res.status, data };
+  return { ok: true, status: res.status, data };
+}
+
 export type PlaceholderResponse = {
   error: string;
   action: string;
@@ -42,7 +64,7 @@ export async function postPlaceholder(
   return {
     error: body.error ?? "not_implemented",
     action: body.action ?? path,
-    slice: body.slice ?? "R0",
+    slice: body.slice ?? "R1",
     message: body.message ?? "This action is not wired.",
   };
 }
