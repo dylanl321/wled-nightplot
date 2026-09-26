@@ -127,6 +127,7 @@ export function TestLivePanel({
     onDetail(res.data);
   }
 
+  const proofLabel = session?.target.label ?? target.label;
   const rungs = proofLadder({
     sentAt: session?.startedAt ?? null,
     reported:
@@ -139,7 +140,7 @@ export function TestLivePanel({
           }
         : null,
     seenByYou: session?.seenByYou ?? null,
-    label: target.label,
+    label: proofLabel,
   });
 
   const colorName = SWATCH_NAMES[color] ?? color;
@@ -237,7 +238,7 @@ export function TestLivePanel({
         <ProofCard
           session={session}
           rungs={rungs}
-          label={target.label}
+          label={proofLabel}
           colorName={colorName}
           caption={detail.liveCaption}
           onSee={see}

@@ -465,6 +465,42 @@ describe("preview + blink", () => {
     expect(box.leds[24]).toBe("#ffa000");
   });
 
+  it("keeps the original restore if Preview is sent again", async () => {
+    const { app, box } = testApp();
+    const id = await enroll(app);
+    const detail = (await (
+      await app.request(`/api/lights/${id}`)
+    ).json()) as { elements: { id: string }[] };
+
+    await app.request(`/api/lights/${id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elementId: detail.elements[0]?.id,
+        color: "#4f7dff",
+        brightness: 180,
+      }),
+    });
+    const again = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elementId: detail.elements[0]?.id,
+        color: "#3dff7a",
+        brightness: 200,
+      }),
+    });
+    expect(again.status).toBe(200);
+    expect(((await again.json()) as { liveLeds: string[] }).liveLeds[0]).toBe("#3dff7a");
+
+    await app.request(`/api/lights/${id}/preview/end`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(box.leds[0]).toBe("#ffa000");
+  });
+
   it("blinks then restores, and refuses both when offline", async () => {
     const { app, box } = testApp();
     const id = await enroll(app);

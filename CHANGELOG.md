@@ -6,7 +6,8 @@
 - Preview writes a temporary solid colour and brightness, then the beads follow `/json/live` readback. Ending restores the previous look. Preview is not Apply.
 - Preview disabled shows a one-line reason (offline, no target, Blink already running).
 - Blink Identify pulses, then restores on completion or error. Discover can Blink a candidate the same way.
-- Proof ladder: Sent → Controller reports → a person confirms. Fixture readback is captioned software-green — not Hardware Done.
+- Proof ladder: Sent → Controller reports → a person confirms. The ladder names the live target, not a different selected chip. Fixture readback is captioned software-green — not Hardware Done.
+- A second Preview on the same Light keeps the original restore snapshot.
 - Apply stays R4 (501 / disabled). All Off stays R5; the UI states that a live Preview would end without restoring.
 
 ## 0.3.0 — R2 Snapshot + Elements (CONFIG-3)

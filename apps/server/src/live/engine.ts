@@ -109,7 +109,8 @@ export function createLiveEngine(deps: {
       };
     }
 
-    const restore = restoreFrom(args.live);
+    const existing = sessions.get(args.light.id);
+    const restore = existing?.restore ?? restoreFrom(args.live);
     const dest: HostPort = { hostname: args.light.hostname, port: args.light.port };
     const sent = await deps.write(dest, previewWrite(target.start, target.stop, color, brightness));
     if (!sent) {

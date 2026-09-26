@@ -30,7 +30,7 @@ export function LightDetail({
   const [detail, setDetail] = useState(initial);
   const [draft, setDraft] = useState<Element[]>(initial.elements);
   const [selectedId, setSelectedId] = useState<string | null>(
-    initial.elements[0]?.id ?? null,
+    initial.session?.target.elementId ?? initial.elements[0]?.id ?? null,
   );
   const [busy, setBusy] = useState<"save" | "refresh" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
