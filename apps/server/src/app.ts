@@ -1,11 +1,17 @@
 import { randomUUID } from "node:crypto";
 import {
   CURRENT_SLICE,
+  applyCaption,
+  applyOutcome,
+  applyRefuseReason,
   catalogSnapshot,
   decideProbeAddress,
+  displayHost,
   fixtureCaption,
   normalizeHostKey,
   parseHexColor,
+  readdressContinuity,
+  shortMac,
   validateDeclaredRanges,
   type DiscoverRow,
   type DraftRange,
@@ -16,6 +22,7 @@ import {
   type LightView,
   type LightsPayload,
   type LiveEndKind,
+  type ReaddressStep,
   type WledSnapshot,
 } from "@nightplot/shared";
 import { Hono } from "hono";
@@ -31,7 +38,7 @@ import {
 import { createLiveEngine } from "./live/engine.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
 import type { ProbeFn } from "./wled/client.ts";
-import type { ReadLiveFn, WriteStateFn } from "./wled/live.ts";
+import { applyRangesWrite, type ReadLiveFn, type WriteStateFn } from "./wled/live.ts";
 
 export type AppDeps = {
   store: FileLightsStore;
@@ -250,6 +257,190 @@ export function createApp(deps: AppDeps) {
     return c.json(await decorateDetail(light, snap, elements));
   });
 
+  app.post("/api/lights/:id/apply", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    const { light, live: snap } = await refreshOne(stored);
+    const drafts = await readApplyDrafts(c, light.id);
+    if (!drafts) {
+      return c.json({ error: "invalid", message: "Send { elements: [{ label, start, stop }] }." }, 400);
+    }
+    const issues = validateDeclaredRanges(drafts, light.ledCount);
+    const reason = applyRefuseReason({
+      reachable: light.reachability === "online" && snap !== null,
+      issueMessage: issues[0]?.message ?? null,
+      elementCount: drafts.length,
+      busyKind: live.get(light.id)?.kind ?? null,
+    });
+    if (reason) {
+      return c.json({ error: "refused", message: reason }, 422);
+    }
+    const sent = drafts.map((row) => ({
+      label: row.label.trim() || "Untitled",
+      start: row.start,
+      stop: row.stop,
+    }));
+    const dest: HostPort = { hostname: light.hostname, port: light.port };
+    const written = await deps.write(
+      dest,
+      applyRangesWrite(sent, snap?.segments.length ?? 0, snap?.segmentColor ?? "#ffa000"),
+    );
+    if (!written) {
+      return c.json(
+        {
+          error: "write-failed",
+          message: "The controller did not take the ranges. Nothing else changed.",
+          apply: {
+            status: "failed" as const,
+            matched: false,
+            rows: [],
+            sent,
+            read: [],
+            message: "The controller did not take the ranges. Nothing else changed.",
+            caption: applyCaption("controller"),
+          },
+        },
+        422,
+      );
+    }
+    const reread = await deps.probe(dest);
+    if (reread.kind !== "found") {
+      return c.json(
+        {
+          error: "reread-failed",
+          message: "Wrote, but could not re-read. Not treating as success.",
+          apply: {
+            status: "failed" as const,
+            matched: false,
+            rows: [],
+            sent,
+            read: [],
+            message: "Wrote, but could not re-read. Not treating as success.",
+            caption: applyCaption("controller"),
+          },
+        },
+        409,
+      );
+    }
+    const liveRead = await live.read({ ...light, reachability: "online" });
+    const source = liveRead?.source === "fixture" ? "fixture" : "controller";
+    const outcome = applyOutcome(sent, reread.snapshot.segments, source);
+    const next = lightFromSnapshot(dest, reread.snapshot, nowIso(), light);
+    if (outcome.matched) {
+      next.lastSnapshot = reread.snapshot;
+      next.lastSnapshotAt = next.lastSeenAt;
+      deps.store.replace(next);
+      const elements = persistDrafts(light.id, drafts);
+      return c.json({
+        ...(await decorateDetail(next, reread.snapshot, elements)),
+        apply: outcome,
+      });
+    }
+    deps.store.replace(next);
+    return c.json(
+      {
+        ...(await decorateDetail(next, reread.snapshot)),
+        apply: outcome,
+      },
+      409,
+    );
+  });
+
+  app.post("/api/lights/:id/readdress", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    const body = await readHostBody(c);
+    if (!body) return c.json({ error: "invalid", message: "Send { host }." }, 400);
+    const decision = decideProbeAddress(body.host);
+    if (!decision.ok) {
+      return c.json({ error: decision.reasonCode, message: decision.reason, switched: false }, 403);
+    }
+    const nextKey = normalizeHostKey(decision.target);
+    const occupant = deps.store.findByHostKey(nextKey);
+    if (occupant && occupant.id !== stored.id) {
+      return c.json(
+        {
+          error: "already-added",
+          message: "That address is already a Light. Kept the current host.",
+          switched: false,
+        },
+        409,
+      );
+    }
+    const outcome = await deps.probe(decision.target);
+    const previous = displayHost(stored);
+    const incoming = displayHost(decision.target);
+    if (outcome.kind !== "found") {
+      return c.json(
+        {
+          error: outcome.kind,
+          message: outcome.reason,
+          switched: false,
+          steps: [
+            {
+              done: false,
+              text: `Nothing we trust answered at ${incoming}. Kept ${previous}.`,
+            },
+          ] satisfies ReaddressStep[],
+        },
+        422,
+      );
+    }
+    const continuity = readdressContinuity({
+      enrolledMac: stored.mac,
+      snapshotMac: outcome.snapshot.mac,
+      sameHost: nextKey === stored.hostKey,
+    });
+    const answered: ReaddressStep = {
+      done: true,
+      text: `Something answered at ${incoming}`,
+    };
+    if (!continuity.ok) {
+      return c.json(
+        {
+          error: continuity.error,
+          message: continuity.message,
+          switched: false,
+          answered: true,
+          steps: [
+            answered,
+            {
+              done: false,
+              text: `Same controller? ${shortMac(stored.mac)} — kept ${previous} until it matches.`,
+            },
+          ] satisfies ReaddressStep[],
+        },
+        422,
+      );
+    }
+    const next = lightFromSnapshot(decision.target, outcome.snapshot, nowIso(), stored);
+    next.lastSnapshot = outcome.snapshot;
+    next.lastSnapshotAt = next.lastSeenAt;
+    deps.store.replace(next);
+    return c.json({
+      ...(await decorateDetail(next, outcome.snapshot)),
+      readdress: {
+        switched: true,
+        sameMac: continuity.sameMac,
+        previousHost: previous,
+        nextHost: incoming,
+        steps: [
+          answered,
+          {
+            done: true,
+            text: continuity.sameMac
+              ? `Same controller — MAC ${shortMac(outcome.snapshot.mac)} matched. Address is now ${incoming}.`
+              : `Address is now ${incoming}. Identity is from this snapshot, not the old one.`,
+          },
+        ] satisfies ReaddressStep[],
+      },
+    });
+  });
+
   app.get("/api/lights/:id/live", async (c) => {
     const stored = deps.store.findById(c.req.param("id"));
     if (!stored) {
@@ -399,8 +590,13 @@ export function createApp(deps: AppDeps) {
   );
   app.post("/api/apply", (c) =>
     c.json(
-      notWired("apply", "Durable apply to the controller is R4. Nothing was sent."),
-      501,
+      {
+        error: "wrong_path",
+        action: "apply",
+        slice: CURRENT_SLICE,
+        message: "Apply lives on a Light (Edit ranges): POST /api/lights/:id/apply.",
+      },
+      400,
     ),
   );
   app.post("/api/all-off", (c) =>
@@ -519,6 +715,50 @@ export function createApp(deps: AppDeps) {
       });
     }
     return drafts;
+  }
+
+  async function readApplyDrafts(
+    c: { req: { json: () => Promise<unknown> } },
+    lightId: string,
+  ): Promise<DraftRange[] | null> {
+    const body = await c.req.json().catch(() => ({}));
+    if (!body || typeof body !== "object") return null;
+    if (!("elements" in body)) {
+      return deps.store.elementsFor(lightId);
+    }
+    const raw = (body as { elements?: unknown }).elements;
+    if (!Array.isArray(raw)) return null;
+    const drafts: DraftRange[] = [];
+    for (const item of raw) {
+      if (!item || typeof item !== "object") return null;
+      const row = item as { id?: unknown; label?: unknown; start?: unknown; stop?: unknown };
+      if (typeof row.start !== "number" || typeof row.stop !== "number") return null;
+      drafts.push({
+        id: typeof row.id === "string" ? row.id : undefined,
+        label: typeof row.label === "string" ? row.label : "",
+        start: row.start,
+        stop: row.stop,
+      });
+    }
+    return drafts;
+  }
+
+  function persistDrafts(lightId: string, drafts: DraftRange[]): Element[] {
+    const existingIds = new Set(deps.store.elementsFor(lightId).map((element) => element.id));
+    const elements: Element[] = drafts.map((draft, index) => ({
+      id:
+        draft.id && existingIds.has(draft.id)
+          ? draft.id
+          : draft.id && looksLikeId(draft.id)
+            ? draft.id
+            : randomUUID(),
+      lightId,
+      label: draft.label.trim() || `Element ${index + 1}`,
+      start: draft.start,
+      stop: draft.stop,
+    }));
+    deps.store.replaceElements(lightId, elements);
+    return elements;
   }
 
   async function readPreviewBody(c: { req: { json: () => Promise<unknown> } }) {

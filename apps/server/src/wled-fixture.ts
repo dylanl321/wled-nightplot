@@ -22,6 +22,7 @@ const state: { on: boolean; bri: number; seg: Seg[] } = {
 };
 
 const pixels = Array.from({ length: ledCount }, () => "#ffa000");
+let mismatch = process.env.NIGHTPLOT_FIXTURE_MISMATCH === "1";
 
 function rgbToHex(rgb: number[]): string {
   return `#${rgb
@@ -49,10 +50,15 @@ function applyState(body: unknown) {
     const row = raw as { start?: unknown; stop?: unknown; col?: unknown };
     const start = typeof row.start === "number" ? row.start : 0;
     const stop = typeof row.stop === "number" ? row.stop : ledCount;
+    if (!Number.isFinite(start) || !Number.isFinite(stop) || stop <= start) continue;
     const col = Array.isArray(row.col) && Array.isArray(row.col[0]) ? row.col : [[[255, 160, 0]]];
     const rgb = (col[0] as number[]).map(Number);
     segs.push({ start, stop, col: [rgb] });
     paint(start, stop, rgb);
+  }
+  if (mismatch && segs.length > 0) {
+    const last = segs[segs.length - 1]!;
+    last.stop = Math.max(last.start + 1, last.stop - 10);
   }
   if (segs.length) state.seg = segs;
 }
@@ -81,6 +87,26 @@ const server = createServer((req, res) => {
         nightplot: "fixture",
       }),
     );
+    return;
+  }
+  if (url === "/nightplot/mismatch") {
+    if (req.method === "POST" || req.method === "PUT") {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk) => chunks.push(chunk as Buffer));
+      req.on("end", () => {
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as {
+            on?: unknown;
+          };
+          if (typeof body.on === "boolean") mismatch = body.on;
+        } catch {
+          /* keep */
+        }
+        res.end(JSON.stringify({ mismatch, nightplot: "fixture" }));
+      });
+      return;
+    }
+    res.end(JSON.stringify({ mismatch, nightplot: "fixture" }));
     return;
   }
   if (url === "/json/state") {

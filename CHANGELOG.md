@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 — R4 Apply ranges + re-address (CONFIG-5)
+
+- Edit ranges Apply writes declared Element ranges to the controller, then re-reads the snapshot. Success only when reported ranges match what was sent.
+- A mismatch or failed reread stays on the failure UI (sent vs read back, Use controller’s / Apply again). No success toast.
+- Preview stays temporary and distinct. Test live “Apply to {Element}” is still not a saved look.
+- Re-address probes the new host first. Same-MAC continuity keeps the Light id; identity (name / MAC / ledCount / segments) comes from the fresh snapshot. The old address stays until that proves out.
+- Successful Apply and re-address persist the enrolled address and last-good snapshot. Fixture software-green is not Hardware Done.
+- All Off stays R5.
+
 ## 0.4.0 — R3 Test live (CONFIG-4)
 
 - Test live sits on the same Light strip as Inspect / Edit ranges. Pick one Element, or the whole strip.

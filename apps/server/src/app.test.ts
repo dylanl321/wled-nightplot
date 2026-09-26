@@ -25,11 +25,19 @@ function memoryBox() {
   let on = true;
   let bri = 128;
   let color = "#ffa000";
-  const snap = () => ({ ...snapshot, on, brightness: bri, segmentColor: color });
+  let segs = [{ start: 0, stop: 60 }];
+  const snap = () => ({
+    ...snapshot,
+    on,
+    brightness: bri,
+    segmentColor: color,
+    segments: segs.map((seg) => ({ ...seg })),
+  });
   const write: WriteStateFn = async (_target, body) => {
     if (typeof body.on === "boolean") on = body.on;
     if (typeof body.bri === "number") bri = body.bri;
     if (body.seg) {
+      const next: { start: number; stop: number }[] = [];
       for (const seg of body.seg) {
         const rgb = seg.col[0] ?? [255, 160, 0];
         const hex = `#${rgb
@@ -37,10 +45,13 @@ function memoryBox() {
           .map((n) => n.toString(16).padStart(2, "0"))
           .join("")}`;
         color = hex;
+        if (seg.stop <= seg.start) continue;
+        next.push({ start: seg.start, stop: seg.stop });
         for (let i = seg.start; i < seg.stop && i < leds.length; i += 1) {
           leds[i] = hex;
         }
       }
+      if (next.length) segs = next;
     }
     return true;
   };
@@ -53,6 +64,7 @@ function memoryBox() {
     readLive,
     probe: (async () => ({ kind: "found" as const, snapshot: snap() })) satisfies ProbeFn,
     leds,
+    segs,
   };
 }
 
@@ -73,21 +85,21 @@ function testApp(overrides: Partial<AppDeps> = {}) {
 }
 
 describe("configure server", () => {
-  it("reports health for R3", async () => {
+  it("reports health for R4", async () => {
     const { app } = testApp();
     const res = await app.request("/health");
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({
       ok: true,
-      slice: "R3",
+      slice: "R4",
     });
   });
 
-  it("keeps Apply and All Off unwired; root Preview is not Apply", async () => {
+  it("keeps root Apply off the Light path; All Off stays R5", async () => {
     const { app } = testApp();
     const apply = await app.request("/api/apply", { method: "POST" });
-    expect(apply.status).toBe(501);
-    expect(((await apply.json()) as { message: string }).message).toMatch(/R4/);
+    expect(apply.status).toBe(400);
+    expect(((await apply.json()) as { message: string }).message).toMatch(/lights\/:id\/apply/);
     const allOff = await app.request("/api/all-off", { method: "POST" });
     expect(allOff.status).toBe(501);
     expect(((await allOff.json()) as { message: string }).message).toMatch(/without restoring/);
@@ -546,6 +558,202 @@ describe("preview + blink", () => {
       body: JSON.stringify({}),
     });
     expect(blinkOff.status).toBe(422);
+  });
+});
+
+describe("apply + re-address", () => {
+  async function enroll(app: ReturnType<typeof testApp>["app"]) {
+    const res = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.72" }),
+    });
+    const body = (await res.json()) as { light: { id: string } };
+    await app.request(`/api/lights/${body.light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [
+          { label: "Left run", start: 0, stop: 24 },
+          { label: "Right run", start: 24, stop: 50 },
+        ],
+      }),
+    });
+    return body.light.id;
+  }
+
+  it("applies declared ranges, rereads, and persists a last-good snapshot", async () => {
+    const { app, store } = testApp();
+    const id = await enroll(app);
+    const detail = (await (await app.request(`/api/lights/${id}`)).json()) as {
+      elements: { id: string; label: string; start: number; stop: number }[];
+    };
+    const res = await app.request(`/api/lights/${id}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: detail.elements }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      apply: { matched: boolean; caption: string; status: string };
+      reported: { start: number; stop: number }[];
+    };
+    expect(body.apply.matched).toBe(true);
+    expect(body.apply.status).toBe("matched");
+    expect(body.apply.caption).toMatch(/Not Hardware Done/);
+    expect(body.reported.map((row) => `${row.start}-${row.stop}`).sort()).toEqual([
+      "0-24",
+      "24-50",
+    ]);
+    expect(store.findById(id)?.lastSnapshot?.segments).toEqual([
+      { start: 0, stop: 24 },
+      { start: 24, stop: 50 },
+    ]);
+  });
+
+  it("stays failed when the reread does not match what was applied", async () => {
+    const box = memoryBox();
+    const { app, store } = testApp({
+      write: box.write,
+      readLive: box.readLive,
+      probe: async () => ({
+        kind: "found" as const,
+        snapshot: { ...snapshot, segments: [{ start: 0, stop: 60 }] },
+      }),
+    });
+    const id = await enroll(app);
+    const detail = (await (await app.request(`/api/lights/${id}`)).json()) as {
+      elements: { id: string; label: string; start: number; stop: number }[];
+    };
+    const res = await app.request(`/api/lights/${id}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: detail.elements }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as {
+      apply: { matched: boolean; status: string; message: string };
+    };
+    expect(body.apply.matched).toBe(false);
+    expect(body.apply.status).toBe("mismatch");
+    expect(body.apply.message).toMatch(/didn’t stick/);
+    expect(store.findById(id)?.lastSnapshot).toBeFalsy();
+  });
+
+  it("refuses Apply when offline or the draft is invalid", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
+    const file = join(dir, "lights.json");
+    const online = testApp({ store: new FileLightsStore(file) });
+    const id = await enroll(online.app);
+    const offline = testApp({
+      store: new FileLightsStore(file),
+      probe: async () => ({ kind: "probe-failed", reason: "no answer" }),
+    });
+    const refused = await offline.app.request(`/api/lights/${id}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(refused.status).toBe(422);
+    expect(((await refused.json()) as { message: string }).message).toMatch(/hasn’t answered/);
+
+    const { app } = testApp();
+    const liveId = await enroll(app);
+    const invert = await app.request(`/api/lights/${liveId}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [{ label: "Bad", start: 24, stop: 10 }],
+      }),
+    });
+    expect(invert.status).toBe(422);
+    expect(((await invert.json()) as { message: string }).message).toMatch(/stop/i);
+  });
+
+  it("probes a new host before switching, and keeps the old address on failure", async () => {
+    const { app, store } = testApp();
+    const id = await enroll(app);
+    const before = store.findById(id)!;
+    let seen: string | null = null;
+    const other = testApp({
+      store,
+      probe: async (target) => {
+        seen = `${target.hostname}:${target.port}`;
+        expect(store.findById(id)?.hostKey).toBe(before.hostKey);
+        return { kind: "probe-failed" as const, reason: "no answer at the new host." };
+      },
+    });
+    const res = await other.app.request(`/api/lights/${id}/readdress`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.88" }),
+    });
+    expect(res.status).toBe(422);
+    expect(seen).toBe("192.168.1.88:80");
+    expect(store.findById(id)?.hostKey).toBe(before.hostKey);
+  });
+
+  it("refuses a public re-address before any probe", async () => {
+    const { app, store } = testApp();
+    const id = await enroll(app);
+    let probed = 0;
+    const guarded = testApp({
+      store,
+      probe: async () => {
+        probed += 1;
+        return { kind: "found" as const, snapshot };
+      },
+    });
+    const res = await guarded.app.request(`/api/lights/${id}/readdress`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "203.0.113.9" }),
+    });
+    expect(res.status).toBe(403);
+    expect(probed).toBe(0);
+    expect(store.findById(id)?.hostKey).toBe("192.168.1.72:80");
+  });
+
+  it("switches on same-MAC from a fresh snapshot, and refuses a different MAC", async () => {
+    const { app, store } = testApp();
+    const id = await enroll(app);
+    const ok = testApp({
+      store,
+      probe: async () => ({
+        kind: "found" as const,
+        snapshot: {
+          ...snapshot,
+          name: "WLED-44",
+          mac: "e8:9f:6d:7f:2a:04",
+          segments: [{ start: 0, stop: 60 }],
+        },
+      }),
+    });
+    const switched = await ok.app.request(`/api/lights/${id}/readdress`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.44" }),
+    });
+    expect(switched.status).toBe(200);
+    const after = store.findById(id)!;
+    expect(after.hostKey).toBe("192.168.1.44:80");
+    expect(after.name).toBe("WLED-44");
+    expect(after.lastSnapshot?.name).toBe("WLED-44");
+
+    const refused = await testApp({
+      store,
+      probe: async () => ({
+        kind: "found" as const,
+        snapshot: { ...snapshot, mac: "aa:bb:cc:dd:ee:ff", name: "Other" },
+      }),
+    }).app.request(`/api/lights/${id}/readdress`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.90" }),
+    });
+    expect(refused.status).toBe(422);
+    expect(((await refused.json()) as { error: string }).error).toBe("mac-mismatch");
+    expect(store.findById(id)?.hostKey).toBe("192.168.1.44:80");
   });
 });
 

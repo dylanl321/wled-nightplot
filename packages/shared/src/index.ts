@@ -1,3 +1,21 @@
+export {
+  adoptReportedRanges,
+  applyCaption,
+  applyOutcome,
+  applyRefuseReason,
+  applyRows,
+  macsMatch,
+  normalizeMac,
+  readdressContinuity,
+  shortMac,
+  spansMatch,
+  type AppliedRange,
+  type ApplyResult,
+  type ApplyRow,
+  type ApplyStatus,
+  type ReaddressDecision,
+  type ReaddressStep,
+} from "./apply.ts";
 export { isLitBead, isUnknownBead, type BeadColor } from "./bead.ts";
 export { catalogSnapshot, CURRENT_SLICE, type CatalogSnapshot } from "./catalog.ts";
 export {

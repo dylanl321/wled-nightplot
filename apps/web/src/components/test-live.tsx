@@ -271,7 +271,7 @@ export function TestLivePanel({
         </div>
       ) : (
         <p className="text-[12px] text-quiet">
-          Preview is temporary. Apply to the controller is R4. All Off would end a
+          Preview is temporary. Range Apply lives on Edit ranges. All Off would end a
           Preview without restoring — that path is R5.
         </p>
       )}
@@ -344,13 +344,13 @@ function ProofCard({
           variant="outline"
           className="ml-auto"
           disabled
-          title="Durable apply to the controller is R4."
+          title="Range Apply is on Edit ranges. This is not a saved look."
         >
           Apply to {label}
         </Button>
       </div>
       <p className="sr-only">
-        Preview colour name {colorName}. Apply is R4.
+        Preview colour name {colorName}. Range Apply is on Edit ranges.
       </p>
     </div>
   );

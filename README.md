@@ -4,7 +4,7 @@ Configure spine for home LED strips. Discover a controller, enroll it as a **Lig
 
 This is not a playback desk. It does not ship Yard, Tonight, Studio, Scene, or Show chrome.
 
-R3 wires Test live: temporary Preview and Blink, with `/json/live` readback. Apply to the controller and All Off orchestration are still later tickets.
+R4 wires Apply of declared Element ranges (write, then re-read) and re-address from a fresh snapshot. Preview stays temporary. All Off orchestration is still a later ticket.
 
 ## Run
 
@@ -31,7 +31,7 @@ pnpm test
 pnpm dev:demo
 ```
 
-or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light for Inspect, then **Edit ranges** to declare Elements, then **Test live** to Preview or Blink. Save declared writes the store only. Preview restores; Apply to the controller is R4. The fixture `/json/live` path is a software stub — not Hardware Done.
+or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light for Inspect, then **Edit ranges** to declare Elements, then **Apply** (writes ranges, then reads them back) or **Test live** to Preview or Blink. Re-address from Inspect probes first and switches only on the same MAC. The fixture is a software stub — not Hardware Done.
 
 Enrolled Lights and declared Elements persist in `data/lights.json` (override with `NIGHTPLOT_STORE_PATH`). Find Lights also probes `NIGHTPLOT_DISCOVERY_TARGETS` (comma-separated `host` / `host:port`).
 
@@ -45,6 +45,8 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | GET | `/api/lights/:id` | Inspect payload: identity, declared Elements, reported segments, drift, live session |
 | GET | `/api/lights/:id/live` | Same Light plus current `/json/live` beads |
 | PATCH | `/api/lights/:id/elements` | Save declared ranges. 422 on invert / overlap / over-ledCount. Does not write WLED. |
+| POST | `/api/lights/:id/apply` | Write declared ranges, re-read snapshot. 200 only on match. 409 keeps the failure. |
+| POST | `/api/lights/:id/readdress` | `{ host }` — probe first, same-MAC continuity, persist address + last-good snapshot. |
 | POST | `/api/lights/:id/preview` | Temporary colour/brightness on one Element. Reads `/json/live`. |
 | POST | `/api/lights/:id/preview/end` | Restore previous look (`restore: false` is the All Off contract, unused here). |
 | POST | `/api/lights/:id/preview/seen` | Person rung: `{ seen: "yes" \| "no" }`. Not Hardware Done. |
@@ -54,7 +56,8 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | GET | `/api/discover` | Last find/probe rows |
 | POST | `/api/discover/probe` | `{ host }` — one address. Public IPs refused before HTTP. |
 | POST | `/api/lights` | `{ host }` — enroll. Fails closed without a WLED snapshot. Duplicate host → 409. |
-| POST | `/api/apply` `/api/all-off` | 501 — Apply is R4; All Off is R5 |
+| POST | `/api/apply` | 400 — use `/api/lights/:id/apply` |
+| POST | `/api/all-off` | 501 — All Off is R5 |
 
 ## UI
 
@@ -63,7 +66,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | `/` | Lights rack + unenrolled tray |
 | `/discover` | Find / type an address / add |
 | `/lights/:id` | Inspect — identity + StripBeads + declared vs reported |
-| `/lights/:id?mode=ranges` | Edit ranges — draft save, overlap/invert/over-ledCount block save |
+| `/lights/:id?mode=ranges` | Edit ranges — draft save, Apply write+reread, failed Apply stays |
 | `/lights/:id?mode=live` | Test live — Preview / Blink, proof ladder, `/json/live` beads |
 
 ## Layout
@@ -71,7 +74,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | Path | What |
 | --- | --- |
 | `apps/web` | Quiet-utility Lights rack, Discover, Inspect / Edit ranges / Test live, `StripBeads` |
-| `apps/server` | Discover/connect, JSON store, WLED snapshot + Preview/Blink + fixture `/json/live` |
+| `apps/server` | Discover/connect, JSON store, WLED snapshot + Preview/Blink + Apply ranges + fixture |
 | `packages/shared` | LAN guard, WLED parse, catalogs, Light / Element types |
 | `docs/ui/` | Nightplot Configure v2 prototype. See [docs/ui/README.md](docs/ui/README.md). |
 | `docs/PLANE.md` | CONFIG tickets, REST-only Plane duties. |

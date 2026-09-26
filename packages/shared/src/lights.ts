@@ -1,6 +1,8 @@
+import type { ApplyResult } from "./apply.ts";
 import type { BeadColor } from "./bead.ts";
 import type { RangeDisplay, ReportedRail } from "./drift.ts";
 import type { LiveSession } from "./live.ts";
+import type { WledSnapshot } from "./wled/snapshot.ts";
 
 export type LightReachability = "online" | "no-answer";
 
@@ -24,6 +26,8 @@ export type Light = {
   on: boolean | null;
   brightness: number | null;
   enrolledAt: string;
+  lastSnapshot?: WledSnapshot | null;
+  lastSnapshotAt?: string | null;
 };
 
 /**
@@ -54,6 +58,7 @@ export type LightDetail = {
   session: LiveSession | null;
   liveLeds: (string | null)[] | null;
   liveCaption: string | null;
+  apply?: ApplyResult | null;
 };
 
 export const emptyLightsPayload = {

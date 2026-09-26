@@ -11,9 +11,9 @@ export const wledController: ControllerDescriptor = {
     snapshot: true,
     blink: true,
     preview: true,
-    apply: false,
+    apply: true,
     allOff: false,
   },
   notes:
-    "Discover, snapshot, Preview, and Blink are live. Preview writes a temporary look and reads /json/live back. Blink pulses then restores. Apply and All Off are not. A fixture readback is software-green — not Hardware Done.",
+    "Discover, snapshot, Preview, Blink, and Apply ranges are live. Apply writes declared Elements, then re-reads the snapshot. A fixture match is software-green — not Hardware Done. All Off is not.",
 };

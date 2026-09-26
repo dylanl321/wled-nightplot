@@ -7,7 +7,7 @@ import { emptyLightsPayload } from "./lights.ts";
 import { getStrip, listStrips } from "./strip/catalog.ts";
 
 describe("controller catalog", () => {
-  it("registers WLED with discover, snapshot, preview, and blink", () => {
+  it("registers WLED with discover, snapshot, preview, blink, and apply", () => {
     const wled = getController("wled");
     expect(wled).toBeDefined();
     expect(wled?.implementation).toBe("registered");
@@ -16,7 +16,7 @@ describe("controller catalog", () => {
     expect(wled?.capabilities.snapshot).toBe(true);
     expect(wled?.capabilities.preview).toBe(true);
     expect(wled?.capabilities.blink).toBe(true);
-    expect(wled?.capabilities.apply).toBe(false);
+    expect(wled?.capabilities.apply).toBe(true);
     expect(wled?.capabilities.allOff).toBe(false);
     expect(listControllers().map((entry) => entry.id)).toEqual(["wled"]);
   });
@@ -46,7 +46,7 @@ describe("discovery catalog", () => {
 describe("catalog snapshot", () => {
   it("packages the three seams for the server", () => {
     const snap = catalogSnapshot();
-    expect(snap.slice).toBe("R3");
+    expect(snap.slice).toBe("R4");
     expect(snap.controllers).toHaveLength(1);
     expect(snap.strips).toHaveLength(1);
     expect(snap.discovery).toHaveLength(3);

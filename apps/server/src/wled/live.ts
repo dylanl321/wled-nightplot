@@ -8,7 +8,7 @@ import {
 export type WledStateWrite = {
   on?: boolean;
   bri?: number;
-  seg?: { start: number; stop: number; col: number[][] }[];
+  seg?: { id?: number; start: number; stop: number; col: number[][] }[];
 };
 
 export type WriteStateFn = (target: HostPort, body: WledStateWrite) => Promise<boolean>;
@@ -84,6 +84,24 @@ export function restoreWriteFromSnapshot(snapshot: WledSnapshot): WledStateWrite
     bri: snapshot.brightness ?? 128,
     seg: segs.map((seg) => ({ start: seg.start, stop: seg.stop, col: [rgb] })),
   };
+}
+
+export function applyRangesWrite(
+  ranges: { start: number; stop: number }[],
+  previousSegmentCount: number,
+  color: string,
+): WledStateWrite {
+  const rgb = hexToTriple(color);
+  const seg: NonNullable<WledStateWrite["seg"]> = ranges.map((range, id) => ({
+    id,
+    start: range.start,
+    stop: range.stop,
+    col: [rgb],
+  }));
+  for (let id = ranges.length; id < previousSegmentCount; id += 1) {
+    seg.push({ id, start: 0, stop: 0, col: [rgb] });
+  }
+  return { seg };
 }
 
 export function previewWrite(

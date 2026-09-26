@@ -43,7 +43,7 @@ Fresh schema when persistence arrives. Do not migrate old Nightplot SQLite.
 
 ## Slices
 
-Work the CONFIG series in order. R3 is Test live (Preview / Blink). Do not implement Apply-to-controller or All Off orchestration until that ticket is the one you are on.
+Work the CONFIG series in order. R4 is Apply ranges and re-address. Do not implement All Off orchestration or Delete until CONFIG-6 / R5.
 
 See `docs/PLANE.md` for Plane coordinates, REST-only rules, state ids, and comment duties.
 

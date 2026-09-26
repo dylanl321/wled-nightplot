@@ -79,7 +79,7 @@ export async function postPlaceholder(
   return {
     error: body.error ?? "not_implemented",
     action: body.action ?? path,
-    slice: body.slice ?? "R3",
+    slice: body.slice ?? "R4",
     message: body.message ?? "This action is not wired.",
   };
 }

@@ -1,11 +1,15 @@
 "use client";
 
 import {
+  adoptReportedRanges,
+  applyRefuseReason,
   buildRangeDisplay,
   firstFreeRange,
   validateDeclaredRanges,
+  type ApplyResult,
   type Element,
   type LightDetail as LightDetailPayload,
+  type ReaddressStep,
 } from "@nightplot/shared";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -14,7 +18,7 @@ import { StripBeads, type StripSpan } from "@/components/strip-beads";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TestLivePanel, liveBeadColor } from "@/components/test-live";
-import { fetchJson, patchJson } from "@/lib/api";
+import { fetchJson, patchJson, postJson } from "@/lib/api";
 import { brightnessPct, lastSeenLabel, snapshotLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -32,8 +36,14 @@ export function LightDetail({
   const [selectedId, setSelectedId] = useState<string | null>(
     initial.session?.target.elementId ?? initial.elements[0]?.id ?? null,
   );
-  const [busy, setBusy] = useState<"save" | "refresh" | null>(null);
+  const [busy, setBusy] = useState<"save" | "refresh" | "apply" | "readdress" | null>(
+    null,
+  );
   const [notice, setNotice] = useState<string | null>(null);
+  const [apply, setApply] = useState<ApplyResult | null>(null);
+  const [addressOpen, setAddressOpen] = useState(false);
+  const [addressHost, setAddressHost] = useState(initial.light.displayHost);
+  const [addressSteps, setAddressSteps] = useState<ReaddressStep[] | null>(null);
 
   const light = detail.light;
   const unreachable = light.reachability === "no-answer";
@@ -64,6 +74,13 @@ export function LightDetail({
   const selected = draft.find((element) => element.id === selectedId) ?? null;
   const firstIssue = issues[0] ?? null;
   const canSave = dirty && issues.length === 0 && busy === null;
+  const applyReason = applyRefuseReason({
+    reachable: !unreachable,
+    issueMessage: firstIssue?.message ?? null,
+    elementCount: draft.length,
+    busyKind: detail.session?.kind ?? null,
+  });
+  const canApply = applyReason === null && busy === null;
 
   const declared: StripSpan[] = display.declared
     .filter((rail) => rail.stop > rail.start)
@@ -116,6 +133,74 @@ export function LightDetail({
     setDraft(detail.elements);
     setSelectedId(detail.elements[0]?.id ?? null);
     setNotice(null);
+    setApply(null);
+  }
+
+  async function applyRanges() {
+    if (applyReason) {
+      setNotice(applyReason);
+      return;
+    }
+    setBusy("apply");
+    setNotice(null);
+    const res = await postJson<LightDetailPayload>(`/api/lights/${light.id}/apply`, {
+      elements: draft.map((element) => ({
+        id: element.id,
+        label: element.label,
+        start: element.start,
+        stop: element.stop,
+      })),
+    });
+    setBusy(null);
+    const payload = res.data as LightDetailPayload & { apply?: ApplyResult; message?: string };
+    if (payload.apply) setApply(payload.apply);
+    if (res.ok && payload.apply?.matched) {
+      setDetail(payload);
+      setDraft(payload.elements);
+      router.refresh();
+      return;
+    }
+    if (res.status === 409 && payload.light) {
+      setDetail(payload);
+      return;
+    }
+    setNotice(payload.message ?? "Apply did not succeed.");
+  }
+
+  function useControllerRanges() {
+    if (detail.reported.length === 0) return;
+    const next = adoptReportedRanges(draft, detail.reported);
+    setDraft(next);
+    setSelectedId(next[0]?.id ?? null);
+    setApply(null);
+    setNotice(null);
+  }
+
+  async function readdress() {
+    setBusy("readdress");
+    setNotice(null);
+    const res = await postJson<
+      LightDetailPayload & {
+        readdress?: { steps?: ReaddressStep[]; switched?: boolean };
+        steps?: ReaddressStep[];
+        message?: string;
+      }
+    >(`/api/lights/${light.id}/readdress`, { host: addressHost });
+    setBusy(null);
+    const payload = res.data as LightDetailPayload & {
+      readdress?: { steps?: ReaddressStep[] };
+      steps?: ReaddressStep[];
+      message?: string;
+    };
+    const steps = payload.readdress?.steps ?? payload.steps ?? null;
+    if (steps) setAddressSteps(steps);
+    if (res.ok && payload.light) {
+      setDetail(payload);
+      setAddressHost(payload.light.displayHost);
+      router.refresh();
+      return;
+    }
+    setNotice(payload.message ?? "Address was not changed.");
   }
 
   function addElement() {
@@ -284,6 +369,17 @@ export function LightDetail({
           detail={detail}
           status={status}
           unreachable={unreachable}
+          addressOpen={addressOpen}
+          addressHost={addressHost}
+          addressSteps={addressSteps}
+          busy={busy === "readdress"}
+          onToggleAddress={() => {
+            setAddressOpen((open) => !open);
+            setAddressSteps(null);
+            setAddressHost(light.displayHost);
+          }}
+          onHost={setAddressHost}
+          onCheck={() => void readdress()}
         />
       ) : mode === "live" ? (
         <TestLivePanel
@@ -306,6 +402,10 @@ export function LightDetail({
         />
       )}
 
+      {mode === "ranges" && apply && apply.status !== "matched" ? (
+        <ApplyFailed apply={apply} onAdopt={useControllerRanges} onRetry={() => void applyRanges()} />
+      ) : null}
+
       {mode === "ranges" ? (
         <div className="mt-auto flex flex-col gap-3 rounded-[10px] border border-input bg-[#12141a] px-4 py-3 sm:flex-row sm:items-center">
           <div className="flex flex-col gap-1">
@@ -314,12 +414,19 @@ export function LightDetail({
                 ? `${changedCount(draft, detail.elements)} unsaved change${
                     changedCount(draft, detail.elements) === 1 ? "" : "s"
                   }`
-                : "Declared ranges match the last save"}
+                : apply?.matched
+                  ? "Controller reports the ranges we sent"
+                  : "Declared ranges match the last save"}
             </span>
             <span className="text-[13px] text-quiet">
-              Save writes Nightplot’s declared Elements. Apply to the controller is R4.
+              Apply writes to the controller, then reads it back. Preview stays temporary.
             </span>
-            {firstIssue ? (
+            {apply?.matched ? (
+              <span className="text-[12px] text-primary">{apply.caption}</span>
+            ) : null}
+            {applyReason ? (
+              <span className="text-[13px] text-destructive">{applyReason}</span>
+            ) : firstIssue ? (
               <span className="text-[13px] text-destructive">{firstIssue.message}</span>
             ) : null}
             {notice ? <span className="text-[13px] text-destructive">{notice}</span> : null}
@@ -328,16 +435,11 @@ export function LightDetail({
             <Button variant="outline" onClick={revert} disabled={!dirty || busy !== null}>
               Revert
             </Button>
-            <Button onClick={() => void save()} disabled={!canSave}>
+            <Button variant="outline" onClick={() => void save()} disabled={!canSave}>
               {busy === "save" ? "Saving…" : "Save declared"}
             </Button>
-            <Button
-              variant="outline"
-              disabled
-              title="Durable apply to the controller is R4."
-              className="cursor-not-allowed"
-            >
-              Apply
+            <Button onClick={() => void applyRanges()} disabled={!canApply} title={applyReason ?? undefined}>
+              {busy === "apply" ? "Applying…" : "Apply"}
             </Button>
           </div>
         </div>
@@ -346,7 +448,7 @@ export function LightDetail({
       ) : null}
 
       <p className="text-[11px] tracking-[0.14em] text-quiet uppercase">
-        configure · r3 · test live
+        configure · r4 · apply
       </p>
     </div>
   );
@@ -356,10 +458,24 @@ function InspectFacts({
   detail,
   status,
   unreachable,
+  addressOpen,
+  addressHost,
+  addressSteps,
+  busy,
+  onToggleAddress,
+  onHost,
+  onCheck,
 }: {
   detail: LightDetailPayload;
   status: string;
   unreachable: boolean;
+  addressOpen: boolean;
+  addressHost: string;
+  addressSteps: ReaddressStep[] | null;
+  busy: boolean;
+  onToggleAddress: () => void;
+  onHost: (value: string) => void;
+  onCheck: () => void;
 }) {
   const light = detail.light;
   const pct = brightnessPct(light.brightness);
@@ -371,35 +487,116 @@ function InspectFacts({
   const drift = detail.display.notes[0]?.text;
 
   return (
-    <div className="grid gap-3 md:grid-cols-3">
-      <FactCard eyebrow="Who it is">
-        <p className="leading-[1.55] text-[#c9c3b8]">
-          Called <span className="text-foreground">{light.name}</span>, at{" "}
-          <span className="font-mono text-foreground">{light.displayHost}</span>.
-        </p>
-        {light.mac ? (
-          <p className="font-mono text-[12px] text-quiet">{light.mac}</p>
-        ) : null}
-      </FactCard>
-      <FactCard eyebrow="What it has">
-        <p className="leading-[1.55] text-[#c9c3b8]">
-          <span className="text-foreground">{light.ledCount} LEDs</span>
-          {" in "}
-          <span className="text-foreground">{detail.elements.length}</span>
-          {detail.elements.length === 1 ? " Element" : " Elements"}.
-          {light.firmware ? ` ${light.firmware}.` : null}
-        </p>
-        {detail.elements.length === 0 ? (
-          <p className="text-[12px] text-quiet">
-            No Elements declared yet. Edit ranges to name them.
+    <div className="flex flex-col gap-3">
+      <div className="grid gap-3 md:grid-cols-3">
+        <FactCard eyebrow="Who it is">
+          <p className="leading-[1.55] text-[#c9c3b8]">
+            Called <span className="text-foreground">{light.name}</span>, at{" "}
+            <span className="font-mono text-foreground">{light.displayHost}</span>.
           </p>
-        ) : null}
-        {drift ? <p className="text-[12px] text-primary">{drift}</p> : null}
-      </FactCard>
-      <FactCard eyebrow="How it’s doing">
-        <p className="leading-[1.55] text-[#c9c3b8]">{how}</p>
-        <p className="text-[12px] text-quiet">{status}</p>
-      </FactCard>
+          {light.mac ? (
+            <p className="font-mono text-[12px] text-quiet">{light.mac}</p>
+          ) : null}
+          <button type="button" onClick={onToggleAddress} className="text-[13px] text-foreground">
+            {addressOpen ? "Close re-address" : "Re-address"}
+          </button>
+        </FactCard>
+        <FactCard eyebrow="What it has">
+          <p className="leading-[1.55] text-[#c9c3b8]">
+            <span className="text-foreground">{light.ledCount} LEDs</span>
+            {" in "}
+            <span className="text-foreground">{detail.elements.length}</span>
+            {detail.elements.length === 1 ? " Element" : " Elements"}.
+            {light.firmware ? ` ${light.firmware}.` : null}
+          </p>
+          {detail.elements.length === 0 ? (
+            <p className="text-[12px] text-quiet">
+              No Elements declared yet. Edit ranges to name them.
+            </p>
+          ) : null}
+          {drift ? <p className="text-[12px] text-primary">{drift}</p> : null}
+        </FactCard>
+        <FactCard eyebrow="How it’s doing">
+          <p className="leading-[1.55] text-[#c9c3b8]">{how}</p>
+          <p className="text-[12px] text-quiet">{status}</p>
+        </FactCard>
+      </div>
+      {addressOpen ? (
+        <div className="flex flex-col gap-3 rounded-xl border border-[#3a4150] bg-[#12141a] p-4">
+          <span className="font-medium">Re-address</span>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <span className="font-mono text-[13px] text-quiet">{light.displayHost} →</span>
+            <Input
+              value={addressHost}
+              onChange={(event) => onHost(event.target.value)}
+              aria-label="New host or host:port"
+              className="font-mono"
+            />
+            <Button onClick={onCheck} disabled={busy || !addressHost.trim()}>
+              {busy ? "Checking…" : "Check"}
+            </Button>
+          </div>
+          {addressSteps?.length ? (
+            <div className="flex flex-col gap-1.5 text-[13px]">
+              {addressSteps.map((step) => (
+                <div key={step.text} className="flex gap-2">
+                  <span className={step.done ? "text-online" : "text-destructive"}>
+                    {step.done ? "✓" : "–"}
+                  </span>
+                  <span className="text-[#c9c3b8]">{step.text}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[12px] text-quiet">
+              Probes the new address first. Switches only when the same MAC answers. Identity
+              comes from that snapshot.
+            </p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ApplyFailed({
+  apply,
+  onAdopt,
+  onRetry,
+}: {
+  apply: ApplyResult;
+  onAdopt: () => void;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-[14px] border border-[#5a2f33] bg-[#1a1113] p-4">
+      <span className="text-[16px] font-semibold text-destructive">Apply didn’t stick</span>
+      <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[13px]">
+        {apply.rows.map((row) => (
+          <div key={`${row.label}-${row.sent.start}`} className="contents">
+            <span className="text-muted-foreground">Sent</span>
+            <span className="font-mono">
+              {row.label} {row.sent.start}–{row.sent.stop}
+            </span>
+            <span className="text-muted-foreground">Read back</span>
+            <span className={cn("font-mono", row.matched ? undefined : "text-destructive")}>
+              {row.read ? `${row.label} ${row.read.start}–${row.read.stop}` : "nothing"}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="text-[12px] leading-5 text-[#c9c3b8]">
+        Your draft is kept. Nothing else on the controller changed.
+      </p>
+      <p className="text-[12px] text-primary">{apply.caption}</p>
+      <div className="mt-1 flex flex-col gap-2 sm:flex-row">
+        <Button variant="outline" className="flex-1" onClick={onAdopt}>
+          Use controller’s
+        </Button>
+        <Button className="flex-1" onClick={onRetry}>
+          Apply again
+        </Button>
+      </div>
     </div>
   );
 }
