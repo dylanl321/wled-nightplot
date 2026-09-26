@@ -48,7 +48,7 @@ export function LightsEmpty() {
         </Button>
       </div>
 
-      <div className="mt-auto rounded-xl border border-dashed border-[#3a4150] px-4 py-4 text-[13px] leading-5 text-quiet">
+      <div className="rounded-xl border border-dashed border-[#3a4150] px-4 py-4 text-[13px] leading-5 text-quiet">
         Candidates will land in a tray here. Discovery is not wired, so the tray
         stays empty on purpose.
       </div>

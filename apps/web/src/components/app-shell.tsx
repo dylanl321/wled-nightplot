@@ -32,7 +32,7 @@ export function AppShell({ children, lightCount, nav }: AppShellProps) {
             + Add a Light
           </NavLink>
         </nav>
-        <div className="mt-auto border-t border-border p-4">
+        <div className="mt-auto max-h-[55%] overflow-y-auto border-t border-border p-4">
           <AllOffControl size="sidebar" caption={allOffCaption} />
         </div>
       </aside>

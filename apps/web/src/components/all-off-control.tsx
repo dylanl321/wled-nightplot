@@ -47,12 +47,12 @@ export function AllOffControl({ size, caption }: AllOffControlProps) {
             All Off cancels live output and does not restore it. That path is
             not wired. Confirming still sends nothing to a strip.
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2">
             <Button
               type="button"
               variant="allOff"
               size="default"
-              className="flex-1"
+              className="w-full"
               disabled={busy}
               onClick={() => void confirm()}
             >
@@ -62,7 +62,7 @@ export function AllOffControl({ size, caption }: AllOffControlProps) {
               type="button"
               variant="outline"
               size="default"
-              className="flex-1"
+              className="w-full"
               onClick={() => {
                 setOpen(false);
                 setMessage(null);
