@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#15171b;color:#ece7dc;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px;-webkit-font-smoothing:antialiased}
+a{color:#d4a574;text-decoration:none}a:hover{color:#ece7dc;text-decoration:underline}
+button{font-family:inherit;cursor:pointer}
+*{box-sizing:border-box}
+</style>
+</helmet>
+<section id="turn2" style="display:flex;flex-direction:column;gap:80px;padding:64px;min-width:2200px;">
+  <header style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:48px;max-width:1720px;">
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div style="display:flex;align-items:center;gap:12px;"><img src="web/public/logo-mark.svg" alt="" style="width:58px;height:16px;"><span style="font-family:Fraunces,serif;font-size:22px;color:#d4a574;">Nightplot</span><span style="color:#7d7870;font-family:'IBM Plex Mono',monospace;font-size:12px;">configure · v2 direction</span></div>
+      <h1 style="margin:0;font-size:44px;font-weight:600;line-height:1.08;letter-spacing:-0.02em;text-wrap:balance;">The strip is the interface. Everything else is a margin note.</h1>
+      <p style="margin:0;color:#9a9488;font-size:15px;line-height:1.6;text-wrap:pretty;">Instead of pages about a Light, one workspace where the glowing row stays put and you change what you’re doing to it. <a href="Nightplot Configure.dc.html">v1</a> is kept as the conservative baseline.</p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 28px;align-content:start;padding-top:8px;">
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="color:#d4a574;font-weight:500;">Modes, not tabs</span><span style="color:#c9c3b8;line-height:1.5;">Inspect · Edit ranges · Test live act on one persistent strip picture.</span></div>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="color:#d4a574;font-weight:500;">Two rails of truth</span><span style="color:#c9c3b8;line-height:1.5;">Declared brackets above the beads, reported below. Drift is a visible gap.</span></div>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="color:#d4a574;font-weight:500;">Proof ladder</span><span style="color:#c9c3b8;line-height:1.5;">Sent → Controller reports → You saw it. The last rung is always a person.</span></div>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="color:#d4a574;font-weight:500;">All Off has a home</span><span style="color:#c9c3b8;line-height:1.5;">Bottom of the rail (desktop) or thumb bar (phone). Confirm expands in place.</span></div>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="color:#d4a574;font-weight:500;">Blink before you add</span><span style="color:#c9c3b8;line-height:1.5;">Discover lets you pulse a candidate so you know which box it is.</span></div>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="color:#d4a574;font-weight:500;">Live session bar</span><span style="color:#c9c3b8;line-height:1.5;">Temporary output is a visible, timed session — never a hidden state.</span></div>
+    </div>
+  </header>
+
+  <!-- 2a Lights -->
+  <div id="2a" data-screen-label="01 Lights" style="display:flex;gap:40px;align-items:flex-start;">
+    <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+    <aside style="width:290px;flex:none;display:flex;flex-direction:column;gap:16px;">
+      <span style="align-self:flex-start;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#0c0d10;background:#d4a574;border-radius:4px;padding:2px 7px;font-weight:500;">2a</span>
+      <h2 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Lights — the rack</h2>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">PRIMARY JOB</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Every Light is its own strip, glowing in the colours it last reported. The list is the picture. Unenrolled WLEDs wait in a tray at the bottom.</p></div>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">HONESTY RULE</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">An unreachable Light’s beads go dark grey with “last seen 2 h ago”, never its last colour. Phone: empty install still has All Off in the thumb bar.</p></div>
+    </aside>
+    </sc-if>
+    <div style="width:1280px;height:800px;flex:none;border:1px solid #262c37;border-radius:12px;overflow:hidden;background:#0c0d10;display:flex;box-shadow:0 30px 80px rgba(0,0,0,.45);">
+      <aside style="width:248px;flex:none;background:#0a0b0e;border-right:1px solid #1d2129;display:flex;flex-direction:column;">
+        <div style="height:64px;flex:none;display:flex;align-items:center;gap:10px;padding:0 20px;"><img src="web/public/logo-mark.svg" alt="" style="width:44px;height:12px;"><span style="font-family:Fraunces,serif;font-size:17px;color:#d4a574;">Nightplot</span></div>
+        <div style="padding:4px 12px;display:flex;flex-direction:column;gap:2px;">
+          <div style="display:flex;padding:9px 10px;border-radius:6px;background:#151820;box-shadow:inset 2px 0 0 #d4a574;"><span style="font-weight:500;">All Lights</span><span style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9a9488;">3</span></div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;border-radius:6px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span><span>Eave front</span><span style="margin-left:auto;font-size:11px;color:#9a9488;">On</span></div>{{ railEave }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;border-radius:6px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span><span>Porch rail</span><span style="margin-left:auto;font-size:11px;color:#9a9488;">Off</span></div>{{ railPorch }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;border-radius:6px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#e07070;"></span><span>Garage</span><span style="margin-left:auto;font-size:11px;color:#e07070;">No answer</span></div>{{ railGarage }}</div>
+        </div>
+        <div style="padding:8px 22px;"><a href="#2b">+ Add a Light</a></div>
+        <div style="margin-top:auto;padding:16px;border-top:1px solid #1d2129;display:flex;flex-direction:column;gap:8px;"><button style="height:44px;background:transparent;color:#e07070;border:1px solid #e07070;border-radius:8px;font-size:14px;font-weight:600;">All Off</button><span style="font-size:11px;color:#7d7870;text-align:center;">1 Light on · 1 not answering</span></div>
+      </aside>
+      <main style="flex:1;min-width:0;padding:28px 32px;display:flex;flex-direction:column;gap:16px;">
+        <div style="display:flex;align-items:flex-end;gap:16px;">
+          <div style="display:flex;flex-direction:column;gap:4px;"><h1 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Lights</h1><span style="color:#9a9488;">Three strips on this network. Each shows what it last reported.</span></div>
+          <button style="margin-left:auto;height:40px;padding:0 18px;background:#d4a574;color:#0c0d10;border:1px solid #d4a574;border-radius:8px;font-size:14px;font-weight:600;">Find Lights</button>
+        </div>
+        <div style="display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;padding:16px 18px;border:1px solid #1d2129;border-radius:12px;background:#07080a;align-items:center;">
+          <div style="display:flex;flex-direction:column;gap:5px;"><span style="font-size:16px;font-weight:500;">Eave front</span><span style="font-size:12px;color:#7ee0d0;">Online · on · 50%</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#7d7870;">192.168.1.41<br>300 LEDs · 3 Elements</span><span style="font-size:12px;color:#d4a574;">1 range drifted</span></div>
+          {{ rackEave }}
+        </div>
+        <div style="display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;padding:16px 18px;border:1px solid #1d2129;border-radius:12px;background:#07080a;align-items:center;">
+          <div style="display:flex;flex-direction:column;gap:5px;"><span style="font-size:16px;font-weight:500;">Porch rail</span><span style="font-size:12px;color:#7ee0d0;">Online · off</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#7d7870;">192.168.1.57<br>150 LEDs · 2 Elements</span></div>
+          {{ rackPorch }}
+        </div>
+        <div style="display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;padding:16px 18px;border:1px solid #1d2129;border-radius:12px;background:#07080a;align-items:center;">
+          <div style="display:flex;flex-direction:column;gap:5px;"><span style="font-size:16px;font-weight:500;">Garage</span><span style="font-size:12px;color:#e07070;">No answer · last seen 2 h ago</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#7d7870;">192.168.1.63<br>90 LEDs · 1 Element</span></div>
+          {{ rackGarage }}
+        </div>
+        <div style="margin-top:auto;display:flex;align-items:center;gap:16px;padding:14px 18px;border:1px dashed #3a4150;border-radius:12px;">
+          <div style="width:180px;">{{ trayNew }}</div>
+          <div style="display:flex;flex-direction:column;gap:2px;"><span>WLED-7F2A is on this network but not added</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#7d7870;">192.168.1.72 · found 4 min ago</span></div>
+          <a href="#2b" style="margin-left:auto;">Look at it</a>
+        </div>
+      </main>
+    </div>
+    <div style="width:390px;height:844px;flex:none;border:1px solid #262c37;border-radius:34px;overflow:hidden;background:#0c0d10;display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,.45);">
+      <div style="height:44px;flex:none;"></div>
+      <div style="height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 20px;"><img src="web/public/logo-mark.svg" alt="" style="width:36px;height:10px;"><span style="font-size:20px;font-weight:600;">Lights</span></div>
+      <div style="flex:1;padding:24px 20px;display:flex;flex-direction:column;gap:20px;">
+        <div style="padding:22px 14px;border:1px solid #1d2129;border-radius:14px;background:#07080a;display:flex;justify-content:center;">{{ emptyStrip }}</div>
+        <div style="display:flex;flex-direction:column;gap:10px;"><h2 style="margin:0;font-size:24px;font-weight:600;letter-spacing:-0.01em;">No Lights yet</h2><p style="margin:0;color:#c9c3b8;line-height:1.6;text-wrap:pretty;">Nightplot finds WLED controllers on your home network. Nothing changes on any strip until you add one.</p></div>
+        <div style="display:flex;flex-direction:column;gap:10px;"><button style="height:52px;background:#d4a574;color:#0c0d10;border:1px solid #d4a574;border-radius:10px;font-size:15px;font-weight:600;">Find Lights</button><button style="height:52px;background:transparent;color:#ece7dc;border:1px solid #262c37;border-radius:10px;font-size:15px;">Type an address</button></div>
+      </div>
+      <div style="flex:none;padding:12px 16px 28px;border-top:1px solid #1d2129;background:#0a0b0e;display:flex;flex-direction:column;gap:6px;"><button style="height:48px;background:transparent;color:#e07070;border:1px solid #5a2f33;border-radius:10px;font-size:15px;font-weight:600;">All Off</button><span style="font-size:11px;color:#7d7870;text-align:center;">No Lights to turn off yet</span></div>
+    </div>
+  </div>
+
+  <!-- 2b Discover -->
+  <div id="2b" data-screen-label="02 Discover" style="display:flex;gap:40px;align-items:flex-start;">
+    <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+    <aside style="width:290px;flex:none;display:flex;flex-direction:column;gap:16px;">
+      <span style="align-self:flex-start;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#0c0d10;background:#d4a574;border-radius:4px;padding:2px 7px;font-weight:500;">2b</span>
+      <h2 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Discover</h2>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">PRIMARY JOB</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Candidates arrive one at a time with what was read from them. Blink one to find the physical box, then Add. Typing an address is always on the right.</p></div>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">HONESTY RULE</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Rejected candidates stay in the list with a plain reason. Add fails closed — a snapshot that can’t be read saves nothing.</p></div>
+    </aside>
+    </sc-if>
+    <div style="width:1280px;height:800px;flex:none;border:1px solid #262c37;border-radius:12px;overflow:hidden;background:#0c0d10;display:flex;box-shadow:0 30px 80px rgba(0,0,0,.45);">
+      <aside style="width:248px;flex:none;background:#0a0b0e;border-right:1px solid #1d2129;display:flex;flex-direction:column;">
+        <div style="height:64px;flex:none;display:flex;align-items:center;gap:10px;padding:0 20px;"><img src="web/public/logo-mark.svg" alt="" style="width:44px;height:12px;"><span style="font-family:Fraunces,serif;font-size:17px;color:#d4a574;">Nightplot</span></div>
+        <div style="padding:4px 12px;display:flex;flex-direction:column;gap:2px;">
+          <div style="display:flex;padding:9px 10px;border-radius:6px;"><span>All Lights</span><span style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9a9488;">3</span></div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span><span>Eave front</span></div>{{ railEave }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span><span>Porch rail</span></div>{{ railPorch }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#e07070;"></span><span>Garage</span></div>{{ railGarage }}</div>
+        </div>
+        <div style="margin:8px 12px;padding:9px 10px;border-radius:6px;background:#151820;box-shadow:inset 2px 0 0 #d4a574;font-weight:500;">+ Add a Light</div>
+        <div style="margin-top:auto;padding:16px;border-top:1px solid #1d2129;display:flex;flex-direction:column;gap:8px;"><button style="height:44px;background:transparent;color:#e07070;border:1px solid #e07070;border-radius:8px;font-size:14px;font-weight:600;">All Off</button><span style="font-size:11px;color:#7d7870;text-align:center;">1 Light on · 1 not answering</span></div>
+      </aside>
+      <main style="flex:1;min-width:0;padding:28px 32px;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-content:start;">
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div style="display:flex;flex-direction:column;gap:4px;"><h1 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Add a Light</h1><span style="color:#9a9488;">Looking on 192.168.1.0/24. Controllers appear as each one answers.</span></div>
+          <div style="display:flex;align-items:center;gap:14px;font-size:12px;"><div style="flex:1;height:3px;background:#1d2129;border-radius:3px;"><div style="width:56%;height:100%;background:#7ee0d0;border-radius:3px;"></div></div><span style="font-family:'IBM Plex Mono',monospace;color:#9a9488;">142 / 254</span><span style="color:#7d7870;">mDNS 3 · SSDP 1 · probe</span><a href="#2b">Stop</a></div>
+          <div style="display:flex;flex-direction:column;gap:14px;padding:18px;border:1px solid #3a4150;border-radius:12px;background:#12141a;">
+            <div style="display:flex;align-items:baseline;gap:10px;"><span style="font-size:18px;font-weight:500;">WLED-7F2A</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9a9488;">192.168.1.72</span><span style="margin-left:auto;font-size:12px;color:#7ee0d0;">Answered · via mDNS</span></div>
+            <div style="padding:14px;background:#07080a;border-radius:8px;">{{ candStrip }}</div>
+            <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;font-size:12px;">
+              <div style="display:flex;flex-direction:column;gap:2px;"><span style="color:#7d7870;">LEDs</span><span style="font-family:'IBM Plex Mono',monospace;">60</span></div>
+              <div style="display:flex;flex-direction:column;gap:2px;"><span style="color:#7d7870;">Firmware</span><span style="font-family:'IBM Plex Mono',monospace;">WLED 0.15.4</span></div>
+              <div style="display:flex;flex-direction:column;gap:2px;"><span style="color:#7d7870;">Segments</span><span style="font-family:'IBM Plex Mono',monospace;">1 of 32</span></div>
+              <div style="display:flex;flex-direction:column;gap:2px;"><span style="color:#7d7870;">MAC</span><span style="font-family:'IBM Plex Mono',monospace;">e8:9f:6d:7f:2a:04</span></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;"><button style="height:40px;padding:0 16px;background:transparent;color:#ece7dc;border:1px solid #262c37;border-radius:8px;">Blink it</button><span style="font-size:12px;color:#7d7870;">3 s pulse, then back to how it was</span><button style="margin-left:auto;height:40px;padding:0 20px;background:#d4a574;color:#0c0d10;border:1px solid #d4a574;border-radius:8px;font-weight:600;">Add WLED-7F2A</button></div>
+          </div>
+          <div style="display:flex;flex-direction:column;border:1px solid #1d2129;border-radius:12px;">
+            <div style="display:grid;grid-template-columns:180px minmax(0,1fr) auto;gap:16px;padding:12px 16px;align-items:center;border-bottom:1px solid #1d2129;"><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9a9488;">192.168.1.41</span><span>Eave front</span><span style="font-size:12px;color:#7d7870;">Already added</span></div>
+            <div style="display:grid;grid-template-columns:180px minmax(0,1fr) auto;gap:16px;padding:12px 16px;align-items:center;border-bottom:1px solid #1d2129;"><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9a9488;">192.168.1.57</span><span>Porch rail</span><span style="font-size:12px;color:#7d7870;">Already added</span></div>
+            <div style="display:grid;grid-template-columns:180px minmax(0,1fr) auto;gap:16px;padding:12px 16px;align-items:center;border-bottom:1px solid #1d2129;"><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#d4a574;">192.168.1.80:80</span><span style="color:#c9c3b8;">Answered, but /json/info isn’t WLED. Not added.</span><span style="font-size:12px;color:#d4a574;">Probe failed</span></div>
+            <div style="display:grid;grid-template-columns:180px minmax(0,1fr) auto;gap:16px;padding:12px 16px;align-items:center;"><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#e07070;">203.0.113.9</span><span style="color:#c9c3b8;">Public internet address. Refused before probing.</span><span style="font-size:12px;color:#e07070;">Refused</span></div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px;padding:18px;border:1px solid #1d2129;border-radius:12px;background:#0e1014;margin-top:78px;">
+          <span style="font-weight:500;">Type an address</span>
+          <div style="height:42px;display:flex;align-items:center;padding:0 12px;border:1px solid #3a4150;border-radius:8px;background:#07080a;font-family:'IBM Plex Mono',monospace;">192.168.1.90</div>
+          <button style="height:40px;background:transparent;color:#ece7dc;border:1px solid #262c37;border-radius:8px;">Check and add</button>
+          <div style="display:flex;flex-direction:column;gap:4px;padding:12px;border-left:2px solid #e07070;background:#1a1113;border-radius:0 6px 6px 0;"><span style="color:#e07070;font-weight:500;">Nothing added</span><span style="color:#c9c3b8;font-size:12px;line-height:1.5;">192.168.1.90 didn’t return a snapshot in 3 s.</span></div>
+          <span style="color:#7d7870;font-size:12px;line-height:1.55;text-wrap:pretty;">Not in the list? Some networks hide mDNS. An address always works; host:port too.</span>
+        </div>
+      </main>
+    </div>
+    <div style="width:390px;height:844px;flex:none;border:1px solid #262c37;border-radius:34px;overflow:hidden;background:#0c0d10;display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,.45);">
+      <div style="height:44px;flex:none;"></div>
+      <div style="height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 20px;"><a href="#2a">‹</a><span style="font-size:20px;font-weight:600;">Add a Light</span><span style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#7ee0d0;">142/254</span></div>
+      <div style="flex:1;padding:12px 16px;display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid #3a4150;border-radius:14px;background:#12141a;">
+          <div style="display:flex;align-items:baseline;gap:8px;"><span style="font-size:17px;font-weight:500;">WLED-7F2A</span><span style="margin-left:auto;font-size:12px;color:#7ee0d0;">Answered</span></div>
+          <div style="padding:10px;background:#07080a;border-radius:8px;">{{ candStripPhone }}</div>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9a9488;">192.168.1.72 · 60 LEDs · WLED 0.15.4</span>
+          <div style="display:flex;gap:8px;"><button style="flex:1;height:48px;background:transparent;color:#ece7dc;border:1px solid #262c37;border-radius:10px;">Blink it</button><button style="flex:1.4;height:48px;background:#d4a574;color:#0c0d10;border:1px solid #d4a574;border-radius:10px;font-weight:600;">Add</button></div>
+        </div>
+        <div style="display:flex;flex-direction:column;border:1px solid #1d2129;border-radius:14px;font-size:13px;">
+          <div style="display:flex;padding:13px 14px;border-bottom:1px solid #1d2129;"><span>Eave front</span><span style="margin-left:auto;color:#7d7870;font-size:12px;">added</span></div>
+          <div style="display:flex;padding:13px 14px;border-bottom:1px solid #1d2129;"><span>Porch rail</span><span style="margin-left:auto;color:#7d7870;font-size:12px;">added</span></div>
+          <div style="display:flex;flex-direction:column;gap:3px;padding:13px 14px;border-bottom:1px solid #1d2129;"><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#d4a574;">192.168.1.80:80</span><span style="color:#c9c3b8;font-size:12px;">Answered, but isn’t WLED. Not added.</span></div>
+          <div style="display:flex;flex-direction:column;gap:3px;padding:13px 14px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#e07070;">203.0.113.9</span><span style="color:#c9c3b8;font-size:12px;">Public address. Refused before probing.</span></div>
+        </div>
+        <div style="margin-top:auto;display:flex;gap:8px;"><div style="flex:1;height:48px;display:flex;align-items:center;padding:0 12px;border:1px solid #262c37;border-radius:10px;color:#7d7870;font-family:'IBM Plex Mono',monospace;font-size:12px;">host or host:port</div><button style="height:48px;padding:0 16px;background:transparent;color:#ece7dc;border:1px solid #262c37;border-radius:10px;">Check</button></div>
+      </div>
+      <div style="flex:none;padding:12px 16px 28px;border-top:1px solid #1d2129;background:#0a0b0e;"><button style="width:100%;height:48px;background:transparent;color:#e07070;border:1px solid #e07070;border-radius:10px;font-size:15px;font-weight:600;">All Off</button></div>
+    </div>
+  </div>
+
+  <!-- 2c Inspect -->
+  <div id="2c" data-screen-label="03 Light · Inspect" style="display:flex;gap:40px;align-items:flex-start;">
+    <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+    <aside style="width:290px;flex:none;display:flex;flex-direction:column;gap:16px;">
+      <span style="align-self:flex-start;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#0c0d10;background:#d4a574;border-radius:4px;padding:2px 7px;font-weight:500;">2c</span>
+      <h2 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Light · Inspect</h2>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">PRIMARY JOB</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Identity and health around the strip it describes. Facts read as sentences, not a spec sheet. Test live is the next step.</p></div>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">HONESTY RULE</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">“Seen by you: never” until a person confirms. Re-address (phone) switches only when the same MAC answers at the new host.</p></div>
+    </aside>
+    </sc-if>
+    <div style="width:1280px;height:800px;flex:none;border:1px solid #262c37;border-radius:12px;overflow:hidden;background:#0c0d10;display:flex;box-shadow:0 30px 80px rgba(0,0,0,.45);">
+      <aside style="width:248px;flex:none;background:#0a0b0e;border-right:1px solid #1d2129;display:flex;flex-direction:column;">
+        <div style="height:64px;flex:none;display:flex;align-items:center;gap:10px;padding:0 20px;"><img src="web/public/logo-mark.svg" alt="" style="width:44px;height:12px;"><span style="font-family:Fraunces,serif;font-size:17px;color:#d4a574;">Nightplot</span></div>
+        <div style="padding:4px 12px;display:flex;flex-direction:column;gap:2px;">
+          <div style="display:flex;padding:9px 10px;border-radius:6px;"><span>All Lights</span><span style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9a9488;">3</span></div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;border-radius:6px;background:#151820;box-shadow:inset 2px 0 0 #d4a574;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span><span style="font-weight:500;">Eave front</span><span style="margin-left:auto;font-size:11px;color:#9a9488;">On</span></div>{{ railEave }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span><span>Porch rail</span><span style="margin-left:auto;font-size:11px;color:#9a9488;">Off</span></div>{{ railPorch }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#e07070;"></span><span>Garage</span><span style="margin-left:auto;font-size:11px;color:#e07070;">No answer</span></div>{{ railGarage }}</div>
+        </div>
+        <div style="padding:8px 22px;"><a href="#2b">+ Add a Light</a></div>
+        <div style="margin-top:auto;padding:16px;border-top:1px solid #1d2129;display:flex;flex-direction:column;gap:8px;"><button style="height:44px;background:transparent;color:#e07070;border:1px solid #e07070;border-radius:8px;font-size:14px;font-weight:600;">All Off</button><span style="font-size:11px;color:#7d7870;text-align:center;">1 Light on · 1 not answering</span></div>
+      </aside>
+      <main style="flex:1;min-width:0;padding:24px 32px;display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <div style="display:flex;align-items:center;gap:12px;"><h1 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Eave front</h1><span style="display:flex;align-items:center;gap:6px;font-size:12px;color:#7ee0d0;padding:3px 10px;border:1px solid #1f4a45;border-radius:20px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span>Online</span>
+            <div style="margin-left:auto;display:flex;gap:6px;align-items:center;"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#c9c3b8;border:1px solid #262c37;border-radius:5px;padding:3px 8px;">WLED</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#c9c3b8;border:1px solid #262c37;border-radius:5px;padding:3px 8px;">WS281x RGB</span></div></div>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#7d7870;">192.168.1.41 · a4:cf:12:8e:3b:10 · WLED 0.15.3 · 300 LEDs</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;"><div style="display:flex;padding:3px;background:#12141a;border:1px solid #262c37;border-radius:9px;"><span style="padding:6px 14px;border-radius:6px;background:#2f3542;font-weight:500;">Inspect</span><a href="#2d" style="padding:6px 14px;color:#9a9488;">Edit ranges</a><a href="#2e" style="padding:6px 14px;color:#9a9488;">Test live</a></div><span style="margin-left:auto;font-size:12px;color:#7d7870;">Snapshot 12 s ago</span><a href="#2c" style="font-size:13px;">Refresh</a></div>
+        <div style="padding:16px 20px 10px;background:#07080a;border:1px solid #1d2129;border-radius:14px;display:flex;flex-direction:column;gap:6px;">
+          <div style="display:flex;gap:18px;font-size:12px;color:#7d7870;"><span style="color:#c9c3b8;">Last snapshot</span><span style="margin-left:auto;">above: what Nightplot declared</span><span>below: what the controller reports</span></div>
+          {{ inspectStrip }}
+        </div>
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:14px;">
+          <div style="display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid #1d2129;border-radius:12px;background:#0e1014;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">WHO IT IS</span>
+            <span style="line-height:1.55;color:#c9c3b8;">Called <span style="color:#ece7dc;">Eave front</span>, at <span style="font-family:'IBM Plex Mono',monospace;color:#ece7dc;">192.168.1.41</span>.</span>
+            <div style="display:flex;gap:14px;font-size:13px;"><a href="#2c">Rename</a><a href="#2c">Re-address</a></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid #1d2129;border-radius:12px;background:#0e1014;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">WHAT IT HAS</span>
+            <span style="line-height:1.55;color:#c9c3b8;"><span style="color:#ece7dc;">300 LEDs</span> in <span style="color:#ece7dc;">3</span> of 32 possible segments. Firmware 0.15.3.</span>
+            <span style="font-size:12px;color:#d4a574;">Right run reports 10 fewer LEDs than declared</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid #1d2129;border-radius:12px;background:#0e1014;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">HOW IT’S DOING</span>
+            <span style="line-height:1.55;color:#c9c3b8;">Answering every 5 s. <span style="color:#ece7dc;">On at 50%</span>.</span>
+            <span style="font-size:12px;color:#9a9488;">Seen by you: <span style="color:#d4a574;">never</span></span>
+          </div>
+        </div>
+        <div style="margin-top:auto;display:flex;align-items:center;gap:12px;"><button style="height:40px;padding:0 14px;background:transparent;color:#ece7dc;border:1px solid #262c37;border-radius:8px;">Blink it</button><a href="#2g" style="color:#9a9488;font-size:13px;">Remove this Light…</a><button style="margin-left:auto;height:40px;padding:0 20px;background:#d4a574;color:#0c0d10;border:1px solid #d4a574;border-radius:8px;font-weight:600;">Test live</button></div>
+      </main>
+    </div>
+    <div style="width:390px;height:844px;flex:none;border:1px solid #262c37;border-radius:34px;overflow:hidden;background:#0c0d10;display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,.45);">
+      <div style="height:44px;flex:none;"></div>
+      <div style="flex:none;display:flex;flex-direction:column;gap:4px;padding:6px 20px 12px;"><a href="#2a" style="font-size:13px;">‹ Lights</a><div style="display:flex;align-items:center;gap:10px;"><span style="font-size:22px;font-weight:600;">Eave front</span><span style="margin-left:auto;font-size:12px;color:#7ee0d0;">● Online</span></div><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#7d7870;">WLED · WS281x RGB · 300 LEDs</span></div>
+      <div style="flex:1;padding:0 16px 12px;display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;padding:3px;background:#12141a;border:1px solid #262c37;border-radius:10px;font-size:13px;"><span style="flex:1;text-align:center;padding:9px 0;border-radius:7px;background:#2f3542;font-weight:500;">Inspect</span><span style="flex:1;text-align:center;padding:9px 0;color:#9a9488;">Ranges</span><span style="flex:1;text-align:center;padding:9px 0;color:#9a9488;">Test</span></div>
+        <div style="padding:10px 6px;background:#07080a;border:1px solid #1d2129;border-radius:12px;">{{ inspectStripPhone }}</div>
+        <div style="display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid #3a4150;border-radius:14px;background:#12141a;">
+          <span style="font-weight:500;">Re-address</span>
+          <div style="display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:13px;"><span style="color:#7d7870;">.41 →</span><div style="flex:1;height:44px;display:flex;align-items:center;padding:0 12px;border:1px solid #3a4150;border-radius:8px;background:#07080a;">192.168.1.44</div></div>
+          <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;">
+            <div style="display:flex;gap:8px;"><span style="color:#7ee0d0;">✓</span><span>Something answered at .44</span></div>
+            <div style="display:flex;gap:8px;"><span style="color:#7ee0d0;">…</span><span style="color:#c9c3b8;">Same controller? Checking MAC a4:cf:…:3b:10 — keeps .41 until it matches</span></div>
+          </div>
+        </div>
+        <button style="margin-top:auto;height:52px;background:#d4a574;color:#0c0d10;border:1px solid #d4a574;border-radius:10px;font-size:15px;font-weight:600;">Test live</button>
+      </div>
+      <div style="flex:none;padding:12px 16px 28px;border-top:1px solid #1d2129;background:#0a0b0e;"><button style="width:100%;height:48px;background:transparent;color:#e07070;border:1px solid #e07070;border-radius:10px;font-size:15px;font-weight:600;">All Off</button></div>
+    </div>
+  </div>
+
+  <!-- 2d Edit ranges -->
+  <div id="2d" data-screen-label="04 Light · Edit ranges" style="display:flex;gap:40px;align-items:flex-start;">
+    <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+    <aside style="width:290px;flex:none;display:flex;flex-direction:column;gap:16px;">
+      <span style="align-self:flex-start;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#0c0d10;background:#d4a574;border-radius:4px;padding:2px 7px;font-weight:500;">2d</span>
+      <h2 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Light · Edit ranges</h2>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">PRIMARY JOB</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Drag an Element’s handles on the beads, or type numbers. Start is inclusive, stop exclusive, length is derived. Then Apply to the controller.</p></div>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">HONESTY RULE</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Overlap is red on the beads and blocks Apply with the reason. Drift shows as a gap between the two rails. Phone: a failed Apply stays on the failure.</p></div>
+    </aside>
+    </sc-if>
+    <div style="width:1280px;height:800px;flex:none;border:1px solid #262c37;border-radius:12px;overflow:hidden;background:#0c0d10;display:flex;box-shadow:0 30px 80px rgba(0,0,0,.45);">
+      <aside style="width:248px;flex:none;background:#0a0b0e;border-right:1px solid #1d2129;display:flex;flex-direction:column;">
+        <div style="height:64px;flex:none;display:flex;align-items:center;gap:10px;padding:0 20px;"><img src="web/public/logo-mark.svg" alt="" style="width:44px;height:12px;"><span style="font-family:Fraunces,serif;font-size:17px;color:#d4a574;">Nightplot</span></div>
+        <div style="padding:4px 12px;display:flex;flex-direction:column;gap:2px;">
+          <div style="display:flex;padding:9px 10px;"><span>All Lights</span><span style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9a9488;">3</span></div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;border-radius:6px;background:#151820;box-shadow:inset 2px 0 0 #d4a574;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span><span style="font-weight:500;">Eave front</span><span style="margin-left:auto;font-size:11px;color:#d4a574;">1 unsaved</span></div>{{ railEave }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span><span>Porch rail</span></div>{{ railPorch }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#e07070;"></span><span>Garage</span></div>{{ railGarage }}</div>
+        </div>
+        <div style="margin-top:auto;padding:16px;border-top:1px solid #1d2129;display:flex;flex-direction:column;gap:8px;"><button style="height:44px;background:transparent;color:#e07070;border:1px solid #e07070;border-radius:8px;font-size:14px;font-weight:600;">All Off</button><span style="font-size:11px;color:#7d7870;text-align:center;">1 Light on · 1 not answering</span></div>
+      </aside>
+      <main style="flex:1;min-width:0;padding:24px 32px;display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <div style="display:flex;align-items:center;gap:12px;"><h1 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Eave front</h1><span style="display:flex;align-items:center;gap:6px;font-size:12px;color:#7ee0d0;padding:3px 10px;border:1px solid #1f4a45;border-radius:20px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span>Online</span>
+            <div style="margin-left:auto;display:flex;gap:6px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#c9c3b8;border:1px solid #262c37;border-radius:5px;padding:3px 8px;">WLED</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#c9c3b8;border:1px solid #262c37;border-radius:5px;padding:3px 8px;">WS281x RGB</span></div></div>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#7d7870;">192.168.1.41 · 300 LEDs · 3 of 32 segments</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;"><div style="display:flex;padding:3px;background:#12141a;border:1px solid #262c37;border-radius:9px;"><a href="#2c" style="padding:6px 14px;color:#9a9488;">Inspect</a><span style="padding:6px 14px;border-radius:6px;background:#2f3542;font-weight:500;">Edit ranges</span><a href="#2e" style="padding:6px 14px;color:#9a9488;">Test live</a></div><span style="margin-left:auto;font-size:12px;color:#7d7870;">Drag a handle or type numbers</span></div>
+        <div style="padding:16px 20px 10px;background:#07080a;border:1px solid #1d2129;border-radius:14px;display:flex;flex-direction:column;gap:6px;">
+          <div style="display:flex;gap:18px;font-size:12px;color:#7d7870;align-items:center;"><span style="color:#c9c3b8;">Draft</span><span style="display:flex;align-items:center;gap:6px;color:#d4a574;"><span style="width:12px;height:8px;border:1px dashed #d4a574;border-radius:2px;"></span>drift</span><span style="display:flex;align-items:center;gap:6px;color:#e07070;"><span style="width:12px;height:8px;border:1px solid #e07070;background:rgba(224,112,112,.2);border-radius:2px;"></span>overlap</span><span style="margin-left:auto;">above: declared · below: reported</span></div>
+          {{ editStrip }}
+        </div>
+        <div style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px;">
+          <div style="display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid #d4a574;border-radius:12px;background:#15130f;">
+            <div style="display:flex;align-items:center;gap:10px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#7d7870;">seg 1</span><div style="height:36px;display:flex;align-items:center;padding:0 10px;border:1px solid #3a4150;border-radius:7px;background:#07080a;width:180px;">Peak</div><span style="margin-left:auto;font-size:12px;color:#9a9488;">controller reports 120–180</span></div>
+            <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;font-family:'IBM Plex Mono',monospace;">
+              <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Sans',sans-serif;font-size:11px;color:#7d7870;">Start · first LED</span><div style="height:36px;display:flex;align-items:center;padding:0 10px;border:1px solid #3a4150;border-radius:7px;background:#07080a;">120</div></div>
+              <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Sans',sans-serif;font-size:11px;color:#e07070;">Stop · after last LED</span><div style="height:36px;display:flex;align-items:center;padding:0 10px;border:1px solid #e07070;border-radius:7px;background:#1a1113;color:#e07070;">185</div></div>
+              <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Sans',sans-serif;font-size:11px;color:#7d7870;">Length</span><div style="height:36px;display:flex;align-items:center;padding:0 10px;color:#9a9488;">65</div></div>
+            </div>
+            <span style="color:#e07070;font-size:13px;">Overlaps Right run on LEDs 180–184. Stop at 180, or move Right run.</span>
+          </div>
+          <div style="display:flex;flex-direction:column;border:1px solid #1d2129;border-radius:12px;background:#0e1014;font-size:13px;">
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;padding:12px 14px;border-bottom:1px solid #1d2129;"><span>Left run</span><span style="font-family:'IBM Plex Mono',monospace;color:#9a9488;">0–120</span><span style="color:#7d7870;font-size:12px;">matches</span></div>
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;padding:12px 14px;border-bottom:1px solid #1d2129;background:#151820;"><span style="color:#d4a574;">Peak</span><span style="font-family:'IBM Plex Mono',monospace;color:#e07070;">120–185</span><span style="color:#e07070;font-size:12px;">overlap</span></div>
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;padding:12px 14px;border-bottom:1px solid #1d2129;"><span>Right run</span><span style="font-family:'IBM Plex Mono',monospace;color:#9a9488;">180–300</span><span style="color:#d4a574;font-size:12px;">reports 290</span></div>
+            <div style="padding:12px 14px;"><a href="#2d">+ Element from free LEDs</a></div>
+          </div>
+        </div>
+        <div style="margin-top:auto;display:flex;align-items:center;gap:12px;padding:12px 16px;border:1px solid #262c37;border-radius:10px;background:#12141a;">
+          <span style="color:#d4a574;">1 unsaved change</span><span style="color:#7d7870;font-size:13px;">Apply writes to the controller, then reads it back.</span>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:10px;"><span style="color:#e07070;font-size:13px;">Fix the overlap first</span><button style="height:38px;padding:0 14px;background:transparent;color:#ece7dc;border:1px solid #262c37;border-radius:8px;">Revert</button><button disabled style="height:38px;padding:0 20px;background:#1a1d24;color:#7d7870;border:1px solid #262c37;border-radius:8px;font-weight:600;cursor:not-allowed;">Apply</button></div>
+        </div>
+      </main>
+    </div>
+    <div style="width:390px;height:844px;flex:none;border:1px solid #262c37;border-radius:34px;overflow:hidden;background:#0c0d10;display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,.45);">
+      <div style="height:44px;flex:none;"></div>
+      <div style="flex:none;display:flex;flex-direction:column;gap:4px;padding:6px 20px 12px;"><a href="#2a" style="font-size:13px;">‹ Lights</a><div style="display:flex;align-items:center;gap:10px;"><span style="font-size:22px;font-weight:600;">Eave front</span><span style="margin-left:auto;font-size:12px;color:#7ee0d0;">● Online</span></div></div>
+      <div style="flex:1;padding:0 16px 12px;display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;padding:3px;background:#12141a;border:1px solid #262c37;border-radius:10px;font-size:13px;"><span style="flex:1;text-align:center;padding:9px 0;color:#9a9488;">Inspect</span><span style="flex:1;text-align:center;padding:9px 0;border-radius:7px;background:#2f3542;font-weight:500;">Ranges</span><span style="flex:1;text-align:center;padding:9px 0;color:#9a9488;">Test</span></div>
+        <div style="display:flex;flex-direction:column;gap:8px;padding:16px;border:1px solid #5a2f33;border-radius:14px;background:#1a1113;">
+          <span style="color:#e07070;font-size:16px;font-weight:600;">Apply didn’t stick</span>
+          <div style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;font-size:13px;"><span style="color:#9a9488;">Sent</span><span style="font-family:'IBM Plex Mono',monospace;">Right run 180–300</span><span style="color:#9a9488;">Read back</span><span style="font-family:'IBM Plex Mono',monospace;color:#e07070;">Right run 180–290</span></div>
+          <span style="color:#c9c3b8;font-size:12px;line-height:1.5;">Your draft is kept. Nothing else on the controller changed.</span>
+          <div style="display:flex;gap:8px;margin-top:4px;"><button style="flex:1;height:46px;background:transparent;color:#ece7dc;border:1px solid #3a4150;border-radius:10px;font-size:13px;">Use controller’s</button><button style="flex:1;height:46px;background:#d4a574;color:#0c0d10;border:1px solid #d4a574;border-radius:10px;font-size:13px;font-weight:600;">Apply again</button></div>
+        </div>
+        <div style="padding:10px 6px;background:#07080a;border:1px solid #1d2129;border-radius:12px;">{{ editStripPhone }}</div>
+        <a href="#2d" style="font-size:13px;">Edit ranges as numbers</a>
+      </div>
+      <div style="flex:none;padding:12px 16px 28px;border-top:1px solid #1d2129;background:#0a0b0e;"><button style="width:100%;height:48px;background:transparent;color:#e07070;border:1px solid #e07070;border-radius:10px;font-size:15px;font-weight:600;">All Off</button></div>
+    </div>
+  </div>
+
+  <!-- 2e Test live -->
+  <div id="2e" data-screen-label="05 Light · Test live" style="display:flex;gap:40px;align-items:flex-start;">
+    <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+    <aside style="width:290px;flex:none;display:flex;flex-direction:column;gap:16px;">
+      <span style="align-self:flex-start;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#0c0d10;background:#d4a574;border-radius:4px;padding:2px 7px;font-weight:500;">2e</span>
+      <h2 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Light · Test live</h2>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">PRIMARY JOB</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Preview a colour on one Element, watch the same beads update from readback, and climb the proof ladder. Apply is a separate, later rung.</p></div>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">HONESTY RULE</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Software stops at “controller reports”. The last rung is a person answering. Phone: Preview disabled with a one-line reason.</p></div>
+    </aside>
+    </sc-if>
+    <div style="width:1280px;height:800px;flex:none;border:1px solid #262c37;border-radius:12px;overflow:hidden;background:#0c0d10;display:flex;box-shadow:0 30px 80px rgba(0,0,0,.45);">
+      <aside style="width:248px;flex:none;background:#0a0b0e;border-right:1px solid #1d2129;display:flex;flex-direction:column;">
+        <div style="height:64px;flex:none;display:flex;align-items:center;gap:10px;padding:0 20px;"><img src="web/public/logo-mark.svg" alt="" style="width:44px;height:12px;"><span style="font-family:Fraunces,serif;font-size:17px;color:#d4a574;">Nightplot</span></div>
+        <div style="padding:4px 12px;display:flex;flex-direction:column;gap:2px;">
+          <div style="display:flex;padding:9px 10px;"><span>All Lights</span><span style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9a9488;">3</span></div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;border-radius:6px;background:#151820;box-shadow:inset 2px 0 0 #d4a574;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span><span style="font-weight:500;">Eave front</span><span style="margin-left:auto;font-size:11px;color:#7ee0d0;">Preview</span></div>{{ railEaveLive }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span><span>Porch rail</span></div>{{ railPorch }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#e07070;"></span><span>Garage</span></div>{{ railGarage }}</div>
+        </div>
+        <div style="margin-top:auto;padding:16px;border-top:1px solid #1d2129;display:flex;flex-direction:column;gap:8px;"><button style="height:44px;background:transparent;color:#e07070;border:1px solid #e07070;border-radius:8px;font-size:14px;font-weight:600;">All Off</button><span style="font-size:11px;color:#7d7870;text-align:center;">Ends the Preview without restoring</span></div>
+      </aside>
+      <main style="flex:1;min-width:0;padding:24px 32px 20px;display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <div style="display:flex;align-items:center;gap:12px;"><h1 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Eave front</h1><span style="display:flex;align-items:center;gap:6px;font-size:12px;color:#7ee0d0;padding:3px 10px;border:1px solid #1f4a45;border-radius:20px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span>Online</span>
+            <div style="margin-left:auto;display:flex;gap:6px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#c9c3b8;border:1px solid #262c37;border-radius:5px;padding:3px 8px;">WLED</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#c9c3b8;border:1px solid #262c37;border-radius:5px;padding:3px 8px;">WS281x RGB</span></div></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;"><div style="display:flex;padding:3px;background:#12141a;border:1px solid #262c37;border-radius:9px;"><a href="#2c" style="padding:6px 14px;color:#9a9488;">Inspect</a><a href="#2d" style="padding:6px 14px;color:#9a9488;">Edit ranges</a><span style="padding:6px 14px;border-radius:6px;background:#2f3542;font-weight:500;">Test live</span></div>
+          <div style="margin-left:auto;display:flex;gap:6px;font-size:13px;"><span style="padding:6px 11px;border:1px solid #262c37;border-radius:7px;color:#9a9488;">Whole strip</span><span style="padding:6px 11px;border:1px solid #262c37;border-radius:7px;color:#9a9488;">Left run</span><span style="padding:6px 11px;border:1px solid #d4a574;border-radius:7px;background:#27221d;">Peak</span><span style="padding:6px 11px;border:1px solid #262c37;border-radius:7px;color:#9a9488;">Right run</span></div></div>
+        <div style="padding:16px 20px 10px;background:#07080a;border:1px solid #1f4a45;border-radius:14px;display:flex;flex-direction:column;gap:6px;">
+          <div style="display:flex;gap:10px;font-size:12px;"><span style="color:#7ee0d0;">What the strip reports</span><span style="color:#7d7870;">read 1 s ago</span></div>
+          {{ liveStrip }}
+        </div>
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;">
+          <div style="display:flex;flex-direction:column;gap:14px;padding:16px;border:1px solid #1d2129;border-radius:12px;background:#0e1014;">
+            <div style="display:grid;grid-template-columns:84px minmax(0,1fr);gap:10px;align-items:center;"><span style="font-size:12px;color:#7d7870;">Colour</span><div style="display:flex;gap:8px;align-items:center;"><span style="width:26px;height:26px;border-radius:13px;background:#ffc978;"></span><span style="width:26px;height:26px;border-radius:13px;background:#ff4a3d;"></span><span style="width:26px;height:26px;border-radius:13px;background:#3dff7a;"></span><span style="width:26px;height:26px;border-radius:13px;background:#4f7dff;box-shadow:0 0 0 2px #0e1014,0 0 0 3.5px #ece7dc;"></span><span style="width:26px;height:26px;border-radius:13px;background:#f4f1ea;"></span><span style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#c9c3b8;">{{ previewHex }}</span></div></div>
+            <div style="display:grid;grid-template-columns:84px minmax(0,1fr) 40px;gap:10px;align-items:center;"><span style="font-size:12px;color:#7d7870;">Brightness</span><div style="height:4px;background:#262c37;border-radius:3px;position:relative;"><div style="width:70%;height:100%;background:#d4a574;border-radius:3px;"></div><div style="position:absolute;left:70%;top:-6px;width:16px;height:16px;margin-left:-8px;border-radius:9px;background:#ece7dc;"></div></div><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;text-align:right;">70%</span></div>
+            <div style="display:grid;grid-template-columns:84px minmax(0,1fr);gap:10px;align-items:center;"><span style="font-size:12px;color:#7d7870;">Effect</span><div style="display:flex;align-items:center;height:34px;padding:0 10px;border:1px solid #262c37;border-radius:7px;font-size:13px;"><span>Solid</span><span style="margin-left:auto;color:#7d7870;font-size:12px;">118 on this controller ▾</span></div></div>
+            <div style="display:flex;gap:8px;"><button style="flex:1;height:40px;background:#d4a574;color:#0c0d10;border:1px solid #d4a574;border-radius:8px;font-weight:600;">Preview on Peak</button><button style="height:40px;padding:0 14px;background:transparent;color:#ece7dc;border:1px solid #262c37;border-radius:8px;">Blink Peak</button></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:0;padding:16px;border:1px solid #1d2129;border-radius:12px;background:#0e1014;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;margin-bottom:10px;">PROOF</span>
+            <div style="display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;padding:7px 0;"><span style="width:18px;height:18px;border-radius:9px;border:1.5px solid #7ee0d0;color:#7ee0d0;font-size:10px;display:flex;align-items:center;justify-content:center;">✓</span><span>Sent to controller</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#7d7870;">21:14:02</span></div>
+            <div style="display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;padding:7px 0;"><span style="width:18px;height:18px;border-radius:9px;border:1.5px solid #7ee0d0;color:#7ee0d0;font-size:10px;display:flex;align-items:center;justify-content:center;">✓</span><span>Controller reports 60 / 60 in Peak</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#7d7870;">others untouched</span></div>
+            <div style="display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;padding:7px 0;"><span style="width:18px;height:18px;border-radius:9px;border:1.5px dashed #d4a574;"></span><div style="display:flex;flex-direction:column;gap:8px;"><span>Is the peak of the eave <span style="color:#d4a574;">{{ previewName }}</span> right now?</span><div style="display:flex;gap:8px;"><button style="height:34px;padding:0 14px;background:transparent;color:#ece7dc;border:1px solid #3a4150;border-radius:7px;font-size:13px;">Yes, I see it</button><button style="height:34px;padding:0 14px;background:transparent;color:#ece7dc;border:1px solid #3a4150;border-radius:7px;font-size:13px;">No / not sure</button></div></div></div>
+            <div style="margin-top:auto;display:flex;align-items:center;gap:10px;padding-top:10px;border-top:1px solid #1d2129;"><span style="font-size:12px;color:#7d7870;">Keep it as Peak’s saved look?</span><button style="margin-left:auto;height:32px;padding:0 12px;background:transparent;color:#ece7dc;border:1px solid #262c37;border-radius:7px;font-size:13px;">Apply to Peak</button></div>
+          </div>
+        </div>
+        <div style="margin-top:auto;display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid #1f4a45;background:#0b1514;border-radius:10px;">
+          <span style="width:8px;height:8px;border-radius:9px;background:#7ee0d0;box-shadow:0 0 8px #7ee0d0;"></span><span>Preview live on <span style="font-weight:500;">Peak</span></span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9a9488;">0:42</span><span style="font-size:13px;color:#7d7870;">Ending puts the previous look back.</span><button style="margin-left:auto;height:32px;padding:0 14px;background:transparent;color:#ece7dc;border:1px solid #1f4a45;border-radius:7px;font-size:13px;">End preview</button>
+        </div>
+      </main>
+    </div>
+    <div style="width:390px;height:844px;flex:none;border:1px solid #262c37;border-radius:34px;overflow:hidden;background:#0c0d10;display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,.45);">
+      <div style="height:44px;flex:none;"></div>
+      <div style="flex:none;display:flex;flex-direction:column;gap:4px;padding:6px 20px 12px;"><a href="#2a" style="font-size:13px;">‹ Lights</a><div style="display:flex;align-items:center;gap:10px;"><span style="font-size:22px;font-weight:600;">Garage</span><span style="margin-left:auto;font-size:12px;color:#e07070;">● No answer</span></div></div>
+      <div style="flex:1;padding:0 16px 12px;display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;padding:3px;background:#12141a;border:1px solid #262c37;border-radius:10px;font-size:13px;"><span style="flex:1;text-align:center;padding:9px 0;color:#9a9488;">Inspect</span><span style="flex:1;text-align:center;padding:9px 0;color:#9a9488;">Ranges</span><span style="flex:1;text-align:center;padding:9px 0;border-radius:7px;background:#2f3542;font-weight:500;">Test</span></div>
+        <div style="display:flex;flex-direction:column;gap:8px;padding:12px 6px;background:#07080a;border:1px solid #1d2129;border-radius:12px;"><span style="font-size:12px;color:#9a9488;padding:0 6px;">Last seen 2 h ago — may not match the strip</span>{{ garageStripPhone }}</div>
+        <div style="display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid #1d2129;border-radius:14px;background:#0e1014;opacity:.55;">
+          <div style="display:flex;gap:10px;"><span style="width:34px;height:34px;border-radius:17px;background:#ffc978;"></span><span style="width:34px;height:34px;border-radius:17px;background:#ff4a3d;"></span><span style="width:34px;height:34px;border-radius:17px;background:#4f7dff;"></span><span style="width:34px;height:34px;border-radius:17px;background:#f4f1ea;"></span></div>
+          <div style="height:4px;background:#262c37;border-radius:3px;"><div style="width:60%;height:100%;background:#7d7870;border-radius:3px;"></div></div>
+        </div>
+        <div style="margin-top:auto;display:flex;flex-direction:column;gap:8px;">
+          <span style="color:#e07070;font-size:13px;text-align:center;">Garage hasn’t answered for 2 h. Refresh or re-address it first.</span>
+          <button disabled style="height:52px;background:#1a1d24;color:#7d7870;border:1px solid #262c37;border-radius:10px;font-size:15px;font-weight:600;cursor:not-allowed;">Preview</button>
+          <button style="height:48px;background:transparent;color:#ece7dc;border:1px solid #3a4150;border-radius:10px;font-size:14px;">Refresh Garage</button>
+        </div>
+      </div>
+      <div style="flex:none;padding:12px 16px 28px;border-top:1px solid #1d2129;background:#0a0b0e;"><button style="width:100%;height:48px;background:transparent;color:#e07070;border:1px solid #e07070;border-radius:10px;font-size:15px;font-weight:600;">All Off</button></div>
+    </div>
+  </div>
+
+  <!-- 2f All Off -->
+  <div id="2f" data-screen-label="06 All Off" style="display:flex;gap:40px;align-items:flex-start;">
+    <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+    <aside style="width:290px;flex:none;display:flex;flex-direction:column;gap:16px;">
+      <span style="align-self:flex-start;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#0c0d10;background:#d4a574;border-radius:4px;padding:2px 7px;font-weight:500;">2f</span>
+      <h2 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">All Off</h2>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">PRIMARY JOB</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Everything off, from anywhere. With nothing live it runs on one press. With a Preview or Blink live, it opens in place — no modal travel.</p></div>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">HONESTY RULE</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Says the Preview ends without restoring its colour. The result lists each Light by what it reported. Retry targets only the ones that failed.</p></div>
+    </aside>
+    </sc-if>
+    <div style="width:1280px;height:800px;flex:none;border:1px solid #262c37;border-radius:12px;overflow:hidden;background:#0c0d10;display:flex;box-shadow:0 30px 80px rgba(0,0,0,.45);">
+      <aside style="width:248px;flex:none;background:#0a0b0e;border-right:1px solid #1d2129;display:flex;flex-direction:column;position:relative;z-index:1;">
+        <div style="height:64px;flex:none;display:flex;align-items:center;gap:10px;padding:0 20px;"><img src="web/public/logo-mark.svg" alt="" style="width:44px;height:12px;"><span style="font-family:Fraunces,serif;font-size:17px;color:#d4a574;">Nightplot</span></div>
+        <div style="padding:4px 12px;display:flex;flex-direction:column;gap:2px;opacity:.45;">
+          <div style="display:flex;padding:9px 10px;"><span>All Lights</span></div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;"><span>Eave front</span>{{ railEaveLive }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;"><span>Porch rail</span>{{ railPorch }}</div>
+        </div>
+        <div style="margin-top:auto;margin:auto 12px 12px;padding:16px;border:1px solid #e07070;border-radius:12px;background:#1a1113;display:flex;flex-direction:column;gap:12px;box-shadow:0 -20px 50px rgba(0,0,0,.6);">
+          <span style="font-size:16px;font-weight:600;">Turn everything off?</span>
+          <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;line-height:1.5;">
+            <span style="color:#c9c3b8;">The Preview on <span style="color:#ece7dc;">Eave front · Peak</span> ends. <span style="color:#d4a574;">Its old colour won’t come back.</span></span>
+            <span style="color:#c9c3b8;">Then 3 Lights power off. Garage isn’t answering and may fail.</span>
+          </div>
+          <button style="height:44px;background:#e07070;color:#0c0d10;border:1px solid #e07070;border-radius:8px;font-size:14px;font-weight:600;">Turn all off</button>
+          <button style="height:36px;background:transparent;color:#ece7dc;border:1px solid #3a4150;border-radius:8px;font-size:13px;">Not now</button>
+        </div>
+      </aside>
+      <main style="flex:1;min-width:0;padding:24px 32px 20px;display:flex;flex-direction:column;gap:14px;position:relative;">
+        <h1 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Eave front</h1>
+        <div style="padding:16px 20px 10px;background:#07080a;border:1px solid #1f4a45;border-radius:14px;display:flex;flex-direction:column;gap:6px;"><span style="color:#7ee0d0;font-size:12px;">What the strip reports</span>{{ liveStrip }}</div>
+        <div style="margin-top:auto;display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid #1f4a45;background:#0b1514;border-radius:10px;"><span style="width:8px;height:8px;border-radius:9px;background:#7ee0d0;"></span><span>Preview live on Peak</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9a9488;">0:57</span></div>
+        <div style="position:absolute;inset:0;background:rgba(8,9,12,.62);"></div>
+      </main>
+    </div>
+    <div style="width:390px;height:844px;flex:none;border:1px solid #262c37;border-radius:34px;overflow:hidden;background:#0c0d10;display:flex;flex-direction:column;position:relative;box-shadow:0 30px 80px rgba(0,0,0,.45);">
+      <div style="height:44px;flex:none;"></div>
+      <div style="flex:none;padding:6px 20px 12px;opacity:.4;"><span style="font-size:22px;font-weight:600;">Eave front</span></div>
+      <div style="padding:0 16px;opacity:.4;"><div style="padding:10px 6px;background:#07080a;border-radius:12px;">{{ offStripPhone }}</div></div>
+      <div style="position:absolute;left:0;right:0;bottom:0;padding:20px 16px 28px;border-top:1px solid #3a4150;border-radius:22px 22px 0 0;background:#12141a;display:flex;flex-direction:column;gap:14px;box-shadow:0 -20px 60px rgba(0,0,0,.6);">
+        <div style="width:40px;height:4px;border-radius:3px;background:#3a4150;align-self:center;"></div>
+        <div style="display:flex;align-items:baseline;gap:10px;"><span style="font-size:19px;font-weight:600;">2 of 3 off</span><span style="margin-left:auto;font-size:12px;color:#d4a574;">1 didn’t answer</span></div>
+        <span style="font-size:13px;color:#c9c3b8;line-height:1.5;">The Preview on Peak ended without restoring.</span>
+        <div style="display:flex;flex-direction:column;border:1px solid #262c37;border-radius:12px;font-size:13px;">
+          <div style="display:flex;flex-direction:column;gap:2px;padding:12px 14px;border-bottom:1px solid #262c37;"><div style="display:flex;"><span>Eave front</span><span style="margin-left:auto;">Off</span></div><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#7d7870;">reports on: false</span></div>
+          <div style="display:flex;flex-direction:column;gap:2px;padding:12px 14px;border-bottom:1px solid #262c37;"><div style="display:flex;"><span>Porch rail</span><span style="margin-left:auto;">Off</span></div><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#7d7870;">was already off</span></div>
+          <div style="display:flex;flex-direction:column;gap:2px;padding:12px 14px;background:#1a1113;border-radius:0 0 12px 12px;"><div style="display:flex;"><span>Garage</span><span style="margin-left:auto;color:#e07070;">Still unknown</span></div><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#c9c3b8;">no answer from 192.168.1.63 in 3 s</span></div>
+        </div>
+        <button style="height:52px;background:#d4a574;color:#0c0d10;border:1px solid #d4a574;border-radius:10px;font-size:15px;font-weight:600;">Retry Garage only</button>
+        <button style="height:44px;background:transparent;color:#ece7dc;border:1px solid #3a4150;border-radius:10px;font-size:14px;">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2g Remove -->
+  <div id="2g" data-screen-label="07 Remove Light" style="display:flex;gap:40px;align-items:flex-start;">
+    <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+    <aside style="width:290px;flex:none;display:flex;flex-direction:column;gap:16px;">
+      <span style="align-self:flex-start;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#0c0d10;background:#d4a574;border-radius:4px;padding:2px 7px;font-weight:500;">2g</span>
+      <h2 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Delete Light</h2>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">PRIMARY JOB</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Deleting is a check that runs, not a warning you dismiss. The button fills as checks complete — you can see how close it is.</p></div>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">HONESTY RULE</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Unknown is not safe. There’s no “I understand” override. Phone shows 3 of 3 complete, with Delete unlocked.</p></div>
+    </aside>
+    </sc-if>
+    <div style="width:1280px;height:800px;flex:none;border:1px solid #262c37;border-radius:12px;overflow:hidden;background:#0c0d10;display:flex;box-shadow:0 30px 80px rgba(0,0,0,.45);">
+      <aside style="width:248px;flex:none;background:#0a0b0e;border-right:1px solid #1d2129;display:flex;flex-direction:column;">
+        <div style="height:64px;flex:none;display:flex;align-items:center;gap:10px;padding:0 20px;"><img src="web/public/logo-mark.svg" alt="" style="width:44px;height:12px;"><span style="font-family:Fraunces,serif;font-size:17px;color:#d4a574;">Nightplot</span></div>
+        <div style="padding:4px 12px;display:flex;flex-direction:column;gap:2px;">
+          <div style="display:flex;padding:9px 10px;"><span>All Lights</span><span style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9a9488;">3</span></div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span><span>Eave front</span></div>{{ railEave }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;border-radius:6px;background:#151820;box-shadow:inset 2px 0 0 #d4a574;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#d4a574;"></span><span style="font-weight:500;">Porch rail</span><span style="margin-left:auto;font-size:11px;color:#d4a574;">Slow</span></div>{{ railPorch }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#e07070;"></span><span>Garage</span></div>{{ railGarage }}</div>
+        </div>
+        <div style="margin-top:auto;padding:16px;border-top:1px solid #1d2129;display:flex;flex-direction:column;gap:8px;"><button style="height:44px;background:transparent;color:#e07070;border:1px solid #e07070;border-radius:8px;font-size:14px;font-weight:600;">All Off</button><span style="font-size:11px;color:#7d7870;text-align:center;">1 Light on · 1 not answering</span></div>
+      </aside>
+      <main style="flex:1;min-width:0;padding:24px 32px;display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;flex-direction:column;gap:5px;"><div style="display:flex;align-items:center;gap:12px;"><h1 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Porch rail</h1><span style="display:flex;align-items:center;gap:6px;font-size:12px;color:#d4a574;padding:3px 10px;border:1px solid #8a6848;border-radius:20px;"><span style="width:6px;height:6px;border-radius:9px;background:#d4a574;"></span>Slow to answer</span></div><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#7d7870;">192.168.1.57 · WLED 16.0.1 · 150 LEDs</span></div>
+        <div style="padding:16px 20px 10px;background:#07080a;border:1px solid #1d2129;border-radius:14px;">{{ porchStrip }}</div>
+        <div style="display:flex;flex-direction:column;gap:16px;padding:22px;border:1px solid #3a4150;border-radius:14px;background:#12141a;max-width:720px;">
+          <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-size:20px;font-weight:600;">Delete Porch rail from Nightplot?</span><span style="color:#9a9488;">Checking what this removes before it can go.</span></div>
+          <div style="display:flex;flex-direction:column;">
+            <div style="display:grid;grid-template-columns:22px 150px minmax(0,1fr);gap:12px;padding:10px 0;border-bottom:1px solid #1d2129;"><span style="color:#7ee0d0;">✓</span><span style="color:#9a9488;">Elements</span><span>Nightplot forgets Steps and Rail. The controller keeps its segments.</span></div>
+            <div style="display:grid;grid-template-columns:22px 150px minmax(0,1fr);gap:12px;padding:10px 0;border-bottom:1px solid #1d2129;"><span style="color:#7ee0d0;">✓</span><span style="color:#9a9488;">Live sessions</span><span>Nothing previewing or blinking.</span></div>
+            <div style="display:grid;grid-template-columns:22px 150px minmax(0,1fr) auto;gap:12px;padding:10px 0;align-items:center;"><span style="color:#d4a574;">?</span><span style="color:#9a9488;">Controller state</span><span style="color:#c9c3b8;">Couldn’t read it in time, so we can’t say what it’ll be left doing.</span><a href="#2g">Check again</a></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div style="position:relative;height:40px;width:220px;border:1px solid #3a4150;border-radius:8px;overflow:hidden;background:#1a1d24;"><div style="position:absolute;left:0;top:0;bottom:0;width:66%;background:#3a2226;"></div><span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9a9488;font-weight:600;font-size:13px;">Delete · 2 of 3 checks</span></div>
+            <span style="color:#d4a574;font-size:13px;">Unlocks when every check is complete.</span>
+            <button style="margin-left:auto;height:40px;padding:0 16px;background:transparent;color:#ece7dc;border:1px solid #262c37;border-radius:8px;">Keep it</button>
+          </div>
+        </div>
+      </main>
+    </div>
+    <div style="width:390px;height:844px;flex:none;border:1px solid #262c37;border-radius:34px;overflow:hidden;background:#0c0d10;display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,.45);">
+      <div style="height:44px;flex:none;"></div>
+      <div style="flex:none;display:flex;flex-direction:column;gap:4px;padding:6px 20px 12px;"><a href="#2a" style="font-size:13px;">‹ Porch rail</a><span style="font-size:22px;font-weight:600;">Delete Porch rail?</span></div>
+      <div style="flex:1;padding:0 16px 12px;display:flex;flex-direction:column;gap:14px;">
+        <span style="color:#7ee0d0;font-size:13px;">All 3 checks complete</span>
+        <div style="display:flex;flex-direction:column;border:1px solid #1d2129;border-radius:14px;background:#0e1014;font-size:13px;">
+          <div style="display:flex;flex-direction:column;gap:3px;padding:13px 14px;border-bottom:1px solid #1d2129;"><span style="color:#9a9488;font-size:12px;">Elements</span><span style="line-height:1.5;">Steps and Rail forgotten. Controller keeps its segments.</span></div>
+          <div style="display:flex;flex-direction:column;gap:3px;padding:13px 14px;border-bottom:1px solid #1d2129;"><span style="color:#9a9488;font-size:12px;">Live sessions</span><span>None running.</span></div>
+          <div style="display:flex;flex-direction:column;gap:3px;padding:13px 14px;"><span style="color:#9a9488;font-size:12px;">Controller state</span><span style="line-height:1.5;">Off. It stays exactly as it is.</span></div>
+        </div>
+        <span style="color:#7d7870;font-size:12px;line-height:1.55;">You can add it back from Add a Light any time.</span>
+        <div style="margin-top:auto;display:flex;flex-direction:column;gap:8px;"><button style="height:52px;background:#e07070;color:#0c0d10;border:1px solid #e07070;border-radius:10px;font-size:15px;font-weight:600;">Delete Porch rail</button><button style="height:48px;background:transparent;color:#ece7dc;border:1px solid #3a4150;border-radius:10px;font-size:14px;">Keep it</button></div>
+      </div>
+      <div style="flex:none;padding:12px 16px 28px;border-top:1px solid #1d2129;background:#0a0b0e;"><button style="width:100%;height:48px;background:transparent;color:#e07070;border:1px solid #e07070;border-radius:10px;font-size:15px;font-weight:600;">All Off</button></div>
+    </div>
+  </div>
+
+  <!-- 2h Seams -->
+  <div id="2h" data-screen-label="08 Seams storyboard" style="display:flex;gap:40px;align-items:flex-start;">
+    <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+    <aside style="width:290px;flex:none;display:flex;flex-direction:column;gap:16px;">
+      <span style="align-self:flex-start;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#0c0d10;background:#d4a574;border-radius:4px;padding:2px 7px;font-weight:500;">2h</span>
+      <h2 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Seams storyboard</h2>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">PRIMARY JOB</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Three beats: today, a new strip type, a new controller. The workspace, rails and live stack never change — only the chips and the bead do.</p></div>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">HONESTY RULE</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">A member you haven’t built never appears as a disabled option. The seam is visible to the team here, not to the homeowner.</p></div>
+    </aside>
+    </sc-if>
+    <div style="width:1702px;flex:none;border:1px solid #262c37;border-radius:12px;background:#0c0d10;display:flex;flex-direction:column;gap:28px;padding:36px 40px;box-shadow:0 30px 80px rgba(0,0,0,.45);">
+      <div style="display:flex;align-items:flex-end;gap:24px;"><div style="display:flex;flex-direction:column;gap:6px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:0.14em;color:#7d7870;">SAME LIGHT · SAME RANGES · SAME FOUR ACTIONS</span><h2 style="margin:0;font-size:28px;font-weight:600;letter-spacing:-0.01em;">Members slot in. Nothing forks.</h2></div>
+        <div style="margin-left:auto;display:flex;gap:8px;font-size:13px;"><span style="padding:5px 11px;border:1px solid #262c37;border-radius:7px;">Preview</span><span style="padding:5px 11px;border:1px solid #262c37;border-radius:7px;">Apply</span><span style="padding:5px 11px;border:1px solid #262c37;border-radius:7px;">Blink</span><span style="padding:5px 11px;border:1px solid #e07070;color:#e07070;border-radius:7px;">All Off</span></div></div>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;">
+        <div style="display:flex;flex-direction:column;gap:14px;padding:20px;border:1px solid #d4a574;border-radius:14px;background:#12141a;">
+          <div style="display:flex;align-items:baseline;gap:8px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#d4a574;">1 · TODAY</span></div>
+          <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:18px;font-weight:600;">Eave front</span><div style="margin-left:auto;display:flex;gap:6px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;border:1px solid #d4a574;border-radius:5px;padding:3px 8px;">WLED</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;border:1px solid #d4a574;border-radius:5px;padding:3px 8px;">WS281x RGB</span></div></div>
+          <div style="padding:10px;background:#07080a;border-radius:10px;">{{ seamA }}</div>
+          <span style="color:#c9c3b8;line-height:1.5;font-size:13px;">One controller member, one strip member. Bead: single RGB die.</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px;padding:20px;border:1px dashed #3a4150;border-radius:14px;background:#0e1014;">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9a9488;">2 · LATER — NEW STRIP TYPE</span>
+          <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:18px;font-weight:600;">Porch rail</span><div style="margin-left:auto;display:flex;gap:6px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;border:1px solid #262c37;border-radius:5px;padding:3px 8px;color:#9a9488;">WLED</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;border:1px dashed #d4a574;border-radius:5px;padding:3px 8px;color:#d4a574;">SK6812 RGBW</span></div></div>
+          <div style="padding:10px;background:#07080a;border-radius:10px;">{{ seamB }}</div>
+          <span style="color:#c9c3b8;line-height:1.5;font-size:13px;">Strip member adds a white channel. The bead grows a second die; the colour control gains a White slider. Rails and ranges untouched.</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px;padding:20px;border:1px dashed #3a4150;border-radius:14px;background:#0e1014;">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9a9488;">3 · LATER — NEW CONTROLLER</span>
+          <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:18px;font-weight:600;">Side gate</span><div style="margin-left:auto;display:flex;gap:6px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;border:1px dashed #d4a574;border-radius:5px;padding:3px 8px;color:#d4a574;">Next controller</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;border:1px solid #262c37;border-radius:5px;padding:3px 8px;color:#9a9488;">WS281x RGB</span></div></div>
+          <div style="padding:10px;background:#07080a;border-radius:10px;">{{ seamC }}</div>
+          <span style="color:#c9c3b8;line-height:1.5;font-size:13px;">Appears in the same Lights rack and rail. Discover gains a mechanism; Preview / All Off route through the same stack.</span>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;font-size:13px;">
+        <div style="display:flex;flex-direction:column;gap:4px;padding:14px;border-top:2px solid #d4a574;"><span style="font-weight:500;">Controller</span><span style="color:#9a9488;">talks to hardware · WLED first</span></div>
+        <div style="display:flex;flex-direction:column;gap:4px;padding:14px;border-top:2px solid #d4a574;"><span style="font-weight:500;">Strip type</span><span style="color:#9a9488;">channels, order, bead · WS281x first</span></div>
+        <div style="display:flex;flex-direction:column;gap:4px;padding:14px;border-top:2px solid #3a4150;"><span style="font-weight:500;">Elements</span><span style="color:#9a9488;">one range model · closed</span></div>
+        <div style="display:flex;flex-direction:column;gap:4px;padding:14px;border-top:2px dashed #3a4150;"><span style="font-weight:500;">Picture</span><span style="color:#9a9488;">linear first · other shapes read the same ranges</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;previewColor&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;blue&quot;,&quot;red&quot;,&quot;green&quot;,&quot;amber&quot;],&quot;default&quot;:&quot;blue&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;showAnnotations&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  strip(o) {
+    const h = React.createElement;
+    const pitch = o.pitch || 11, s = pitch / 11, per = o.perRow || o.count;
+    const gut = o.gutter ?? 30, pad = 6, top = o.top ?? 30, bot = o.bottom ?? 22, gap = o.gap ?? 4;
+    const band = 13 * s, rowH = top + band * 2 + bot, rows = Math.ceil(o.count / per);
+    const W = gut + pad * 2 + per * pitch, H = rows * rowH + (rows - 1) * gap;
+    const id = o.id, bri = o.bri ?? 1, fs = o.fs || (s < 0.75 ? 9 : 10.5);
+    const rowTop = r => r * (rowH + gap), cy = r => rowTop(r) + top + band;
+    const xAt = i => gut + pad + (i % per) * pitch, xEnd = i => xAt(i - 1) + pitch;
+    const pieces = (a, b) => { const out = []; let i = a; while (i < b) { const r = Math.floor(i / per); const e = Math.min(b, (r + 1) * per); out.push({ r, a: i, b: e }); i = e; } return out; };
+    const defs = [
+      h('linearGradient', { key: 'pcb', id: `${id}-pcb`, x1: 0, y1: 0, x2: 0, y2: 1 }, h('stop', { offset: '0%', stopColor: '#20242c' }), h('stop', { offset: '45%', stopColor: '#171a21' }), h('stop', { offset: '100%', stopColor: '#0e1015' })),
+    ];
+    const cols = new Set();
+    for (let i = 0; i < o.count; i++) { const c = o.color(i); if (c && c !== 'unknown') cols.add(c); }
+    const gid = c => `${id}-g${c.slice(1)}`;
+    cols.forEach(c => defs.push(h('radialGradient', { key: c, id: gid(c), cx: '50%', cy: '50%', r: '50%' },
+      h('stop', { offset: '0%', stopColor: c, stopOpacity: 0.95 }), h('stop', { offset: '22%', stopColor: c, stopOpacity: 0.6 }), h('stop', { offset: '55%', stopColor: c, stopOpacity: 0.16 }), h('stop', { offset: '100%', stopColor: c, stopOpacity: 0 }))));
+    const k = [], spill = [], bloom = [];
+    for (let r = 0; r < rows; r++) {
+      const n = Math.min(per, o.count - r * per), y = cy(r), bh = 9 * s;
+      k.push(h('rect', { key: 'b' + r, x: gut + pad - 1, y: y - bh / 2, width: n * pitch + 2, height: bh, rx: 1.5, fill: `url(#${id}-pcb)`, stroke: '#2a2e38', strokeWidth: 0.8 }));
+      k.push(h('line', { key: 'c1' + r, x1: gut + pad, y1: y - bh / 2 + 2 * s, x2: gut + pad + n * pitch, y2: y - bh / 2 + 2 * s, stroke: '#8a6848', strokeWidth: 0.7, opacity: 0.5 }));
+      k.push(h('line', { key: 'c2' + r, x1: gut + pad, y1: y + bh / 2 - 2 * s, x2: gut + pad + n * pitch, y2: y + bh / 2 - 2 * s, stroke: '#8a6848', strokeWidth: 0.7, opacity: 0.4 }));
+      if (gut) k.push(h('text', { key: 'ix' + r, x: 0, y: y + 3.5, fontSize: fs, fill: '#7d7870', fontFamily: 'IBM Plex Mono' }, String(r * per).padStart(3, '0')));
+    }
+    const tones = { drift: '#d4a574', error: '#e07070', sel: '#d4a574' };
+    const regs = [];
+    (o.regions || []).forEach((g, gi) => pieces(g.start, g.stop).forEach((p, pi) => {
+      const t = tones[g.kind], y = cy(p.r);
+      regs.push(h('rect', { key: `rg${gi}-${pi}`, x: xAt(p.a) + 0.5, y: y - band * 0.95, width: (p.b - p.a) * pitch - 1, height: band * 1.9, rx: 3,
+        fill: t, fillOpacity: g.kind === 'error' ? 0.18 : g.kind === 'sel' ? 0.06 : 0.07, stroke: t, strokeOpacity: g.kind === 'sel' ? 0.4 : 0.95, strokeWidth: 1, strokeDasharray: g.kind === 'drift' ? '3 2' : null }));
+    }));
+    const railN = k.length;
+    for (let i = 0; i < o.count; i++) {
+      const c = o.color(i), r = Math.floor(i / per), x = xAt(i) + pitch / 2, y = cy(r), lit = c && c !== 'unknown';
+      const bl = 5 * s;
+      if (lit) bloom.push(h('ellipse', { key: 'g' + i, cx: x, cy: y, rx: pitch * 1.25, ry: pitch * 1.45, fill: `url(#${gid(c)})`, opacity: bri }));
+      k.push(h('rect', { key: 'p' + i, x: x - bl / 2, y: y - bl / 2, width: bl, height: bl, rx: bl * 0.18, fill: c === 'unknown' ? '#2a2926' : lit ? '#efe9dc' : '#3e3c37' }));
+      if (o.rgbw) {
+        k.push(h('circle', { key: 'a' + i, cx: x - bl * 0.2, cy: y, r: bl * 0.2, fill: lit ? c : '#141519' }));
+        k.push(h('circle', { key: 'w' + i, cx: x + bl * 0.2, cy: y, r: bl * 0.2, fill: lit ? '#fff4dc' : '#141519' }));
+      } else {
+        k.push(h('circle', { key: 'd' + i, cx: x, cy: y, r: lit ? bl * 0.36 : bl * 0.3, fill: lit ? c : c === 'unknown' ? '#1d1d1f' : '#141519', stroke: lit ? '#ffffff' : null, strokeOpacity: 0.55 * bri, strokeWidth: lit ? bl * 0.12 : 0 }));
+      }
+    }
+    const over = [];
+    (o.declared || []).forEach((sp, si) => {
+      const ps = pieces(sp.start, sp.stop), t = sp.error ? '#e07070' : sp.sel ? '#d4a574' : '#9a9488';
+      ps.forEach((p, pi) => {
+        const y0 = rowTop(p.r) + top - 9, x0 = xAt(p.a) + 1.5, x1 = xEnd(p.b) - 1.5;
+        over.push(h('path', { key: `dp${si}-${pi}`, d: `M${x0} ${y0 + 5}V${y0}H${x1}V${y0 + 5}`, fill: 'none', stroke: t, strokeWidth: sp.sel ? 1.4 : 1 }));
+        if (pi === 0) over.push(h('text', { key: `dt${si}`, x: x0, y: y0 - 5, fontSize: fs + 0.5 },
+          h('tspan', { fontFamily: 'IBM Plex Sans', fontWeight: 500, fill: sp.sel ? '#d4a574' : '#ece7dc' }, sp.label),
+          h('tspan', { fontFamily: 'IBM Plex Mono', fill: sp.error ? '#e07070' : '#7d7870', dx: 6, fontSize: fs }, `${sp.start}–${sp.stop}`)));
+      });
+      if (sp.sel && o.handles) {
+        const f = ps[0], l = ps[ps.length - 1];
+        [[xAt(f.a), f.r], [xEnd(l.b), l.r]].forEach(([hx, hr], hi) => {
+          const y0 = rowTop(hr) + top - 9, col = hi === 1 && sp.error ? '#e07070' : '#d4a574';
+          over.push(h('line', { key: `hl${si}${hi}`, x1: hx, y1: y0, x2: hx, y2: cy(hr) + band, stroke: col, strokeWidth: 1.2 }));
+          over.push(h('circle', { key: `hc${si}${hi}`, cx: hx, cy: y0, r: 5.5, fill: '#0c0d10', stroke: col, strokeWidth: 1.8 }));
+        });
+      }
+    });
+    (o.reported || []).forEach((sp, si) => pieces(sp.start, sp.stop).forEach((p, pi) => {
+      const y1 = cy(p.r) + band + 6, x0 = xAt(p.a) + 1.5, x1 = xEnd(p.b) - 1.5, t = sp.differs ? '#d4a574' : '#3f4552';
+      over.push(h('path', { key: `rp${si}-${pi}`, d: `M${x0} ${y1 - 4}V${y1}H${x1}V${y1 - 4}`, fill: 'none', stroke: t, strokeWidth: 1, strokeDasharray: sp.differs ? '3 2' : null }));
+      if (sp.differs && pi === ps0(sp)) over.push(h('text', { key: `rt${si}`, x: x1, y: y1 + fs + 2, fontSize: fs, fill: '#d4a574', fontFamily: 'IBM Plex Mono', textAnchor: 'end' }, `reports ${sp.start}–${sp.stop}`));
+    }));
+    function ps0(sp) { return pieces(sp.start, sp.stop).length - 1; }
+    return h('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'img', 'aria-label': o.aria || 'LED strip', style: { display: 'block', maxWidth: '100%', height: 'auto', overflow: 'visible' } },
+      h('defs', null, defs),
+      h('g', null, spill), k.slice(0, railN), regs.length ? h('g', null, regs) : null, h('g', null, bloom), k.slice(railN), over);
+  }
+  renderVals() {
+    const map = { blue: ['#4f7dff', 'blue'], red: ['#ff4a3d', 'red'], green: ['#3dff7a', 'green'], amber: ['#ffa000', 'amber'] };
+    const [pc, pname] = map[this.props.previewColor ?? 'blue'] || map.blue;
+    const warm = '#ffc978';
+    const eave = [{ label: 'Left run', start: 0, stop: 120 }, { label: 'Peak', start: 120, stop: 180 }, { label: 'Right run', start: 180, stop: 300 }];
+    const rep = [{ start: 0, stop: 120 }, { start: 120, stop: 180 }, { start: 180, stop: 290, differs: true }];
+    const mini = (id, count, color, pitch, extra = {}) => this.strip(Object.assign({ id, count, pitch, gutter: 0, top: 3, bottom: 3, color }, extra));
+    const live = i => (i >= 120 && i < 180 ? pc : warm);
+    return {
+      showAnnotations: this.props.showAnnotations ?? true,
+      previewHex: pc.toUpperCase(), previewName: pname,
+      railEave: mini('re', 40, () => warm, 4.8, { bri: 0.8 }), railEaveLive: mini('rel', 40, i => (i >= 16 && i < 24 ? pc : warm), 4.8),
+      railPorch: mini('rp', 40, () => null, 4.8), railGarage: mini('rg', 40, () => 'unknown', 4.8),
+      rackEave: this.strip({ id: 'ke', count: 300, perRow: 100, pitch: 6.8, gutter: 0, top: 20, bottom: 4, color: () => warm, bri: 0.8, declared: eave, fs: 9.5 }),
+      rackPorch: this.strip({ id: 'kp', count: 150, perRow: 100, pitch: 6.8, gutter: 0, top: 20, bottom: 4, color: () => null, declared: [{ label: 'Steps', start: 0, stop: 40 }, { label: 'Rail', start: 40, stop: 150 }], fs: 9.5 }),
+      rackGarage: this.strip({ id: 'kg', count: 90, perRow: 100, pitch: 6.8, gutter: 0, top: 20, bottom: 4, color: () => 'unknown', declared: [{ label: 'Door', start: 0, stop: 90 }], fs: 9.5 }),
+      trayNew: mini('tn', 36, () => '#ffa000', 4.8),
+      emptyStrip: mini('em', 16, () => null, 18),
+      candStrip: this.strip({ id: 'cs', count: 60, pitch: 13.4, gutter: 0, top: 4, bottom: 4, color: () => '#ffa000', bri: 0.9 }),
+      candStripPhone: this.strip({ id: 'csp', count: 60, perRow: 30, pitch: 10.4, gutter: 0, top: 4, bottom: 4, color: () => '#ffa000', bri: 0.9 }),
+      inspectStrip: this.strip({ id: 'is', count: 300, perRow: 100, pitch: 8.7, color: () => warm, bri: 0.8, declared: eave, reported: rep, regions: [{ kind: 'drift', start: 290, stop: 300 }] }),
+      inspectStripPhone: this.strip({ id: 'isp', count: 300, perRow: 60, pitch: 5.4, gutter: 18, top: 20, bottom: 14, color: i => (i >= 290 ? null : warm), bri: 0.8, declared: eave, reported: rep, regions: [{ kind: 'drift', start: 290, stop: 300 }], fs: 9 }),
+      editStrip: this.strip({ id: 'ed', count: 300, perRow: 100, pitch: 8.7, color: i => (i >= 290 ? null : warm), bri: 0.8, handles: true,
+        declared: [{ label: 'Left run', start: 0, stop: 120 }, { label: 'Peak', start: 120, stop: 185, sel: true, error: true }, { label: 'Right run', start: 180, stop: 300 }],
+        reported: rep, regions: [{ kind: 'error', start: 180, stop: 185 }, { kind: 'drift', start: 290, stop: 300 }] }),
+      editStripPhone: this.strip({ id: 'edp', count: 300, perRow: 60, pitch: 5.4, gutter: 18, top: 20, bottom: 14, color: i => (i >= 290 ? null : warm), bri: 0.8, declared: eave, reported: rep, regions: [{ kind: 'drift', start: 290, stop: 300 }], fs: 9 }),
+      liveStrip: this.strip({ id: 'lv', count: 300, perRow: 100, pitch: 8.7, color: live, bri: 0.9, top: 30, bottom: 8,
+        declared: [{ label: 'Left run', start: 0, stop: 120 }, { label: 'Peak', start: 120, stop: 180, sel: true }, { label: 'Right run', start: 180, stop: 300 }], regions: [{ kind: 'sel', start: 120, stop: 180 }] }),
+      garageStripPhone: this.strip({ id: 'gp', count: 90, perRow: 45, pitch: 7.2, gutter: 22, top: 22, bottom: 4, color: () => 'unknown', declared: [{ label: 'Door', start: 0, stop: 90 }], fs: 9 }),
+      offStripPhone: this.strip({ id: 'ofp', count: 300, perRow: 50, pitch: 6.4, gutter: 22, top: 4, bottom: 4, color: () => null }),
+      porchStrip: this.strip({ id: 'po', count: 150, perRow: 75, pitch: 11.6, color: () => null, top: 30, bottom: 8, declared: [{ label: 'Steps', start: 0, stop: 40 }, { label: 'Rail', start: 40, stop: 150 }] }),
+      seamA: this.strip({ id: 'sa', count: 40, pitch: 12.4, gutter: 0, top: 4, bottom: 4, color: i => (i >= 14 && i < 26 ? pc : warm) }),
+      seamB: this.strip({ id: 'sb', count: 40, pitch: 12.4, gutter: 0, top: 4, bottom: 4, rgbw: true, color: () => '#ffb070' }),
+      seamC: this.strip({ id: 'sc', count: 40, pitch: 12.4, gutter: 0, top: 4, bottom: 4, color: i => (i < 20 ? warm : '#ff4a3d'), bri: 0.8 }),
+    };
+  }
+}
+</script>
+</body>
+</html>

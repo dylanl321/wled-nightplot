@@ -1,0 +1,20 @@
+{
+  "name": "nightplot-configure",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Nightplot Configure — the configure spine for Lights and Elements.",
+  "packageManager": "pnpm@10.33.3",
+  "scripts": {
+    "dev": "concurrently -k -n web,api -c \"#d4a574,#7ee0d0\" \"pnpm --filter @nightplot/web dev\" \"pnpm --filter @nightplot/server dev\"",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "lint": "pnpm --filter @nightplot/web lint",
+    "proto": "pnpm dlx serve docs/ui -p 43182"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "sharp", "unrs-resolver"]
+  }
+}

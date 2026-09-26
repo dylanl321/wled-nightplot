@@ -1,0 +1,14 @@
+node_modules
+.next
+dist
+coverage
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+.turbo
+.vercel
+uploads
+agent-tools
