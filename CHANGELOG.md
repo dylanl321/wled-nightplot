@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.1 — Discovery uses advertised ports (CONFIG-9)
+
+- SSDP candidates take host and port from LOCATION. No LOCATION → listed as needs host:port, not a fake :80 Add.
+- mDNS uses the SRV service port (including 80 when the service advertised it). `data.port || 80` is gone. An A/AAAA without a service port is needs host:port.
+- An http LOCATION without an explicit port is :80 (URL default), documented here and on Discover. Typed host still means :80.
+- Typed address remains the escape hatch. The local fixture is `127.0.0.1:48210` — Find will not invent that port.
+
 ## 0.7.0 — R6 Safe settings (CONFIG-7)
 
 - Safe settings live on an enrolled Light (Inspect → Safe settings): display name, turn-on-at-boot, boot brightness, boot preset, default transition, global current limit.

@@ -1,7 +1,16 @@
 import { createSocket } from "node:dgram";
-import { parseHostPort, type DiscoverVia, type HostPort } from "@nightplot/shared";
+import { parseHostPort, type DiscoverVia } from "@nightplot/shared";
+import {
+  parseSsdpAdvertisement,
+  resolveMdnsRecords,
+  type MdnsRecordInput,
+} from "./parse.ts";
 
-export type Collected = HostPort & { via: DiscoverVia };
+export type Collected = {
+  hostname: string;
+  port: number | null;
+  via: DiscoverVia;
+};
 
 export type CollectFn = () => Promise<Collected[]>;
 
@@ -35,7 +44,7 @@ function dedupe(rows: Collected[]): Collected[] {
   const seen = new Set<string>();
   const out: Collected[] = [];
   for (const row of rows) {
-    const key = `${row.hostname.toLowerCase()}:${row.port}:${row.via}`;
+    const key = `${row.hostname.toLowerCase()}:${row.port ?? "none"}:${row.via}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(row);
@@ -51,7 +60,7 @@ async function collectMdns(ms: number): Promise<Collected[]> {
     const create = mod.default;
     if (typeof create !== "function") return [];
     const browser = create();
-    const found: Collected[] = [];
+    const records: MdnsRecordInput[] = [];
     return await new Promise((resolve) => {
       const finish = () => {
         try {
@@ -59,26 +68,13 @@ async function collectMdns(ms: number): Promise<Collected[]> {
         } catch {
           /* ignore */
         }
-        resolve(found);
+        resolve(
+          resolveMdnsRecords(records).map((hint) => ({ ...hint, via: "mdns" })),
+        );
       };
       const timer = setTimeout(finish, ms);
       browser.on("response", (res) => {
-        const records = [...(res.answers ?? []), ...(res.additionals ?? [])];
-        for (const rec of records) {
-          if (rec.type === "SRV" && rec.data && typeof rec.data === "object") {
-            const data = rec.data as { target?: string; port?: number };
-            if (data.target) {
-              found.push({
-                hostname: String(data.target).replace(/\.$/, ""),
-                port: data.port || 80,
-                via: "mdns",
-              });
-            }
-          }
-          if ((rec.type === "A" || rec.type === "AAAA") && typeof rec.data === "string") {
-            found.push({ hostname: rec.data, port: 80, via: "mdns" });
-          }
-        }
+        records.push(...(res.answers ?? []), ...(res.additionals ?? []));
       });
       try {
         browser.query({
@@ -95,14 +91,12 @@ async function collectMdns(ms: number): Promise<Collected[]> {
 }
 
 type MdnsBrowser = {
-  on: (event: "response", fn: (res: { answers?: MdnsRec[]; additionals?: MdnsRec[] }) => void) => void;
+  on: (
+    event: "response",
+    fn: (res: { answers?: MdnsRecordInput[]; additionals?: MdnsRecordInput[] }) => void,
+  ) => void;
   query: (q: { questions: { name: string; type: string }[] }) => void;
   destroy: () => void;
-};
-
-type MdnsRec = {
-  type?: string;
-  data?: unknown;
 };
 
 async function collectSsdp(ms: number): Promise<Collected[]> {
@@ -128,10 +122,12 @@ async function collectSsdp(ms: number): Promise<Collected[]> {
       clearTimeout(timer);
       finish();
     });
-    socket.on("message", (_msg, rinfo) => {
-      if (rinfo?.address) {
-        found.push({ hostname: rinfo.address, port: 80, via: "ssdp" });
-      }
+    socket.on("message", (msg, rinfo) => {
+      const hint = parseSsdpAdvertisement(
+        Buffer.isBuffer(msg) ? msg.toString("utf8") : String(msg),
+        rinfo?.address ?? "",
+      );
+      if (hint?.hostname) found.push({ ...hint, via: "ssdp" });
     });
     socket.bind(0, () => {
       try {

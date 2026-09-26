@@ -41,6 +41,10 @@ describe("discovery catalog", () => {
     expect(
       listDiscoveryMechanisms().every((entry) => entry.implementation === "registered"),
     ).toBe(true);
+    const notes = listDiscoveryMechanisms().map((entry) => entry.notes).join(" ");
+    expect(notes).toMatch(/LOCATION/);
+    expect(notes).toMatch(/SRV/);
+    expect(notes).toMatch(/escape hatch/);
   });
 });
 

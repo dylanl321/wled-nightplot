@@ -7,6 +7,7 @@ export type AddressDecision =
   | { ok: true; target: HostPort }
   | { ok: false; reason: string; reasonCode: "disallowed-address" };
 
+/** Typed host with no port, and http URLs without an explicit port. Discovery must not invent this. */
 const DEFAULT_PORT = 80;
 
 const LOCAL_SUFFIXES = [".local", ".lan", ".home.arpa", ".internal"];

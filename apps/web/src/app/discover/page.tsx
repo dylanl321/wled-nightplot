@@ -42,7 +42,7 @@ export default async function DiscoverPage() {
           </h1>
           <p className="text-muted-foreground">
             Looking on this link. Controllers appear as each one answers. Type
-            an address if the find comes back empty.
+            host:port if find has no port or the list comes back empty.
           </p>
         </div>
         <DiscoverPanel
