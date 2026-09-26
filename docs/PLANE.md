@@ -34,8 +34,12 @@ Gaps (not the next R-slice; do not fold into an R-ticket):
 
 | Issue | Title (as filed) |
 | --- | --- |
+| CONFIG-8 | Doc gap — prototype v1 link + support.js rebuild path |
 | CONFIG-9 | SSDP/mDNS discovery hardcodes port 80 |
+| CONFIG-10 | GET /api/lights re-probes every enrolled Light (needs-human) |
 | CONFIG-11 | Metal name lag after Safe settings rename (`/json/info` vs `/json/cfg`) |
+| CONFIG-12 | SSDP ST filter may miss WLED boxes |
+| CONFIG-13 | mDNS SRV-only .local may not resolve in Node |
 
 Issue id for CONFIG-1: `298cb9ff-bacb-4c20-83c6-54d5ba8f5747`.  
 Issue id for CONFIG-2: `70d76b1b-ba37-4181-8e90-138cdddb3b57`.  
@@ -44,8 +48,12 @@ Issue id for CONFIG-4: `59cd7b64-86a6-49e6-bafe-400b6cc3037f`.
 Issue id for CONFIG-5: `94623fba-a991-4240-a0dc-29dae5e2da7b`.  
 Issue id for CONFIG-6: `8425ad37-8a35-42d1-81c8-5f7306d833bb`.  
 Issue id for CONFIG-7: `2c54b44a-5342-4819-9217-ce23177eba4f`.  
+Issue id for CONFIG-8: `6bb9cba3-f49d-48e3-90e5-bbc71a343836`.  
 Issue id for CONFIG-9: `8dc7e136-2149-4dc1-9940-fd01a9202350`.  
-Issue id for CONFIG-11: `3ab014bd-a807-4cf6-8edb-1dd9a75950c1`.
+Issue id for CONFIG-10: `a8bb769e-4732-4f28-90c1-12a0b5bb318d`.  
+Issue id for CONFIG-11: `3ab014bd-a807-4cf6-8edb-1dd9a75950c1`.  
+Issue id for CONFIG-12: `114c5135-9689-4b08-b80f-7cdfae017695`.  
+Issue id for CONFIG-13: `6f028d65-c85e-4649-8a61-595c2b32ea31`.
 
 ## States
 
