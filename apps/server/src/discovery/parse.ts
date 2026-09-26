@@ -28,15 +28,16 @@ export function parseLocationUrl(raw: string): DiscoveryHint | null {
   if (!trimmed) return null;
   try {
     const url = new URL(trimmed);
-    if (!url.hostname) return null;
+    const hostname = url.hostname.replace(/^\[|\]$/g, "");
+    if (!hostname) return null;
     if (url.port) {
       const port = validPort(url.port);
       if (port == null) return null;
-      return { hostname: url.hostname, port };
+      return { hostname, port };
     }
-    if (url.protocol === "https:") return { hostname: url.hostname, port: 443 };
-    if (url.protocol === "http:") return { hostname: url.hostname, port: 80 };
-    return { hostname: url.hostname, port: null };
+    if (url.protocol === "https:") return { hostname, port: 443 };
+    if (url.protocol === "http:") return { hostname, port: 80 };
+    return { hostname, port: null };
   } catch {
     return null;
   }
