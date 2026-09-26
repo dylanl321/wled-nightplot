@@ -230,6 +230,55 @@ describe("discover + connect", () => {
     expect(store.load()).toEqual([]);
   });
 
+  it("probes a non-80 discovered host and shows host:port", async () => {
+    const probed: { hostname: string; port: number }[] = [];
+    const { app } = testApp({
+      collect: async () => [{ hostname: "127.0.0.1", port: 48210, via: "ssdp" }],
+      probe: async (target) => {
+        probed.push(target);
+        return { kind: "found", snapshot };
+      },
+    });
+    const res = await app.request("/api/discover", { method: "POST" });
+    const body = (await res.json()) as {
+      candidates: { status: string; displayHost: string; port: number | null }[];
+    };
+    expect(probed).toEqual([{ hostname: "127.0.0.1", port: 48210 }]);
+    expect(body.candidates[0]).toMatchObject({
+      status: "found",
+      displayHost: "127.0.0.1:48210",
+      port: 48210,
+    });
+  });
+
+  it("does not probe when find has a host but no port", async () => {
+    let probed = 0;
+    const { app } = testApp({
+      collect: async () => [{ hostname: "192.168.1.50", port: null, via: "ssdp" }],
+      probe: async () => {
+        probed += 1;
+        return { kind: "found", snapshot };
+      },
+    });
+    const res = await app.request("/api/discover", { method: "POST" });
+    const body = (await res.json()) as {
+      candidates: {
+        status: string;
+        reasonCode: string | null;
+        displayHost: string;
+        port: number | null;
+      }[];
+    };
+    expect(probed).toBe(0);
+    expect(body.candidates[0]).toMatchObject({
+      status: "rejected",
+      reasonCode: "missing-port",
+      displayHost: "192.168.1.50",
+      port: null,
+    });
+    expect(body.candidates[0]?.status).not.toBe("found");
+  });
+
   it("enrolls a Light once and refuses a duplicate host", async () => {
     const { app, store } = testApp();
     const first = await app.request("/api/lights", {

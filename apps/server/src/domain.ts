@@ -169,12 +169,33 @@ export function refusedRow(raw: string, via: DiscoverVia, now: string, reason: s
   return {
     key: raw.trim().toLowerCase() || "refused",
     hostname: raw.trim(),
-    port: 0,
+    port: null,
     displayHost: raw.trim(),
     via,
     status: "rejected",
     reason,
     reasonCode: "disallowed-address",
+    name: null,
+    ledCount: null,
+    firmware: null,
+    mac: null,
+    on: null,
+    bead: null,
+    foundAt: now,
+  };
+}
+
+export function needsPortRow(hostname: string, via: DiscoverVia, now: string): DiscoverRow {
+  const host = hostname.trim();
+  return {
+    key: `${host.toLowerCase()}:needs-port:${via}`,
+    hostname: host,
+    port: null,
+    displayHost: host,
+    via,
+    status: "rejected",
+    reason: "Find did not report a port. Type host:port — typed address is the way in.",
+    reasonCode: "missing-port",
     name: null,
     ledCount: null,
     firmware: null,

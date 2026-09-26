@@ -30,13 +30,20 @@ CONFIG tickets are serial. R0 is skeleton only. Do not start the next slice in t
 | CONFIG-6 | R5 — Manage a few + All Off only |
 | CONFIG-7 | R6 — Safe settings (optional) |
 
+Gaps (not the next R-slice; do not fold into an R-ticket):
+
+| Issue | Title (as filed) |
+| --- | --- |
+| CONFIG-9 | SSDP/mDNS discovery hardcodes port 80 |
+
 Issue id for CONFIG-1: `298cb9ff-bacb-4c20-83c6-54d5ba8f5747`.  
 Issue id for CONFIG-2: `70d76b1b-ba37-4181-8e90-138cdddb3b57`.  
 Issue id for CONFIG-3: `d2a9a037-4b96-4f86-b6b1-3141a0a9bb8f`.  
 Issue id for CONFIG-4: `59cd7b64-86a6-49e6-bafe-400b6cc3037f`.  
 Issue id for CONFIG-5: `94623fba-a991-4240-a0dc-29dae5e2da7b`.  
 Issue id for CONFIG-6: `8425ad37-8a35-42d1-81c8-5f7306d833bb`.  
-Issue id for CONFIG-7: `2c54b44a-5342-4819-9217-ce23177eba4f`.
+Issue id for CONFIG-7: `2c54b44a-5342-4819-9217-ce23177eba4f`.  
+Issue id for CONFIG-9: `8dc7e136-2149-4dc1-9940-fd01a9202350`.
 
 ## States
 

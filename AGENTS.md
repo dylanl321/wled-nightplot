@@ -30,6 +30,8 @@ One code basis. Do not fork the Lights / Elements / live stack per vendor or str
 | Strip / driver | WS281x | `packages/shared/src/strip/` |
 | Discovery | mDNS / SSDP / address probe | `packages/shared/src/discovery/` |
 
+Find must use an advertised port (SSDP LOCATION, mDNS SRV) or leave the row as needs host:port. Do not invent `:80` so a non-80 WLED looks addable.
+
 New controllers or strip types register a member. They do not rewrite the rack.
 
 Layout:

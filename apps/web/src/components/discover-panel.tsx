@@ -2,7 +2,7 @@
 
 import type { DiscoverRow, LightView } from "@nightplot/shared";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { MiniStrip } from "@/components/mini-strip";
 import { Button } from "@/components/ui/button";
 import { postJson } from "@/lib/api";
@@ -20,6 +20,7 @@ export function DiscoverPanel({
   const [busy, setBusy] = useState<"scan" | "probe" | "add" | "blink" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const addressRef = useRef<HTMLInputElement>(null);
 
   const found = useMemo(
     () => rows.filter((row) => row.status === "found"),
@@ -110,7 +111,8 @@ export function DiscoverPanel({
         <p className="text-[15px] leading-6 text-[#c9c3b8]">
           Candidates arrive as each one answers. Add fails closed — a snapshot
           that can’t be read saves nothing. Public addresses are refused before
-          a probe.
+          a probe. Find only offers Add when the box advertised a port
+          (SSDP LOCATION or mDNS SRV). No port → type host:port.
         </p>
         <Button
           type="button"
@@ -146,7 +148,9 @@ export function DiscoverPanel({
                 className={`font-mono text-xs ${
                   row.reasonCode === "disallowed-address"
                     ? "text-destructive"
-                    : row.reasonCode === "probe-failed" || row.reasonCode === "not-wled"
+                    : row.reasonCode === "missing-port" ||
+                        row.reasonCode === "probe-failed" ||
+                        row.reasonCode === "not-wled"
                       ? "text-primary"
                       : "text-muted-foreground"
                 }`}
@@ -156,23 +160,37 @@ export function DiscoverPanel({
               <span className="text-sm text-[#c9c3b8]">
                 {row.name ?? row.reason ?? row.status}
               </span>
-              <span
-                className={`text-xs ${
-                  row.status === "already-added"
-                    ? "text-quiet"
+              {row.reasonCode === "missing-port" ? (
+                <button
+                  type="button"
+                  className="justify-self-start text-xs text-primary underline-offset-2 hover:underline md:justify-self-end"
+                  disabled={busy !== null}
+                  onClick={() => {
+                    setAddress(`${row.hostname}:`);
+                    setNotice(null);
+                    setInfo(null);
+                    addressRef.current?.focus();
+                  }}
+                >
+                  Type host:port
+                </button>
+              ) : (
+                <span
+                  className={`text-xs ${
+                    row.status === "already-added"
+                      ? "text-quiet"
+                      : row.reasonCode === "disallowed-address"
+                        ? "text-destructive"
+                        : "text-primary"
+                  }`}
+                >
+                  {row.status === "already-added"
+                    ? "Already added"
                     : row.reasonCode === "disallowed-address"
-                      ? "text-destructive"
-                      : "text-primary"
-                }`}
-              >
-                {row.status === "already-added"
-                  ? "Already added"
-                  : row.reasonCode === "disallowed-address"
-                    ? "Refused"
-                    : row.reasonCode === "not-wled"
-                      ? "Probe failed"
+                      ? "Refused"
                       : "Probe failed"}
-              </span>
+                </span>
+              )}
             </div>
           ))}
         </div>
@@ -184,6 +202,7 @@ export function DiscoverPanel({
       >
         <span className="font-medium">Type an address</span>
         <input
+          ref={addressRef}
           value={address}
           onChange={(event) => setAddress(event.target.value)}
           placeholder="host or host:port"
@@ -207,7 +226,9 @@ export function DiscoverPanel({
           {busy === "add" ? "Adding…" : "Check and add"}
         </Button>
         <p className="text-xs leading-5 text-quiet">
-          Some networks hide mDNS. An address always works; host:port too.
+          Some networks hide mDNS. Typed address is the escape hatch — host
+          alone means :80; non-80 boxes need host:port. The local fixture is
+          127.0.0.1:48210.
         </p>
       </div>
 

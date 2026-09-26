@@ -46,6 +46,7 @@ import {
   lightDetail,
   lightFromSnapshot,
   markUnreachable,
+  needsPortRow,
   refusedRow,
   rowFromProbe,
 } from "./domain.ts";
@@ -112,6 +113,10 @@ export function createApp(deps: AppDeps) {
     const rows: DiscoverRow[] = [];
 
     for (const item of collected) {
+      if (item.port == null) {
+        rows.push(needsPortRow(item.hostname, item.via, now));
+        continue;
+      }
       const decision = decideProbeAddress(
         item.port === 80 ? item.hostname : `${item.hostname}:${item.port}`,
       );

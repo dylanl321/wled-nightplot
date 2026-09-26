@@ -19,14 +19,15 @@ export type DiscoverReasonCode =
   | "disallowed-address"
   | "probe-failed"
   | "not-wled"
-  | "already-added";
+  | "already-added"
+  | "missing-port";
 
 export type DiscoverStatus = "found" | "rejected" | "already-added";
 
 export type DiscoverRow = {
   key: string;
   hostname: string;
-  port: number;
+  port: number | null;
   displayHost: string;
   via: DiscoverVia;
   status: DiscoverStatus;
