@@ -314,7 +314,7 @@ export function StripProvisionPanel({
 
       {failed ? (
         <div className="flex flex-col gap-2 rounded-[14px] border border-[#5a2f33] bg-[#1a1113] p-4">
-          <span className="text-[16px] font-semibold text-destructive">Apply didn’t stick</span>
+          <span className="text-[16px] font-semibold text-destructive">{result.message}</span>
           <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[13px]">
             <span className="text-muted-foreground">Sent</span>
             <span className="font-mono">
@@ -329,7 +329,6 @@ export function StripProvisionPanel({
                 : ""}
             </span>
           </div>
-          <p className="text-[13px] text-destructive">{result.message}</p>
           <p className="text-[12px] text-primary">{result.caption}</p>
         </div>
       ) : null}
