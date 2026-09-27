@@ -22,6 +22,7 @@ import {
 } from "@nightplot/shared";
 import {
   previewWrite,
+  restoreOnField,
   restoreWriteFromSnapshot,
   type ReadLiveFn,
   type WriteStateFn,
@@ -236,7 +237,7 @@ function restoreBody(restore: LiveRestoreSnapshot, ledCount: number) {
       ? restore.segments
       : [{ start: 0, stop: ledCount, color }];
   return {
-    on: restore.on ?? true,
+    ...restoreOnField(restore.on),
     bri: restore.brightness ?? 128,
     seg: segs.map((seg) => ({
       start: seg.start,
