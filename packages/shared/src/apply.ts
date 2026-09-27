@@ -1,4 +1,4 @@
-import type { LiveSessionKind } from "./live.ts";
+import { parseHexColor, type LiveSessionKind } from "./live.ts";
 import type { RangeSpan } from "./range.ts";
 
 export type AppliedRange = {
@@ -40,11 +40,26 @@ export type ReaddressDecision =
   | { ok: true; sameMac: boolean }
   | { ok: false; error: "mac-mismatch" | "mac-unknown"; message: string };
 
+/** Fail-closed Apply copy when the snapshot did not name a colour. */
+export const APPLY_UNKNOWN_COLOUR_REASON =
+  "Colour is unknown. Apply will not invent a look.";
+
+/**
+ * A colour Apply may write. Info-only / missing / non-hex is unknown —
+ * never treat that as `#ffa000`.
+ */
+export function knownApplyColor(color: string | null | undefined): string | null {
+  if (!color) return null;
+  return parseHexColor(color);
+}
+
 export function applyRefuseReason(input: {
   reachable: boolean;
   issueMessage?: string | null;
   elementCount: number;
   busyKind?: LiveSessionKind | null;
+  /** Live snapshot colour. Missing or non-hex refuses — never invent `#ffa000`. */
+  segmentColor?: string | null;
 }): string | null {
   if (!input.reachable) {
     return "This Light hasn’t answered. Refresh or re-address it first.";
@@ -57,6 +72,9 @@ export function applyRefuseReason(input: {
   }
   if (input.issueMessage) return input.issueMessage;
   if (input.elementCount < 1) return "Declare at least one Element first.";
+  if (!knownApplyColor(input.segmentColor)) {
+    return APPLY_UNKNOWN_COLOUR_REASON;
+  }
   return null;
 }
 

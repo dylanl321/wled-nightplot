@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { WledSnapshot } from "@nightplot/shared";
 import {
+  applyRangesWrite,
   restoreBriField,
   restoreColField,
   restoreOnField,
@@ -94,5 +95,26 @@ describe("restoreWriteFromSnapshot", () => {
     expect(write.bri).toBe(128);
     expect(write.seg).toEqual([{ start: 0, stop: 60 }]);
     expect(write.seg?.[0]).not.toHaveProperty("col");
+  });
+});
+
+describe("applyRangesWrite", () => {
+  it("writes a known colour — does not default to #ffa000", () => {
+    const write = applyRangesWrite([{ start: 0, stop: 24 }], 1, "#4f7dff");
+    expect(write.seg?.[0]).toMatchObject({
+      id: 0,
+      start: 0,
+      stop: 24,
+      col: [[79, 125, 255]],
+    });
+    expect(write.seg?.[1]).toMatchObject({ id: 1, start: 0, stop: 0, col: [[79, 125, 255]] });
+    expect(JSON.stringify(write)).not.toContain("255,160,0");
+  });
+
+  it("omits col when colour is not a hex — never invents #ffa000", () => {
+    const write = applyRangesWrite([{ start: 0, stop: 24 }], 0, "");
+    expect(write.seg?.[0]).toEqual({ id: 0, start: 0, stop: 24 });
+    expect(write.seg?.[0]).not.toHaveProperty("col");
+    expect(JSON.stringify(write)).not.toContain("255,160,0");
   });
 });

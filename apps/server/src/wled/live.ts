@@ -145,20 +145,25 @@ export function restoreWriteFromSnapshot(snapshot: WledSnapshot): WledStateWrite
   });
 }
 
+/**
+ * Apply range write. Colour is only attached when it is a known hex —
+ * never `null → #ffa000`. Apply itself refuses unknown colour before this
+ * runs. Preview is not Apply.
+ */
 export function applyRangesWrite(
   ranges: { start: number; stop: number }[],
   previousSegmentCount: number,
   color: string,
 ): WledStateWrite {
-  const rgb = hexToTriple(color);
+  const col = restoreColField(color);
   const seg: NonNullable<WledStateWrite["seg"]> = ranges.map((range, id) => ({
     id,
     start: range.start,
     stop: range.stop,
-    col: [rgb],
+    ...col,
   }));
   for (let id = ranges.length; id < previousSegmentCount; id += 1) {
-    seg.push({ id, start: 0, stop: 0, col: [rgb] });
+    seg.push({ id, start: 0, stop: 0, ...col });
   }
   return { seg };
 }

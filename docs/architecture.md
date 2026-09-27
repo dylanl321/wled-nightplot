@@ -58,7 +58,7 @@ Strip Apply (`buildProvisionWrite`) writes WLED `order: 0` (GRBW on SK6812 RGBW;
 | Store | `FileLightsStore` | `apps/server/src/store/lights-store.ts` |
 | LED products | `FileLedProductsStore` | `apps/server/src/store/led-products-store.ts` |
 | Probe | `createWledProbe` | `apps/server/src/wled/client.ts` (`TIMEOUT_MS` 3000). All Off unknown-row copy is `allOffNoAnswerReason` — elapsed or generic refuse, not a claimed 3 s. Delete unknown-controller copy is `deleteUnknownControllerReason` — elapsed or generic refuse, not “in time” |
-| Live write / `/json/live` | `createWledWriter`, `createWledLiveReader`, `restoreOnField`, `restoreBriField`, `restoreColField` | `apps/server/src/wled/live.ts`. Preview / Blink restore omits `on` / `bri` / segment `col` when the snapshot did not know them — never `null → true`, `null → 128`, or `null → #ffa000`. Preview is not Apply. |
+| Live write / `/json/live` | `createWledWriter`, `createWledLiveReader`, `restoreOnField`, `restoreBriField`, `restoreColField`, `applyRangesWrite` | `apps/server/src/wled/live.ts`. Preview / Blink restore omits `on` / `bri` / segment `col` when the snapshot did not know them — never `null → true`, `null → 128`, or `null → #ffa000`. Apply refuses unknown colour (`applyRefuseReason` / `knownApplyColor`) — never `null → #ffa000`. Preview is not Apply. |
 | cfg | `createWledCfgReader`, `createWledCfgWriter` | `apps/server/src/wled/cfg.ts` |
 | Live sessions | `createLiveEngine` | `apps/server/src/live/engine.ts` |
 | Find collect | `createCollector` | `apps/server/src/discovery/collect.ts` |

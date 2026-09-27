@@ -7,8 +7,10 @@ import {
   allOffSummary,
   applyCaption,
   applyOutcome,
+  APPLY_UNKNOWN_COLOUR_REASON,
   applyRefuseReason,
   applyUnknownSegments,
+  knownApplyColor,
   buildDeleteChecks,
   canDelete,
   catalogSnapshot,
@@ -372,14 +374,19 @@ export function createApp(deps: AppDeps) {
       return c.json({ error: "invalid", message: "Send { elements: [{ label, start, stop }] }." }, 400);
     }
     const issues = validateDeclaredRanges(drafts, light.ledCount);
+    const color = knownApplyColor(snap?.segmentColor);
     const reason = applyRefuseReason({
       reachable: light.reachability === "online" && snap !== null,
       issueMessage: issues[0]?.message ?? null,
       elementCount: drafts.length,
       busyKind: live.get(light.id)?.kind ?? null,
+      segmentColor: color,
     });
-    if (reason) {
-      return c.json({ error: "refused", message: reason }, 422);
+    if (reason || !color) {
+      return c.json(
+        { error: "refused", message: reason ?? APPLY_UNKNOWN_COLOUR_REASON },
+        422,
+      );
     }
     const sent = drafts.map((row) => ({
       label: row.label.trim() || "Untitled",
@@ -389,7 +396,7 @@ export function createApp(deps: AppDeps) {
     const dest: HostPort = { hostname: light.hostname, port: light.port };
     const written = await deps.write(
       dest,
-      applyRangesWrite(sent, snap?.segments?.length ?? 0, snap?.segmentColor ?? "#ffa000"),
+      applyRangesWrite(sent, snap?.segments?.length ?? 0, color),
     );
     if (!written) {
       return c.json(
