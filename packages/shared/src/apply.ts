@@ -21,10 +21,15 @@ export type ApplyResult = {
   matched: boolean;
   rows: ApplyRow[];
   sent: AppliedRange[];
-  read: RangeSpan[];
+  /** Known reread spans. `null` when segments were unknown — not an empty list. */
+  read: RangeSpan[] | null;
   message: string;
   caption: string;
 };
+
+/** Fail-closed Apply copy when the reread did not report `state.seg`. */
+export const APPLY_UNKNOWN_SEGMENTS_MESSAGE =
+  "Wrote, but segments are unknown. Not treating as success.";
 
 export type ReaddressStep = {
   done: boolean;
@@ -109,11 +114,38 @@ export function applyRows(sent: AppliedRange[], read: RangeSpan[]): ApplyRow[] {
   return rows;
 }
 
-export function applyOutcome(
+/**
+ * Honest Apply result when reread `segments` is unknown (`null`).
+ * Does not call `applyOutcome` and does not invent a match against `[]`.
+ */
+export function applyUnknownSegments(
   sent: AppliedRange[],
-  read: RangeSpan[],
   source: "fixture" | "controller",
 ): ApplyResult {
+  return {
+    status: "failed",
+    matched: false,
+    rows: [],
+    sent,
+    read: null,
+    message: APPLY_UNKNOWN_SEGMENTS_MESSAGE,
+    caption: applyCaption(source),
+  };
+}
+
+/**
+ * Compare a known reread. Pass `null` only when segments are unknown —
+ * that refuses (does not treat unknown as empty). A known empty `[]`
+ * still compares as empty.
+ */
+export function applyOutcome(
+  sent: AppliedRange[],
+  read: RangeSpan[] | null,
+  source: "fixture" | "controller",
+): ApplyResult {
+  if (read === null) {
+    return applyUnknownSegments(sent, source);
+  }
   const matched = spansMatch(sent, read);
   return {
     status: matched ? "matched" : "mismatch",

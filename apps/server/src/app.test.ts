@@ -1108,6 +1108,89 @@ describe("apply + re-address", () => {
     expect(store.findById(id)?.lastSnapshot).toBeFalsy();
   });
 
+  it("does not treat unknown reread segments as empty before applyOutcome", async () => {
+    let written = false;
+    const { app, store } = testApp({
+      write: async () => {
+        written = true;
+        return true;
+      },
+      probe: async () => ({
+        kind: "found" as const,
+        snapshot: written ? { ...snapshot, segments: null } : snapshot,
+      }),
+    });
+    const id = await enroll(app);
+    const detail = (await (await app.request(`/api/lights/${id}`)).json()) as {
+      elements: { id: string; label: string; start: number; stop: number }[];
+    };
+    const res = await app.request(`/api/lights/${id}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: detail.elements }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as {
+      error: string;
+      message: string;
+      apply: {
+        matched: boolean;
+        status: string;
+        message: string;
+        read: { start: number; stop: number }[] | null;
+        rows: unknown[];
+      };
+    };
+    expect(written).toBe(true);
+    expect(body.error).toBe("reread-unknown-segments");
+    expect(body.apply.matched).toBe(false);
+    expect(body.apply.status).toBe("failed");
+    expect(body.apply.status).not.toBe("matched");
+    expect(body.apply.status).not.toBe("mismatch");
+    expect(body.apply.read).toBeNull();
+    expect(body.apply.rows).toEqual([]);
+    expect(body.apply.message).toMatch(/segments are unknown/);
+    expect(body.apply.message).not.toMatch(/didn’t stick/);
+    expect(body.message).toMatch(/segments are unknown/);
+    expect(store.findById(id)?.lastSnapshot).toBeFalsy();
+  });
+
+  it("still compares a known empty reread seg list as empty — distinct from unknown", async () => {
+    let written = false;
+    const { app, store } = testApp({
+      write: async () => {
+        written = true;
+        return true;
+      },
+      probe: async () => ({
+        kind: "found" as const,
+        snapshot: written ? { ...snapshot, segments: [] } : snapshot,
+      }),
+    });
+    const id = await enroll(app);
+    const detail = (await (await app.request(`/api/lights/${id}`)).json()) as {
+      elements: { id: string; label: string; start: number; stop: number }[];
+    };
+    const res = await app.request(`/api/lights/${id}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: detail.elements }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as {
+      error?: string;
+      apply: { matched: boolean; status: string; message: string; read: unknown };
+    };
+    expect(written).toBe(true);
+    expect(body.error).not.toBe("reread-unknown-segments");
+    expect(body.apply.matched).toBe(false);
+    expect(body.apply.status).toBe("mismatch");
+    expect(body.apply.read).toEqual([]);
+    expect(body.apply.message).toMatch(/didn’t stick/);
+    expect(body.apply.message).not.toMatch(/segments are unknown/);
+    expect(store.findById(id)?.lastSnapshot).toBeFalsy();
+  });
+
   it("refuses Apply when offline or the draft is invalid", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
     const file = join(dir, "lights.json");

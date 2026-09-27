@@ -8,6 +8,7 @@ import {
   applyCaption,
   applyOutcome,
   applyRefuseReason,
+  applyUnknownSegments,
   buildDeleteChecks,
   canDelete,
   catalogSnapshot,
@@ -429,8 +430,22 @@ export function createApp(deps: AppDeps) {
     }
     const liveRead = await live.read({ ...light, reachability: "online" });
     const source = liveRead?.source === "fixture" ? "fixture" : "controller";
-    const outcome = applyOutcome(sent, reread.snapshot.segments ?? [], source);
+    const read = reread.snapshot.segments;
     const next = lightFromSnapshot(dest, reread.snapshot, nowIso(), light);
+    if (read === null) {
+      const outcome = applyUnknownSegments(sent, source);
+      deps.store.replace(next);
+      return c.json(
+        {
+          error: "reread-unknown-segments",
+          message: outcome.message,
+          ...(await decorateDetail(next, reread.snapshot)),
+          apply: outcome,
+        },
+        409,
+      );
+    }
+    const outcome = applyOutcome(sent, read, source);
     if (outcome.matched) {
       next.lastSnapshot = reread.snapshot;
       next.lastSnapshotAt = next.lastSeenAt;
