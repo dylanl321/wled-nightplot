@@ -15,4 +15,4 @@ labels: ""
 
 ## Out of scope
 
-Docker / GHCR is CONFIG-45. Playback / mapping / scheduling are not this product.
+One gap per issue. Do not bundle the next R-slice.

@@ -1,25 +1,32 @@
 # Nightplot Configure
 
-Configure spine for home LED strips. Discover a controller, enroll it as a **Light**, describe **Elements** as ranges on the strip, Preview live, then Apply. All Off has a home.
+Nightplot Configure is a LAN utility for home LED strips on WLED. Find a controller on the network, enroll it as a **Light**, describe **Elements** as ranges on the strip, **Preview** colour on the beads, then **Apply**. **Blink** identifies a box; **All Off** sits on the rack.
 
-This is not a lighting control room. It does not host playback, mapping, or scheduling. It does not ship Yard, Tonight, Studio, Scene, Show, Schedule, or Devices-as-noun chrome.
+It is early software for a home network. There is no authentication and no TLS. Docker packages the same local/LAN run.
 
-The product is **not production-ready**. This repo has production-*shaped* documentation, governance, and a Docker image builder. That image is **not production certified**.
+GitHub: [`dylanl321/wled-nightplot`](https://github.com/dylanl321/wled-nightplot) on `main`. The package name is `nightplot-configure`.
 
-GitHub today is `dylanl321/wled-nightplot` (`main`). The package name is `nightplot-configure`.
+## Words
 
-## Honesty
+- A **Light** is one enrolled controller and one strip.
+- An **Element** is a contiguous inclusive–exclusive range on that strip.
+- **Preview** writes a temporary colour and brightness, then restores (or cancels without restore).
+- **Apply** writes declared ranges (or Strip / Safe fields) and re-reads the controller. Success only when the readback matches.
+- **Blink** pulses a Light or a Find candidate so you can see which box it is.
+- **All Off** cancels live sessions without restoring, then powers off enrolled Lights.
 
-- Unreachable beads are grey, with last-seen copy. Never the last colour.
-- Preview is not Apply.
-- All Off cancels without restoring.
-- Delete is a check that runs, not an “I understand” override on unknown.
-- A registered catalog member is not Hardware Done. A stub endpoint must say it sent nothing.
-- The local WLED-shaped fixture is a software stub — **not Hardware Done**.
+## How it behaves
 
-R6 wires the small Safe settings set on an enrolled Light, gated by the firmware’s `/json/cfg` fingerprint. Unsupported firmware is refused — nothing is written. After a display-name write, the rack title uses the `/json/cfg` name even when metal `/json/info` still lags until reboot.
+- An unreachable Light stays **grey**, with last-seen copy. The rack never shows a stored last colour.
+- Preview is temporary. Apply is what persists on the controller.
+- All Off cancels without restoring the previous look.
+- **Remove this Light** runs checks (Elements, live sessions, controller state). Unknown is not safe; there is no “I understand” override.
+- Safe settings and first-time Strip provision write only understood, fingerprinted fields. Unsupported firmware is refused — nothing is written.
+- The local WLED-shaped fixture is a software stub for development. A green readback there is not proof that a real strip passed.
 
-CONFIG-40 adds first-time **Strip** provision on an enrolled Light: WS281x type, node count, and GPIO. CONFIG-41 adds named catalog presets (common WS281x length / GPIO defaults) that fill that form; fields still override. Apply writes reviewed `/json/cfg` bus fields, then re-reads cfg and the snapshot. A mismatch stays on the failure UI. CONFIG-43: a length-changing Apply clips or drops declared Elements that run past the new strip, and flags leftover coverage on grow — the UI does not claim they still match without that story.
+After a Safe display-name write, the rack title uses the `/json/cfg` name even when metal `/json/info` still lags until reboot.
+
+**Strip** sets WS281x type, node count, and GPIO on an enrolled Light. Named catalog presets fill that form; fields still override. Apply writes reviewed `/json/cfg` bus fields, then re-reads cfg and the snapshot. A mismatch stays on the failure UI. A length-changing Apply clips or drops declared Elements that run past the new strip, and flags leftover coverage on grow — the UI does not claim they still match.
 
 ## Quick start
 
@@ -44,7 +51,7 @@ More: [docs/install.md](docs/install.md). Docker / compose: [docs/deploy.md](doc
 
 ## Docker
 
-One image (`Dockerfile`); compose runs **web** + **api** in a shared network namespace (web rewrites to `127.0.0.1:43181`). Not production certified. Find (mDNS / SSDP) from a container usually fails — typed address still works. Linux host networking is the honest Find path (`docker-compose.host.yml`).
+One image (`Dockerfile`); compose runs **web** + **api** in a shared network namespace (web rewrites to `127.0.0.1:43181`). There is no auth and no TLS — this is for a machine on your LAN. Find (mDNS / SSDP) from a container usually fails; typed address still works. Linux host networking is the path that can see multicast (`docker-compose.host.yml`).
 
 ```bash
 docker build -t nightplot-configure .
@@ -68,7 +75,7 @@ Full build / run / multicast caveats: [docs/deploy.md](docs/deploy.md).
 pnpm dev:demo
 ```
 
-or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light for Inspect, then **Strip** to pick a named default or set WS281x / node count / GPIO and **Apply** (writes `/json/cfg`, then re-reads the snapshot), **Edit ranges** to declare Elements, **Test live** to Preview or Blink, or **Safe settings** for the small `/json/cfg` set. **All Off** is on the rail / thumb bar. **Remove this Light** on Inspect runs three checks and refuses until they complete. The fixture is a software stub — not Hardware Done.
+or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light for Inspect, then **Strip** to pick a named default or set WS281x / node count / GPIO and **Apply** (writes `/json/cfg`, then re-reads the snapshot), **Edit ranges** to declare Elements, **Test live** to Preview or Blink, or **Safe settings** for the small `/json/cfg` set. **All Off** is on the rail / thumb bar. **Remove this Light** on Inspect runs three checks and refuses until they complete. The fixture is a software stub for development, not a verified real strip.
 
 By default the fixture updates `/json/info` and `/json/cfg` together. Real metal often keeps the old `/json/info` name until reboot. To simulate that lag: `NIGHTPLOT_FIXTURE_INFO_NAME_LAG=1 pnpm fixture`, or `POST http://127.0.0.1:48210/nightplot/info-name-lag` with `{ "on": true }`. Safe settings rename still updates the rack title from cfg. `{ "on": false }` copies cfg → info.
 
@@ -80,9 +87,9 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 
 | Doc | What |
 | --- | --- |
-| [docs/overview.md](docs/overview.md) | What Configure is / is not |
+| [docs/overview.md](docs/overview.md) | What Configure is and how the flow works |
 | [docs/install.md](docs/install.md) | Install, env, fixture, proto |
-| [docs/deploy.md](docs/deploy.md) | High-level run shape. Docker is CONFIG-45 |
+| [docs/deploy.md](docs/deploy.md) | Docker / compose / GHCR on a LAN |
 | [docs/architecture.md](docs/architecture.md) | Real paths and symbols |
 | [docs/ui/README.md](docs/ui/README.md) | v2 prototype (visual source of truth) |
 | [docs/PLANE.md](docs/PLANE.md) | CONFIG tickets, REST-only Plane duties |
@@ -144,7 +151,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | `packages/shared` | LAN guard, WLED parse, catalogs, Light / Element types |
 | `docs/ui/` | Nightplot Configure v2 prototype. See [docs/ui/README.md](docs/ui/README.md). |
 | `docs/PLANE.md` | CONFIG tickets, REST-only Plane duties. |
-| `Dockerfile` / `docker-compose.yml` | Production-shaped image + compose. See [docs/deploy.md](docs/deploy.md). |
+| `Dockerfile` / `docker-compose.yml` | Local/LAN image + compose. See [docs/deploy.md](docs/deploy.md). |
 
 ## Prototype
 
@@ -153,9 +160,5 @@ pnpm proto
 ```
 
 Then open [http://127.0.0.1:43182/Nightplot%20Configure%20v2.dc.html](http://127.0.0.1:43182/Nightplot%20Configure%20v2.dc.html).
-
-## Publishing name
-
-This GitHub repo is `dylanl321/wled-nightplot`. The package and Plane project stay **Nightplot Configure** / `nightplot-configure`. Renaming the GitHub repo is out of scope here.
 
 Plane project: Configure (`CONFIG`) in workspace `nightplot`. See [docs/PLANE.md](docs/PLANE.md).

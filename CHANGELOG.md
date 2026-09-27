@@ -7,14 +7,18 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+### Changed
+
+- Public docs describe Nightplot Configure as a standalone LAN utility (CONFIG-50). README and overview open with what the product is, who it is for, and how to run it. Lights, Elements, Preview, Apply, Blink, and All Off are defined in positive vocabulary. Early-software facts (LAN, no auth, no TLS, fixture is a development stub) replace documentation-about-documentation meta.
+
 ### Fixed
 
 - ServerDown recovery copy names both the local `pnpm dev` path and Docker compose / `docker run` restart (`docs/deploy.md`). It no longer tells a compose operator to run host `pnpm dev` (CONFIG-46).
 
 ### Added
 
-- Production-shaped Docker image, compose, and GHCR workflow (CONFIG-45). One image (`api` / `web` / `all`); `docker-compose.yml` runs web + api in a shared network namespace with a lights-store volume. Bind `0.0.0.0` and optional `NIGHTPLOT_CORS_ORIGINS` are env-gated for containers — `pnpm dev` stays loopback. Find multicast from a container often fails; `docker-compose.host.yml` is the Linux host-network path. Typed address still works. Not production certified.
-- Production-shaped repo documentation and governance scaffold (CONFIG-44): README hub, CONTRIBUTING, CONSTITUTION, SECURITY, MIT LICENSE, `docs/overview.md` / `install.md` / `deploy.md` / `architecture.md`, GitHub issue and PR templates. Product is not production-ready. Docker / compose / GHCR is CONFIG-45 — not this slice.
+- Docker image, compose, and GHCR workflow (CONFIG-45). One image (`api` / `web` / `all`); `docker-compose.yml` runs web + api in a shared network namespace with a lights-store volume. Bind `0.0.0.0` and optional `NIGHTPLOT_CORS_ORIGINS` are env-gated for containers — `pnpm dev` stays loopback. Find multicast from a container often fails; `docker-compose.host.yml` is the Linux host-network path. Typed address still works. The image packages local/LAN run; there is no auth or TLS.
+- Repo documentation and governance files (CONFIG-44): README hub, CONTRIBUTING, CONSTITUTION, SECURITY, MIT LICENSE, `docs/overview.md` / `install.md` / `deploy.md` / `architecture.md`, GitHub issue and PR templates. Docker / compose / GHCR landed in CONFIG-45.
 
 ## 0.7.11 — Elements after strip length change (CONFIG-43)
 

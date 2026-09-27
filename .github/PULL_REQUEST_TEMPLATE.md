@@ -12,7 +12,7 @@ Fixes CONFIG-
 - [ ] Preview is not Apply
 - [ ] Fail-closed Safe / provision (or this PR does not touch those writes)
 - [ ] Fixture / stub answers are not called Hardware Done
-- [ ] Product words: Lights / Elements — no Yard, Tonight, Studio, Scene, Show chrome
+- [ ] Product words: Lights, Elements, Preview, Apply, Blink, All Off
 
 ## Checks
 
