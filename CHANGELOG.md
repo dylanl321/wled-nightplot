@@ -24,6 +24,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Fixed
 
+- Discover loads enrolled Lights and Find separately. A Find-only miss keeps the enrolled list and says Find did not load, with Find Lights as retry — it does not claim the configure server or the list is down. Lights-only outage still uses ServerDown (CONFIG-49).
 - ServerDown recovery copy names both the local `pnpm dev` path and Docker compose / `docker run` restart (`docs/deploy.md`). It no longer tells a compose operator to run host `pnpm dev` (CONFIG-46).
 
 ## 0.7.11 — Elements after strip length change (CONFIG-43)

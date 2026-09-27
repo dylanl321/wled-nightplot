@@ -10,9 +10,11 @@ import { postJson } from "@/lib/api";
 export function DiscoverPanel({
   initialCandidates,
   enrolled,
+  findError,
 }: {
   initialCandidates: DiscoverRow[];
   enrolled: LightView[];
+  findError?: string;
 }) {
   const router = useRouter();
   const [address, setAddress] = useState("");
@@ -20,6 +22,9 @@ export function DiscoverPanel({
   const [busy, setBusy] = useState<"scan" | "probe" | "add" | "blink" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [findLoadError, setFindLoadError] = useState<string | null>(
+    findError ?? null,
+  );
   const addressRef = useRef<HTMLInputElement>(null);
 
   const found = useMemo(
@@ -35,6 +40,7 @@ export function DiscoverPanel({
     setBusy("scan");
     setNotice(null);
     setInfo(null);
+    setFindLoadError(null);
     const res = await postJson<{ candidates: DiscoverRow[] }>("/api/discover");
     setBusy(null);
     if (!res.ok) {
@@ -114,6 +120,16 @@ export function DiscoverPanel({
 
   return (
     <div className="flex flex-col gap-6">
+      {findLoadError ? (
+        <div className="max-w-[520px] rounded-md border-l-2 border-primary bg-[#1a1812] px-3 py-3">
+          <p className="font-medium text-primary">Find did not load</p>
+          <p className="mt-1 text-xs leading-5 text-[#c9c3b8]">
+            Enrolled Lights stay listed. This is not a claim that the configure
+            server is down. Try Find Lights again, or type an address.
+          </p>
+          <p className="mt-2 font-mono text-xs text-quiet">{findLoadError}</p>
+        </div>
+      ) : null}
       <div className="flex flex-col gap-4 rounded-xl border border-[#3a4150] bg-[#12141a] p-[18px]">
         <p className="text-[15px] leading-6 text-[#c9c3b8]">
           Find probes up to four collected hosts at a time. A dead probe stops

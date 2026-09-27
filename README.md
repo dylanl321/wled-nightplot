@@ -140,7 +140,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | Path | What |
 | --- | --- |
 | `/` | Lights rack + unenrolled tray. All Off on the rail / thumb bar |
-| `/discover` | Find / type an address / add |
+| `/discover` | Find / type an address / add. A Find load miss still lists enrolled Lights; it does not claim the configure server is down. Retry Find Lights or type an address. |
 | `/lights/:id` | Inspect — identity + StripBeads + declared vs reported + Delete checks |
 | `/lights/:id?mode=strip` | Strip — catalog product or WS281x / SK6812 RGBW plus length / GPIO; fields still override. Apply writes `/json/cfg` then re-reads. Mismatch stays. |
 | `/lights/:id?mode=safe` | Safe settings — name, boot, transition, current limit; refuse if unsupported. A rename updates the title from `/json/cfg` without waiting for reboot. |

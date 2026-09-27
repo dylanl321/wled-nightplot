@@ -1,10 +1,59 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DiscoverPanel } from "@/components/discover-panel";
 import {
   ESPALEXA_PORT_WARNING,
   discoverRow,
+  lightView,
 } from "@/test/fixtures";
+
+describe("DiscoverPanel Find load miss", () => {
+  it("shows enrolled Lights and Find failure without ServerDown copy", () => {
+    render(
+      <DiscoverPanel
+        enrolled={[lightView({ name: "Garage" })]}
+        initialCandidates={[]}
+        findError="Find session failed"
+      />,
+    );
+
+    expect(screen.getByText("Find did not load")).toBeTruthy();
+    expect(
+      screen.getByText(/Enrolled Lights stay listed/),
+    ).toBeTruthy();
+    expect(screen.getByText("Find session failed")).toBeTruthy();
+    expect(screen.getByText(/1 Light already on/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Find Lights" })).toBeTruthy();
+
+    const body = document.body.textContent ?? "";
+    expect(body).not.toMatch(/list is not loaded/);
+    expect(body).not.toMatch(/Couldn’t reach the configure server/);
+  });
+
+  it("clears the Find load miss after Find Lights retries", async () => {
+    const fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({ candidates: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(
+      <DiscoverPanel
+        enrolled={[lightView()]}
+        initialCandidates={[]}
+        findError="Find session failed"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Find Lights" }));
+    expect(await screen.findByRole("button", { name: "Find Lights" })).toBeTruthy();
+    expect(screen.queryByText("Find did not load")).toBeNull();
+    expect(screen.getByText(/1 Light already on/)).toBeTruthy();
+    expect(fetch).toHaveBeenCalled();
+  });
+});
 
 describe("DiscoverPanel Find copy", () => {
   it("names the four-at-a-time probe bound and the 3 s dead-host stop", () => {
