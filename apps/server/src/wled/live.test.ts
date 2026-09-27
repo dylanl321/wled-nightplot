@@ -100,7 +100,7 @@ describe("restoreWriteFromSnapshot", () => {
 
 describe("applyRangesWrite", () => {
   it("writes a known colour — does not default to #ffa000", () => {
-    const write = applyRangesWrite([{ start: 0, stop: 24 }], 1, "#4f7dff");
+    const write = applyRangesWrite([{ start: 0, stop: 24 }], 2, "#4f7dff");
     expect(write.seg?.[0]).toMatchObject({
       id: 0,
       start: 0,

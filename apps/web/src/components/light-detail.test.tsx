@@ -453,7 +453,7 @@ describe("LightDetail Apply unknown colour", () => {
     );
 
     const apply = screen.getByRole("button", { name: "Apply" });
-    expect(apply).toBeDisabled();
+    expect((apply as HTMLButtonElement).disabled).toBe(true);
     expect(apply.getAttribute("title")).toMatch(/will not invent a look/);
     expect(screen.getByText(/Colour is unknown/)).toBeTruthy();
   });
@@ -475,7 +475,9 @@ describe("LightDetail Apply unknown colour", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Apply" })).not.toBeDisabled();
+    expect((screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
     expect(screen.queryByText(/Colour is unknown/)).toBeNull();
   });
 });
