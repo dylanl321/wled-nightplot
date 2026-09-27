@@ -2,8 +2,9 @@ import { mkdtempSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, type AppDeps } from "./app.ts";
+import { FIND_PROBE_CONCURRENCY } from "./discovery/map-limit.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
 import { createFixtureBox } from "./wled-fixture-box.ts";
 import { createWledCfgReader, createWledCfgWriter } from "./wled/cfg.ts";
@@ -284,6 +285,127 @@ describe("discover + connect", () => {
       port: null,
     });
     expect(body.candidates[0]?.status).not.toBe("found");
+  });
+
+  it("probes collected hosts with a bound of four, keeping collect order", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const started: string[] = [];
+    const gates: Array<() => void> = [];
+
+    const hosts = [
+      { hostname: "192.168.1.10", port: 80, via: "mdns" as const },
+      { hostname: "192.168.1.11", port: 80, via: "ssdp" as const },
+      { hostname: "192.168.1.12", port: 80, via: "targets" as const },
+      { hostname: "192.168.1.13", port: 80, via: "mdns" as const },
+      { hostname: "192.168.1.14", port: 80, via: "ssdp" as const },
+      { hostname: "192.168.1.15", port: 80, via: "targets" as const },
+    ];
+
+    const { app } = testApp({
+      collect: async () => hosts,
+      probe: async (target) => {
+        started.push(target.hostname);
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise<void>((resolve) => {
+          gates.push(resolve);
+        });
+        inFlight -= 1;
+        if (target.hostname === "192.168.1.12") {
+          return {
+            kind: "probe-failed",
+            reason: `${target.hostname} didn’t return a snapshot in 3 s.`,
+          };
+        }
+        return {
+          kind: "found",
+          snapshot: { ...snapshot, name: target.hostname },
+        };
+      },
+    });
+
+    const pending = app.request("/api/discover", { method: "POST" });
+
+    await vi.waitFor(() => {
+      expect(inFlight).toBe(FIND_PROBE_CONCURRENCY);
+      expect(started).toEqual([
+        "192.168.1.10",
+        "192.168.1.11",
+        "192.168.1.12",
+        "192.168.1.13",
+      ]);
+    });
+
+    for (const release of gates.splice(0).reverse()) release();
+
+    await vi.waitFor(() => {
+      expect(started).toEqual(hosts.map((host) => host.hostname));
+    });
+
+    for (const release of gates.splice(0)) release();
+
+    const res = await pending;
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      candidates: { status: string; name: string | null; hostname: string }[];
+    };
+    expect(maxInFlight).toBe(FIND_PROBE_CONCURRENCY);
+    expect(body.candidates.map((row) => row.hostname)).toEqual(
+      hosts.map((host) => host.hostname),
+    );
+    expect(body.candidates.map((row) => row.status)).toEqual([
+      "found",
+      "found",
+      "rejected",
+      "found",
+      "found",
+      "found",
+    ]);
+    expect(body.candidates[2]?.name).toBeNull();
+    expect(body.candidates[0]?.name).toBe("192.168.1.10");
+  });
+
+  it("does not spend a Find probe slot on missing-port or already-added", async () => {
+    let probed = 0;
+    const { app, store } = testApp({
+      collect: async () => [
+        { hostname: "192.168.1.72", port: 80, via: "mdns" },
+        { hostname: "192.168.1.50", port: null, via: "ssdp" },
+        { hostname: "192.168.1.40", port: 80, via: "targets" },
+      ],
+      probe: async (target) => {
+        probed += 1;
+        return { kind: "found", snapshot: { ...snapshot, name: target.hostname } };
+      },
+    });
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.72" }),
+    });
+    expect(enroll.status).toBe(201);
+    probed = 0;
+
+    const res = await app.request("/api/discover", { method: "POST" });
+    const body = (await res.json()) as {
+      candidates: { status: string; reasonCode: string | null; hostname: string }[];
+    };
+    expect(probed).toBe(1);
+    expect(store.load()).toHaveLength(1);
+    expect(body.candidates[0]).toMatchObject({
+      hostname: "192.168.1.72",
+      status: "already-added",
+    });
+    expect(body.candidates[1]).toMatchObject({
+      hostname: "192.168.1.50",
+      status: "rejected",
+      reasonCode: "missing-port",
+    });
+    expect(body.candidates[2]).toMatchObject({
+      hostname: "192.168.1.40",
+      status: "found",
+    });
   });
 
   it("enrolls a Light once and refuses a duplicate host", async () => {

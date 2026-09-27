@@ -45,6 +45,7 @@ import {
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { CollectFn } from "./discovery/collect.ts";
+import { FIND_PROBE_CONCURRENCY, mapLimit } from "./discovery/map-limit.ts";
 import {
   lightDetail,
   lightFromSnapshot,
@@ -113,24 +114,27 @@ export function createApp(deps: AppDeps) {
     const now = nowIso();
     const collected = await deps.collect();
     const enrolled = new Set(deps.store.load().map((light) => light.hostKey));
-    const rows: DiscoverRow[] = [];
+    const rows: DiscoverRow[] = new Array(collected.length);
+    const probeJobs: { index: number; target: HostPort; via: (typeof collected)[number]["via"] }[] =
+      [];
 
-    for (const item of collected) {
+    for (let i = 0; i < collected.length; i += 1) {
+      const item = collected[i]!;
       if (item.port == null) {
-        rows.push(needsPortRow(item.hostname, item.via, now));
+        rows[i] = needsPortRow(item.hostname, item.via, now);
         continue;
       }
       const decision = decideProbeAddress(
         item.port === 80 ? item.hostname : `${item.hostname}:${item.port}`,
       );
       if (!decision.ok) {
-        rows.push(refusedRow(item.hostname, item.via, now, decision.reason));
+        rows[i] = refusedRow(item.hostname, item.via, now, decision.reason);
         continue;
       }
       const key = normalizeHostKey(decision.target);
       if (enrolled.has(key)) {
         const light = deps.store.findByHostKey(key);
-        rows.push({
+        rows[i] = {
           key,
           hostname: decision.target.hostname,
           port: decision.target.port,
@@ -146,11 +150,18 @@ export function createApp(deps: AppDeps) {
           on: light?.on ?? null,
           bead: null,
           foundAt: now,
-        });
+        };
         continue;
       }
-      const outcome = await deps.probe(decision.target);
-      rows.push(rowFromProbe(decision.target, item.via, outcome, now, false));
+      probeJobs.push({ index: i, target: decision.target, via: item.via });
+    }
+
+    const probed = await mapLimit(probeJobs, FIND_PROBE_CONCURRENCY, async (job) => {
+      const outcome = await deps.probe(job.target);
+      return rowFromProbe(job.target, job.via, outcome, now, false);
+    });
+    for (let j = 0; j < probeJobs.length; j += 1) {
+      rows[probeJobs[j]!.index] = probed[j]!;
     }
 
     for (const light of deps.store.load()) {

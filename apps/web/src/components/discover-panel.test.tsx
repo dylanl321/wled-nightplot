@@ -6,6 +6,15 @@ import {
   discoverRow,
 } from "@/test/fixtures";
 
+describe("DiscoverPanel Find copy", () => {
+  it("names the four-at-a-time probe bound and the 3 s dead-host stop", () => {
+    render(<DiscoverPanel enrolled={[]} initialCandidates={[]} />);
+    expect(screen.getByText(/up to four collected hosts at a time/)).toBeTruthy();
+    expect(screen.getByText(/dead probe stops/)).toBeTruthy();
+    expect(screen.getByText(/3 s/)).toBeTruthy();
+  });
+});
+
 describe("DiscoverPanel portWarning", () => {
   it("shows Espalexa copy and the host:port hatch on a default-port reject", () => {
     render(

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.5 — Find probes collected hosts in parallel (CONFIG-27)
+
+- `POST /api/discover` probes collected hosts with a bound of **four** at a time (`FIND_PROBE_CONCURRENCY`). It no longer waits for one dead box before starting the next.
+- Each probe still uses the CONFIG-15 ~3 s abort. `probe-failed` / `not-wled` / missing-port / already-added / disallowed-address stay per-host. Result order follows collect order.
+- Lights list re-probe policy is unchanged: list does not re-probe; Inspect Refresh is the one-Light live probe.
+- Fixture / stub answers are still not Hardware Done. Unreachable stays grey with last-seen.
+
 ## 0.7.4 — Discover / Lights component tests (CONFIG-23)
 
 - `apps/web` has a Vitest + Testing Library harness (`pnpm --filter @nightplot/web test`, included in `pnpm test`).

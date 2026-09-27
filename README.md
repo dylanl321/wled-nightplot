@@ -39,7 +39,7 @@ By default the fixture updates `/json/info` and `/json/cfg` together. Real metal
 
 **Ports.** Find uses a real advertised port: SSDP `LOCATION`, mDNS SRV. It does not assume `:80`. A host with no port from find is listed as needs host:port — it is not Add-able. Typed address is the escape hatch (a typed host with no port still means `:80`). Listed hosts use `displayHost` and hide default `:80` (a not-WLED reject on port 80 is `192.168.1.80`, not `192.168.1.80:80`). The fixture is **not** on 80; type `127.0.0.1:48210` or use the demo target list.
 
-Enrolled Lights and declared Elements persist in `data/lights.json` (override with `NIGHTPLOT_STORE_PATH`). Find Lights also probes `NIGHTPLOT_DISCOVERY_TARGETS` (comma-separated `host` / `host:port` — include the port when it is not 80).
+Enrolled Lights and declared Elements persist in `data/lights.json` (override with `NIGHTPLOT_STORE_PATH`). Find Lights also probes `NIGHTPLOT_DISCOVERY_TARGETS` (comma-separated `host` / `host:port` — include the port when it is not 80). Find probes up to **four** collected hosts at a time; a host that does not answer is `probe-failed` in about 3 s and does not block the rest of the scan.
 
 ## API
 
@@ -58,7 +58,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | POST | `/api/lights/:id/preview/seen` | Person rung: `{ seen: "yes" \| "no" }`. Not Hardware Done. |
 | POST | `/api/lights/:id/blink` | Identify pulse. Restore with `/blink/end` (UI does this after 3 s). |
 | POST | `/api/discover/blink` | `{ host }` — pulse a candidate, then restore. |
-| POST | `/api/discover` | LAN find (mDNS, SSDP, env targets). Does not enroll. |
+| POST | `/api/discover` | LAN find (mDNS, SSDP, env targets). Probes up to four collected hosts at a time. Does not enroll. |
 | GET | `/api/discover` | Last find/probe rows |
 | POST | `/api/discover/probe` | `{ host }` — one address. Public IPs refused before HTTP. |
 | POST | `/api/lights` | `{ host }` — enroll. Fails closed without a WLED snapshot. Duplicate host → 409. |

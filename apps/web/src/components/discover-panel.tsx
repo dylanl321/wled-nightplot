@@ -116,10 +116,11 @@ export function DiscoverPanel({
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4 rounded-xl border border-[#3a4150] bg-[#12141a] p-[18px]">
         <p className="text-[15px] leading-6 text-[#c9c3b8]">
-          Candidates arrive as each one answers. Add fails closed — a snapshot
-          that can’t be read saves nothing. Public addresses are refused before
-          a probe. Find only offers Add when the box advertised a port
-          (SSDP LOCATION or mDNS SRV). No port → type host:port.
+          Find probes up to four collected hosts at a time. A dead probe stops
+          in 3 s and does not block the rest of the scan. Add fails closed — a
+          snapshot that can’t be read saves nothing. Public addresses are
+          refused before a probe. Find only offers Add when the box advertised
+          a port (SSDP LOCATION or mDNS SRV). No port → type host:port.
         </p>
         <Button
           type="button"
