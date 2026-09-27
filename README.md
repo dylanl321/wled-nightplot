@@ -1,14 +1,27 @@
 # Nightplot Configure
 
-Configure spine for home LED strips. Discover a controller, enroll it as a **Light**, describe **Elements** as ranges on the strip, preview live, then Apply. All Off has a home.
+Configure spine for home LED strips. Discover a controller, enroll it as a **Light**, describe **Elements** as ranges on the strip, Preview live, then Apply. All Off has a home.
 
-This is not a playback desk. It does not ship Yard, Tonight, Studio, Scene, or Show chrome.
+This is not a lighting control room. It does not host playback, mapping, or scheduling. It does not ship Yard, Tonight, Studio, Scene, Show, Schedule, or Devices-as-noun chrome.
+
+The product is **not production-ready**. This repo has production-*shaped* documentation and governance. Docker / compose / GHCR is CONFIG-45 — not this tree.
+
+GitHub today is `dylanl321/wled-nightplot` (`main`). The package name is `nightplot-configure`.
+
+## Honesty
+
+- Unreachable beads are grey, with last-seen copy. Never the last colour.
+- Preview is not Apply.
+- All Off cancels without restoring.
+- Delete is a check that runs, not an “I understand” override on unknown.
+- A registered catalog member is not Hardware Done. A stub endpoint must say it sent nothing.
+- The local WLED-shaped fixture is a software stub — **not Hardware Done**.
 
 R6 wires the small Safe settings set on an enrolled Light, gated by the firmware’s `/json/cfg` fingerprint. Unsupported firmware is refused — nothing is written. After a display-name write, the rack title uses the `/json/cfg` name even when metal `/json/info` still lags until reboot.
 
-CONFIG-40 adds first-time **Strip** provision on an enrolled Light: WS281x type, node count, and GPIO. CONFIG-41 adds named catalog presets (common WS281x length / GPIO defaults) that fill that form; fields still override. Apply writes reviewed `/json/cfg` bus fields, then re-reads cfg and the snapshot. A mismatch stays on the failure UI. CONFIG-43: a length-changing Apply clips or drops declared Elements that run past the new strip, and flags leftover coverage on grow — the UI does not claim they still match without that story. A fixture report is not Hardware Done.
+CONFIG-40 adds first-time **Strip** provision on an enrolled Light: WS281x type, node count, and GPIO. CONFIG-41 adds named catalog presets (common WS281x length / GPIO defaults) that fill that form; fields still override. Apply writes reviewed `/json/cfg` bus fields, then re-reads cfg and the snapshot. A mismatch stays on the failure UI. CONFIG-43: a length-changing Apply clips or drops declared Elements that run past the new strip, and flags leftover coverage on grow — the UI does not claim they still match without that story.
 
-## Run
+## Quick start
 
 Needs Node 20+ and [pnpm](https://pnpm.io).
 
@@ -27,6 +40,8 @@ pnpm test
 
 `pnpm test` includes `apps/web` component tests (Vitest + Testing Library): Espalexa `portWarning` copy on Discover / the unenrolled tray, and Lights last-seen / unknown beads with Inspect Refresh as the one-Light probe. The list component does not re-probe.
 
+More: [docs/install.md](docs/install.md).
+
 ### Discover → Add without a box on the LAN
 
 `pnpm fixture` serves a WLED-shaped `/json` at `127.0.0.1:48210`. Then either:
@@ -42,6 +57,23 @@ By default the fixture updates `/json/info` and `/json/cfg` together. Real metal
 **Ports.** Find uses a real advertised port: SSDP `LOCATION`, mDNS SRV. It does not assume `:80`. A host with no port from find is listed as needs host:port — it is not Add-able. Typed address is the escape hatch (a typed host with no port still means `:80`). Listed hosts use `displayHost` and hide default `:80` (a not-WLED reject on port 80 is `192.168.1.80`, not `192.168.1.80:80`). The fixture is **not** on 80; type `127.0.0.1:48210` or use the demo target list.
 
 Enrolled Lights and declared Elements persist in `data/lights.json` (override with `NIGHTPLOT_STORE_PATH`). Find Lights also probes `NIGHTPLOT_DISCOVERY_TARGETS` (comma-separated `host` / `host:port` — include the port when it is not 80). Find probes up to **four** collected hosts at a time; a dead probe aborts in about 3 s and does not block the rest of the scan. After `/json/info` answers, `/json/state` is a short enrichment — a hang does not add another 3 s. The listed reason uses the time that actually elapsed, or generic **probe failed** when the refuse was instant.
+
+## Docs
+
+| Doc | What |
+| --- | --- |
+| [docs/overview.md](docs/overview.md) | What Configure is / is not |
+| [docs/install.md](docs/install.md) | Install, env, fixture, proto |
+| [docs/deploy.md](docs/deploy.md) | High-level run shape. Docker is CONFIG-45 |
+| [docs/architecture.md](docs/architecture.md) | Real paths and symbols |
+| [docs/ui/README.md](docs/ui/README.md) | v2 prototype (visual source of truth) |
+| [docs/PLANE.md](docs/PLANE.md) | CONFIG tickets, REST-only Plane duties |
+| [AGENTS.md](AGENTS.md) | Slice duties and product words |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Tests, PRs, product words |
+| [CONSTITUTION.md](CONSTITUTION.md) | Non-negotiables |
+| [SECURITY.md](SECURITY.md) | LAN assumptions, how to report |
+| [LICENSE](LICENSE) | MIT |
+| [CHANGELOG.md](CHANGELOG.md) | What landed |
 
 ## API
 
@@ -103,8 +135,8 @@ pnpm proto
 
 Then open [http://127.0.0.1:43182/Nightplot%20Configure%20v2.dc.html](http://127.0.0.1:43182/Nightplot%20Configure%20v2.dc.html).
 
-## Publishing this draft
+## Publishing name
 
-This Origin draft **is** Nightplot Configure. When you create the GitHub repository, name it **`nightplot-configure`**.
+This GitHub repo is `dylanl321/wled-nightplot`. The package and Plane project stay **Nightplot Configure** / `nightplot-configure`. Renaming the GitHub repo is out of scope here.
 
-Plane project: Configure (`CONFIG`) in workspace `nightplot`. See `docs/PLANE.md`.
+Plane project: Configure (`CONFIG`) in workspace `nightplot`. See [docs/PLANE.md](docs/PLANE.md).

@@ -1,5 +1,16 @@
 # Changelog
 
+All notable changes to this project are documented in this file.
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Slice lines (`0.7.x`) are not SemVer marketing numbers.
+
+## Unreleased
+
+### Added
+
+- Production-shaped repo documentation and governance scaffold (CONFIG-44): README hub, CONTRIBUTING, CONSTITUTION, SECURITY, MIT LICENSE, `docs/overview.md` / `install.md` / `deploy.md` / `architecture.md`, GitHub issue and PR templates. Product is not production-ready. Docker / compose / GHCR is CONFIG-45 — not this slice.
+
 ## 0.7.11 — Elements after strip length change (CONFIG-43)
 
 - After a successful length-changing Strip Apply, declared Elements are reconciled against the new `ledCount`. Ranges that run past the new strip are clipped; ranges that start past it are dropped. Grow does not invent Elements — leftover coverage is flagged.
