@@ -4,9 +4,7 @@ import { LightsHome } from "@/components/lights-home";
 import {
   ESPALEXA_PORT_WARNING,
   discoverRow,
-  isLightsListPath,
   lightView,
-  requestPath,
 } from "@/test/fixtures";
 
 const LAST_COLOUR = "#ffa000";
@@ -68,9 +66,6 @@ describe("LightsHome cached beads", () => {
     expect(strip.innerHTML).not.toContain(LAST_COLOUR);
     expect(strip.innerHTML).toContain("#1d1d1f");
     expect(fetch).not.toHaveBeenCalled();
-    expect(
-      fetch.mock.calls.some((call) => isLightsListPath(requestPath(String(call[0])))),
-    ).toBe(false);
   });
 
   it("shows Espalexa portWarning on the unenrolled tray", () => {
@@ -92,7 +87,8 @@ describe("LightsHome cached beads", () => {
     expect(
       screen.getByText("Hue-shaped is on this network but not added"),
     ).toBeTruthy();
-    expect(screen.getByText("192.168.1.80")).toBeTruthy();
+    expect(screen.getByText(/192\.168\.1\.80 · found via ssdp/)).toBeTruthy();
+    expect(screen.queryByText(/192\.168\.1\.80:80/)).toBeNull();
     expect(screen.getByText(ESPALEXA_PORT_WARNING)).toBeTruthy();
   });
 });
