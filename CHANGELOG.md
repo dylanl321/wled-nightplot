@@ -18,6 +18,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Changed
 
+- Strip Apply authors GRBW (`order: 0` / `COL_ORDER_GRB`) only when the native bus type changes to a mapped type, including convert to SK6812 RGBW. Same-type length or GPIO writes keep the colour order already on the box. There is no order picker. Fixture software-green is not Hardware Done. Preview is not Apply (CONFIG-59).
 - `docs/PLANE.md` lists filed CONFIG tickets through CONFIG-50 and records the live GitHub home `dylanl321/wled-nightplot` with package name `nightplot-configure` (CONFIG-34).
 - Public docs describe Nightplot Configure as a standalone LAN utility (CONFIG-50). README and overview open with what the product is, who it is for, and how to run it. Lights, Elements, Preview, Apply, Blink, and All Off are defined in positive vocabulary. Early-software facts (LAN, no auth, no TLS, fixture is a development stub) replace documentation-about-documentation meta.
 

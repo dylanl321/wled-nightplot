@@ -27,7 +27,7 @@ GitHub: [`dylanl321/wled-nightplot`](https://github.com/dylanl321/wled-nightplot
 
 After a Safe display-name write, the rack title uses the `/json/cfg` name even when metal `/json/info` still lags until reboot.
 
-**Strip** sets WS281x type, node count, and GPIO on an enrolled Light. A catalog LED product fills that form from the SKU and its driver; fields still override. Attaching a product stores `ledProductId` on the Light and does not write the controller. Apply writes reviewed `/json/cfg` bus fields, then re-reads cfg and the snapshot. A mismatch stays on the failure UI. A length-changing Apply clips or drops declared Elements that run past the new strip, and flags leftover coverage on grow — the UI does not claim they still match.
+**Strip** sets WS281x RGB or SK6812 RGBW type, node count, and GPIO on an enrolled Light. Converting to SK6812 RGBW writes GRBW (`order` 0). A same-type length or GPIO Apply keeps the colour order already on the box. A catalog LED product fills that form from the SKU and its driver; fields still override. Attaching a product stores `ledProductId` on the Light and does not write the controller. Apply writes reviewed `/json/cfg` bus fields, then re-reads cfg and the snapshot. A mismatch stays on the failure UI. A length-changing Apply clips or drops declared Elements that run past the new strip, and flags leftover coverage on grow — the UI does not claim they still match.
 
 ## Quick start
 
