@@ -524,6 +524,156 @@ describe("LightDetail Elements after length change", () => {
   });
 });
 
+describe("LightDetail selected Element kind chip", () => {
+  it("says no compare when segments are unknown — not seg", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: null,
+            brightness: null,
+            bead: "unknown",
+            segmentCount: null,
+            lastSeenAt: "2026-09-26T18:00:00.000Z",
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+          reported: [],
+          display: {
+            declared: [
+              {
+                id: "el-door",
+                label: "Door",
+                start: 0,
+                stop: 60,
+                length: 60,
+                differs: false,
+                error: false,
+              },
+            ],
+            reported: [],
+            regions: [],
+            notes: [{ text: "Segments unknown — no report to compare." }],
+          },
+        })}
+        mode="ranges"
+      />,
+    );
+
+    expect(selectedKindChip().textContent).toBe("no compare");
+  });
+
+  it("says no compare when the Light is unreachable — not seg", () => {
+    render(<LightDetail initial={lightDetail()} mode="ranges" />);
+
+    expect(selectedKindChip().textContent).toBe("no compare");
+  });
+
+  it("still says overlap when ranges overlap and compare is refused", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: null,
+            brightness: null,
+            bead: "unknown",
+            segmentCount: null,
+            lastSeenAt: "2026-09-26T18:00:00.000Z",
+            elementCount: 2,
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+          elements: [
+            { id: "el-door", lightId: "light-garage", label: "Door", start: 0, stop: 40 },
+            { id: "el-eave", lightId: "light-garage", label: "Eave", start: 20, stop: 60 },
+          ],
+        })}
+        mode="ranges"
+      />,
+    );
+
+    expect(selectedKindChip().textContent).toBe("overlap");
+  });
+
+  it("still says drift when a known report differs", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: true,
+            brightness: 128,
+            bead: "#ffa000",
+            segmentCount: 0,
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+          reported: [],
+          display: {
+            declared: [
+              {
+                id: "el-door",
+                label: "Door",
+                start: 0,
+                stop: 60,
+                length: 60,
+                differs: true,
+                error: false,
+              },
+            ],
+            reported: [],
+            regions: [{ kind: "drift", start: 0, stop: 60 }],
+            notes: [{ text: "Door is not on the controller" }],
+          },
+        })}
+        mode="ranges"
+      />,
+    );
+
+    expect(selectedKindChip().textContent).toBe("drift");
+  });
+
+  it("still says seg when a known report matches", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: true,
+            brightness: 128,
+            bead: "#ffa000",
+            segmentCount: 1,
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+          reported: [{ start: 0, stop: 60, differs: false }],
+          display: {
+            declared: [
+              {
+                id: "el-door",
+                label: "Door",
+                start: 0,
+                stop: 60,
+                length: 60,
+                differs: false,
+                error: false,
+              },
+            ],
+            reported: [{ start: 0, stop: 60, differs: false }],
+            regions: [],
+            notes: [],
+          },
+        })}
+        mode="ranges"
+      />,
+    );
+
+    expect(selectedKindChip().textContent).toBe("seg");
+  });
+});
+
+function selectedKindChip(): HTMLElement {
+  return screen.getByLabelText("Element kind");
+}
+
 function paragraphWith(pattern: RegExp): HTMLElement {
   return screen.getByText((_, node) => {
     if (node?.tagName !== "P") return false;

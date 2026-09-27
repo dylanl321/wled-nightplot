@@ -742,8 +742,12 @@ function EditRanges({
         {selected ? (
           <>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-[11px] text-quiet">
-                {selectedRail?.error ? "overlap" : selectedRail?.differs ? "drift" : "seg"}
+              <span className="font-mono text-[11px] text-quiet" aria-label="Element kind">
+                {selectedKind(
+                  selectedRail?.error === true,
+                  selectedRail?.differs === true,
+                  comparable,
+                )}
               </span>
               <Input
                 value={selected.label}
@@ -936,6 +940,17 @@ function ModeButton({
       {children}
     </button>
   );
+}
+
+function selectedKind(
+  error: boolean,
+  differs: boolean,
+  comparable: boolean,
+): "overlap" | "drift" | "no compare" | "seg" {
+  if (error) return "overlap";
+  if (differs) return "drift";
+  if (!comparable) return "no compare";
+  return "seg";
 }
 
 function rowStatus(

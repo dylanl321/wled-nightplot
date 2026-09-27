@@ -26,6 +26,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Fixed
 
+- Edit ranges selected-Element kind chip no longer says **seg** when compare is refused (unknown `state.seg` or unreachable). The chip uses the same refuse class as the footer (**no compare**). Overlap and drift still win when those apply. A known empty `seg: []` still compares. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-80).
 - Apply no longer invents `#ffa000` when the snapshot did not name a colour. Info-only or missing `segmentColor` refuses Apply (422) and writes nothing — same honesty class as CONFIG-72/73 restore omit. Known colours still Apply. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-76).
 - Edit ranges row status no longer says **matches** when segments are unknown or compare is refused. The row uses the same refuse class as the footer (**no compare**). A known empty `seg: []` still compares and can show drift or matches. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-79).
 - Apply reread no longer coalesces unknown segments (`null` after info-only / skipped `/json/state`) to `[]` before `applyOutcome`. Unknown skips the match compare and stays failed — not a false empty match. A known empty `seg: []` still compares as empty. Same honesty class as CONFIG-75 drift skip and CONFIG-71 **segments unknown** ≠ 0. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-78).
