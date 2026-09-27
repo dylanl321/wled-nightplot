@@ -19,7 +19,11 @@ export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T>
     message?: string;
   };
   if (!res.ok) {
-    throw new Error(body.message ?? `Request failed (${res.status})`);
+    const error = new Error(body.message ?? `Request failed (${res.status})`) as Error & {
+      status: number;
+    };
+    error.status = res.status;
+    throw error;
   }
   return body;
 }

@@ -1,11 +1,12 @@
 export const dynamic = "force-dynamic";
 
 import type { LightDetail as LightDetailPayload, LightsPayload } from "@nightplot/shared";
-import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { LightDetail } from "@/components/light-detail";
+import { LightUnavailable } from "@/components/light-unavailable";
 import { ServerDown } from "@/components/server-down";
-import { apiUrl } from "@/lib/api";
+import { fetchJson } from "@/lib/api";
+import { inspectPageModel } from "@/lib/inspect-page-load";
 
 export default async function LightPage({
   params,
@@ -26,53 +27,48 @@ export default async function LightPage({
           : requested === "strip"
             ? "strip"
             : "inspect";
-  let lights: LightsPayload | null = null;
-  let detail: LightDetailPayload | null = null;
-  let missing = false;
-  let error: string | undefined;
 
-  try {
-    const [lightsRes, detailRes] = await Promise.all([
-      fetch(apiUrl("/api/lights"), {
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-      }),
-      fetch(apiUrl(`/api/lights/${id}`), {
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-      }),
-    ]);
-    if (detailRes.status === 404) {
-      missing = true;
-    } else if (!lightsRes.ok || !detailRes.ok) {
-      error = "The configure API did not return this Light.";
-    } else {
-      lights = (await lightsRes.json()) as LightsPayload;
-      detail = (await detailRes.json()) as LightDetailPayload;
-    }
-  } catch (caught) {
-    error = caught instanceof Error ? caught.message : "Unknown error";
-  }
+  const [lightsResult, detailResult] = await Promise.allSettled([
+    fetchJson<LightsPayload>("/api/lights"),
+    fetchJson<LightDetailPayload>(`/api/lights/${id}`),
+  ]);
+  const model = inspectPageModel(lightsResult, detailResult);
 
-  if (missing) notFound();
-
-  if (!lights || !detail) {
+  if (model.kind === "server-down") {
     return (
       <AppShell lightCount={0} nav="light" activeLightId={id}>
-        <ServerDown detail={error} />
+        <ServerDown detail={model.error} />
+      </AppShell>
+    );
+  }
+
+  if (model.kind === "detail-miss") {
+    return (
+      <AppShell
+        lights={model.lights.lights}
+        lightCount={model.lights.lights.length}
+        nav="light"
+        activeLightId={id}
+        sessions={model.lights.sessions}
+      >
+        <LightUnavailable
+          kind={model.missing ? "missing" : "load-failed"}
+          detail={model.error}
+          listed
+        />
       </AppShell>
     );
   }
 
   return (
     <AppShell
-      lights={lights.lights}
-      lightCount={lights.lights.length}
+      lights={model.lights.lights}
+      lightCount={model.lights.lights.length}
       nav="light"
       activeLightId={id}
-      sessions={lights.sessions}
+      sessions={model.lights.sessions}
     >
-      <LightDetail initial={detail} mode={mode} />
+      <LightDetail initial={model.detail} mode={mode} />
     </AppShell>
   );
 }
