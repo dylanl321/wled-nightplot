@@ -2,6 +2,7 @@ import type { LightDetail as LightDetailPayload, ProvisionRead } from "@nightplo
 import {
   provisionApplyBodyFromProduct,
   seedLedProductsFromPresets,
+  stripColorOrderCopy,
 } from "@nightplot/shared";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -12,7 +13,14 @@ import { lightDetail, lightView, requestPath } from "@/test/fixtures";
 const catalogProducts = seedLedProductsFromPresets();
 
 const provision: ProvisionRead = {
-  settings: { ledType: "ws281x", length: 60, gpio: 16, nativeType: 22 },
+  settings: {
+    ledType: "ws281x",
+    length: 60,
+    gpio: 16,
+    nativeType: 22,
+    nativeOrder: 0,
+    colorOrder: "GRB",
+  },
   fingerprint: {
     firmware: "WLED 0.15.4",
     source: "cfg",
@@ -23,6 +31,22 @@ const provision: ProvisionRead = {
   caption: "Software-green from the fixture. Not Hardware Done.",
   refuse: null,
   buses: 1,
+};
+
+const sk6812RgbwProvision: ProvisionRead = {
+  ...provision,
+  settings: {
+    ledType: "sk6812-rgbw",
+    length: 60,
+    gpio: 16,
+    nativeType: 30,
+    nativeOrder: 1,
+    colorOrder: "RGBW",
+  },
+  fingerprint: {
+    ...provision.fingerprint,
+    mappingId: "wled-0.15-sk6812-rgbw-grbw",
+  },
 };
 
 function payload(overrides: Partial<LightDetailPayload> = {}): LightDetailPayload {
@@ -59,7 +83,14 @@ describe("Strip provision", () => {
               status: "mismatch",
               matched: false,
               sent: { ledType: "ws281x", length: 150, gpio: 2 },
-              read: { ledType: "ws281x", length: 60, gpio: 16, nativeType: 22 },
+              read: {
+                ledType: "ws281x",
+                length: 60,
+                gpio: 16,
+                nativeType: 22,
+                nativeOrder: 0,
+                colorOrder: "GRB",
+              },
               snapshotLedCount: 60,
               fingerprint: provision.fingerprint,
               message: "Wrote, but /json/cfg did not match. Not treating as success.",
@@ -135,6 +166,8 @@ describe("Strip provision", () => {
                 length: applyBody.body.provision.length,
                 gpio: applyBody.body.provision.gpio,
                 nativeType: 22,
+                nativeOrder: 0,
+                colorOrder: "GRB",
               },
               snapshotLedCount: applyBody.body.provision.length,
               fingerprint: provision.fingerprint,
@@ -259,7 +292,14 @@ describe("Strip provision", () => {
             ...payload(),
             provision: {
               ...provision,
-              settings: { ledType: "sk6812-rgbw", length: 60, gpio: 16, nativeType: 30 },
+              settings: {
+                ledType: "sk6812-rgbw",
+                length: 60,
+                gpio: 16,
+                nativeType: 30,
+                nativeOrder: 0,
+                colorOrder: "GRBW",
+              },
               fingerprint: {
                 ...provision.fingerprint,
                 mappingId: "wled-0.15-sk6812-rgbw-grbw",
@@ -269,11 +309,19 @@ describe("Strip provision", () => {
               status: "matched",
               matched: true,
               sent: { ledType: "sk6812-rgbw", length: 60, gpio: 16 },
-              read: { ledType: "sk6812-rgbw", length: 60, gpio: 16, nativeType: 30 },
+              read: {
+                ledType: "sk6812-rgbw",
+                length: 60,
+                gpio: 16,
+                nativeType: 30,
+                nativeOrder: 0,
+                colorOrder: "GRBW",
+              },
               snapshotLedCount: 60,
               fingerprint: provision.fingerprint,
               message: "Controller reports the strip we sent.",
               caption: provision.caption,
+              orderPreserved: false,
             },
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
@@ -302,6 +350,11 @@ describe("Strip provision", () => {
       ]);
     });
     expect(screen.getByText("Controller reports the strip we sent.")).toBeTruthy();
+    expect(screen.getByText("Colour order on this bus: GRBW.")).toBeTruthy();
+    expect(screen.getByText("Strip does not pick colour order.")).toBeTruthy();
+    expect(screen.queryByText(/not GRBW/)).toBeNull();
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByRole("listbox")).toBeNull();
   });
 
   it("shows the Element rewrite story after a length-changing Apply", async () => {
@@ -331,7 +384,14 @@ describe("Strip provision", () => {
               status: "matched",
               matched: true,
               sent: { ledType: "ws281x", length: 30, gpio: 16 },
-              read: { ledType: "ws281x", length: 30, gpio: 16, nativeType: 22 },
+              read: {
+                ledType: "ws281x",
+                length: 30,
+                gpio: 16,
+                nativeType: 22,
+                nativeOrder: 0,
+                colorOrder: "GRB",
+              },
               snapshotLedCount: 30,
               fingerprint: provision.fingerprint,
               message: "Controller reports the strip we sent.",
@@ -432,7 +492,14 @@ describe("Strip provision", () => {
               status: "matched",
               matched: true,
               sent: { ledType: "ws281x", length: 30, gpio: 16 },
-              read: { ledType: "ws281x", length: 30, gpio: 16, nativeType: 22 },
+              read: {
+                ledType: "ws281x",
+                length: 30,
+                gpio: 16,
+                nativeType: 22,
+                nativeOrder: 0,
+                colorOrder: "GRB",
+              },
               snapshotLedCount: 30,
               fingerprint: provision.fingerprint,
               message: "Controller reports the strip we sent.",
@@ -490,5 +557,85 @@ describe("Strip provision", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit ranges" }));
     expect((await screen.findAllByText("0–30")).length).toBeGreaterThan(0);
     expect(screen.queryByText("0–60")).toBeNull();
+  });
+
+  it("names a live non-GRBW SK6812 order on Strip without a picker", async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const path = requestPath(String(input));
+      if (path.endsWith("/provision")) {
+        return new Response(JSON.stringify(payload({ provision: sk6812RgbwProvision })), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ message: "unexpected path" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
+    expect(await screen.findByText(stripColorOrderCopy(sk6812RgbwProvision.settings))).toBeTruthy();
+    expect(screen.getByText(/not GRBW/)).toBeTruthy();
+    expect(screen.getByText("Strip does not pick colour order.")).toBeTruthy();
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^(GRB|RGB|BRG|RBG|GBR|BGR)W?$/i })).toBeNull();
+  });
+
+  it("names the preserved non-GRBW order after a same-type Apply", async () => {
+    const after = {
+      ...sk6812RgbwProvision,
+      settings: { ...sk6812RgbwProvision.settings, length: 90 },
+    };
+    const kept = stripColorOrderCopy({
+      colorOrder: "RGBW",
+      ledType: "sk6812-rgbw",
+      afterSameTypeApply: true,
+    });
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      if (path.endsWith("/provision") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            ...payload({ provision: after }),
+            provisionWrite: {
+              status: "matched",
+              matched: true,
+              sent: { ledType: "sk6812-rgbw", length: 90, gpio: 16 },
+              read: after.settings,
+              snapshotLedCount: 90,
+              fingerprint: after.fingerprint,
+              message: "Controller reports the strip we sent.",
+              caption: after.caption,
+              orderPreserved: true,
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (path.endsWith("/provision")) {
+        return new Response(JSON.stringify(payload({ provision: sk6812RgbwProvision })), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ message: "unexpected path" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
+    fireEvent.change(await screen.findByLabelText("Node count"), { target: { value: "90" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(await screen.findByText("Controller reports the strip we sent.")).toBeTruthy();
+    expect(screen.getByText(kept)).toBeTruthy();
+    expect(screen.getByText(/Apply kept the order already on the box/)).toBeTruthy();
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByLabelText(/colour order/i)).toBeNull();
   });
 });

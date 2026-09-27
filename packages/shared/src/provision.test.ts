@@ -3,12 +3,14 @@ import {
   WLED_SK6812_RGBW_NATIVE_TYPE,
   WLED_WS281X_NATIVE_TYPE,
   buildProvisionWrite,
+  colorOrderFromNative,
   parseWledProvision,
   provisionFieldsMatch,
   provisionRefuseReason,
   provisionSnapshotMatch,
   resolveProvisionMapping,
   resolveWs281xMapping,
+  stripColorOrderCopy,
 } from "./provision.ts";
 
 const cfg = {
@@ -41,6 +43,8 @@ describe("parseWledProvision", () => {
       length: 60,
       gpio: 16,
       nativeType: WLED_WS281X_NATIVE_TYPE,
+      nativeOrder: 0,
+      colorOrder: "GRB",
     });
     expect(read.caption).toMatch(/Not Hardware Done/);
     expect(read.refuse).toBeNull();
@@ -103,9 +107,45 @@ describe("parseWledProvision", () => {
       length: 60,
       gpio: 16,
       nativeType: WLED_SK6812_RGBW_NATIVE_TYPE,
+      nativeOrder: 0,
+      colorOrder: "GRBW",
     });
     expect(read.refuse).toBeNull();
     expect(read.caption).toMatch(/Not Hardware Done/);
+  });
+
+  it("decodes a non-GRBW SK6812 order and does not leave it blank", () => {
+    const rgbw = {
+      hw: {
+        led: {
+          ins: [{ start: 0, len: 60, pin: [16], type: 30, order: 1 }],
+        },
+      },
+    };
+    const read = parseWledProvision(rgbw, "WLED 0.15.4", "fixture");
+    expect(read.settings.colorOrder).toBe("RGBW");
+    expect(read.settings.nativeOrder).toBe(1);
+    expect(stripColorOrderCopy(read.settings)).toMatch(/RGBW/);
+    expect(stripColorOrderCopy(read.settings)).toMatch(/not GRBW/);
+  });
+
+  it("names an unknown numeric order instead of going blank", () => {
+    expect(colorOrderFromNative(7, "sk6812-rgbw")).toBe("WLED order 7");
+    expect(
+      stripColorOrderCopy({
+        colorOrder: colorOrderFromNative(7, "sk6812-rgbw"),
+        ledType: "sk6812-rgbw",
+        afterSameTypeApply: true,
+      }),
+    ).toBe(
+      "Colour order on this bus: WLED order 7. This is not GRBW — Apply kept the order already on the box.",
+    );
+    expect(
+      stripColorOrderCopy({
+        colorOrder: null,
+        ledType: "sk6812-rgbw",
+      }),
+    ).toBe("Colour order on this bus was not in /json/cfg.");
   });
 });
 
@@ -192,6 +232,7 @@ describe("provision write", () => {
     expect(bus.pin).toEqual([2]);
     expect(bus.extra).toBe("keep");
     expect(built.sent.ledType).toBe("sk6812-rgbw");
+    expect(built.orderPreserved).toBe(false);
   });
 
   it("preserves SK6812 order on a same-type length write", () => {
@@ -218,6 +259,15 @@ describe("provision write", () => {
     expect(bus.order).toBe(1);
     expect(bus.len).toBe(90);
     expect(bus.extra).toBe("keep");
+    expect(built.orderPreserved).toBe(true);
+    expect(read.settings.colorOrder).toBe("RGBW");
+    expect(
+      stripColorOrderCopy({
+        colorOrder: read.settings.colorOrder,
+        ledType: read.settings.ledType,
+        afterSameTypeApply: built.orderPreserved,
+      }),
+    ).toMatch(/Apply kept the order already on the box/);
   });
 
   it("preserves SK6812 order on a same-type GPIO write", () => {
@@ -243,6 +293,8 @@ describe("provision write", () => {
     expect(bus.order).toBe(3);
     expect(bus.pin).toEqual([2]);
     expect(bus.len).toBe(60);
+    expect(built.orderPreserved).toBe(true);
+    expect(read.settings.colorOrder).toBe("RBGW");
   });
 
   it("refuses SK6812 writes on firmware outside the table", () => {

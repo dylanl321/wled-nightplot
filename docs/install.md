@@ -53,7 +53,7 @@ pnpm fixture
 
 serves WLED-shaped `/json` at `127.0.0.1:48210` (`apps/server/src/wled-fixture.ts`). Then `pnpm dev:demo` (sets `NIGHTPLOT_DISCOVERY_TARGETS=127.0.0.1:48210`) or type that address on Add a Light.
 
-The fixture is a software stub for development. A green readback there is not proof that a real strip passed. `NIGHTPLOT_FIXTURE_NATIVE_TYPE=30` starts the bus as SK6812 RGBW (`TYPE_SK6812_RGBW`). Default is 22 (WS281x RGB). Converting a bus to SK6812 RGBW writes GRBW (`order` 0); a same-type length or GPIO Apply keeps the colour order already on the box.
+The fixture is a software stub for development. A green readback there is not proof that a real strip passed. `NIGHTPLOT_FIXTURE_NATIVE_TYPE=30` starts the bus as SK6812 RGBW (`TYPE_SK6812_RGBW`). Default is 22 (WS281x RGB). Converting a bus to SK6812 RGBW writes GRBW (`order` 0); a same-type length or GPIO Apply keeps the colour order already on the box, and Strip names that order (including when it is not GRBW).
 
 ## Prototype
 

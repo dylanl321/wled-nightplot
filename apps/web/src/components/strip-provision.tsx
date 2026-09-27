@@ -6,6 +6,7 @@ import {
   PROVISION_LED_TYPES,
   provisionDraftFromProduct,
   provisionLedTypeLabel,
+  stripColorOrderCopy,
   type LedProduct,
   type LightDetail,
   type ProvisionRead,
@@ -159,6 +160,12 @@ export function StripProvisionPanel({
   }
 
   const failed = result && !result.matched;
+  const afterSameTypeApply = Boolean(result?.matched && result.orderPreserved);
+  const colorOrderCopy = stripColorOrderCopy({
+    colorOrder: read.settings.colorOrder,
+    ledType: read.settings.ledType,
+    afterSameTypeApply,
+  });
 
   return (
     <div className="flex flex-col gap-4">
@@ -168,8 +175,9 @@ export function StripProvisionPanel({
           First-time bus: LED type, node count, and GPIO. A catalog product fills the form from
           that SKU and its driver; fields still override. Attaching a product is Nightplot
           bookkeeping — not Apply, not a WLED write, not Hardware Done. Apply writes /json/cfg,
-          then reads the snapshot back. A length change clips or drops declared ranges that run
-          past the new strip, and flags leftover coverage. Preview is not Apply.
+          then reads the snapshot back. Colour order on the bus is named after Apply; Strip does
+          not pick it. A length change clips or drops declared ranges that run past the new
+          strip, and flags leftover coverage. Preview is not Apply.
         </p>
       </div>
 
@@ -291,6 +299,13 @@ export function StripProvisionPanel({
         </div>
       )}
 
+      {!read.refuse && !unreachable && !result?.matched ? (
+        <div className="flex flex-col gap-1">
+          <p className="text-[13px] leading-5 text-[#c9c3b8]">{colorOrderCopy}</p>
+          <p className="text-[12px] text-quiet">Strip does not pick colour order.</p>
+        </div>
+      ) : null}
+
       {read.settings.ledType === "unknown" && !read.refuse ? (
         <p className="text-[13px] text-quiet">
           Live bus type is unknown. Apply writes the selected type’s mapping for this firmware.
@@ -322,6 +337,8 @@ export function StripProvisionPanel({
       {result?.matched ? (
         <div className="flex flex-col gap-2">
           <p className="text-[13px] text-primary">{result.message}</p>
+          <p className="text-[13px] text-primary">{colorOrderCopy}</p>
+          <p className="text-[12px] text-quiet">Strip does not pick colour order.</p>
           {result.ranges?.notes.map((note) => (
             <p key={note} className="text-[13px] text-primary">
               {note}

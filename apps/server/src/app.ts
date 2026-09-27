@@ -967,6 +967,7 @@ export function createApp(deps: AppDeps) {
       fingerprint: reread.fingerprint,
       message: provisionMismatchNote(built.sent, reread.settings, nextSnap?.ledCount ?? null),
       caption: reread.caption,
+      orderPreserved: built.orderPreserved,
       ...(ranges ? { ranges } : {}),
     };
     if (!matched) {

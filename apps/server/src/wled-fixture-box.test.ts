@@ -77,6 +77,11 @@ describe("fixture info/cfg name divergence", () => {
     expect(box.info.leds.rgbw).toBe(true);
   });
 
+  it("starts with a non-GRBW SK6812 order when nativeOrder is set", () => {
+    const box = createFixtureBox({ nativeType: 30, nativeOrder: 1, ledCount: 80 });
+    expect(box.cfg.hw.led.ins[0]).toMatchObject({ type: 30, order: 1, len: 80 });
+  });
+
   it("applies an SK6812 RGBW bus write and sets info rgbw", () => {
     const box = createFixtureBox({ ledCount: 60, gpio: 16 });
     expect(box.info.leds.rgbw).toBe(false);

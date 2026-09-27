@@ -39,14 +39,14 @@ First members. Home directories are the registration point.
 | `stripHonestyForLight` | `packages/shared/src/strip/honesty.ts` | rgb / rgbw + chip caption from product, else `stripKind` |
 | `WledSnapshot` | `packages/shared/src/wled/snapshot.ts` | Parsed `/json` (info + state) |
 | `WledSafeSettings` | `packages/shared/src/safe.ts` | Small Safe set; fingerprint-gated |
-| `WledStripProvision` | `packages/shared/src/provision.ts` | First-time bus: type / length / GPIO. `buildProvisionWrite` authors `order: 0` (GRBW / `COL_ORDER_GRB` on RGBW) only on native type change; same-type length / GPIO clones the live `order` |
+| `WledStripProvision` | `packages/shared/src/provision.ts` | First-time bus: type / length / GPIO plus live `nativeOrder` / `colorOrder`. `buildProvisionWrite` authors `order: 0` (GRBW / `COL_ORDER_GRB` on RGBW) only on native type change; same-type length / GPIO clones the live `order` |
 | `LedProduct` | `packages/shared/src/strip/products.ts` | Operator LED SKU. `formFactor` is metadata. `driverId` must be a registered strip driver |
 
 Unreachable: `markUnreachable` in `apps/server/src/domain.ts` clears `on` / `brightness`. `beadFor` returns `"unknown"` — never a stored last colour.
 
 `Light.rgbw` is the last `/json/info` `leds.rgbw`. Inspect and Lights beads use `LightView.stripBead` / `stripChip` from `stripHonestyForLight` (attached `LedProduct`, else persisted `stripKind`). A successful Strip cfg read or Apply stores a known `ledType` on `stripKind`. A live Inspect GET may also read `/json/cfg` once when `stripKind` is still the default and `ledProductId` is null, then persist a known mapped `ledType`. The Lights list does not GET cfg. Snapshot rgbw is not a driver name.
 
-Strip Apply (`buildProvisionWrite`) writes WLED `order: 0` (GRBW on SK6812 RGBW; `COL_ORDER_GRB`) only when the native bus type changes — convert, including unknown → mapped. A length or GPIO Apply that keeps the same type leaves the colour order already on the box. The Strip form does not pick colour order. Extra mapping rows are not registered. Fixture software-green is not Hardware Done. Preview is not Apply.
+Strip Apply (`buildProvisionWrite`) writes WLED `order: 0` (GRBW on SK6812 RGBW; `COL_ORDER_GRB`) only when the native bus type changes — convert, including unknown → mapped. A length or GPIO Apply that keeps the same type leaves the colour order already on the box. Strip names that live/preserved order after Apply (and on the cfg read). A non-GRBW SK6812 order is said out loud — not a blank. The Strip form does not pick colour order. Extra mapping rows are not registered. Fixture software-green is not Hardware Done. Preview is not Apply.
 
 ## Server
 
