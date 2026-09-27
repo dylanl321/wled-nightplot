@@ -27,7 +27,9 @@ export function LightUnavailable({
           server is down.
         </p>
       ) : null}
-      {detail ? <p className="font-mono text-xs text-quiet">{detail}</p> : null}
+      {detail && detail !== title ? (
+        <p className="font-mono text-xs text-quiet">{detail}</p>
+      ) : null}
       <Button asChild className="w-fit">
         <Link href="/">Back to Lights</Link>
       </Button>

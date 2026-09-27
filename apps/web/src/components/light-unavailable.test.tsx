@@ -49,7 +49,7 @@ describe("LightUnavailable detail miss", () => {
         lightCount={1}
         nav="light"
       >
-        <LightUnavailable kind="missing" listed />
+        <LightUnavailable kind="missing" detail="That Light is not on Lights" listed />
       </AppShell>,
     );
 
@@ -57,6 +57,7 @@ describe("LightUnavailable detail miss", () => {
     expect(screen.getByText(/never enrolled/)).toBeTruthy();
     expect(screen.getByText("Garage")).toBeTruthy();
     expect(screen.queryByText("This Light did not load")).toBeNull();
+    expect(screen.getAllByText("That Light is not on Lights")).toHaveLength(1);
 
     const body = document.body.textContent ?? "";
     expect(body).not.toMatch(/list is not loaded/);
