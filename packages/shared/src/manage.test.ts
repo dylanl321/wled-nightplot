@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   allOffConfirmCopy,
   allOffDockCaption,
+  allOffNoAnswerReason,
   allOffRetryLabel,
   allOffRowLabel,
   allOffSummary,
@@ -47,6 +48,25 @@ describe("all-off copy", () => {
         missingCount: 1,
       }),
     ).toMatch(/without restoring/);
+  });
+
+  it("uses generic All Off refuse copy when the wait was instant", () => {
+    expect(allOffNoAnswerReason("192.168.1.63", 0)).toBe("no answer from 192.168.1.63.");
+    expect(allOffNoAnswerReason("192.168.1.63", 12)).toBe("no answer from 192.168.1.63.");
+    expect(allOffNoAnswerReason("192.168.1.63", 499)).toBe("no answer from 192.168.1.63.");
+    expect(allOffNoAnswerReason("192.168.1.63", 8)).not.toMatch(/in 3 s/);
+  });
+
+  it("names actual elapsed seconds when All Off waited", () => {
+    expect(allOffNoAnswerReason("192.168.1.63", 500)).toBe(
+      "no answer from 192.168.1.63 in 1 s.",
+    );
+    expect(allOffNoAnswerReason("192.168.1.63", 2800)).toBe(
+      "no answer from 192.168.1.63 in 3 s.",
+    );
+    expect(allOffNoAnswerReason("192.168.1.63:48210", 6200)).toBe(
+      "no answer from 192.168.1.63:48210 in 6 s.",
+    );
   });
 });
 

@@ -1166,6 +1166,58 @@ describe("all-off + delete", () => {
     expect(retryBody.rows[0]?.status).toBe("off");
   });
 
+  it("does not claim 3 s when All Off refuse is instant", async () => {
+    let fail = false;
+    const { app, box } = testApp({
+      probe: async (target) => {
+        if (fail) return { kind: "probe-failed" as const, reason: "probe failed." };
+        return box.probe(target);
+      },
+    });
+    const id = await enrollHost(app, "192.168.1.63");
+    fail = true;
+    const res = await app.request("/api/all-off", { method: "POST" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      rows: { lightId: string; status: string; detail: string }[];
+    };
+    expect(body.rows).toEqual([
+      {
+        lightId: id,
+        name: "WLED",
+        status: "unknown",
+        detail: "no answer from 192.168.1.63.",
+      },
+    ]);
+    expect(body.rows[0]?.detail).not.toMatch(/in 3 s/);
+  });
+
+  it("names the All Off wait from actual elapsed, not a fixed 3 s", async () => {
+    let fail = false;
+    const origin = Date.now();
+    const now = vi.spyOn(Date, "now").mockReturnValue(origin);
+    try {
+      const { app, box } = testApp({
+        probe: async (target) => {
+          if (fail) {
+            now.mockReturnValue(origin + 2800);
+            return { kind: "probe-failed" as const, reason: "probe failed." };
+          }
+          return box.probe(target);
+        },
+      });
+      const id = await enrollHost(app, "192.168.1.63");
+      fail = true;
+      const res = await app.request("/api/all-off", { method: "POST" });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { rows: { lightId: string; detail: string }[] };
+      expect(body.rows[0]?.lightId).toBe(id);
+      expect(body.rows[0]?.detail).toBe("no answer from 192.168.1.63 in 3 s.");
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it("refuses Delete until every check is complete", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
     const file = join(dir, "lights.json");

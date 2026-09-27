@@ -57,7 +57,7 @@ Strip Apply (`buildProvisionWrite`) writes WLED `order: 0` (GRBW on SK6812 RGBW;
 | HTTP | `createApp` | `apps/server/src/app.ts` |
 | Store | `FileLightsStore` | `apps/server/src/store/lights-store.ts` |
 | LED products | `FileLedProductsStore` | `apps/server/src/store/led-products-store.ts` |
-| Probe | `createWledProbe` | `apps/server/src/wled/client.ts` (`TIMEOUT_MS` 3000) |
+| Probe | `createWledProbe` | `apps/server/src/wled/client.ts` (`TIMEOUT_MS` 3000). All Off unknown-row copy is `allOffNoAnswerReason` — elapsed or generic refuse, not a claimed 3 s |
 | Live write / `/json/live` | `createWledWriter`, `createWledLiveReader` | `apps/server/src/wled/live.ts` |
 | cfg | `createWledCfgReader`, `createWledCfgWriter` | `apps/server/src/wled/cfg.ts` |
 | Live sessions | `createLiveEngine` | `apps/server/src/live/engine.ts` |
