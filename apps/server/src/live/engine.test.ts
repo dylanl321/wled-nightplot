@@ -68,6 +68,8 @@ describe("Preview restore honesty", () => {
     if (ended.ok) expect(ended.restored).toBe(true);
     expect(writes).toHaveLength(1);
     expect(writes[0]).not.toHaveProperty("on");
+    expect(writes[0]).not.toHaveProperty("bri");
+    expect(writes[0]).not.toHaveProperty("seg");
   });
 
   it("restores known off after Preview", async () => {
@@ -86,6 +88,8 @@ describe("Preview restore honesty", () => {
     const ended = await engine.end(light.id, "complete");
     expect(ended.ok).toBe(true);
     expect(writes[0]?.on).toBe(false);
+    expect(writes[0]?.bri).toBe(40);
+    expect(writes[0]).not.toHaveProperty("seg");
   });
 
   it("identifyHost restore omits on from an info-only snapshot", async () => {
@@ -101,5 +105,29 @@ describe("Preview restore honesty", () => {
     expect(writes).toHaveLength(2);
     expect(writes[0]?.on).toBe(true);
     expect(writes[1]).not.toHaveProperty("on");
+    expect(writes[1]).not.toHaveProperty("bri");
+    expect(writes[1]).not.toHaveProperty("seg");
+  });
+
+  it("does not invent brightness 128 or colour #ffa000 from info-only restore", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    const started = await engine.startPreview({
+      light,
+      live: infoOnly,
+      elements: [{ id: "el-1", lightId: light.id, label: "Porch", start: 0, stop: 10 }],
+      color: "#4f7dff",
+      brightness: 180,
+    });
+    expect(started.ok).toBe(true);
+    writes.length = 0;
+
+    const ended = await engine.end(light.id, "complete");
+    expect(ended.ok).toBe(true);
+    if (ended.ok) expect(ended.restored).toBe(true);
+    expect(writes[0]?.bri).toBeUndefined();
+    expect(JSON.stringify(writes[0])).not.toContain("128");
+    expect(JSON.stringify(writes[0])).not.toContain("255,160,0");
+    expect(JSON.stringify(writes[0])).not.toMatch(/ffa000/i);
   });
 });

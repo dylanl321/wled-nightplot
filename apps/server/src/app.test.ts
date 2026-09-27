@@ -885,6 +885,8 @@ describe("preview + blink", () => {
     expect(((await ended.json()) as { restored: boolean }).restored).toBe(true);
     expect(writes[0]).toBeDefined();
     expect(writes[0]).not.toHaveProperty("on");
+    expect(writes[0]).not.toHaveProperty("bri");
+    expect(writes[0]).not.toHaveProperty("seg");
   });
 
   it("keeps the original restore if Preview is sent again", async () => {

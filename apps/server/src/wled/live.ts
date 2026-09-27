@@ -1,14 +1,16 @@
 import {
+  hexToRgb,
   parseLiveLeds,
   type HostPort,
   type LiveRead,
+  type LiveRestoreSnapshot,
   type WledSnapshot,
 } from "@nightplot/shared";
 
 export type WledStateWrite = {
   on?: boolean;
   bri?: number;
-  seg?: { id?: number; start: number; stop: number; col: number[][] }[];
+  seg?: { id?: number; start: number; stop: number; col?: number[][] }[];
 };
 
 export type WriteStateFn = (target: HostPort, body: WledStateWrite) => Promise<boolean>;
@@ -81,17 +83,66 @@ export function restoreOnField(on: boolean | null | undefined): Pick<WledStateWr
   return typeof on === "boolean" ? { on } : {};
 }
 
-export function restoreWriteFromSnapshot(snapshot: WledSnapshot): WledStateWrite {
-  const color = snapshot.segmentColor ?? "#ffa000";
-  const rgb = hexToTriple(color);
-  const known = snapshot.segments ?? [];
+/**
+ * Restore writes brightness only when the snapshot knew it.
+ * Info-only `brightness: null` stays omitted — never `null → 128`.
+ */
+export function restoreBriField(
+  brightness: number | null | undefined,
+): Pick<WledStateWrite, "bri"> {
+  return typeof brightness === "number" ? { bri: brightness } : {};
+}
+
+/**
+ * Restore writes segment colour only when the snapshot knew it.
+ * Info-only `segmentColor: null` stays omitted — never `null → #ffa000`.
+ */
+export function restoreColField(
+  color: string | null | undefined,
+): { col: [number, number, number][] } | Record<string, never> {
+  const rgb = color ? hexToRgb(color) : null;
+  return rgb ? { col: [rgb] } : {};
+}
+
+export function restoreWrite(
+  restore: Pick<LiveRestoreSnapshot, "on" | "brightness" | "color" | "segments"> & {
+    ledCount: number;
+  },
+): WledStateWrite {
+  const known = restore.segments;
   const segs =
-    known.length > 0 ? known : [{ start: 0, stop: snapshot.ledCount }];
+    known.length > 0
+      ? known
+      : restore.color
+        ? [{ start: 0, stop: restore.ledCount, color: restore.color }]
+        : [];
   return {
-    ...restoreOnField(snapshot.on),
-    bri: snapshot.brightness ?? 128,
-    seg: segs.map((seg) => ({ start: seg.start, stop: seg.stop, col: [rgb] })),
+    ...restoreOnField(restore.on),
+    ...restoreBriField(restore.brightness),
+    ...(segs.length > 0
+      ? {
+          seg: segs.map((seg) => ({
+            start: seg.start,
+            stop: seg.stop,
+            ...restoreColField(seg.color ?? restore.color),
+          })),
+        }
+      : {}),
   };
+}
+
+export function restoreWriteFromSnapshot(snapshot: WledSnapshot): WledStateWrite {
+  return restoreWrite({
+    on: snapshot.on,
+    brightness: snapshot.brightness,
+    color: snapshot.segmentColor,
+    segments: (snapshot.segments ?? []).map((seg) => ({
+      start: seg.start,
+      stop: seg.stop,
+      color: snapshot.segmentColor,
+    })),
+    ledCount: snapshot.ledCount,
+  });
 }
 
 export function applyRangesWrite(
