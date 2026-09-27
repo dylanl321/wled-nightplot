@@ -467,6 +467,7 @@ export function LightDetail({
           selected={selected}
           issues={issues}
           display={display}
+          comparable={!unreachable && light.segmentCount !== null}
           onSelect={setSelectedId}
           onPatch={patchSelected}
           onAdd={addElement}
@@ -702,6 +703,7 @@ function EditRanges({
   selected,
   issues,
   display,
+  comparable,
   onSelect,
   onPatch,
   onAdd,
@@ -711,6 +713,7 @@ function EditRanges({
   selected: Element | null;
   issues: ReturnType<typeof validateDeclaredRanges>;
   display: ReturnType<typeof buildRangeDisplay>;
+  comparable: boolean;
   onSelect: (id: string) => void;
   onPatch: (patch: Partial<Element>) => void;
   onAdd: () => void;
@@ -814,7 +817,7 @@ function EditRanges({
             const rowIssues = issues.filter(
               (issue) => issue.elementId === element.id || issue.otherId === element.id,
             );
-            const status = rowStatus(rowIssues[0]?.code, rail?.differs === true);
+            const status = rowStatus(rowIssues[0]?.code, rail?.differs === true, comparable);
             return (
               <button
                 key={element.id}
@@ -838,7 +841,7 @@ function EditRanges({
                   className={cn(
                     "text-[12px]",
                     status === "matches" && "text-quiet",
-                    status === "drift" && "text-primary",
+                    (status === "drift" || status === "no compare") && "text-primary",
                     (status === "overlap" || status === "invert" || status === "over-ledCount") &&
                       "text-destructive",
                   )}
@@ -936,8 +939,10 @@ function ModeButton({
 function rowStatus(
   code: "invert" | "overlap" | "over-ledCount" | undefined,
   differs: boolean,
-): "matches" | "drift" | "overlap" | "invert" | "over-ledCount" {
+  comparable: boolean,
+): "matches" | "drift" | "overlap" | "invert" | "over-ledCount" | "no compare" {
   if (code) return code;
+  if (!comparable) return "no compare";
   return differs ? "drift" : "matches";
 }
 
