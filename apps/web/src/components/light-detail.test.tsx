@@ -534,7 +534,8 @@ describe("LightDetail Elements after length change", () => {
       0,
     );
     expect(selectedKindChip().textContent).toBe("past strip");
-    expect(screen.getAllByText("past strip")).toHaveLength(2);
+    expect(rangeErrorKey().textContent).toBe("past strip");
+    expect(screen.getAllByText("past strip")).toHaveLength(3);
   });
 });
 
@@ -575,12 +576,16 @@ describe("LightDetail selected Element kind chip", () => {
     );
 
     expect(selectedKindChip().textContent).toBe("no compare");
+    expect(screen.queryByLabelText("Range error key")).toBeNull();
+    expect(screen.queryByText("overlap")).toBeNull();
   });
 
   it("says no compare when the Light is unreachable — not seg", () => {
     render(<LightDetail initial={lightDetail()} mode="ranges" />);
 
     expect(selectedKindChip().textContent).toBe("no compare");
+    expect(screen.queryByLabelText("Range error key")).toBeNull();
+    expect(screen.queryByText("overlap")).toBeNull();
   });
 
   it("still says overlap when ranges overlap and compare is refused", () => {
@@ -607,6 +612,7 @@ describe("LightDetail selected Element kind chip", () => {
     );
 
     expect(selectedKindChip().textContent).toBe("overlap");
+    expect(rangeErrorKey().textContent).toBe("overlap");
   });
 
   it("says invert when the selected range is inverted — not overlap", () => {
@@ -629,8 +635,11 @@ describe("LightDetail selected Element kind chip", () => {
     );
 
     expect(selectedKindChip().textContent).toBe("invert");
-    expect(screen.getAllByText("invert")).toHaveLength(2);
+    expect(rangeErrorKey().textContent).toBe("invert");
+    expect(screen.getAllByText("invert")).toHaveLength(3);
     expect(selectedKindChip().textContent).not.toBe("overlap");
+    expect(rangeErrorKey().textContent).not.toBe("overlap");
+    expect(screen.queryByText("overlap")).toBeNull();
   });
 
   it("says past strip when the selected range runs past the strip — not overlap", () => {
@@ -654,8 +663,11 @@ describe("LightDetail selected Element kind chip", () => {
     );
 
     expect(selectedKindChip().textContent).toBe("past strip");
-    expect(screen.getAllByText("past strip")).toHaveLength(2);
+    expect(rangeErrorKey().textContent).toBe("past strip");
+    expect(screen.getAllByText("past strip")).toHaveLength(3);
     expect(selectedKindChip().textContent).not.toBe("overlap");
+    expect(rangeErrorKey().textContent).not.toBe("overlap");
+    expect(screen.queryByText("overlap")).toBeNull();
   });
 
   it("still says drift when a known report differs", () => {
@@ -693,6 +705,8 @@ describe("LightDetail selected Element kind chip", () => {
     );
 
     expect(selectedKindChip().textContent).toBe("drift");
+    expect(screen.queryByLabelText("Range error key")).toBeNull();
+    expect(screen.queryByText("overlap")).toBeNull();
   });
 
   it("still says seg when a known report matches", () => {
@@ -890,6 +904,10 @@ describe("LightDetail ApplyFailed adopt", () => {
 
 function selectedKindChip(): HTMLElement {
   return screen.getByLabelText("Element kind");
+}
+
+function rangeErrorKey(): HTMLElement {
+  return screen.getByLabelText("Range error key");
 }
 
 function applyRangesDetail(): LightDetailPayload {
