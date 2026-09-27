@@ -39,7 +39,7 @@ python3 -m http.server 43182 --directory docs/ui
 ## What to take from it
 
 - The strip is glowing LED beads on a dark rail, not chips or progress bars.
-- RGBW (SK6812 or an attached RGBW product) grows a second die on each bead and is captioned RGBW. RGB stays one die. That caption follows the product or driver — not a hardcoded WS281x RGBW chip from snapshot `rgbw`.
+- RGBW (SK6812 or an attached RGBW product) grows a second die on each bead and is captioned RGBW. RGB stays one die. That caption follows the product or driver — not a hardcoded WS281x RGBW chip from snapshot `rgbw`. Inspect may persist a known cfg bus type when the Light still has the default driver and no product.
 - Declared brackets sit above the beads; reported brackets sit below. Drift is a visible gap. Preview match counts are not those reported brackets.
 - Unreachable beads are grey with last-seen copy. Never the last colour.
 - Product words: Lights, Elements, Preview, Apply, Blink, All Off. Use this product’s vocabulary.

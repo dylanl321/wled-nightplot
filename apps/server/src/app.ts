@@ -27,6 +27,7 @@ import {
   buildProvisionWrite,
   buildSafeWrite,
   isProvisionLedType,
+  needsInspectStripKindSeed,
   parseWledProvision,
   provisionFieldsMatch,
   provisionMismatchNote,
@@ -312,7 +313,8 @@ export function createApp(deps: AppDeps) {
       return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
     }
     const { light, live: snap } = await refreshOne(stored);
-    return c.json(await decorateDetail(light, snap));
+    const next = await seedStripKindFromInspect(light, snap);
+    return c.json(await decorateDetail(next, snap));
   });
 
   app.patch("/api/lights/:id/elements", async (c) => {
@@ -1179,6 +1181,27 @@ export function createApp(deps: AppDeps) {
     const next = { ...light, stripKind: ledType };
     deps.store.replace(next);
     return next;
+  }
+
+  async function seedStripKindFromInspect(
+    light: Light,
+    snap: WledSnapshot | null,
+  ): Promise<Light> {
+    if (
+      !snap ||
+      !needsInspectStripKindSeed({
+        stripKind: light.stripKind,
+        ledProductId: light.ledProductId,
+        reachable: light.reachability === "online",
+      })
+    ) {
+      return light;
+    }
+    const dest: HostPort = { hostname: light.hostname, port: light.port };
+    const raw = await deps.readCfg(dest);
+    if (raw == null) return light;
+    const provision = parseWledProvision(raw, snap.firmware ?? light.firmware);
+    return rememberStripKind(light, provision.settings.ledType);
   }
 
   async function refreshOne(

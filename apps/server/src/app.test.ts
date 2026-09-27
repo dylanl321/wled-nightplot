@@ -1761,6 +1761,34 @@ describe("strip provision", () => {
     expect(box.info.leds.rgbw).toBe(true);
   });
 
+  it("Inspect seeds SK6812 from a type-30 fixture cfg after enroll", async () => {
+    const box = createFixtureBox({ ledCount: 80, gpio: 16, nativeType: 30 });
+    const { app, store, id } = await enrollFixture(box);
+    expect(store.findById(id)?.stripKind).toBe("ws281x");
+    expect(store.findById(id)?.rgbw).toBe(true);
+
+    const listed = (await (await app.request("/api/lights")).json()) as {
+      lights: { stripKind: string; stripChip: string; rgbw: boolean }[];
+    };
+    expect(listed.lights[0]).toMatchObject({
+      rgbw: true,
+      stripKind: "ws281x",
+      stripChip: "WS281x RGB",
+    });
+    expect(store.findById(id)?.stripKind).toBe("ws281x");
+
+    const inspect = await app.request(`/api/lights/${id}`);
+    expect(inspect.status).toBe(200);
+    const body = (await inspect.json()) as {
+      light: { stripKind: string; stripBead: string; stripChip: string; rgbw: boolean };
+    };
+    expect(body.light.rgbw).toBe(true);
+    expect(body.light.stripKind).toBe("sk6812-rgbw");
+    expect(body.light.stripBead).toBe("rgbw");
+    expect(body.light.stripChip).toBe("SK6812 RGBW");
+    expect(store.findById(id)?.stripKind).toBe("sk6812-rgbw");
+  });
+
   it("reads an SK6812 fixture bus without writing", async () => {
     const box = createFixtureBox({ ledCount: 80, gpio: 16, nativeType: 30 });
     const { app, store, id } = await enrollFixture(box);
@@ -2103,6 +2131,173 @@ describe("bead / Inspect RGBW honesty", () => {
     expect(body.light.bead).toBe("unknown");
     expect(body.light.stripBead).toBe("rgbw");
     expect(body.light.stripChip).toBe("SK6812 RGBW");
+  });
+});
+
+describe("Inspect stripKind seed", () => {
+  function type30Cfg() {
+    return {
+      hw: { led: { ins: [{ start: 0, len: 60, pin: [16], type: 30, order: 0 }] } },
+    };
+  }
+
+  it("enroll stays default; Inspect persists a known cfg ledType", async () => {
+    const readCfg = vi.fn(async () => type30Cfg());
+    const { app, store } = testApp({
+      probe: async () => ({
+        kind: "found" as const,
+        snapshot: { ...snapshot, rgbw: true },
+      }),
+      readCfg,
+    });
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.72" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string; stripKind: string } }).light.id;
+    expect(store.findById(id)?.stripKind).toBe("ws281x");
+    expect(readCfg).not.toHaveBeenCalled();
+
+    const list = await app.request("/api/lights");
+    expect(list.status).toBe(200);
+    expect(
+      ((await list.json()) as { lights: { stripKind: string; stripChip: string }[] }).lights[0],
+    ).toMatchObject({ stripKind: "ws281x", stripChip: "WS281x RGB" });
+    expect(readCfg).not.toHaveBeenCalled();
+
+    const inspect = await app.request(`/api/lights/${id}`);
+    const body = (await inspect.json()) as {
+      light: { stripKind: string; stripBead: string; stripChip: string; rgbw: boolean };
+    };
+    expect(body.light.rgbw).toBe(true);
+    expect(body.light.stripKind).toBe("sk6812-rgbw");
+    expect(body.light.stripBead).toBe("rgbw");
+    expect(body.light.stripChip).toBe("SK6812 RGBW");
+    expect(store.findById(id)?.stripKind).toBe("sk6812-rgbw");
+    expect(readCfg).toHaveBeenCalledTimes(1);
+
+    await app.request(`/api/lights/${id}`);
+    expect(readCfg).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not invent stripKind from snapshot rgbw when cfg type is unknown", async () => {
+    const readCfg = vi.fn(async () => ({
+      hw: { led: { ins: [{ start: 0, len: 60, pin: [16], type: 32, order: 0 }] } },
+    }));
+    const { app, store } = testApp({
+      probe: async () => ({
+        kind: "found" as const,
+        snapshot: { ...snapshot, rgbw: true },
+      }),
+      readCfg,
+    });
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.72" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+
+    const inspect = await app.request(`/api/lights/${id}`);
+    const body = (await inspect.json()) as {
+      light: { rgbw: boolean; stripKind: string; stripChip: string };
+    };
+    expect(body.light.rgbw).toBe(true);
+    expect(body.light.stripKind).toBe("ws281x");
+    expect(body.light.stripChip).toBe("WS281x RGB");
+    expect(store.findById(id)?.stripKind).toBe("ws281x");
+    expect(readCfg).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not GET cfg when a product is attached or the Light is unreachable", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
+    const file = join(dir, "lights.json");
+    const readCfg = vi.fn(async () => type30Cfg());
+    const online = testApp({
+      store: new FileLightsStore(file),
+      readCfg,
+    });
+    const enroll = await online.app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.40" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    await online.app.request("/api/led-products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "porch-sk6812",
+        label: "Porch SK6812",
+        formFactor: "discrete",
+        driverId: "sk6812-rgbw",
+      }),
+    });
+    await online.app.request(`/api/lights/${id}/led-product`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ledProductId: "porch-sk6812" }),
+    });
+    expect(online.store.findById(id)?.stripKind).toBe("ws281x");
+    readCfg.mockClear();
+
+    const attached = await online.app.request(`/api/lights/${id}`);
+    expect(
+      ((await attached.json()) as { light: { stripKind: string; stripChip: string } }).light,
+    ).toMatchObject({ stripKind: "ws281x", stripChip: "SK6812 RGBW" });
+    expect(readCfg).not.toHaveBeenCalled();
+
+    const offlineRead = vi.fn(async () => type30Cfg());
+    const offline = testApp({
+      store: new FileLightsStore(file),
+      products: online.products,
+      readCfg: offlineRead,
+      probe: async () => ({
+        kind: "probe-failed",
+        reason: "192.168.1.40 didn’t return a snapshot in 3 s.",
+      }),
+    });
+    const res = await offline.app.request(`/api/lights/${id}`);
+    const body = (await res.json()) as {
+      light: { bead: string; reachability: string; stripKind: string };
+    };
+    expect(body.light.reachability).toBe("no-answer");
+    expect(body.light.bead).toBe("unknown");
+    expect(body.light.stripKind).toBe("ws281x");
+    expect(offlineRead).not.toHaveBeenCalled();
+  });
+
+  it("unreachable Inspect stays grey and does not GET cfg", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
+    const file = join(dir, "lights.json");
+    const online = testApp({ store: new FileLightsStore(file) });
+    const enroll = await online.app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.40" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    expect(online.store.findById(id)?.ledProductId).toBeNull();
+
+    const readCfg = vi.fn(async () => type30Cfg());
+    const offline = testApp({
+      store: new FileLightsStore(file),
+      readCfg,
+      probe: async () => ({
+        kind: "probe-failed",
+        reason: "192.168.1.40 didn’t return a snapshot in 3 s.",
+      }),
+    });
+    const res = await offline.app.request(`/api/lights/${id}`);
+    const body = (await res.json()) as {
+      light: { bead: string; reachability: string; stripKind: string; lastSeenAt: string | null };
+    };
+    expect(body.light.reachability).toBe("no-answer");
+    expect(body.light.bead).toBe("unknown");
+    expect(body.light.stripKind).toBe("ws281x");
+    expect(body.light.lastSeenAt).toBeTruthy();
+    expect(readCfg).not.toHaveBeenCalled();
   });
 });
 

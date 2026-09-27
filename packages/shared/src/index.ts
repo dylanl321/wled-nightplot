@@ -180,6 +180,7 @@ export { sk6812RgbwStrip } from "./strip/sk6812-rgbw.ts";
 export { ws281xStrip } from "./strip/ws281x.ts";
 export {
   knownStripKind,
+  needsInspectStripKindSeed,
   stripBeadCaption,
   stripHonestyForLight,
 } from "./strip/honesty.ts";
