@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { stripBeadCaption, stripHonestyForLight, knownStripKind } from "./honesty.ts";
+import {
+  knownStripKind,
+  needsInspectStripKindSeed,
+  stripBeadCaption,
+  stripHonestyForLight,
+} from "./honesty.ts";
 import type { LedProduct } from "./products.ts";
 
 const rgbwProduct: LedProduct = {
@@ -80,5 +85,36 @@ describe("strip honesty", () => {
   it("captions rgb vs rgbw without claiming Hardware Done", () => {
     expect(stripBeadCaption("rgb")).toBe("RGB");
     expect(stripBeadCaption("rgbw")).toBe("RGBW");
+  });
+
+  it("seeds Inspect stripKind only when default, unattached, and reachable", () => {
+    expect(
+      needsInspectStripKindSeed({
+        stripKind: "ws281x",
+        ledProductId: null,
+        reachable: true,
+      }),
+    ).toBe(true);
+    expect(
+      needsInspectStripKindSeed({
+        stripKind: "sk6812-rgbw",
+        ledProductId: null,
+        reachable: true,
+      }),
+    ).toBe(false);
+    expect(
+      needsInspectStripKindSeed({
+        stripKind: "ws281x",
+        ledProductId: "porch-sk6812",
+        reachable: true,
+      }),
+    ).toBe(false);
+    expect(
+      needsInspectStripKindSeed({
+        stripKind: "ws281x",
+        ledProductId: null,
+        reachable: false,
+      }),
+    ).toBe(false);
   });
 });

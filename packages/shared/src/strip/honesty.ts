@@ -23,6 +23,21 @@ export function knownStripKind(value: string | null | undefined): string {
   return value && getStrip(value) ? value : ws281xStrip.id;
 }
 
+/**
+ * Live Inspect may GET `/json/cfg` once when the enrolled Light still has the
+ * default driver and no catalog product. Snapshot `leds.rgbw` is not a reason
+ * to seed. The Lights list stays cfg-free.
+ */
+export function needsInspectStripKindSeed(input: {
+  stripKind?: string | null;
+  ledProductId?: string | null;
+  reachable?: boolean;
+}): boolean {
+  if (input.reachable === false) return false;
+  if (input.ledProductId) return false;
+  return knownStripKind(input.stripKind) === ws281xStrip.id;
+}
+
 export function stripHonestyForLight(input: {
   stripKind?: string | null;
   product?: LedProduct | null;

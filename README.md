@@ -78,7 +78,7 @@ pnpm dev:demo
 
 or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light for Inspect, then **Strip** to pick a catalog LED product or set WS281x / SK6812 RGBW / node count / GPIO and **Apply** (writes `/json/cfg`, then re-reads the snapshot), **Edit ranges** to declare Elements, **Test live** to Preview or Blink, or **Safe settings** for the small `/json/cfg` set. **All Off** is on the rail / thumb bar. **Remove this Light** on Inspect runs three checks and refuses until they complete. The fixture is a software stub for development, not a verified real strip.
 
-By default the fixture updates `/json/info` and `/json/cfg` together. Real metal often keeps the old `/json/info` name until reboot. To simulate that lag: `NIGHTPLOT_FIXTURE_INFO_NAME_LAG=1 pnpm fixture`, or `POST http://127.0.0.1:48210/nightplot/info-name-lag` with `{ "on": true }`. Safe settings rename still updates the rack title from cfg. `{ "on": false }` copies cfg → info. `NIGHTPLOT_FIXTURE_NATIVE_TYPE=30` starts the fixture bus as SK6812 RGBW; default is 22 (WS281x RGB). A fixture readback is still a development stub.
+By default the fixture updates `/json/info` and `/json/cfg` together. Real metal often keeps the old `/json/info` name until reboot. To simulate that lag: `NIGHTPLOT_FIXTURE_INFO_NAME_LAG=1 pnpm fixture`, or `POST http://127.0.0.1:48210/nightplot/info-name-lag` with `{ "on": true }`. Safe settings rename still updates the rack title from cfg. `{ "on": false }` copies cfg → info. `NIGHTPLOT_FIXTURE_NATIVE_TYPE=30` starts the fixture bus as SK6812 RGBW; default is 22 (WS281x RGB). Enroll keeps the default driver until Inspect or Strip reads cfg. A fixture readback is still a development stub.
 
 **Ports.** Find uses a real advertised port: SSDP `LOCATION`, mDNS SRV. It does not assume `:80`. A host with no port from find is listed as needs host:port — it is not Add-able. Typed address is the escape hatch (a typed host with no port still means `:80`). Listed hosts use `displayHost` and hide default `:80` (a not-WLED reject on port 80 is `192.168.1.80`, not `192.168.1.80:80`). The fixture is **not** on 80; type `127.0.0.1:48210` or use the demo target list.
 
@@ -110,8 +110,8 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | GET | `/api/led-products` | Nightplot LED product catalog (seeded SKUs + operator creates). Does not write WLED. |
 | GET | `/api/led-products/:id` | One catalog row. 404 if missing. |
 | POST | `/api/led-products` | Create a product. 422 on unknown `driverId`, bad `formFactor`, or bad defaults. Does not write WLED. |
-| GET | `/api/lights` | Enrolled Lights (live snapshot or grey + last-seen), declared Elements, unenrolled tray |
-| GET | `/api/lights/:id` | Inspect payload: identity, declared Elements, reported segments, drift, live session |
+| GET | `/api/lights` | Enrolled Lights (live snapshot or grey + last-seen), declared Elements, unenrolled tray. Does not GET `/json/cfg`. |
+| GET | `/api/lights/:id` | Inspect payload: identity, declared Elements, reported segments, drift, live session. When `stripKind` is still the default and no LED product is attached, a live Inspect may persist a known `/json/cfg` bus type. |
 | GET | `/api/lights/:id/live` | Same Light plus current `/json/live` beads |
 | PATCH | `/api/lights/:id/elements` | Save declared ranges. 422 on invert / overlap / over-ledCount. Does not write WLED. |
 | POST | `/api/lights/:id/apply` | Write declared ranges, re-read snapshot. 200 only on match. 409 keeps the failure. |
