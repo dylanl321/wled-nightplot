@@ -25,6 +25,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Fixed
 
+- Delete unknown controller copy no longer invents “in time”. Instant refuse or an unmeasured wait is generic **Couldn’t read it, so we can’t say what it’ll be left doing.** A measured wait of at least ~0.5 s names the actual elapsed seconds — same honesty class as CONFIG-28 / CONFIG-36. v2 Delete canvas uses the generic string (CONFIG-67).
 - All Off unknown rows no longer hardcode “in 3 s”. Instant refuse is generic **no answer from {host}.** A wait of at least ~0.5 s names the actual elapsed seconds — same honesty class as CONFIG-28, All Off product string. v2 All Off canvas Garage example uses the generic string (CONFIG-36).
 - Discover loads enrolled Lights and Find separately. A Find-only miss keeps the enrolled list and says Find did not load, with Find Lights as retry — it does not claim the configure server or the list is down. Lights-only outage still uses ServerDown (CONFIG-49).
 - ServerDown recovery copy names both the local `pnpm dev` path and Docker compose / `docker run` restart (`docs/deploy.md`). It no longer tells a compose operator to run host `pnpm dev` (CONFIG-46).

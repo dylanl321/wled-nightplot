@@ -312,9 +312,9 @@ export function createApp(deps: AppDeps) {
     if (!stored) {
       return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
     }
-    const { light, live: snap } = await refreshOne(stored);
+    const { light, live: snap, elapsedMs } = await refreshOne(stored);
     const next = await seedStripKindFromInspect(light, snap);
-    return c.json(await decorateDetail(next, snap));
+    return c.json(await decorateDetail(next, snap, undefined, elapsedMs));
   });
 
   app.patch("/api/lights/:id/elements", async (c) => {
@@ -1154,7 +1154,7 @@ export function createApp(deps: AppDeps) {
   }
 
   async function deleteImpact(stored: Light) {
-    const { light, live: snap } = await refreshOne(stored);
+    const { light, live: snap, elapsedMs } = await refreshOne(stored);
     const elements = deps.store.elementsFor(light.id);
     const session = live.get(light.id);
     const checks = buildDeleteChecks({
@@ -1162,12 +1162,13 @@ export function createApp(deps: AppDeps) {
       sessionLabel: session?.target.label ?? null,
       reachable: light.reachability === "online" && snap !== null,
       reportedOn: snap?.on ?? null,
+      controllerWaitMs: elapsedMs,
     });
     const liveRead = snap ? await live.read(light) : null;
     return {
       checks,
       caption: manageCaption(liveRead?.source === "fixture" ? "fixture" : "controller"),
-      light: (await decorateDetail(light, snap, elements)).light,
+      light: (await decorateDetail(light, snap, elements, elapsedMs)).light,
     };
   }
 
@@ -1206,17 +1207,19 @@ export function createApp(deps: AppDeps) {
 
   async function refreshOne(
     stored: Light,
-  ): Promise<{ light: Light; live: WledSnapshot | null }> {
+  ): Promise<{ light: Light; live: WledSnapshot | null; elapsedMs: number }> {
+    const started = Date.now();
     const target: HostPort = { hostname: stored.hostname, port: stored.port };
     const outcome = await deps.probe(target);
+    const elapsedMs = Date.now() - started;
     if (outcome.kind === "found") {
       const next = lightFromSnapshot(target, outcome.snapshot, nowIso(), stored);
       deps.store.replace(next);
-      return { light: next, live: outcome.snapshot };
+      return { light: next, live: outcome.snapshot, elapsedMs };
     }
     const next = markUnreachable(stored);
     deps.store.replace(next);
-    return { light: next, live: null };
+    return { light: next, live: null, elapsedMs };
   }
 
   async function listLights(): Promise<LightsPayload> {
@@ -1251,6 +1254,7 @@ export function createApp(deps: AppDeps) {
     light: Light,
     snap: WledSnapshot | null,
     elements?: Element[],
+    controllerWaitMs?: number,
   ): Promise<LightDetail> {
     const detail = lightDetail(
       light,
@@ -1269,6 +1273,7 @@ export function createApp(deps: AppDeps) {
         sessionLabel: current?.target.label ?? null,
         reachable: light.reachability === "online" && snap !== null,
         reportedOn: snap?.on ?? null,
+        controllerWaitMs,
       }),
       liveLeds: liveRead?.leds ?? null,
       liveCaption: liveRead

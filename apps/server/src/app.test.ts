@@ -1252,6 +1252,70 @@ describe("all-off + delete", () => {
     expect(ok.status).toBe(200);
     expect(online.store.findById(id)).toBeUndefined();
   });
+
+  it("does not invent a wait when Delete controller refuse is instant", async () => {
+    let fail = false;
+    const { app, box } = testApp({
+      probe: async () => {
+        if (fail) return { kind: "probe-failed" as const, reason: "probe failed." };
+        return box.probe();
+      },
+    });
+    const id = await enrollHost(app, "192.168.1.63");
+    fail = true;
+    const res = await app.request(`/api/lights/${id}/delete-checks`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      checks: { key: string; status: string; detail: string }[];
+    };
+    const controller = body.checks.find((check) => check.key === "controller");
+    expect(controller?.status).toBe("unknown");
+    expect(controller?.detail).toBe(
+      "Couldn’t read it, so we can’t say what it’ll be left doing.",
+    );
+    expect(controller?.detail).not.toMatch(/in time/);
+    expect(controller?.detail).not.toMatch(/in \d+ s/);
+  });
+
+  it("names the Delete wait from actual elapsed, not “in time”", async () => {
+    let fail = false;
+    const origin = Date.now();
+    const now = vi.spyOn(Date, "now").mockReturnValue(origin);
+    try {
+      const { app, box } = testApp({
+        probe: async () => {
+          if (fail) {
+            now.mockReturnValue(origin + 2800);
+            return { kind: "probe-failed" as const, reason: "probe failed." };
+          }
+          return box.probe();
+        },
+      });
+      const id = await enrollHost(app, "192.168.1.63");
+      fail = true;
+      now.mockReturnValue(origin);
+      const res = await app.request(`/api/lights/${id}/delete-checks`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        checks: { key: string; detail: string }[];
+      };
+      const controller = body.checks.find((check) => check.key === "controller");
+      expect(controller?.detail).toBe(
+        "Couldn’t read it in 3 s, so we can’t say what it’ll be left doing.",
+      );
+      expect(controller?.detail).not.toMatch(/in time/);
+      now.mockReturnValue(origin);
+      const inspect = await app.request(`/api/lights/${id}`);
+      const inspectBody = (await inspect.json()) as {
+        deleteChecks?: { key: string; detail: string }[];
+      };
+      expect(inspectBody.deleteChecks?.find((check) => check.key === "controller")?.detail).toBe(
+        controller?.detail,
+      );
+    } finally {
+      now.mockRestore();
+    }
+  });
 });
 
 describe("safe settings", () => {

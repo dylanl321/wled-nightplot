@@ -10,6 +10,7 @@ import {
   canDelete,
   deleteProgress,
   deleteRefuseReason,
+  deleteUnknownControllerReason,
   manageCaption,
 } from "./manage.ts";
 
@@ -99,5 +100,46 @@ describe("delete checks", () => {
     expect(canDelete(ready)).toBe(true);
     expect(deleteRefuseReason(ready)).toBeNull();
     expect(ready[2]?.detail).toMatch(/Off/);
+  });
+
+  it("uses generic unknown-controller copy when the wait was instant or unmeasured", () => {
+    const generic = "Couldn’t read it, so we can’t say what it’ll be left doing.";
+    expect(deleteUnknownControllerReason()).toBe(generic);
+    expect(deleteUnknownControllerReason(0)).toBe(generic);
+    expect(deleteUnknownControllerReason(12)).toBe(generic);
+    expect(deleteUnknownControllerReason(499)).toBe(generic);
+    expect(deleteUnknownControllerReason(8)).not.toMatch(/in time/);
+    expect(deleteUnknownControllerReason(8)).not.toMatch(/in \d+ s/);
+    const locked = buildDeleteChecks({
+      elementLabels: ["Left run"],
+      sessionLabel: null,
+      reachable: false,
+      reportedOn: null,
+    });
+    expect(locked[2]?.detail).toBe(generic);
+    expect(locked[2]?.detail).not.toMatch(/in time/);
+  });
+
+  it("names actual elapsed seconds when Delete waited", () => {
+    expect(deleteUnknownControllerReason(500)).toBe(
+      "Couldn’t read it in 1 s, so we can’t say what it’ll be left doing.",
+    );
+    expect(deleteUnknownControllerReason(2800)).toBe(
+      "Couldn’t read it in 3 s, so we can’t say what it’ll be left doing.",
+    );
+    expect(deleteUnknownControllerReason(6200)).toBe(
+      "Couldn’t read it in 6 s, so we can’t say what it’ll be left doing.",
+    );
+    const waited = buildDeleteChecks({
+      elementLabels: ["Left run"],
+      sessionLabel: null,
+      reachable: false,
+      reportedOn: null,
+      controllerWaitMs: 2800,
+    });
+    expect(waited[2]?.detail).toBe(
+      "Couldn’t read it in 3 s, so we can’t say what it’ll be left doing.",
+    );
+    expect(waited[2]?.detail).not.toMatch(/in time/);
   });
 });

@@ -56,6 +56,23 @@ export function allOffNoAnswerReason(host: string, elapsedMs: number): string {
   return `no answer from ${host} in ${seconds} s.`;
 }
 
+/**
+ * Below this, a duration in Delete unknown-controller copy would be misleading
+ * (instant refuse or unmeasured). Same 0.5 s honesty gate as CONFIG-28 / CONFIG-36.
+ */
+export const DELETE_UNKNOWN_ELAPSED_MIN_MS = 500;
+
+/** Delete unknown-controller copy: actual elapsed, or generic refuse. Not “in time”. */
+export function deleteUnknownControllerReason(elapsedMs?: number): string {
+  const waited =
+    typeof elapsedMs === "number" && Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
+  if (waited < DELETE_UNKNOWN_ELAPSED_MIN_MS) {
+    return "Couldn’t read it, so we can’t say what it’ll be left doing.";
+  }
+  const seconds = Math.max(1, Math.round(waited / 1000));
+  return `Couldn’t read it in ${seconds} s, so we can’t say what it’ll be left doing.`;
+}
+
 export function allOffSummary(rows: AllOffRow[], cancelled: AllOffCancelled[]): string {
   if (rows.length === 0) return "No Lights to turn off.";
   const off = rows.filter((row) => row.status === "off" || row.status === "already-off").length;
@@ -77,6 +94,8 @@ export function buildDeleteChecks(input: {
   sessionLabel: string | null;
   reachable: boolean;
   reportedOn: boolean | null;
+  /** Measured probe wait. Omit or < ~0.5 s → generic copy (no invented duration). */
+  controllerWaitMs?: number;
 }): DeleteCheck[] {
   const names =
     input.elementLabels.length > 0 ? input.elementLabels.join(" and ") : "no named Elements";
@@ -104,7 +123,7 @@ export function buildDeleteChecks(input: {
         key: "controller",
         label: "Controller state",
         status: "unknown",
-        detail: "Couldn’t read it in time, so we can’t say what it’ll be left doing.",
+        detail: deleteUnknownControllerReason(input.controllerWaitMs),
       }
     : {
         key: "controller",

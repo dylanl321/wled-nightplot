@@ -18,6 +18,7 @@ export {
 } from "./apply.ts";
 export {
   ALL_OFF_NO_ANSWER_ELAPSED_MIN_MS,
+  DELETE_UNKNOWN_ELAPSED_MIN_MS,
   allOffConfirmCopy,
   allOffDockCaption,
   allOffNoAnswerReason,
@@ -28,6 +29,7 @@ export {
   canDelete,
   deleteProgress,
   deleteRefuseReason,
+  deleteUnknownControllerReason,
   manageCaption,
   type AllOffCancelled,
   type AllOffLiveHint,
