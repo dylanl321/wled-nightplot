@@ -7,6 +7,10 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+### Fixed
+
+- ServerDown recovery copy names both the local `pnpm dev` path and Docker compose / `docker run` restart (`docs/deploy.md`). It no longer tells a compose operator to run host `pnpm dev` (CONFIG-46).
+
 ### Added
 
 - Production-shaped Docker image, compose, and GHCR workflow (CONFIG-45). One image (`api` / `web` / `all`); `docker-compose.yml` runs web + api in a shared network namespace with a lights-store volume. Bind `0.0.0.0` and optional `NIGHTPLOT_CORS_ORIGINS` are env-gated for containers — `pnpm dev` stays loopback. Find multicast from a container often fails; `docker-compose.host.yml` is the Linux host-network path. Typed address still works. Not production certified.
