@@ -1171,7 +1171,7 @@ describe("all-off + delete", () => {
     const { app, box } = testApp({
       probe: async (target) => {
         if (fail) return { kind: "probe-failed" as const, reason: "probe failed." };
-        return box.probe(target);
+        return box.probe();
       },
     });
     const id = await enrollHost(app, "192.168.1.63");
@@ -1203,7 +1203,7 @@ describe("all-off + delete", () => {
             now.mockReturnValue(origin + 2800);
             return { kind: "probe-failed" as const, reason: "probe failed." };
           }
-          return box.probe(target);
+          return box.probe();
         },
       });
       const id = await enrollHost(app, "192.168.1.63");
