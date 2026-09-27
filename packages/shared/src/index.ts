@@ -92,6 +92,7 @@ export {
 } from "./drift.ts";
 export {
   emptyLightsPayload,
+  normalizeLightLedProductId,
   type Element,
   type Light,
   type LightDetail,
@@ -151,7 +152,12 @@ export {
   inheritLedProductFields,
   isLedFormFactor,
   LED_FORM_FACTORS,
+  parseLedProductAttach,
   parseLedProductInput,
+  provisionApplyBodyFromProduct,
+  provisionDraftFromProduct,
+  provisionLedTypeForDriver,
+  resolveLedProductAttach,
   seedLedProductsFromPresets,
   validateLedProduct,
 } from "./strip/products.ts";
@@ -159,9 +165,12 @@ export type {
   InheritedLedFields,
   LedFormFactor,
   LedProduct,
+  LedProductAttachParse,
+  LedProductAttachResolve,
   LedProductDraft,
   LedProductIssue,
   LedProductParse,
+  ProvisionDraftFromProduct,
 } from "./strip/products.ts";
 export type { StripBead, StripChannel, StripDriverDescriptor } from "./strip/types.ts";
 export type { StripPreset } from "./strip/presets.ts";

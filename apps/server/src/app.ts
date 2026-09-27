@@ -10,7 +10,9 @@ import {
   buildDeleteChecks,
   canDelete,
   catalogSnapshot,
+  parseLedProductAttach,
   parseLedProductInput,
+  resolveLedProductAttach,
   deleteRefuseReason,
   decideProbeAddress,
   displayHost,
@@ -813,6 +815,32 @@ export function createApp(deps: AppDeps) {
     return c.json({ ...detail, safe: reread, safeWrite: result });
   });
 
+  app.patch("/api/lights/:id/led-product", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    const body = await c.req.json().catch(() => null);
+    const parsed = parseLedProductAttach(body);
+    if (!parsed.ok) {
+      return c.json({ error: parsed.error, message: parsed.message }, 400);
+    }
+    const resolved = resolveLedProductAttach(parsed.ledProductId, (id) =>
+      products.findById(id),
+    );
+    if (!resolved.ok) {
+      const status = resolved.error === "not_found" ? 404 : 422;
+      return c.json({ error: resolved.error, message: resolved.message }, status);
+    }
+    const { light, live: snap } = await refreshOne(stored);
+    const next = { ...light, ledProductId: resolved.ledProductId };
+    deps.store.replace(next);
+    return c.json({
+      ...(await decorateDetail(next, snap)),
+      ledProducts: products.list(),
+    });
+  });
+
   app.get("/api/lights/:id/provision", async (c) => {
     const stored = deps.store.findById(c.req.param("id"));
     if (!stored) {
@@ -825,6 +853,7 @@ export function createApp(deps: AppDeps) {
     return c.json({
       ...(await decorateDetail(light, snap)),
       provision,
+      ledProducts: products.list(),
     });
   });
 

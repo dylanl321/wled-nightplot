@@ -1,19 +1,28 @@
 /**
- * Operator LED product catalog (CONFIG-52).
+ * Operator LED product catalog (CONFIG-52) and Light attach / draft fill
+ * (CONFIG-53).
  *
  * Nightplot-owned SKUs — form factor, driver, optional defaults — separate
  * from WLED bus writes. A catalog row is not Hardware Done. formFactor is
- * metadata; it is never written to WLED. Attaching a product to a Light is
- * CONFIG-53. RGBW native provision maps are CONFIG-54.
+ * metadata; it is never written to WLED. Attaching a product persists
+ * `ledProductId` only. RGBW native provision maps are CONFIG-54.
  */
 import {
   PROVISION_GPIO_MAX,
   PROVISION_GPIO_MIN,
+  PROVISION_LED_TYPES,
   PROVISION_LENGTH_MAX,
   PROVISION_LENGTH_MIN,
+  type ProvisionLedType,
+  type WledStripProvisionDraft,
 } from "../provision.ts";
 import { getStrip } from "./catalog.ts";
-import { STRIP_PRESETS, type StripPreset } from "./presets.ts";
+import {
+  defaultStripPreset,
+  provisionDraftFromPreset,
+  STRIP_PRESETS,
+  type StripPreset,
+} from "./presets.ts";
 import type { StripBead, StripChannel } from "./types.ts";
 
 export const LED_FORM_FACTORS = ["discrete", "cob", "diffused"] as const;
@@ -70,6 +79,116 @@ export function inheritLedProductFields(product: LedProduct): InheritedLedFields
     colorOrder: product.colorOrder ?? driver.colorOrder,
     bead: product.bead ?? driver.bead,
   };
+}
+
+export type LedProductAttachParse =
+  | { ok: true; ledProductId: string | null }
+  | { ok: false; error: "invalid"; message: string };
+
+export type LedProductAttachResolve =
+  | { ok: true; ledProductId: string | null; product: LedProduct | null }
+  | { ok: false; error: "not_found" | "unknown_driver"; message: string };
+
+export type ProvisionDraftFromProduct =
+  | { ok: true; draft: WledStripProvisionDraft }
+  | { ok: false; error: "unknown_driver" | "unsupported_led_type"; message: string };
+
+export function provisionLedTypeForDriver(driverId: string): ProvisionLedType | null {
+  return (PROVISION_LED_TYPES as readonly string[]).includes(driverId)
+    ? (driverId as ProvisionLedType)
+    : null;
+}
+
+/**
+ * Fill the Strip provision draft from a catalog product + its driver.
+ * `ledType` is the registered driver id when that id is a provision type
+ * (today: ws281x). Length / GPIO come from product defaults, then the
+ * caller fallback, then the first seeded preset. Channel / color / bead
+ * inherit is not written here — RGBW native maps are CONFIG-54.
+ */
+export function provisionDraftFromProduct(
+  product: LedProduct,
+  fallback?: Partial<Pick<WledStripProvisionDraft, "length" | "gpio">>,
+): ProvisionDraftFromProduct {
+  if (!getStrip(product.driverId)) {
+    return {
+      ok: false,
+      error: "unknown_driver",
+      message: "driverId must name a registered strip driver (today: ws281x).",
+    };
+  }
+  const ledType = provisionLedTypeForDriver(product.driverId);
+  if (!ledType) {
+    return {
+      ok: false,
+      error: "unsupported_led_type",
+      message:
+        "This driver is not a strip type we provision. Fields were not filled. Nothing was written.",
+    };
+  }
+  const seeded = provisionDraftFromPreset(defaultStripPreset());
+  return {
+    ok: true,
+    draft: {
+      ledType,
+      length: product.defaultLength ?? fallback?.length ?? seeded.length,
+      gpio: product.defaultGpio ?? fallback?.gpio ?? seeded.gpio,
+    },
+  };
+}
+
+export function provisionApplyBodyFromProduct(product: LedProduct):
+  | { ok: true; body: { provision: WledStripProvisionDraft } }
+  | { ok: false; error: "unknown_driver" | "unsupported_led_type"; message: string } {
+  const filled = provisionDraftFromProduct(product);
+  if (!filled.ok) return filled;
+  return { ok: true, body: { provision: filled.draft } };
+}
+
+export function parseLedProductAttach(input: unknown): LedProductAttachParse {
+  if (!input || typeof input !== "object") {
+    return { ok: false, error: "invalid", message: "Send { ledProductId }." };
+  }
+  const row = input as Record<string, unknown>;
+  if (!("ledProductId" in row)) {
+    return { ok: false, error: "invalid", message: "Send { ledProductId }." };
+  }
+  if (row.ledProductId === null) {
+    return { ok: true, ledProductId: null };
+  }
+  if (typeof row.ledProductId !== "string" || !row.ledProductId.trim()) {
+    return {
+      ok: false,
+      error: "invalid",
+      message: "ledProductId must be a catalog id or null.",
+    };
+  }
+  return { ok: true, ledProductId: row.ledProductId.trim() };
+}
+
+export function resolveLedProductAttach(
+  ledProductId: string | null,
+  lookup: (id: string) => LedProduct | undefined,
+): LedProductAttachResolve {
+  if (ledProductId === null) {
+    return { ok: true, ledProductId: null, product: null };
+  }
+  const product = lookup(ledProductId);
+  if (!product) {
+    return {
+      ok: false,
+      error: "not_found",
+      message: "That LED product is not in the catalog.",
+    };
+  }
+  if (!getStrip(product.driverId)) {
+    return {
+      ok: false,
+      error: "unknown_driver",
+      message: "driverId must name a registered strip driver (today: ws281x).",
+    };
+  }
+  return { ok: true, ledProductId: product.id, product };
 }
 
 export function seedLedProductsFromPresets(

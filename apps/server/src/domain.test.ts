@@ -47,4 +47,12 @@ describe("lightFromSnapshot name", () => {
     expect(refreshed.nameSource).toBe("info");
     expect(refreshed.staleInfoName).toBeNull();
   });
+
+  it("keeps ledProductId across a snapshot refresh", () => {
+    const enrolled = lightFromSnapshot(target, snapshot, "2026-09-26T18:00:00.000Z");
+    expect(enrolled.ledProductId).toBeNull();
+    const attached = { ...enrolled, ledProductId: "led-ws281x-60-gpio16" };
+    const refreshed = lightFromSnapshot(target, snapshot, "2026-09-26T18:01:00.000Z", attached);
+    expect(refreshed.ledProductId).toBe("led-ws281x-60-gpio16");
+  });
 });

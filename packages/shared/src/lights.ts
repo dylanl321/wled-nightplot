@@ -39,9 +39,19 @@ export type Light = {
   on: boolean | null;
   brightness: number | null;
   enrolledAt: string;
+  /**
+   * Nightplot LED product catalog id, or null for manual Strip fields.
+   * Bookkeeping only — not a WLED write, not Hardware Done.
+   */
+  ledProductId: string | null;
   lastSnapshot?: WledSnapshot | null;
   lastSnapshotAt?: string | null;
 };
+
+/** Missing or blank store values are manual fields. */
+export function normalizeLightLedProductId(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
 
 /**
  * An Element is a contiguous inclusive–exclusive range on a Light’s strip.

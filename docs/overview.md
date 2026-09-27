@@ -17,13 +17,13 @@ It is early software. There is no authentication and no TLS. A fixture report is
 
 1. **Find** — mDNS, SSDP, typed address, optional `NIGHTPLOT_DISCOVERY_TARGETS`. Public IPs refused before HTTP.
 2. **Enroll** — fails closed without a WLED snapshot. Persists in `data/lights.json`.
-3. **Strip** — first-time WS281x type / length / GPIO via `/json/cfg` (`provision`). Named catalog presets fill the form; fields still override.
+3. **Strip** — first-time WS281x type / length / GPIO via `/json/cfg` (`provision`). A catalog LED product fills the form from that SKU and its driver; fields still override. Attach persists `ledProductId` on the Light and does not write WLED.
 4. **Elements** — declare ranges. Save writes Nightplot only. Apply writes the controller, then re-reads. 200 only on match.
 5. **Test live** — Preview and Blink. Preview is temporary; Apply is what persists. Proof ladder: sent → controller reports → a person confirms.
 6. **Safe settings** — small `WledSafeSettings` set, fingerprint-gated. Unsupported firmware is refused.
 7. **Manage** — Lights rack, All Off (cancels without restoring), Delete (checks that run).
 
-The catalog slice id is `R6` (`CURRENT_SLICE` in `packages/shared/src/catalog.ts`). Strip provision, named presets, and range reconcile sit on that same flow. Operator LED products (`LedProduct`) are a Nightplot catalog of specific SKUs — form factor, driver, optional defaults — stored in `data/led-products.json`. They are not written to WLED. Attaching a product to a Light is a later ticket.
+The catalog slice id is `R6` (`CURRENT_SLICE` in `packages/shared/src/catalog.ts`). Strip provision, named presets (seeds), LED product attach, and range reconcile sit on that same flow. Operator LED products (`LedProduct`) are a Nightplot catalog of specific SKUs — form factor, driver, optional defaults — stored in `data/led-products.json`. Attaching one to a Light stores `ledProductId`. That is not a WLED write and not Hardware Done.
 
 ## Honesty
 
