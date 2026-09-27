@@ -6,6 +6,7 @@ import {
   knownStripKind,
   normalizeHostKey,
   resolveLightName,
+  snapshotSegmentCount,
   stripHonestyForLight,
   validateDeclaredRanges,
   type BeadColor,
@@ -102,13 +103,13 @@ export function lightDetail(
   product: LedProduct | null = null,
 ): LightDetail {
   const reachable = light.reachability === "online" && live !== null;
-  const reported = reachable ? (live?.segments ?? []) : [];
+  const reported = live?.segments ?? [];
   const issues = validateDeclaredRanges(elements, light.ledCount);
   const display = buildRangeDisplay(elements, reported, issues, { reachable });
   return {
     light: toLightView(light, live, {
       elementCount: elements.length,
-      segmentCount: reachable ? (live?.segments.length ?? 0) : null,
+      segmentCount: reachable ? snapshotSegmentCount(live) : null,
       driftLabel: display.notes[0]?.text ?? null,
       product,
     }),

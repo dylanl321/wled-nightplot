@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lightFromSnapshot, rowFromProbe, toLightView } from "./domain.ts";
+import { lightDetail, lightFromSnapshot, rowFromProbe, toLightView } from "./domain.ts";
 
 const snapshot = {
   name: "WLED",
@@ -136,7 +136,7 @@ describe("toLightView strip honesty", () => {
       on: null,
       brightness: null,
       segmentColor: null,
-      segments: [],
+      segments: null,
     };
     const light = lightFromSnapshot(target, infoOnly, "2026-09-26T18:00:00.000Z");
     const view = toLightView(light, infoOnly);
@@ -169,7 +169,7 @@ describe("rowFromProbe info-only beads", () => {
           on: null,
           brightness: null,
           segmentColor: null,
-          segments: [],
+          segments: null,
         },
       },
       "2026-09-26T18:00:00.000Z",
@@ -177,5 +177,39 @@ describe("rowFromProbe info-only beads", () => {
     );
     expect(row.on).toBeNull();
     expect(row.bead).toBe("unknown");
+  });
+});
+
+describe("lightDetail segmentCount honesty", () => {
+  const target = { hostname: "192.168.1.72", port: 80 };
+
+  it("does not present info-only missing segments as zero", () => {
+    const infoOnly = {
+      ...snapshot,
+      on: null,
+      brightness: null,
+      segmentColor: null,
+      segments: null,
+    };
+    const light = lightFromSnapshot(target, infoOnly, "2026-09-26T18:00:00.000Z");
+    const detail = lightDetail(light, infoOnly, []);
+    expect(detail.light.reachability).toBe("online");
+    expect(detail.light.segmentCount).toBeNull();
+    expect(detail.light.segmentCount).not.toBe(0);
+    expect(detail.reported).toEqual([]);
+  });
+
+  it("keeps a known empty seg list as zero — distinct from unknown", () => {
+    const empty = { ...snapshot, on: true, segments: [] };
+    const light = lightFromSnapshot(target, empty, "2026-09-26T18:00:00.000Z");
+    const detail = lightDetail(light, empty, []);
+    expect(detail.light.segmentCount).toBe(0);
+  });
+
+  it("counts reported segments when state.seg is present", () => {
+    const light = lightFromSnapshot(target, snapshot, "2026-09-26T18:00:00.000Z");
+    const detail = lightDetail(light, snapshot, []);
+    expect(detail.light.segmentCount).toBe(1);
+    expect(detail.reported).toEqual([{ start: 0, stop: 60, differs: true }]);
   });
 });

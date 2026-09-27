@@ -221,7 +221,7 @@ function restoreFrom(snapshot: WledSnapshot): LiveRestoreSnapshot {
     on: snapshot.on,
     brightness: snapshot.brightness,
     color: snapshot.segmentColor,
-    segments: snapshot.segments.map((seg) => ({
+    segments: (snapshot.segments ?? []).map((seg) => ({
       start: seg.start,
       stop: seg.stop,
       color: snapshot.segmentColor,

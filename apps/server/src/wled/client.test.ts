@@ -120,7 +120,7 @@ describe("probeWled /json/state after /json/info", () => {
     if (outcome.kind !== "found") return;
     expect(outcome.snapshot.name).toBe("WLED-7F2A");
     expect(outcome.snapshot.on).toBeNull();
-    expect(outcome.snapshot.segments).toEqual([]);
+    expect(outcome.snapshot.segments).toBeNull();
     expect(elapsed).toBeLessThan(PROBE_STATE_AFTER_INFO_MS + 250);
     expect(elapsed).toBeLessThan(1500);
   });
@@ -143,6 +143,7 @@ describe("probeWled /json/state after /json/info", () => {
     expect(outcome.kind).toBe("found");
     if (outcome.kind !== "found") return;
     expect(outcome.snapshot.on).toBeNull();
+    expect(outcome.snapshot.segments).toBeNull();
     expect(elapsed).toBeLessThan(700);
   });
 

@@ -34,7 +34,7 @@ describe("restoreWriteFromSnapshot", () => {
       on: null,
       brightness: null,
       segmentColor: null,
-      segments: [],
+      segments: null,
     });
     expect(write).not.toHaveProperty("on");
     expect(write.on).toBeUndefined();

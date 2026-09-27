@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseWledPayload } from "./snapshot.ts";
+import { parseWledPayload, snapshotSegmentCount } from "./snapshot.ts";
 
 const wledJson = {
   info: {
@@ -15,6 +15,16 @@ const wledJson = {
     seg: [{ col: [[255, 160, 0]] }],
   },
 };
+
+describe("snapshotSegmentCount", () => {
+  it("is null for missing or unknown segments — not zero", () => {
+    expect(snapshotSegmentCount(null)).toBeNull();
+    expect(snapshotSegmentCount(undefined)).toBeNull();
+    expect(snapshotSegmentCount({ segments: null })).toBeNull();
+    expect(snapshotSegmentCount({ segments: [] })).toBe(0);
+    expect(snapshotSegmentCount({ segments: [{ start: 0, stop: 24 }] })).toBe(1);
+  });
+});
 
 describe("parseWledPayload", () => {
   it("reads a combined /json snapshot", () => {
@@ -58,8 +68,28 @@ describe("parseWledPayload", () => {
       on: null,
       brightness: null,
       segmentColor: null,
-      segments: [],
+      segments: null,
     });
+    expect(snapshotSegmentCount(snap)).toBeNull();
+  });
+
+  it("treats a known empty seg list as zero — not unknown", () => {
+    const snap = parseWledPayload({
+      info: wledJson.info,
+      state: { on: true, bri: 128, seg: [] },
+    });
+    expect(snap?.segments).toEqual([]);
+    expect(snapshotSegmentCount(snap)).toBe(0);
+  });
+
+  it("treats state without a seg array as segments unknown", () => {
+    const snap = parseWledPayload({
+      info: wledJson.info,
+      state: { on: false, bri: 0 },
+    });
+    expect(snap?.on).toBe(false);
+    expect(snap?.segments).toBeNull();
+    expect(snapshotSegmentCount(snap)).toBeNull();
   });
 
   it("rejects HTML or a non-WLED JSON box", () => {

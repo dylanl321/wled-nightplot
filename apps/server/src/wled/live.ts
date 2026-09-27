@@ -84,10 +84,9 @@ export function restoreOnField(on: boolean | null | undefined): Pick<WledStateWr
 export function restoreWriteFromSnapshot(snapshot: WledSnapshot): WledStateWrite {
   const color = snapshot.segmentColor ?? "#ffa000";
   const rgb = hexToTriple(color);
+  const known = snapshot.segments ?? [];
   const segs =
-    snapshot.segments.length > 0
-      ? snapshot.segments
-      : [{ start: 0, stop: snapshot.ledCount }];
+    known.length > 0 ? known : [{ start: 0, stop: snapshot.ledCount }];
   return {
     ...restoreOnField(snapshot.on),
     bri: snapshot.brightness ?? 128,

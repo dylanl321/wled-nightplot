@@ -129,6 +129,51 @@ describe("LightDetail reported rails", () => {
   });
 });
 
+describe("LightDetail info-only segments", () => {
+  it("says Segments unknown when segmentCount is missing — not 0 reported", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: null,
+            brightness: null,
+            bead: "unknown",
+            segmentCount: null,
+            lastSeenAt: "2026-09-26T18:00:00.000Z",
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+        })}
+        mode="inspect"
+      />,
+    );
+
+    expect(screen.getByText(/Segments unknown/)).toBeTruthy();
+    expect(screen.queryByText(/0 segments reported/)).toBeNull();
+  });
+
+  it("still names a known empty segment list on Inspect", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: true,
+            brightness: 128,
+            bead: "#ffa000",
+            segmentCount: 0,
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+        })}
+        mode="inspect"
+      />,
+    );
+
+    expect(screen.getByText(/0 segments reported/)).toBeTruthy();
+    expect(screen.queryByText(/Segments unknown/)).toBeNull();
+  });
+});
+
 describe("LightDetail info-only power", () => {
   it("does not say Online · off when on is missing — unknown-grey, not null-as-off", () => {
     render(

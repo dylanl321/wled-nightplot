@@ -75,6 +75,7 @@ export type LightView = Light & {
   stripChip: string;
   displayHost: string;
   elementCount: number;
+  /** Null when `state.seg` is unknown. 0 is a known empty list. */
   segmentCount: number | null;
   driftLabel: string | null;
 };

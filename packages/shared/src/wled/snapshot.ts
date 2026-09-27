@@ -9,8 +9,20 @@ export type WledSnapshot = {
   on: boolean | null;
   brightness: number | null;
   segmentColor: string | null;
-  segments: RangeSpan[];
+  /**
+   * Reported `state.seg` spans. `null` when state was skipped/hung or `seg`
+   * was not an array — unknown, not zero. `[]` is a known empty list.
+   */
+  segments: RangeSpan[] | null;
 };
+
+/** Unknown when `segments` is null. Distinct from a known empty `[]`. */
+export function snapshotSegmentCount(
+  snapshot: Pick<WledSnapshot, "segments"> | null | undefined,
+): number | null {
+  if (!snapshot || snapshot.segments === null) return null;
+  return snapshot.segments.length;
+}
 
 export function parseWledPayload(body: unknown): WledSnapshot | null {
   if (!body || typeof body !== "object") return null;
@@ -51,8 +63,8 @@ export function parseWledPayload(body: unknown): WledSnapshot | null {
 function parseSegments(
   state: Record<string, unknown> | null,
   ledCount: number,
-): RangeSpan[] {
-  if (!state || !Array.isArray(state.seg)) return [];
+): RangeSpan[] | null {
+  if (!state || !Array.isArray(state.seg)) return null;
   const out: RangeSpan[] = [];
   for (const raw of state.seg) {
     if (!isRecord(raw)) continue;

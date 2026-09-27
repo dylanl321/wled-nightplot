@@ -251,4 +251,8 @@ export {
   type SafeWriteResult,
   type WledSafeSettings,
 } from "./safe.ts";
-export { parseWledPayload, type WledSnapshot } from "./wled/snapshot.ts";
+export {
+  parseWledPayload,
+  snapshotSegmentCount,
+  type WledSnapshot,
+} from "./wled/snapshot.ts";
