@@ -140,6 +140,35 @@ describe("configure server", () => {
     });
   });
 
+  it("CORS defaults to loopback web; env may add one published origin", async () => {
+    const { app } = testApp();
+    const allowed = await app.request("/health", {
+      headers: { Origin: "http://127.0.0.1:43180" },
+    });
+    expect(allowed.headers.get("access-control-allow-origin")).toBe(
+      "http://127.0.0.1:43180",
+    );
+    const denied = await app.request("/health", {
+      headers: { Origin: "http://192.168.1.10:43180" },
+    });
+    expect(denied.headers.get("access-control-allow-origin")).toBeNull();
+
+    const previous = process.env.NIGHTPLOT_CORS_ORIGINS;
+    process.env.NIGHTPLOT_CORS_ORIGINS = "http://192.168.1.10:43180";
+    try {
+      const { app: gated } = testApp();
+      const extra = await gated.request("/health", {
+        headers: { Origin: "http://192.168.1.10:43180" },
+      });
+      expect(extra.headers.get("access-control-allow-origin")).toBe(
+        "http://192.168.1.10:43180",
+      );
+    } finally {
+      if (previous === undefined) delete process.env.NIGHTPLOT_CORS_ORIGINS;
+      else process.env.NIGHTPLOT_CORS_ORIGINS = previous;
+    }
+  });
+
   it("exposes strip presets on the catalog snapshot", async () => {
     const { app } = testApp();
     const res = await app.request("/api/catalogs");

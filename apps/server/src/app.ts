@@ -54,6 +54,7 @@ import {
 } from "@nightplot/shared";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { resolveCorsOrigins } from "./cors-origins.ts";
 import type { CollectFn } from "./discovery/collect.ts";
 import { FIND_PROBE_CONCURRENCY, mapLimit } from "./discovery/map-limit.ts";
 import {
@@ -94,7 +95,7 @@ export function createApp(deps: AppDeps) {
   app.use(
     "*",
     cors({
-      origin: ["http://127.0.0.1:43180", "http://localhost:43180"],
+      origin: resolveCorsOrigins(),
     }),
   );
 

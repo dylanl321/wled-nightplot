@@ -38,7 +38,7 @@ Catalog slice id is still `R6` (`CURRENT_SLICE` in `packages/shared/src/catalog.
 | Doc | What |
 | --- | --- |
 | [install.md](install.md) | pnpm, ports, fixture |
-| [deploy.md](deploy.md) | What “deploy” means today. Docker is CONFIG-45 |
+| [deploy.md](deploy.md) | Docker / compose / GHCR. Not production certified |
 | [architecture.md](architecture.md) | Tree, seams, symbols |
 | [ui/README.md](ui/README.md) | v2 prototype |
 | [PLANE.md](PLANE.md) | CONFIG tickets |

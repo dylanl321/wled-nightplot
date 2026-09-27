@@ -4,7 +4,7 @@ Configure spine for home LED strips. Discover a controller, enroll it as a **Lig
 
 This is not a lighting control room. It does not host playback, mapping, or scheduling. It does not ship Yard, Tonight, Studio, Scene, Show, Schedule, or Devices-as-noun chrome.
 
-The product is **not production-ready**. This repo has production-*shaped* documentation and governance. Docker / compose / GHCR is CONFIG-45 — not this tree.
+The product is **not production-ready**. This repo has production-*shaped* documentation, governance, and a Docker image builder. That image is **not production certified**.
 
 GitHub today is `dylanl321/wled-nightplot` (`main`). The package name is `nightplot-configure`.
 
@@ -40,7 +40,25 @@ pnpm test
 
 `pnpm test` includes `apps/web` component tests (Vitest + Testing Library): Espalexa `portWarning` copy on Discover / the unenrolled tray, and Lights last-seen / unknown beads with Inspect Refresh as the one-Light probe. The list component does not re-probe.
 
-More: [docs/install.md](docs/install.md).
+More: [docs/install.md](docs/install.md). Docker / compose: [docs/deploy.md](docs/deploy.md).
+
+## Docker
+
+One image (`Dockerfile`); compose runs **web** + **api**. Not production certified. Find (mDNS / SSDP) from a bridge network usually fails — typed address still works. Linux host networking is the honest Find path (`docker-compose.host.yml`).
+
+```bash
+docker build -t nightplot-configure .
+docker compose up --build
+```
+
+- App: [http://127.0.0.1:43180](http://127.0.0.1:43180)
+- API: [http://127.0.0.1:43181](http://127.0.0.1:43181)
+
+Store volume: `lights-store` → `/data/lights.json`. `pnpm dev` bind stays loopback; compose publishes `0.0.0.0` on purpose.
+
+GHCR build: Actions → Docker → Run workflow, or push to `main` / a `v*` tag. Images push only when GHCR login succeeds. Workflow does not run on pull requests.
+
+Full build / run / multicast caveats: [docs/deploy.md](docs/deploy.md).
 
 ### Discover → Add without a box on the LAN
 
@@ -126,6 +144,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | `packages/shared` | LAN guard, WLED parse, catalogs, Light / Element types |
 | `docs/ui/` | Nightplot Configure v2 prototype. See [docs/ui/README.md](docs/ui/README.md). |
 | `docs/PLANE.md` | CONFIG tickets, REST-only Plane duties. |
+| `Dockerfile` / `docker-compose.yml` | Production-shaped image + compose. See [docs/deploy.md](docs/deploy.md). |
 
 ## Prototype
 
