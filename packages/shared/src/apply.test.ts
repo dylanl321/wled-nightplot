@@ -11,6 +11,7 @@ import {
   applyOutcome,
   applyRefuseReason,
   applyUnknownSegments,
+  applyUnreadFailed,
   knownApplyColor,
   macsMatch,
   readdressContinuity,
@@ -131,6 +132,36 @@ describe("apply match", () => {
     expect(result.message).toMatch(/didn’t stick/);
     expect(result.rows[0]?.matched).toBe(false);
     expect(applyCaption("fixture")).toMatch(/Not Hardware Done/);
+  });
+
+  it("does not invent a known empty read when segments were not read", () => {
+    const sent = [{ label: "Right run", start: 24, stop: 50 }];
+    const writeFailed = applyUnreadFailed(
+      sent,
+      "The controller did not take the ranges. Nothing else changed.",
+      "controller",
+    );
+    expect(writeFailed.matched).toBe(false);
+    expect(writeFailed.status).toBe("failed");
+    expect(writeFailed.read).toBeNull();
+    expect(writeFailed.read).not.toEqual([]);
+    expect(writeFailed.rows).toEqual([]);
+    expect(adoptControllerRangesReason(writeFailed)).toBe(APPLY_ADOPT_UNKNOWN_REASON);
+    expect(adoptControllerRangesReason(writeFailed)).not.toBe(APPLY_ADOPT_EMPTY_REASON);
+
+    const rereadFailed = applyUnreadFailed(
+      sent,
+      "Wrote, but could not re-read. Not treating as success.",
+      "controller",
+    );
+    expect(rereadFailed.read).toBeNull();
+    expect(rereadFailed.read).not.toEqual([]);
+    expect(adoptControllerRangesReason(rereadFailed)).toBe(APPLY_ADOPT_UNKNOWN_REASON);
+
+    const knownEmpty = applyOutcome(sent, [], "controller");
+    expect(knownEmpty.read).toEqual([]);
+    expect(knownEmpty.status).toBe("mismatch");
+    expect(adoptControllerRangesReason(knownEmpty)).toBe(APPLY_ADOPT_EMPTY_REASON);
   });
 
   it("does not treat unknown reread segments as empty before outcome", () => {

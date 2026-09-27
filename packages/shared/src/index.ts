@@ -12,6 +12,7 @@ export {
   applyRefuseReason,
   applyRows,
   applyUnknownSegments,
+  applyUnreadFailed,
   knownApplyColor,
   macsMatch,
   normalizeMac,

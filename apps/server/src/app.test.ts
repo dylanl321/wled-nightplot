@@ -1145,6 +1145,90 @@ describe("apply + re-address", () => {
     expect(store.findById(id)?.lastSnapshot).toBeFalsy();
   });
 
+  it("write-failed Apply does not invent apply.read as a known empty list", async () => {
+    let written = false;
+    const { app } = testApp({
+      write: async () => {
+        written = true;
+        return false;
+      },
+    });
+    const id = await enroll(app);
+    const detail = (await (await app.request(`/api/lights/${id}`)).json()) as {
+      elements: { id: string; label: string; start: number; stop: number }[];
+    };
+    const res = await app.request(`/api/lights/${id}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: detail.elements }),
+    });
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as {
+      error: string;
+      message: string;
+      apply: {
+        matched: boolean;
+        status: string;
+        message: string;
+        read: { start: number; stop: number }[] | null;
+        rows: unknown[];
+      };
+    };
+    expect(written).toBe(true);
+    expect(body.error).toBe("write-failed");
+    expect(body.apply.matched).toBe(false);
+    expect(body.apply.status).toBe("failed");
+    expect(body.apply.read).toBeNull();
+    expect(body.apply.read).not.toEqual([]);
+    expect(body.apply.rows).toEqual([]);
+    expect(body.apply.message).toMatch(/did not take the ranges/);
+    expect(body.message).toMatch(/did not take the ranges/);
+  });
+
+  it("reread-failed Apply does not invent apply.read as a known empty list", async () => {
+    let written = false;
+    const { app } = testApp({
+      write: async () => {
+        written = true;
+        return true;
+      },
+      probe: async () =>
+        written
+          ? { kind: "probe-failed" as const, reason: "no answer" }
+          : { kind: "found" as const, snapshot },
+    });
+    const id = await enroll(app);
+    const detail = (await (await app.request(`/api/lights/${id}`)).json()) as {
+      elements: { id: string; label: string; start: number; stop: number }[];
+    };
+    const res = await app.request(`/api/lights/${id}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: detail.elements }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as {
+      error: string;
+      message: string;
+      apply: {
+        matched: boolean;
+        status: string;
+        message: string;
+        read: { start: number; stop: number }[] | null;
+        rows: unknown[];
+      };
+    };
+    expect(written).toBe(true);
+    expect(body.error).toBe("reread-failed");
+    expect(body.apply.matched).toBe(false);
+    expect(body.apply.status).toBe("failed");
+    expect(body.apply.read).toBeNull();
+    expect(body.apply.read).not.toEqual([]);
+    expect(body.apply.rows).toEqual([]);
+    expect(body.apply.message).toMatch(/could not re-read/);
+    expect(body.message).toMatch(/could not re-read/);
+  });
+
   it("does not treat unknown reread segments as empty before applyOutcome", async () => {
     let written = false;
     const { app, store } = testApp({

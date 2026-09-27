@@ -26,6 +26,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Fixed
 
+- Apply write-failed and reread-failed no longer invent `apply.read` as a known empty list. When no segment list was read, `read` is `null` — not `[]`. A known empty reread `seg: []` still reports `[]`. Same honesty class as CONFIG-78 unknown-reread. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-86).
 - Strip Apply failure no longer titles a cfg mismatch or refuse as **Apply didn’t stick**. The panel uses the provision result message: **Wrote, but /json/cfg did not match. Not treating as success.** A cfg-refuse stays that refuse copy. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-84).
 - Apply leftover-segment clears no longer invent previous count 0 from a missing `state.seg`. Unknown (`null` after info-only / skipped `/json/state`) refuses leftover `stop: 0` clears and the Apply write. A known empty `seg: []` still applies with no leftover clears. Same honesty class as **segments unknown** ≠ 0 and unknown reread. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-83).
 - Edit-ranges Apply failure no longer titles an unknown-reread refuse as **Apply didn’t stick**. The panel uses the Apply result message: **Wrote, but segments are unknown. Not treating as success.** A known mismatch still says didn’t stick. Same honesty class as unknown segments ≠ empty. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-81).

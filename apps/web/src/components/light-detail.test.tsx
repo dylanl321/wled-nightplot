@@ -1,8 +1,10 @@
 import {
+  APPLY_ADOPT_EMPTY_REASON,
   APPLY_ADOPT_UNKNOWN_REASON,
   APPLY_UNKNOWN_SEGMENTS_MESSAGE,
   applyOutcome,
   applyUnknownSegments,
+  applyUnreadFailed,
   type ApplyResult,
   type LightDetail as LightDetailPayload,
 } from "@nightplot/shared";
@@ -716,6 +718,51 @@ describe("LightDetail ApplyFailed copy", () => {
     expect(await screen.findByText(/Apply didn’t stick/)).toBeTruthy();
     expect(screen.queryByText(APPLY_UNKNOWN_SEGMENTS_MESSAGE)).toBeNull();
     expect(screen.getByText(/Nothing else on the controller changed/)).toBeTruthy();
+  });
+
+  it("treats write-failed unread apply.read as unknown — not a known empty list", async () => {
+    const initial = applyRangesDetail();
+    const apply = applyUnreadFailed(
+      [{ label: "Door", start: 0, stop: 60 }],
+      "The controller did not take the ranges. Nothing else changed.",
+      "controller",
+    );
+    stubApplyResult(initial, apply);
+
+    render(<LightDetail initial={initial} mode="ranges" />);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(
+      await screen.findByText("The controller did not take the ranges. Nothing else changed."),
+    ).toBeTruthy();
+    expect(screen.getByText("unknown")).toBeTruthy();
+    expect(screen.queryByText("nothing")).toBeNull();
+    expect(screen.getByText(APPLY_ADOPT_UNKNOWN_REASON)).toBeTruthy();
+    expect(screen.queryByText(APPLY_ADOPT_EMPTY_REASON)).toBeNull();
+    expect(
+      (screen.getByRole("button", { name: "Use controller’s" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("treats reread-failed unread apply.read as unknown — not a known empty list", async () => {
+    const initial = applyRangesDetail();
+    const apply = applyUnreadFailed(
+      [{ label: "Door", start: 0, stop: 60 }],
+      "Wrote, but could not re-read. Not treating as success.",
+      "controller",
+    );
+    stubApplyResult(initial, apply);
+
+    render(<LightDetail initial={initial} mode="ranges" />);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(
+      await screen.findByText("Wrote, but could not re-read. Not treating as success."),
+    ).toBeTruthy();
+    expect(screen.getByText("unknown")).toBeTruthy();
+    expect(screen.queryByText("nothing")).toBeNull();
+    expect(screen.getByText(APPLY_ADOPT_UNKNOWN_REASON)).toBeTruthy();
+    expect(screen.queryByText(APPLY_ADOPT_EMPTY_REASON)).toBeNull();
   });
 });
 

@@ -6,11 +6,11 @@ import {
   allOffNoAnswerReason,
   allOffSummary,
   APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE,
-  applyCaption,
   applyOutcome,
   APPLY_UNKNOWN_COLOUR_REASON,
   applyRefuseReason,
   applyUnknownSegments,
+  applyUnreadFailed,
   knownApplyColor,
   snapshotSegmentCount,
   buildDeleteChecks,
@@ -404,38 +404,32 @@ export function createApp(deps: AppDeps) {
     }
     const written = await deps.write(dest, planned.body);
     if (!written) {
+      const outcome = applyUnreadFailed(
+        sent,
+        "The controller did not take the ranges. Nothing else changed.",
+        "controller",
+      );
       return c.json(
         {
           error: "write-failed",
-          message: "The controller did not take the ranges. Nothing else changed.",
-          apply: {
-            status: "failed" as const,
-            matched: false,
-            rows: [],
-            sent,
-            read: [],
-            message: "The controller did not take the ranges. Nothing else changed.",
-            caption: applyCaption("controller"),
-          },
+          message: outcome.message,
+          apply: outcome,
         },
         422,
       );
     }
     const reread = await deps.probe(dest);
     if (reread.kind !== "found") {
+      const outcome = applyUnreadFailed(
+        sent,
+        "Wrote, but could not re-read. Not treating as success.",
+        "controller",
+      );
       return c.json(
         {
           error: "reread-failed",
-          message: "Wrote, but could not re-read. Not treating as success.",
-          apply: {
-            status: "failed" as const,
-            matched: false,
-            rows: [],
-            sent,
-            read: [],
-            message: "Wrote, but could not re-read. Not treating as success.",
-            caption: applyCaption("controller"),
-          },
+          message: outcome.message,
+          apply: outcome,
         },
         409,
       );
