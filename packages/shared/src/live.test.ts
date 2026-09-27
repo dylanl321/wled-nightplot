@@ -10,6 +10,7 @@ import {
   previewRefuseReason,
   proofLadder,
   resolveLiveTarget,
+  restoreSegmentsFromSnapshot,
   shouldRestoreOnEnd,
 } from "./live.ts";
 
@@ -36,6 +37,21 @@ describe("session restore contract", () => {
     expect(shouldRestoreOnEnd("complete")).toBe(true);
     expect(shouldRestoreOnEnd("error")).toBe(true);
     expect(shouldRestoreOnEnd("cancel-without-restore")).toBe(false);
+  });
+
+  it("keeps unknown segments unknown — not an empty list", () => {
+    expect(restoreSegmentsFromSnapshot(null, "#ffa000")).toBeNull();
+    expect(restoreSegmentsFromSnapshot(null, null)).toBeNull();
+  });
+
+  it("keeps a known empty report empty, and maps known spans", () => {
+    expect(restoreSegmentsFromSnapshot([], "#ffa000")).toEqual([]);
+    expect(restoreSegmentsFromSnapshot([{ start: 0, stop: 60 }], "#ffa000")).toEqual([
+      { start: 0, stop: 60, color: "#ffa000" },
+    ]);
+    expect(restoreSegmentsFromSnapshot([{ start: 4, stop: 12 }], null)).toEqual([
+      { start: 4, stop: 12, color: null },
+    ]);
   });
 });
 

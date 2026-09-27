@@ -5,6 +5,7 @@ import {
   restoreBriField,
   restoreColField,
   restoreOnField,
+  restoreSegField,
   restoreWriteFromSnapshot,
 } from "./live.ts";
 
@@ -60,6 +61,25 @@ describe("restoreColField", () => {
   });
 });
 
+describe("restoreSegField", () => {
+  it("writes known ranges", () => {
+    expect(
+      restoreSegField([{ start: 0, stop: 60, color: "#ffa000" }], "#ffa000"),
+    ).toEqual({ seg: [{ start: 0, stop: 60, col: [[255, 160, 0]] }] });
+  });
+
+  it("omits segments when unknown — never invents a whole-strip from colour", () => {
+    expect(restoreSegField(null, "#ffa000")).toEqual({});
+    expect(restoreSegField(undefined, "#ffa000")).toEqual({});
+    expect(restoreSegField(null, "#ffa000")).not.toHaveProperty("seg");
+  });
+
+  it("restores a known empty list as empty — no whole-strip invent", () => {
+    expect(restoreSegField([], "#ffa000")).toEqual({});
+    expect(restoreSegField([], "#ffa000")).not.toHaveProperty("seg");
+  });
+});
+
 describe("restoreWriteFromSnapshot", () => {
   it("does not invent on, brightness, or colour from an info-only snapshot", () => {
     const write = restoreWriteFromSnapshot({
@@ -74,6 +94,28 @@ describe("restoreWriteFromSnapshot", () => {
     expect(write).not.toHaveProperty("seg");
     expect(write.on).toBeUndefined();
     expect(write.bri).toBeUndefined();
+  });
+
+  it("omits seg when segments are unknown even if colour is known", () => {
+    const write = restoreWriteFromSnapshot({
+      ...known,
+      segments: null,
+    });
+    expect(write.on).toBe(true);
+    expect(write.bri).toBe(128);
+    expect(write).not.toHaveProperty("seg");
+    expect(JSON.stringify(write)).not.toContain('"start":0');
+    expect(JSON.stringify(write)).not.toContain('"stop":60');
+  });
+
+  it("restores known empty segments as empty — no whole-strip invent from colour", () => {
+    const write = restoreWriteFromSnapshot({
+      ...known,
+      segments: [],
+    });
+    expect(write.on).toBe(true);
+    expect(write.bri).toBe(128);
+    expect(write).not.toHaveProperty("seg");
   });
 
   it("writes known off — does not flip off to on", () => {

@@ -938,6 +938,43 @@ describe("preview + blink", () => {
     expect(writes[0]).not.toHaveProperty("seg");
   });
 
+  it("does not invent a whole-strip segment when Preview ends with unknown segments", async () => {
+    const writes: import("./wled/live.ts").WledStateWrite[] = [];
+    const infoOnlyColor = {
+      ...snapshot,
+      on: true,
+      brightness: 40,
+      segmentColor: "#ffa000",
+      segments: null,
+    };
+    const { app } = testApp({
+      probe: async () => ({ kind: "found" as const, snapshot: infoOnlyColor }),
+      write: async (_target, body) => {
+        writes.push(body);
+        return true;
+      },
+    });
+    const id = await enroll(app);
+    const preview = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ color: "#4f7dff", brightness: 180 }),
+    });
+    expect(preview.status).toBe(200);
+    writes.length = 0;
+
+    const ended = await app.request(`/api/lights/${id}/preview/end`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(ended.status).toBe(200);
+    expect(((await ended.json()) as { restored: boolean }).restored).toBe(true);
+    expect(writes[0]?.on).toBe(true);
+    expect(writes[0]?.bri).toBe(40);
+    expect(writes[0]).not.toHaveProperty("seg");
+  });
+
   it("keeps the original restore if Preview is sent again", async () => {
     const { app, box } = testApp();
     const id = await enroll(app);

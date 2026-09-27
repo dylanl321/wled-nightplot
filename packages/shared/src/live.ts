@@ -23,12 +23,39 @@ export type LiveTarget = {
   stop: number;
 };
 
+export type LiveRestoreSegment = {
+  start: number;
+  stop: number;
+  color: string | null;
+};
+
 export type LiveRestoreSnapshot = {
   on: boolean | null;
   brightness: number | null;
   color: string | null;
-  segments: { start: number; stop: number; color: string | null }[];
+  /**
+   * Reported ranges. `null` when unknown (info-only / missing `seg`) — not an
+   * empty list. `[]` is a known empty report.
+   */
+  segments: LiveRestoreSegment[] | null;
 };
+
+/**
+ * Keep unknown segments unknown through Preview restore.
+ * Do not coalesce `null` to `[]` — that would look like a known empty list
+ * and invent a whole-strip write from colour.
+ */
+export function restoreSegmentsFromSnapshot(
+  segments: { start: number; stop: number }[] | null,
+  color: string | null,
+): LiveRestoreSnapshot["segments"] {
+  if (segments === null) return null;
+  return segments.map((seg) => ({
+    start: seg.start,
+    stop: seg.stop,
+    color,
+  }));
+}
 
 export type LiveSession = {
   id: string;

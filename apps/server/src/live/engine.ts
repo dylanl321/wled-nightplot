@@ -7,6 +7,7 @@ import {
   parseHexColor,
   previewRefuseReason,
   resolveLiveTarget,
+  restoreSegmentsFromSnapshot,
   shouldRestoreOnEnd,
   type Element,
   type HostPort,
@@ -161,10 +162,7 @@ export function createLiveEngine(deps: {
     const dest: HostPort = { hostname: light.hostname, port: light.port };
     let restored = false;
     if (shouldRestoreOnEnd(kind)) {
-      restored = await deps.write(
-        dest,
-        restoreWrite({ ...session.restore, ledCount: light.ledCount }),
-      );
+      restored = await deps.write(dest, restoreWrite(session.restore));
     }
     const live = await deps.readLive(dest, light.ledCount);
     sessions.delete(lightId);
@@ -223,11 +221,7 @@ function restoreFrom(snapshot: WledSnapshot): LiveRestoreSnapshot {
     on: snapshot.on,
     brightness: snapshot.brightness,
     color: snapshot.segmentColor,
-    segments: (snapshot.segments ?? []).map((seg) => ({
-      start: seg.start,
-      stop: seg.stop,
-      color: snapshot.segmentColor,
-    })),
+    segments: restoreSegmentsFromSnapshot(snapshot.segments, snapshot.segmentColor),
   };
 }
 
