@@ -31,7 +31,18 @@ describe("strip catalog", () => {
     expect(strip?.implementation).toBe("registered");
     expect(strip?.bead).toBe("rgb");
     expect(strip?.channels).toEqual(["r", "g", "b"]);
-    expect(listStrips().map((entry) => entry.id)).toEqual(["ws281x"]);
+    expect(listStrips().map((entry) => entry.id)).toEqual(["ws281x", "sk6812-rgbw"]);
+  });
+
+  it("registers SK6812 RGBW as a four-channel bead", () => {
+    const strip = getStrip("sk6812-rgbw");
+    expect(strip).toBeDefined();
+    expect(strip?.implementation).toBe("registered");
+    expect(strip?.wired).toBe(false);
+    expect(strip?.bead).toBe("rgbw");
+    expect(strip?.channels).toEqual(["r", "g", "b", "w"]);
+    expect(strip?.colorOrder).toBe("GRBW");
+    expect(strip?.notes).toMatch(/not Hardware Done/);
   });
 
   it("registers named strip presets as catalog data", () => {
@@ -60,7 +71,7 @@ describe("catalog snapshot", () => {
     const snap = catalogSnapshot();
     expect(snap.slice).toBe("R6");
     expect(snap.controllers).toHaveLength(1);
-    expect(snap.strips).toHaveLength(1);
+    expect(snap.strips).toHaveLength(2);
     expect(snap.stripPresets.length).toBeGreaterThanOrEqual(3);
     expect(snap.ledProducts).toEqual([]);
     expect(snap.discovery).toHaveLength(3);

@@ -1,4 +1,5 @@
 import type { StripDriverDescriptor } from "./types.ts";
+import { sk6812RgbwStrip } from "./sk6812-rgbw.ts";
 import { ws281xStrip } from "./ws281x.ts";
 
 export {
@@ -12,7 +13,7 @@ export {
   type StripPreset,
 } from "./presets.ts";
 
-const strips: readonly StripDriverDescriptor[] = [ws281xStrip];
+const strips: readonly StripDriverDescriptor[] = [ws281xStrip, sk6812RgbwStrip];
 
 export function listStrips(): readonly StripDriverDescriptor[] {
   return strips;

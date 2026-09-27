@@ -1,10 +1,13 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { WLED_SK6812_RGBW_NATIVE_TYPE, WLED_WS281X_NATIVE_TYPE } from "@nightplot/shared";
 
 export type FixtureBoxOptions = {
   name?: string;
   ver?: string;
   ledCount?: number;
   gpio?: number;
+  /** WLED `hw.led.ins[0].type`. Default `TYPE_WS2812_RGB` (22). */
+  nativeType?: number;
   cfgEnabled?: boolean;
   mismatch?: boolean;
   busMismatch?: boolean;
@@ -31,13 +34,14 @@ type BusIns = {
 export function createFixtureBox(options: FixtureBoxOptions = {}) {
   let ledCount = options.ledCount ?? 60;
   const gpio = options.gpio ?? 16;
+  const nativeType = options.nativeType ?? WLED_WS281X_NATIVE_TYPE;
   const info = {
     ver: options.ver ?? "0.15.4",
     name: options.name ?? "WLED",
     mac: "020000000001",
     brand: "WLED",
     product: "FOSS",
-    leds: { count: ledCount, rgbw: false },
+    leds: { count: ledCount, rgbw: nativeType === WLED_SK6812_RGBW_NATIVE_TYPE },
   };
   const cfgEnabled = options.cfgEnabled ?? true;
   const cfg: {
@@ -58,7 +62,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
             start: 0,
             len: ledCount,
             pin: [gpio],
-            type: 22,
+            type: nativeType,
             order: 0,
             rev: false,
             skip: 0,
@@ -122,7 +126,10 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       const row = next.hw.led.ins[0] as Record<string, unknown>;
       const bus = cfg.hw.led.ins[0]!;
       if (typeof row.start === "number") bus.start = Math.max(0, Math.round(row.start));
-      if (typeof row.type === "number") bus.type = Math.round(row.type);
+      if (typeof row.type === "number") {
+        bus.type = Math.round(row.type);
+        info.leds.rgbw = bus.type === WLED_SK6812_RGBW_NATIVE_TYPE;
+      }
       if (typeof row.order === "number") bus.order = Math.round(row.order);
       if (typeof row.rev === "boolean") bus.rev = row.rev;
       if (typeof row.skip === "number") bus.skip = Math.round(row.skip);

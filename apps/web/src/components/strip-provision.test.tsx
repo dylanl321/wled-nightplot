@@ -248,6 +248,62 @@ describe("Strip provision", () => {
     );
   });
 
+  it("posts SK6812 RGBW when that type is selected", async () => {
+    const posts: unknown[] = [];
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      if (path.endsWith("/provision") && init?.method === "POST") {
+        posts.push(JSON.parse(String(init.body)));
+        return new Response(
+          JSON.stringify({
+            ...payload(),
+            provision: {
+              ...provision,
+              settings: { ledType: "sk6812-rgbw", length: 60, gpio: 16, nativeType: 30 },
+              fingerprint: {
+                ...provision.fingerprint,
+                mappingId: "wled-0.15-sk6812-rgbw-grbw",
+              },
+            },
+            provisionWrite: {
+              status: "matched",
+              matched: true,
+              sent: { ledType: "sk6812-rgbw", length: 60, gpio: 16 },
+              read: { ledType: "sk6812-rgbw", length: 60, gpio: 16, nativeType: 30 },
+              snapshotLedCount: 60,
+              fingerprint: provision.fingerprint,
+              message: "Controller reports the strip we sent.",
+              caption: provision.caption,
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (path.endsWith("/provision")) {
+        return new Response(JSON.stringify(payload()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ message: "unexpected path" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
+    fireEvent.click(await screen.findByRole("button", { name: "SK6812 RGBW" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(posts).toEqual([
+        { provision: { ledType: "sk6812-rgbw", length: 60, gpio: 16 } },
+      ]);
+    });
+    expect(screen.getByText("Controller reports the strip we sent.")).toBeTruthy();
+  });
+
   it("shows the Element rewrite story after a length-changing Apply", async () => {
     const after = payload({
       light: lightView({

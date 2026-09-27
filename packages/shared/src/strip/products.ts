@@ -5,7 +5,7 @@
  * Nightplot-owned SKUs — form factor, driver, optional defaults — separate
  * from WLED bus writes. A catalog row is not Hardware Done. formFactor is
  * metadata; it is never written to WLED. Attaching a product persists
- * `ledProductId` only. RGBW native provision maps are CONFIG-54.
+ * `ledProductId` only. SK6812 RGBW is a registered driver products may name.
  */
 import {
   PROVISION_GPIO_MAX,
@@ -102,9 +102,9 @@ export function provisionLedTypeForDriver(driverId: string): ProvisionLedType | 
 /**
  * Fill the Strip provision draft from a catalog product + its driver.
  * `ledType` is the registered driver id when that id is a provision type
- * (today: ws281x). Length / GPIO come from product defaults, then the
- * caller fallback, then the first seeded preset. Channel / color / bead
- * inherit is not written here — RGBW native maps are CONFIG-54.
+ * (ws281x or sk6812-rgbw). Length / GPIO come from product defaults, then
+ * the caller fallback, then the first seeded preset. Channel / color / bead
+ * inherit is catalog metadata — Apply writes the mapped native type only.
  */
 export function provisionDraftFromProduct(
   product: LedProduct,
@@ -114,7 +114,7 @@ export function provisionDraftFromProduct(
     return {
       ok: false,
       error: "unknown_driver",
-      message: "driverId must name a registered strip driver (today: ws281x).",
+      message: "driverId must name a registered strip driver.",
     };
   }
   const ledType = provisionLedTypeForDriver(product.driverId);
@@ -185,7 +185,7 @@ export function resolveLedProductAttach(
     return {
       ok: false,
       error: "unknown_driver",
-      message: "driverId must name a registered strip driver (today: ws281x).",
+      message: "driverId must name a registered strip driver.",
     };
   }
   return { ok: true, ledProductId: product.id, product };
@@ -235,7 +235,7 @@ export function parseLedProductInput(input: unknown): LedProductParse {
     return {
       ok: false,
       error: "unknown_driver",
-      message: "driverId must name a registered strip driver (today: ws281x).",
+      message: "driverId must name a registered strip driver.",
     };
   }
   const driverId = row.driverId.trim();
@@ -243,7 +243,7 @@ export function parseLedProductInput(input: unknown): LedProductParse {
     return {
       ok: false,
       error: "unknown_driver",
-      message: "driverId must name a registered strip driver (today: ws281x).",
+      message: "driverId must name a registered strip driver.",
     };
   }
 
@@ -334,7 +334,7 @@ function parseOverrides(
       return {
         ok: false,
         error: "bad_override",
-        message: "bead must be rgb or rgbw. RGBW native provision maps are not this catalog.",
+        message: "bead must be rgb or rgbw. Form factor stays metadata.",
       };
     }
     fields.bead = row.bead;

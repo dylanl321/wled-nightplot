@@ -2,7 +2,10 @@
 
 import {
   defaultStripPreset,
+  draftLedTypeFromSettings,
+  PROVISION_LED_TYPES,
   provisionDraftFromProduct,
+  provisionLedTypeLabel,
   type LedProduct,
   type LightDetail,
   type ProvisionRead,
@@ -50,7 +53,7 @@ export function StripProvisionPanel({
         setAttachedId(payload.light.ledProductId ?? null);
         const fallback = defaultStripPreset();
         setDraft({
-          ledType: "ws281x",
+          ledType: draftLedTypeFromSettings(payload.provision.settings.ledType),
           length: payload.provision.settings.length ?? fallback.length,
           gpio: payload.provision.settings.gpio ?? fallback.gpio,
         });
@@ -122,7 +125,7 @@ export function StripProvisionPanel({
       setRead(payload.provision);
       if (payload.provision.settings.length != null && payload.provision.settings.gpio != null) {
         setDraft({
-          ledType: "ws281x",
+          ledType: draftLedTypeFromSettings(payload.provision.settings.ledType),
           length: payload.provision.settings.length,
           gpio: payload.provision.settings.gpio,
         });
@@ -175,7 +178,7 @@ export function StripProvisionPanel({
           LED product
         </legend>
         <p className="text-[12px] text-quiet">
-          Operator catalog. Form factor is metadata. RGBW maps are not written on this path.
+          Operator catalog. Form factor is metadata. A product may name WS281x or SK6812 RGBW.
         </p>
         <div className="flex flex-wrap gap-2">
           <button
@@ -231,17 +234,34 @@ export function StripProvisionPanel({
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-3">
-          <label className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
+          <div className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
             <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
               LED type
             </span>
-            <div className="flex h-10 items-center rounded-md border border-primary bg-secondary px-3 text-[13px] font-semibold">
-              WS281x
+            <div className="flex flex-wrap gap-2" role="group" aria-label="LED type">
+              {PROVISION_LED_TYPES.map((ledType) => {
+                const selectedType = draft.ledType === ledType;
+                return (
+                  <button
+                    key={ledType}
+                    type="button"
+                    aria-pressed={selectedType}
+                    onClick={() => patch("ledType", ledType)}
+                    className={`h-10 rounded-md border px-3 text-[13px] font-semibold ${
+                      selectedType
+                        ? "border-primary bg-secondary text-foreground"
+                        : "border-input bg-[#07080a] text-[#c9c3b8] hover:bg-secondary"
+                    }`}
+                  >
+                    {provisionLedTypeLabel(ledType)}
+                  </button>
+                );
+              })}
             </div>
             <span className="text-[12px] text-quiet">
-              First strip member. Other bus types are not written.
+              Mapped types only. Unknown bus types are not written.
             </span>
-          </label>
+          </div>
           <label className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
             <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
               Length
@@ -266,14 +286,14 @@ export function StripProvisionPanel({
               onChange={(event) => patch("gpio", Number.parseInt(event.target.value, 10) || 0)}
               aria-label="GPIO pin"
             />
-            <span className="text-[12px] text-quiet">Single data pin for WS281x.</span>
+            <span className="text-[12px] text-quiet">Single data pin.</span>
           </label>
         </div>
       )}
 
       {read.settings.ledType === "unknown" && !read.refuse ? (
         <p className="text-[13px] text-quiet">
-          Live bus type is unknown. Apply writes the WS281x mapping for this firmware.
+          Live bus type is unknown. Apply writes the selected type’s mapping for this firmware.
         </p>
       ) : null}
 
@@ -318,7 +338,7 @@ export function StripProvisionPanel({
           onClick={() => {
             const fallback = defaultStripPreset();
             setDraft({
-              ledType: "ws281x",
+              ledType: draftLedTypeFromSettings(read.settings.ledType),
               length: read.settings.length ?? fallback.length,
               gpio: read.settings.gpio ?? fallback.gpio,
             });

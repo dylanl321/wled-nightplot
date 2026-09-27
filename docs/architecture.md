@@ -22,7 +22,7 @@ First members. Home directories are the registration point.
 | Seam | First member | Home | Notes |
 | --- | --- | --- | --- |
 | Controller | WLED | `packages/shared/src/controller/` | `wledController` — `wired: true`, capabilities through provision |
-| Strip / driver | WS281x | `packages/shared/src/strip/` | `ws281xStrip` — `wired: false`. Pixels go through WLED, not a local driver |
+| Strip / driver | WS281x, SK6812 RGBW | `packages/shared/src/strip/` | `ws281xStrip` + `sk6812RgbwStrip` — both `wired: false`. Pixels go through WLED, not a local driver |
 | Discovery | mDNS / SSDP / address probe | `packages/shared/src/discovery/` | `implementation: "registered"`. Empty results are honest |
 
 `GET /api/catalogs` returns `catalogSnapshot()` (`packages/shared/src/catalog.ts`). `CURRENT_SLICE` is `"R6"`. Named strip presets live in `packages/shared/src/strip/presets.ts` (`stripPresets` on that payload) and seed the LED product catalog. Operator LED products (`LedProduct`) live in `packages/shared/src/strip/products.ts` and on that payload as `ledProducts`. `PATCH /api/lights/:id/led-product` attaches one to a Light (`ledProductId`). That is Nightplot bookkeeping, not a WLED write.
@@ -79,7 +79,7 @@ Find must use an advertised port (SSDP `LOCATION` in `apps/server/src/discovery/
 | Thing | Status |
 | --- | --- |
 | Docker / compose / GHCR | Image + compose for local/LAN run. See [deploy.md](deploy.md). No auth or TLS |
-| Local WS281x driver | Catalog member registered; `wired: false` |
+| Local strip driver | Catalog members registered (WS281x, SK6812 RGBW); `wired: false` |
 | Auth / public bind | Not present. Defaults loopback. Containers bind `0.0.0.0` for published ports — LAN publish, not a public-internet deploy |
 | Hardware Done | Not claimed. The fixture is a software stub for development |
 

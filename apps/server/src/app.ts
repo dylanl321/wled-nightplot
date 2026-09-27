@@ -25,6 +25,7 @@ import {
   applyResolvedName,
   buildProvisionWrite,
   buildSafeWrite,
+  isProvisionLedType,
   parseWledProvision,
   provisionFieldsMatch,
   provisionMismatchNote,
@@ -1107,10 +1108,10 @@ export function createApp(deps: AppDeps) {
     const raw = (body as { provision?: unknown }).provision;
     if (!raw || typeof raw !== "object") return null;
     const row = raw as Record<string, unknown>;
-    if (row.ledType !== "ws281x") return null;
+    if (!isProvisionLedType(row.ledType)) return null;
     if (typeof row.length !== "number" || typeof row.gpio !== "number") return null;
     return {
-      ledType: "ws281x",
+      ledType: row.ledType,
       length: row.length,
       gpio: row.gpio,
     };

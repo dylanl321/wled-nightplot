@@ -2,15 +2,30 @@
  * First-time WLED strip provision (CONFIG-40).
  *
  * Lifts the reviewed Nightplot cfg/bus path — `hw.led.ins[]` pin / len / type
- * plus the firmware-scoped WS281x compatibility mappings — without the Yard
- * compilation service. Existing bus fields we do not own are cloned, not
- * replaced with guessed defaults.
+ * plus firmware-scoped compatibility mappings (WS281x RGB and SK6812 RGBW).
+ * Existing bus fields we do not own are cloned, not replaced with guessed
+ * defaults.
  */
 
 import type { RangeLengthStory } from "./range.ts";
 
-export const PROVISION_LED_TYPES = ["ws281x"] as const;
+export const PROVISION_LED_TYPES = ["ws281x", "sk6812-rgbw"] as const;
 export type ProvisionLedType = (typeof PROVISION_LED_TYPES)[number];
+
+export function isProvisionLedType(value: unknown): value is ProvisionLedType {
+  return typeof value === "string" && (PROVISION_LED_TYPES as readonly string[]).includes(value);
+}
+
+export function provisionLedTypeLabel(ledType: ProvisionLedType): string {
+  if (ledType === "sk6812-rgbw") return "SK6812 RGBW";
+  return "WS281x";
+}
+
+export function draftLedTypeFromSettings(
+  ledType: ProvisionLedType | "unknown",
+): ProvisionLedType {
+  return isProvisionLedType(ledType) ? ledType : "ws281x";
+}
 
 export type ProvisionFieldKey = "ledType" | "length" | "gpio";
 
@@ -30,16 +45,20 @@ export type WledStripProvisionDraft = {
 export type NativeCompatibilityMapping = {
   readonly id: string;
   readonly firmwareVersions: readonly string[];
-  readonly protocol: "ws281x";
+  readonly protocol: ProvisionLedType;
   readonly native: { readonly type: number; readonly order: number };
 };
 
 /**
  * Numeric WLED values are accepted only through this explicit, firmware-scoped
- * table (lifted from Nightplot `WLED_COMPATIBILITY_MAPPINGS` + the WS281x RGB
- * driver-validated firmware list). Existing buses do not need a mapping when
- * their native type/order encoding is preserved byte-for-byte — but this
- * slice still refuses writes on firmware that is not in the table.
+ * table (Nightplot `WLED_COMPATIBILITY_MAPPINGS` + WLED `wled00/const.h`).
+ * Existing buses do not need a mapping when their native type/order encoding
+ * is preserved byte-for-byte — but this slice still refuses writes on
+ * firmware that is not in the table.
+ *
+ * SK6812 RGBW is `TYPE_SK6812_RGBW` (30). Order 0 is `COL_ORDER_GRB`,
+ * documented as GRB(w) — GRBW on RGBW types. RGBWW (e.g. `TYPE_WS2805` 32)
+ * is not mapped.
  */
 export const WLED_COMPATIBILITY_MAPPINGS: readonly NativeCompatibilityMapping[] = [
   {
@@ -49,10 +68,22 @@ export const WLED_COMPATIBILITY_MAPPINGS: readonly NativeCompatibilityMapping[] 
     native: { type: 22, order: 0 },
   },
   {
+    id: "wled-0.14-sk6812-rgbw-grbw",
+    firmwareVersions: ["0.14.0"],
+    protocol: "sk6812-rgbw",
+    native: { type: 30, order: 0 },
+  },
+  {
     id: "wled-0.15-ws281x-rgb-grb-driver",
     firmwareVersions: ["0.15.0"],
     protocol: "ws281x",
     native: { type: 22, order: 0 },
+  },
+  {
+    id: "wled-0.15-sk6812-rgbw-grbw-driver",
+    firmwareVersions: ["0.15.0"],
+    protocol: "sk6812-rgbw",
+    native: { type: 30, order: 0 },
   },
   {
     id: "wled-0.15-ws281x-rgb-grb",
@@ -61,15 +92,30 @@ export const WLED_COMPATIBILITY_MAPPINGS: readonly NativeCompatibilityMapping[] 
     native: { type: 22, order: 0 },
   },
   {
+    id: "wled-0.15-sk6812-rgbw-grbw",
+    firmwareVersions: ["0.15.3", "0.15.4"],
+    protocol: "sk6812-rgbw",
+    native: { type: 30, order: 0 },
+  },
+  {
     id: "wled-16-ws281x-rgb-grb",
     firmwareVersions: ["16.0.1"],
     protocol: "ws281x",
     native: { type: 22, order: 0 },
   },
+  {
+    id: "wled-16-sk6812-rgbw-grbw",
+    firmwareVersions: ["16.0.1"],
+    protocol: "sk6812-rgbw",
+    native: { type: 30, order: 0 },
+  },
 ];
 
 /** TYPE_WS2812_RGB — first strip member. */
 export const WLED_WS281X_NATIVE_TYPE = 22;
+
+/** TYPE_SK6812_RGBW — WLED const.h (0.14.4 / 0.15.x / master). */
+export const WLED_SK6812_RGBW_NATIVE_TYPE = 30;
 
 /**
  * Out-of-scope WLED bus kinds (analog PWM, network, HUB75). Observing one
@@ -134,7 +180,20 @@ export function baseFirmwareVersion(version: string | null | undefined): string 
   return trimmed.split(/[+-]/, 1)[0] || null;
 }
 
-export function resolveWs281xMapping(
+export function resolveProvisionMapping(
+  firmware: string | null | undefined,
+  ledType: ProvisionLedType,
+): NativeCompatibilityMapping | null {
+  const base = baseFirmwareVersion(firmware);
+  if (!base) return null;
+  return (
+    WLED_COMPATIBILITY_MAPPINGS.find(
+      (entry) => entry.protocol === ledType && entry.firmwareVersions.includes(base),
+    ) ?? null
+  );
+}
+
+export function resolveAnyProvisionMapping(
   firmware: string | null | undefined,
 ): NativeCompatibilityMapping | null {
   const base = baseFirmwareVersion(firmware);
@@ -145,12 +204,20 @@ export function resolveWs281xMapping(
   );
 }
 
+export function resolveWs281xMapping(
+  firmware: string | null | undefined,
+): NativeCompatibilityMapping | null {
+  return resolveProvisionMapping(firmware, "ws281x");
+}
+
 export function isSupportedProvisionFirmware(firmware: string | null | undefined): boolean {
-  return resolveWs281xMapping(firmware) !== null;
+  return resolveAnyProvisionMapping(firmware) !== null;
 }
 
 export function ledTypeFromNative(type: number | null): ProvisionLedType | "unknown" {
-  return type === WLED_WS281X_NATIVE_TYPE ? "ws281x" : "unknown";
+  if (type === WLED_WS281X_NATIVE_TYPE) return "ws281x";
+  if (type === WLED_SK6812_RGBW_NATIVE_TYPE) return "sk6812-rgbw";
+  return "unknown";
 }
 
 export function rawWledBuses(config: unknown): Record<string, unknown>[] {
@@ -187,7 +254,7 @@ export function parseWledProvision(
   source: "fixture" | "controller" = "controller",
 ): ProvisionRead {
   const caption = provisionCaption(source);
-  const mapping = resolveWs281xMapping(firmware);
+  const mapping = resolveAnyProvisionMapping(firmware);
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return refusedRead(
       firmware,
@@ -228,7 +295,7 @@ export function parseWledProvision(
   if (gpioList && gpioList.length > 1) {
     return refusedRead(
       firmware,
-      "This bus uses more than one pin. WS281x provision is a single GPIO. Nothing was written.",
+      "This bus uses more than one pin. Strip provision is a single GPIO. Nothing was written.",
       caption,
       mapping,
       1,
@@ -253,11 +320,15 @@ export function parseWledProvision(
     nativeType,
   };
 
+  const typeMapping =
+    settings.ledType === "unknown"
+      ? null
+      : resolveProvisionMapping(firmware, settings.ledType);
   const firmwareOk = mapping !== null;
   const writable = firmwareOk;
   const refuse = firmwareOk
     ? null
-    : "This firmware isn’t in the WS281x compatibility table. Nothing was written.";
+    : "This firmware isn’t in the strip compatibility table. Nothing was written.";
 
   return {
     settings,
@@ -265,7 +336,7 @@ export function parseWledProvision(
       firmware,
       source: "cfg",
       writable,
-      mappingId: mapping?.id ?? null,
+      mappingId: typeMapping?.id ?? mapping?.id ?? null,
       fields: writable ? ["ledType", "length", "gpio"] : [],
     },
     caption,
@@ -294,21 +365,18 @@ export function provisionRefuseReason(input: {
   }
   if (input.read.refuse) return input.read.refuse;
   if (!input.read.fingerprint.writable) {
-    return "This firmware isn’t in the WS281x compatibility table. Nothing was written.";
+    return "This firmware isn’t in the strip compatibility table. Nothing was written.";
   }
   if (input.draft) {
     const invalid = validateProvisionDraft(input.draft);
     if (invalid) return invalid;
-    if (input.draft.ledType !== "ws281x") {
-      return "LED type must be WS281x. Unknown types are not written.";
-    }
   }
   return null;
 }
 
 export function validateProvisionDraft(draft: WledStripProvisionDraft): string | null {
-  if (draft.ledType !== "ws281x") {
-    return "LED type must be WS281x. Unknown types are not written.";
+  if (!isProvisionLedType(draft.ledType)) {
+    return "LED type must be a mapped strip driver. Unknown types are not written.";
   }
   if (
     !Number.isFinite(draft.length) ||
@@ -342,17 +410,17 @@ export function buildProvisionWrite(
     read: {
       ...parsed,
       fingerprint,
-      refuse: fingerprint.writable ? parsed.refuse : parsed.refuse ?? "This firmware isn’t in the WS281x compatibility table. Nothing was written.",
+      refuse: fingerprint.writable ? parsed.refuse : parsed.refuse ?? "This firmware isn’t in the strip compatibility table. Nothing was written.",
     },
     draft,
   });
   if (reason) return { ok: false, message: reason };
 
-  const mapping = resolveWs281xMapping(fingerprint.firmware);
+  const mapping = resolveProvisionMapping(fingerprint.firmware, draft.ledType);
   if (!mapping) {
     return {
       ok: false,
-      message: "This firmware isn’t in the WS281x compatibility table. Nothing was written.",
+      message: "This firmware isn’t in the strip compatibility table. Nothing was written.",
     };
   }
 
@@ -372,7 +440,7 @@ export function buildProvisionWrite(
   }
 
   const sent: WledStripProvisionDraft = {
-    ledType: "ws281x",
+    ledType: draft.ledType,
     length: draft.length,
     gpio: draft.gpio,
   };

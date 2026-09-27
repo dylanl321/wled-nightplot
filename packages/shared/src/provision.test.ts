@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  WLED_SK6812_RGBW_NATIVE_TYPE,
   WLED_WS281X_NATIVE_TYPE,
   buildProvisionWrite,
   parseWledProvision,
   provisionFieldsMatch,
   provisionRefuseReason,
   provisionSnapshotMatch,
+  resolveProvisionMapping,
   resolveWs281xMapping,
 } from "./provision.ts";
 
@@ -80,8 +82,30 @@ describe("parseWledProvision", () => {
   it("refuses firmware that is not in the compatibility table", () => {
     const read = parseWledProvision(cfg, "WLED 0.8.4");
     expect(resolveWs281xMapping("WLED 0.8.4")).toBeNull();
+    expect(resolveProvisionMapping("WLED 0.8.4", "sk6812-rgbw")).toBeNull();
     expect(read.fingerprint.writable).toBe(false);
     expect(read.refuse).toMatch(/compatibility table/);
+  });
+
+  it("reads SK6812 RGBW native type 30 on supported firmware", () => {
+    const rgbw = {
+      hw: {
+        led: {
+          ins: [{ start: 0, len: 60, pin: [16], type: 30, order: 0 }],
+        },
+      },
+    };
+    const read = parseWledProvision(rgbw, "WLED 0.15.4", "fixture");
+    expect(read.fingerprint.writable).toBe(true);
+    expect(read.fingerprint.mappingId).toBe("wled-0.15-sk6812-rgbw-grbw");
+    expect(read.settings).toEqual({
+      ledType: "sk6812-rgbw",
+      length: 60,
+      gpio: 16,
+      nativeType: WLED_SK6812_RGBW_NATIVE_TYPE,
+    });
+    expect(read.refuse).toBeNull();
+    expect(read.caption).toMatch(/Not Hardware Done/);
   });
 });
 
@@ -140,7 +164,67 @@ describe("provision write", () => {
     );
     expect(built.ok).toBe(false);
     if (built.ok) return;
-    expect(built.message).toMatch(/WS281x/);
+    expect(built.message).toMatch(/mapped strip driver|Unknown types/);
+  });
+
+  it("writes SK6812 RGBW type 30 / order 0 when converting from WS281x", () => {
+    const read = parseWledProvision(cfg, "WLED 0.15.4");
+    const built = buildProvisionWrite(
+      { ledType: "sk6812-rgbw", length: 80, gpio: 2 },
+      cfg,
+      read.fingerprint,
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    const bus = (
+      built.body as { hw: { led: { ins: Record<string, unknown>[] } } }
+    ).hw.led.ins[0]!;
+    expect(bus.type).toBe(WLED_SK6812_RGBW_NATIVE_TYPE);
+    expect(bus.order).toBe(0);
+    expect(bus.len).toBe(80);
+    expect(bus.pin).toEqual([2]);
+    expect(built.sent.ledType).toBe("sk6812-rgbw");
+  });
+
+  it("preserves SK6812 order on a same-type length write", () => {
+    const raw = {
+      hw: {
+        led: {
+          ins: [{ start: 0, len: 60, pin: [16], type: 30, order: 1, extra: "keep" }],
+        },
+      },
+    };
+    const read = parseWledProvision(raw, "0.15.4");
+    expect(read.settings.ledType).toBe("sk6812-rgbw");
+    const built = buildProvisionWrite(
+      { ledType: "sk6812-rgbw", length: 90, gpio: 16 },
+      raw,
+      read.fingerprint,
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    const bus = (
+      built.body as { hw: { led: { ins: Record<string, unknown>[] } } }
+    ).hw.led.ins[0]!;
+    expect(bus.type).toBe(30);
+    expect(bus.order).toBe(1);
+    expect(bus.len).toBe(90);
+    expect(bus.extra).toBe("keep");
+  });
+
+  it("refuses SK6812 writes on firmware outside the table", () => {
+    const raw = {
+      hw: { led: { ins: [{ start: 0, len: 30, pin: [16], type: 30, order: 0 }] } },
+    };
+    const read = parseWledProvision(raw, "WLED 0.8.4");
+    const built = buildProvisionWrite(
+      { ledType: "sk6812-rgbw", length: 30, gpio: 16 },
+      raw,
+      read.fingerprint,
+    );
+    expect(built.ok).toBe(false);
+    if (built.ok) return;
+    expect(built.message).toMatch(/compatibility table/);
   });
 
   it("matches a reread and treats snapshot length as part of the contract", () => {
