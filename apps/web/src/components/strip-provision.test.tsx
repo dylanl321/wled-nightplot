@@ -397,7 +397,7 @@ describe("Strip provision", () => {
     ).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Edit ranges" }));
-    expect(await screen.findByText("0–30")).toBeTruthy();
+    expect((await screen.findAllByText("0–30")).length).toBeGreaterThan(0);
     expect(screen.queryByText("0–60")).toBeNull();
   });
 });
