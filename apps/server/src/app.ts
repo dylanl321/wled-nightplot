@@ -62,6 +62,7 @@ import {
   type ReaddressStep,
   type ProvisionRead,
   type SafeRead,
+  type SafeWriteResult,
   type WledSafeSettings,
   type WledSnapshot,
   type WledStripProvisionDraft,
@@ -769,27 +770,11 @@ export function createApp(deps: AppDeps) {
       draft,
     });
     if (reason) {
-      return c.json(
-        {
-          error: "refused",
-          message: reason,
-          safe,
-          safeWrite: {
-            status: "refused" as const,
-            matched: false,
-            sent: draft,
-            read: safe.settings,
-            fingerprint: safe.fingerprint,
-            message: reason,
-            caption: safe.caption,
-          },
-        },
-        422,
-      );
+      return c.json(refusedSafeBody(safe, draft, reason), 422);
     }
     const built = buildSafeWrite(draft, safe.fingerprint);
     if (!built.ok) {
-      return c.json({ error: "refused", message: built.message, safe }, 422);
+      return c.json(refusedSafeBody(safe, draft, built.message), 422);
     }
     const written = await deps.writeCfg(dest, built.body);
     if (!written) {
@@ -1456,6 +1441,32 @@ export function createApp(deps: AppDeps) {
 
 function looksLikeId(id: string): boolean {
   return id.length > 0 && !id.startsWith("draft-");
+}
+
+function refusedSafeBody(
+  safe: SafeRead,
+  sent: Partial<WledSafeSettings>,
+  message: string,
+): {
+  error: "refused";
+  message: string;
+  safe: SafeRead;
+  safeWrite: SafeWriteResult;
+} {
+  return {
+    error: "refused",
+    message,
+    safe,
+    safeWrite: {
+      status: "refused",
+      matched: false,
+      sent,
+      read: safe.settings,
+      fingerprint: safe.fingerprint,
+      message,
+      caption: safe.caption,
+    },
+  };
 }
 
 function emptySnap(): WledSnapshot {
