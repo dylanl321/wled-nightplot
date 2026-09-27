@@ -45,6 +45,7 @@ python3 -m http.server 43182 --directory docs/ui
 - Product words: Lights, Elements, Preview, Apply, Blink, All Off. Use this product’s vocabulary.
 - Discover listed hosts follow `displayHost`: omit `:80` unless the port is not 80. A default-port not-WLED reject is `192.168.1.80`, not `192.168.1.80:80`.
 - All Off unknown-row copy is actual elapsed or generic **no answer from {host}.** — the v2 Garage example uses the generic string, not an invented 3 s wait.
+- Delete unknown-controller copy is actual elapsed or generic **Couldn’t read it** — the v2 Porch rail unknown example uses the generic string, not “in time”.
 - Espalexa `portWarning` copy and Lights last-seen / unknown-bead honesty are locked by `apps/web` component tests (`pnpm --filter @nightplot/web test`).
 
 The prototype’s populated racks (Eave front, Porch rail, Garage) are direction frames. The running app only shows Lights that were enrolled. Inspect, Strip (first-time WS281x or SK6812 RGBW / length / GPIO via cfg, plus a catalog LED product that fills those fields), Edit ranges, Test live, Apply, All Off, Delete, and Safe settings follow this bead language. Convert to SK6812 RGBW writes GRBW (`order` 0); a same-type length or GPIO Apply keeps the colour order already on the box. A length-changing Strip Apply must not leave declared Elements claiming they still match — clip / drop / flag, then the re-read drift story. A fixture readback is not Hardware Done. Preview is not Apply. Attaching a product is not Apply.

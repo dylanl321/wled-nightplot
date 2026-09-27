@@ -31,7 +31,7 @@ The catalog slice id is `R6` (`CURRENT_SLICE` in `packages/shared/src/catalog.ts
 - RGB vs RGBW on Inspect and the Lights rack follows the attached LED product or the persisted strip driver — not a hardcoded WS281x label from `/json/info` `leds.rgbw`. Opening Inspect on a Light that still has the default driver and no product may persist a known `/json/cfg` bus type (the same mapping as Strip). The Lights list does not read cfg. RGBW beads show two dies (colour + white). That is not Hardware Done.
 - Preview is temporary. Apply persists.
 - All Off cancels without restoring. An unknown row names the wait that happened, or a generic refuse — not a claimed 3 s.
-- Delete has no “I understand” override on unknown.
+- Delete has no “I understand” override on unknown. Unknown controller copy names the wait that happened, or a generic refuse — not “in time”.
 - A registered catalog member is a slot in the table. It is not proof hardware passed. A stub endpoint must say it sent nothing.
 
 ## Where to go next
