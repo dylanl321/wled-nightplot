@@ -26,6 +26,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Fixed
 
+- Preview restore no longer invents a whole-strip segment from an info-only snapshot. When `/json/info` answered but `/json/state` was skipped or hung (`segments: null`), end-Preview / Blink restore and Find Blink restore omit `seg` instead of coalescing unknown to `[]` and writing `{ start: 0, stop: ledCount }` from colour. Known empty `seg: []` restores as empty. Known ranges stay. Same honesty class as omitted `on` / `bri` / `col`. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-82).
 - Edit ranges selected-Element kind chip no longer says **seg** when compare is refused (unknown `state.seg` or unreachable). The chip uses the same refuse class as the footer (**no compare**). Overlap and drift still win when those apply. A known empty `seg: []` still compares. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-80).
 - Apply no longer invents `#ffa000` when the snapshot did not name a colour. Info-only or missing `segmentColor` refuses Apply (422) and writes nothing — same honesty class as CONFIG-72/73 restore omit. Known colours still Apply. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-76).
 - Edit ranges row status no longer says **matches** when segments are unknown or compare is refused. The row uses the same refuse class as the footer (**no compare**). A known empty `seg: []` still compares and can show drift or matches. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-79).

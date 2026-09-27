@@ -109,6 +109,69 @@ describe("Preview restore honesty", () => {
     expect(writes[1]).not.toHaveProperty("seg");
   });
 
+  it("does not invent a whole-strip segment from colour when segments are unknown", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    const started = await engine.startPreview({
+      light,
+      live: { ...infoOnly, on: true, brightness: 40, segmentColor: "#ffa000" },
+      elements: [{ id: "el-1", lightId: light.id, label: "Porch", start: 0, stop: 10 }],
+      color: "#4f7dff",
+      brightness: 180,
+    });
+    expect(started.ok).toBe(true);
+    writes.length = 0;
+
+    const ended = await engine.end(light.id, "complete");
+    expect(ended.ok).toBe(true);
+    if (ended.ok) expect(ended.restored).toBe(true);
+    expect(writes[0]?.on).toBe(true);
+    expect(writes[0]?.bri).toBe(40);
+    expect(writes[0]).not.toHaveProperty("seg");
+    expect(JSON.stringify(writes[0])).not.toContain('"start":0');
+    expect(JSON.stringify(writes[0])).not.toContain('"stop":10');
+  });
+
+  it("restores known ranges after Preview", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    const started = await engine.startPreview({
+      light,
+      live: {
+        ...infoOnly,
+        on: true,
+        brightness: 40,
+        segmentColor: "#ffa000",
+        segments: [{ start: 0, stop: 10 }],
+      },
+      elements: [{ id: "el-1", lightId: light.id, label: "Porch", start: 0, stop: 10 }],
+      color: "#4f7dff",
+      brightness: 180,
+    });
+    expect(started.ok).toBe(true);
+    writes.length = 0;
+
+    const ended = await engine.end(light.id, "complete");
+    expect(ended.ok).toBe(true);
+    expect(writes[0]?.seg).toEqual([{ start: 0, stop: 10, col: [[255, 160, 0]] }]);
+  });
+
+  it("identifyHost restore omits seg from unknown segments even when colour is known", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    const result = await engine.identifyHost(
+      { hostname: light.hostname, port: light.port },
+      light.ledCount,
+      { ...infoOnly, on: true, brightness: 40, segmentColor: "#ffa000" },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.restored).toBe(true);
+    expect(writes).toHaveLength(2);
+    expect(writes[1]?.on).toBe(true);
+    expect(writes[1]?.bri).toBe(40);
+    expect(writes[1]).not.toHaveProperty("seg");
+  });
+
   it("does not invent brightness 128 or colour #ffa000 from info-only restore", async () => {
     const writes: WledStateWrite[] = [];
     const engine = engineWithWrites(writes);

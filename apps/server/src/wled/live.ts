@@ -1,6 +1,7 @@
 import {
   hexToRgb,
   parseLiveLeds,
+  restoreSegmentsFromSnapshot,
   type HostPort,
   type LiveRead,
   type LiveRestoreSnapshot,
@@ -104,30 +105,32 @@ export function restoreColField(
   return rgb ? { col: [rgb] } : {};
 }
 
+/**
+ * Restore writes segments only when the snapshot knew them.
+ * Info-only `segments: null` stays omitted — never `null → []` then a
+ * whole-strip invent from colour. Known empty `[]` restores as empty.
+ */
+export function restoreSegField(
+  segments: LiveRestoreSnapshot["segments"] | undefined,
+  color: string | null | undefined,
+): Pick<WledStateWrite, "seg"> {
+  if (segments == null || segments.length === 0) return {};
+  return {
+    seg: segments.map((seg) => ({
+      start: seg.start,
+      stop: seg.stop,
+      ...restoreColField(seg.color ?? color),
+    })),
+  };
+}
+
 export function restoreWrite(
-  restore: Pick<LiveRestoreSnapshot, "on" | "brightness" | "color" | "segments"> & {
-    ledCount: number;
-  },
+  restore: Pick<LiveRestoreSnapshot, "on" | "brightness" | "color" | "segments">,
 ): WledStateWrite {
-  const known = restore.segments;
-  const segs =
-    known.length > 0
-      ? known
-      : restore.color
-        ? [{ start: 0, stop: restore.ledCount, color: restore.color }]
-        : [];
   return {
     ...restoreOnField(restore.on),
     ...restoreBriField(restore.brightness),
-    ...(segs.length > 0
-      ? {
-          seg: segs.map((seg) => ({
-            start: seg.start,
-            stop: seg.stop,
-            ...restoreColField(seg.color ?? restore.color),
-          })),
-        }
-      : {}),
+    ...restoreSegField(restore.segments, restore.color),
   };
 }
 
@@ -136,12 +139,7 @@ export function restoreWriteFromSnapshot(snapshot: WledSnapshot): WledStateWrite
     on: snapshot.on,
     brightness: snapshot.brightness,
     color: snapshot.segmentColor,
-    segments: (snapshot.segments ?? []).map((seg) => ({
-      start: seg.start,
-      stop: seg.stop,
-      color: snapshot.segmentColor,
-    })),
-    ledCount: snapshot.ledCount,
+    segments: restoreSegmentsFromSnapshot(snapshot.segments, snapshot.segmentColor),
   });
 }
 
