@@ -1,4 +1,4 @@
-import type { DiscoverRow, LightView } from "@nightplot/shared";
+import { stripBeadCaption, type DiscoverRow, type LightView } from "@nightplot/shared";
 import Link from "next/link";
 import { MiniStrip } from "@/components/mini-strip";
 import { StripBeads } from "@/components/strip-beads";
@@ -94,8 +94,8 @@ function LightRow({ light }: { light: LightView }) {
       : "Online · off";
   const elementLine =
     light.elementCount === 0
-      ? `${light.ledCount} LEDs · no Elements`
-      : `${light.ledCount} LEDs · ${light.elementCount} Element${
+      ? `${light.ledCount} LEDs · ${stripBeadCaption(light.stripBead)} · no Elements`
+      : `${light.ledCount} LEDs · ${stripBeadCaption(light.stripBead)} · ${light.elementCount} Element${
           light.elementCount === 1 ? "" : "s"
         }`;
   const segmentLine =
@@ -135,7 +135,8 @@ function LightRow({ light }: { light: LightView }) {
         bottom={4}
         color={() => light.bead}
         brightness={unreachable ? 1 : 0.8}
-        ariaLabel={`${light.name} strip`}
+        rgbw={light.stripBead === "rgbw"}
+        ariaLabel={`${light.name} strip, ${stripBeadCaption(light.stripBead)}`}
       />
     </Link>
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lightFromSnapshot } from "./domain.ts";
+import { lightFromSnapshot, toLightView } from "./domain.ts";
 
 const snapshot = {
   name: "WLED",
@@ -54,5 +54,79 @@ describe("lightFromSnapshot name", () => {
     const attached = { ...enrolled, ledProductId: "led-ws281x-60-gpio16" };
     const refreshed = lightFromSnapshot(target, snapshot, "2026-09-26T18:01:00.000Z", attached);
     expect(refreshed.ledProductId).toBe("led-ws281x-60-gpio16");
+  });
+
+  it("keeps a persisted SK6812 stripKind — does not hardcode ws281x on refresh", () => {
+    const enrolled = lightFromSnapshot(target, snapshot, "2026-09-26T18:00:00.000Z");
+    expect(enrolled.stripKind).toBe("ws281x");
+    const afterWrite = { ...enrolled, stripKind: "sk6812-rgbw" };
+    const refreshed = lightFromSnapshot(
+      target,
+      { ...snapshot, rgbw: true },
+      "2026-09-26T18:01:00.000Z",
+      afterWrite,
+    );
+    expect(refreshed.stripKind).toBe("sk6812-rgbw");
+    expect(refreshed.rgbw).toBe(true);
+  });
+});
+
+describe("toLightView strip honesty", () => {
+  const target = { hostname: "192.168.1.72", port: 80 };
+
+  it("does not treat snapshot rgbw as a WS281x RGBW chip", () => {
+    const light = lightFromSnapshot(target, { ...snapshot, rgbw: true }, "2026-09-26T18:00:00.000Z");
+    const view = toLightView(light, { ...snapshot, rgbw: true });
+    expect(light.rgbw).toBe(true);
+    expect(view.stripKind).toBe("ws281x");
+    expect(view.stripBead).toBe("rgb");
+    expect(view.stripChip).toBe("WS281x RGB");
+  });
+
+  it("follows an attached SK6812 product for the bead and chip", () => {
+    const light = {
+      ...lightFromSnapshot(target, snapshot, "2026-09-26T18:00:00.000Z"),
+      ledProductId: "porch-sk6812",
+    };
+    const view = toLightView(light, snapshot, {
+      elementCount: 0,
+      segmentCount: 1,
+      driftLabel: null,
+      product: {
+        id: "porch-sk6812",
+        label: "Porch SK6812",
+        notes: "Not a WLED write.",
+        formFactor: "discrete",
+        driverId: "sk6812-rgbw",
+      },
+    });
+    expect(view.stripBead).toBe("rgbw");
+    expect(view.stripChip).toBe("SK6812 RGBW");
+    expect(view.bead).toBe("#ffa000");
+  });
+
+  it("keeps unreachable beads unknown on an RGBW product", () => {
+    const light = {
+      ...lightFromSnapshot(target, snapshot, "2026-09-26T18:00:00.000Z"),
+      reachability: "no-answer" as const,
+      on: null,
+      brightness: null,
+      ledProductId: "porch-sk6812",
+    };
+    const view = toLightView(light, null, {
+      elementCount: 0,
+      segmentCount: null,
+      driftLabel: null,
+      product: {
+        id: "porch-sk6812",
+        label: "Porch SK6812",
+        notes: "",
+        formFactor: "discrete",
+        driverId: "sk6812-rgbw",
+      },
+    });
+    expect(view.bead).toBe("unknown");
+    expect(view.stripBead).toBe("rgbw");
+    expect(view.stripChip).toBe("SK6812 RGBW");
   });
 });

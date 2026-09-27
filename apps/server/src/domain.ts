@@ -2,14 +2,17 @@ import { randomUUID } from "node:crypto";
 import {
   buildRangeDisplay,
   displayHost,
+  knownStripKind,
   normalizeHostKey,
   resolveLightName,
+  stripHonestyForLight,
   validateDeclaredRanges,
   type BeadColor,
   type DiscoverRow,
   type DiscoverVia,
   type Element,
   type HostPort,
+  type LedProduct,
   type Light,
   type LightDetail,
   type LightView,
@@ -33,7 +36,7 @@ export function lightFromSnapshot(
     nameSource: resolved.nameSource,
     staleInfoName: resolved.staleInfoName,
     controllerKind: "wled",
-    stripKind: "ws281x",
+    stripKind: knownStripKind(existing?.stripKind),
     hostname: target.hostname,
     port: target.port,
     hostKey: normalizeHostKey(target),
@@ -68,16 +71,23 @@ export function toLightView(
     elementCount: number;
     segmentCount: number | null;
     driftLabel: string | null;
+    product?: LedProduct | null;
   } = {
     elementCount: 0,
     segmentCount: null,
     driftLabel: null,
   },
 ): LightView {
+  const honesty = stripHonestyForLight({
+    stripKind: light.stripKind,
+    product: extras.product,
+  });
   return {
     ...light,
     displayHost: displayHost({ hostname: light.hostname, port: light.port }),
     bead: beadFor(light, live),
+    stripBead: honesty.bead,
+    stripChip: honesty.chipLabel,
     elementCount: extras.elementCount,
     segmentCount: extras.segmentCount,
     driftLabel: extras.driftLabel,
@@ -88,6 +98,7 @@ export function lightDetail(
   light: Light,
   live: WledSnapshot | null,
   elements: Element[],
+  product: LedProduct | null = null,
 ): LightDetail {
   const reachable = light.reachability === "online" && live !== null;
   const reported = reachable ? (live?.segments ?? []) : [];
@@ -98,6 +109,7 @@ export function lightDetail(
       elementCount: elements.length,
       segmentCount: reachable ? (live?.segments.length ?? 0) : null,
       driftLabel: display.notes[0]?.text ?? null,
+      product,
     }),
     elements,
     reported: display.reported,

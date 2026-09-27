@@ -16,5 +16,5 @@ export const sk6812RgbwStrip: StripDriverDescriptor = {
   colorOrder: "GRBW",
   bead: "rgbw",
   notes:
-    "Four channels per node (RGB + white). WLED native type 30, order 0 (GRBW). A registered member is not Hardware Done. Bead chrome for the second die is a later Inspect slice.",
+    "Four channels per node (RGB + white). WLED native type 30, order 0 (GRBW). A registered member is not Hardware Done. Inspect beads grow a second die when this driver or an attached product is RGBW.",
 };

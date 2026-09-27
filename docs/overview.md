@@ -28,6 +28,7 @@ The catalog slice id is `R6` (`CURRENT_SLICE` in `packages/shared/src/catalog.ts
 ## Honesty
 
 - Unreachable beads are grey (`BeadColor` `"unknown"`), with last-seen. Never the last colour.
+- RGB vs RGBW on Inspect and the Lights rack follows the attached LED product or the persisted strip driver — not a hardcoded WS281x label from `/json/info` `leds.rgbw`. RGBW beads show two dies (colour + white). That is not Hardware Done.
 - Preview is temporary. Apply persists.
 - All Off cancels without restoring.
 - Delete has no “I understand” override on unknown.
