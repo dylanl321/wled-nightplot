@@ -11,7 +11,7 @@ It is early software. There is no authentication and no TLS. A fixture report is
 - **Preview** is temporary colour and brightness; it restores (or cancels without restore).
 - **Apply** writes the controller and re-reads. Success only on match.
 - **Blink** is an identify pulse.
-- **All Off** cancels live sessions without restoring, then powers off enrolled Lights.
+- **All Off** cancels live sessions without restoring, then powers off enrolled Lights. Probes up to four Lights at a time; each Light is listed by what it reported. Unknown stays unknown.
 
 ## Flow
 
@@ -21,7 +21,7 @@ It is early software. There is no authentication and no TLS. A fixture report is
 4. **Elements** — declare ranges. Save writes Nightplot only. Apply writes the controller, then re-reads. 200 only on match.
 5. **Test live** — Preview and Blink. Preview is temporary; Apply is what persists. Proof ladder: sent → controller reports → a person confirms.
 6. **Safe settings** — small `WledSafeSettings` set, fingerprint-gated. Unsupported firmware is refused.
-7. **Manage** — Lights rack, All Off (cancels without restoring), Delete (checks that run).
+7. **Manage** — Lights rack, All Off (cancels without restoring; up to four Light probes at a time), Delete (checks that run).
 
 The catalog slice id is `R6` (`CURRENT_SLICE` in `packages/shared/src/catalog.ts`). Strip provision, named presets (seeds), LED product attach, and range reconcile sit on that same flow. Operator LED products (`LedProduct`) are a Nightplot catalog of specific SKUs — form factor, driver, optional defaults — stored in `data/led-products.json`. Attaching one to a Light stores `ledProductId`. That is not a WLED write and not Hardware Done.
 

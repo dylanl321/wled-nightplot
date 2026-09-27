@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { FIND_PROBE_CONCURRENCY, mapLimit } from "./map-limit.ts";
+import {
+  ALL_OFF_PROBE_CONCURRENCY,
+  FIND_PROBE_CONCURRENCY,
+  mapLimit,
+  mapLimitSettled,
+} from "./map-limit.ts";
 
 describe("mapLimit", () => {
   it("documents Find’s default bound of four", () => {
     expect(FIND_PROBE_CONCURRENCY).toBe(4);
+  });
+
+  it("documents All Off’s default bound of four", () => {
+    expect(ALL_OFF_PROBE_CONCURRENCY).toBe(4);
   });
 
   it("returns an empty list without calling the mapper", async () => {
@@ -79,5 +88,44 @@ describe("mapLimit", () => {
   it("refuses a non-positive limit", async () => {
     await expect(mapLimit([1], 0, async (n) => n)).rejects.toThrow(/>= 1/);
     await expect(mapLimit([1], 1.5, async (n) => n)).rejects.toThrow(/>= 1/);
+  });
+});
+
+describe("mapLimitSettled", () => {
+  it("keeps later items running after an earlier throw", async () => {
+    const started: number[] = [];
+    const out = await mapLimitSettled([0, 1, 2, 3], 2, async (item) => {
+      started.push(item);
+      if (item === 1) throw new Error("boom");
+      return item * 10;
+    });
+    expect(started.sort()).toEqual([0, 1, 2, 3]);
+    expect(out[0]).toEqual({ status: "fulfilled", value: 0 });
+    expect(out[1]?.status).toBe("rejected");
+    expect((out[1] as PromiseRejectedResult).reason).toBeInstanceOf(Error);
+    expect(String((out[1] as PromiseRejectedResult).reason)).toMatch(/boom/);
+    expect(out[2]).toEqual({ status: "fulfilled", value: 20 });
+    expect(out[3]).toEqual({ status: "fulfilled", value: 30 });
+  });
+
+  it("never runs more than `limit` mappers at once", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const out = await mapLimitSettled([0, 1, 2, 3, 4], 2, async (item) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      inFlight -= 1;
+      if (item === 2) throw new Error("mid");
+      return item;
+    });
+    expect(maxInFlight).toBe(2);
+    expect(out.map((row) => row.status)).toEqual([
+      "fulfilled",
+      "fulfilled",
+      "rejected",
+      "fulfilled",
+      "fulfilled",
+    ]);
   });
 });

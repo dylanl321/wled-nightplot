@@ -63,6 +63,7 @@ Strip Apply (`buildProvisionWrite`) writes WLED `order: 0` (GRBW on SK6812 RGBW;
 | Live sessions | `createLiveEngine` | `apps/server/src/live/engine.ts` |
 | Find collect | `createCollector` | `apps/server/src/discovery/collect.ts` |
 | Find probe bound | `FIND_PROBE_CONCURRENCY` (4) | `apps/server/src/discovery/map-limit.ts` |
+| All Off Light bound | `ALL_OFF_PROBE_CONCURRENCY` (4), `mapLimitSettled` | `apps/server/src/discovery/map-limit.ts` |
 | Fixture | `createFixtureBox` | `apps/server/src/wled-fixture-box.ts` |
 
 `GET /health` returns `{ ok, service: "nightplot-configure", slice: CURRENT_SLICE }`.

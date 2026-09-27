@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { listStripPresets, provisionApplyBodyFromPreset } from "@nightplot/shared";
 import { createApp, type AppDeps } from "./app.ts";
-import { FIND_PROBE_CONCURRENCY } from "./discovery/map-limit.ts";
+import { ALL_OFF_PROBE_CONCURRENCY, FIND_PROBE_CONCURRENCY } from "./discovery/map-limit.ts";
 import { FileLedProductsStore } from "./store/led-products-store.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
 import { createFixtureBox } from "./wled-fixture-box.ts";
@@ -1216,6 +1216,181 @@ describe("all-off + delete", () => {
     } finally {
       now.mockRestore();
     }
+  });
+
+  it("probes enrolled Lights with a bound of four; a refuse stays unknown", async () => {
+    const boxes = new Map<string, ReturnType<typeof memoryBox>>();
+    const boxFor = (host: string) => {
+      const existing = boxes.get(host);
+      if (existing) return existing;
+      const next = memoryBox();
+      boxes.set(host, next);
+      return next;
+    };
+    const hosts = [
+      "192.168.1.10",
+      "192.168.1.11",
+      "192.168.1.12",
+      "192.168.1.13",
+      "192.168.1.14",
+      "192.168.1.15",
+    ];
+    const firstSeen = new Set<string>();
+    const started: string[] = [];
+    const gates: Array<() => void> = [];
+    let gating = false;
+    let inFlight = 0;
+    let maxInFlight = 0;
+
+    const { app } = testApp({
+      write: async (target, body) => boxFor(target.hostname).write(target, body),
+      readLive: (target, count) => boxFor(target.hostname).readLive(target, count),
+      probe: async (target) => {
+        if (gating && !firstSeen.has(target.hostname)) {
+          firstSeen.add(target.hostname);
+          started.push(target.hostname);
+          inFlight += 1;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          await new Promise<void>((resolve) => {
+            gates.push(resolve);
+          });
+          inFlight -= 1;
+        }
+        if (gating && target.hostname === "192.168.1.14") {
+          return { kind: "probe-failed", reason: "no answer" };
+        }
+        return boxFor(target.hostname).probe();
+      },
+    });
+
+    const ids: string[] = [];
+    for (const host of hosts) {
+      ids.push(await enrollHost(app, host));
+    }
+    gating = true;
+
+    const pending = app.request("/api/all-off", { method: "POST" });
+
+    await vi.waitFor(() => {
+      expect(inFlight).toBe(ALL_OFF_PROBE_CONCURRENCY);
+      expect(started).toEqual(hosts.slice(0, ALL_OFF_PROBE_CONCURRENCY));
+    });
+
+    for (const release of gates.splice(0)) release();
+
+    await vi.waitFor(() => {
+      expect(started).toEqual(hosts);
+    });
+
+    for (const release of gates.splice(0)) release();
+
+    const res = await pending;
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      rows: { lightId: string; name: string; status: string; detail: string }[];
+      failedIds: string[];
+      caption: string;
+    };
+    expect(maxInFlight).toBe(ALL_OFF_PROBE_CONCURRENCY);
+    expect(body.rows.map((row) => row.lightId)).toEqual(ids);
+    expect(body.rows.map((row) => row.status)).toEqual([
+      "off",
+      "off",
+      "off",
+      "off",
+      "unknown",
+      "off",
+    ]);
+    expect(body.rows[4]?.detail).toMatch(/^no answer from 192\.168\.1\.14(\.| in \d+ s\.)$/);
+    expect(body.failedIds).toEqual([ids[4]]);
+    expect(body.rows.some((row) => row.status === "off" && row.lightId === ids[4])).toBe(false);
+    expect(body.caption).toMatch(/Not Hardware Done/);
+  });
+
+  it("settles All Off when one Light probe throws; siblings stay fail-closed", async () => {
+    const boxes = new Map<string, ReturnType<typeof memoryBox>>();
+    const boxFor = (host: string) => {
+      const existing = boxes.get(host);
+      if (existing) return existing;
+      const next = memoryBox();
+      boxes.set(host, next);
+      return next;
+    };
+    let explode = false;
+    const { app, store } = testApp({
+      write: async (target, body) => boxFor(target.hostname).write(target, body),
+      readLive: (target, count) => boxFor(target.hostname).readLive(target, count),
+      probe: async (target) => {
+        if (explode && target.hostname === "192.168.1.73") {
+          throw new Error("probe exploded");
+        }
+        return boxFor(target.hostname).probe();
+      },
+    });
+    const keep = await enrollHost(app, "192.168.1.72");
+    const boom = await enrollHost(app, "192.168.1.73");
+    const later = await enrollHost(app, "192.168.1.74");
+    explode = true;
+
+    const res = await app.request("/api/all-off", { method: "POST" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      rows: { lightId: string; status: string; detail: string }[];
+      failedIds: string[];
+      caption: string;
+    };
+    expect(body.rows).toHaveLength(3);
+    expect(body.rows.find((row) => row.lightId === keep)?.status).toBe("off");
+    expect(body.rows.find((row) => row.lightId === later)?.status).toBe("off");
+    const unknown = body.rows.find((row) => row.lightId === boom);
+    expect(unknown?.status).toBe("unknown");
+    expect(unknown?.detail).toBe("no answer from 192.168.1.73.");
+    expect(unknown?.detail).not.toMatch(/in 3 s/);
+    expect(body.failedIds).toEqual([boom]);
+    expect(store.findById(keep)?.on).toBe(false);
+    expect(store.findById(later)?.on).toBe(false);
+    expect(store.findById(boom)?.on).toBeNull();
+    expect(store.findById(boom)?.reachability).toBe("no-answer");
+    expect(body.caption).toMatch(/Not Hardware Done/);
+  });
+
+  it("All Off Light probes overlap instead of waiting out each dead Light", async () => {
+    const delayMs = 80;
+    const hosts = ["192.168.1.80", "192.168.1.81", "192.168.1.82"];
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
+    const store = new FileLightsStore(join(dir, "lights.json"));
+    const online = testApp({ store });
+    const ids: string[] = [];
+    for (const host of hosts) {
+      ids.push(await enrollHost(online.app, host));
+    }
+
+    const dead = testApp({
+      store,
+      probe: async () => {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        return { kind: "probe-failed" as const, reason: "no answer" };
+      },
+    });
+
+    const started = Date.now();
+    const res = await dead.app.request("/api/all-off", { method: "POST" });
+    const elapsed = Date.now() - started;
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      rows: { lightId: string; status: string; detail: string }[];
+    };
+    expect(body.rows.map((row) => row.lightId)).toEqual(ids);
+    expect(body.rows.every((row) => row.status === "unknown")).toBe(true);
+    expect(body.rows.map((row) => row.detail)).toEqual([
+      "no answer from 192.168.1.80.",
+      "no answer from 192.168.1.81.",
+      "no answer from 192.168.1.82.",
+    ]);
+    expect(body.rows.every((row) => !/in 3 s/.test(row.detail))).toBe(true);
+    // Serial would be ~3 × delay; overlap should finish near one delay.
+    expect(elapsed).toBeLessThan(delayMs * 2.2);
+    expect(elapsed).toBeGreaterThanOrEqual(delayMs);
   });
 
   it("refuses Delete until every check is complete", async () => {
