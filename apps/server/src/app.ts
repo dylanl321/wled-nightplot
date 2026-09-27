@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   CURRENT_SLICE,
+  allOffNoAnswerReason,
   allOffSummary,
   applyCaption,
   applyOutcome,
@@ -1026,7 +1027,9 @@ export function createApp(deps: AppDeps) {
     let sawFixture = false;
     for (const stored of targets) {
       const dest: HostPort = { hostname: stored.hostname, port: stored.port };
+      const started = Date.now();
       const { light, live: snap } = await refreshOne(stored);
+      const elapsedMs = Date.now() - started;
       const liveRead = snap ? await live.read(light) : null;
       if (liveRead?.source === "fixture") sawFixture = true;
       if (light.reachability !== "online" || !snap) {
@@ -1034,7 +1037,7 @@ export function createApp(deps: AppDeps) {
           lightId: light.id,
           name: light.name,
           status: "unknown",
-          detail: `no answer from ${displayHost(dest)} in 3 s`,
+          detail: allOffNoAnswerReason(displayHost(dest), elapsedMs),
         });
         continue;
       }

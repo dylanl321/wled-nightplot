@@ -40,6 +40,22 @@ export function manageCaption(source: "fixture" | "controller"): string {
   return "Each Light is listed by what it reported. Not Hardware Done.";
 }
 
+/**
+ * Below this, a duration in All Off unknown-row copy would be misleading
+ * (instant refuse). Same 0.5 s honesty gate as CONFIG-28 probe-failed.
+ */
+export const ALL_OFF_NO_ANSWER_ELAPSED_MIN_MS = 500;
+
+/** All Off unknown-row copy: actual elapsed, or generic refuse. Not a claimed 3 s. */
+export function allOffNoAnswerReason(host: string, elapsedMs: number): string {
+  const waited = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
+  if (waited < ALL_OFF_NO_ANSWER_ELAPSED_MIN_MS) {
+    return `no answer from ${host}.`;
+  }
+  const seconds = Math.max(1, Math.round(waited / 1000));
+  return `no answer from ${host} in ${seconds} s.`;
+}
+
 export function allOffSummary(rows: AllOffRow[], cancelled: AllOffCancelled[]): string {
   if (rows.length === 0) return "No Lights to turn off.";
   const off = rows.filter((row) => row.status === "off" || row.status === "already-off").length;
