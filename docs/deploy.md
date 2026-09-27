@@ -14,7 +14,7 @@ One image, three processes (`docker-entrypoint.sh`):
 | `web` | `next start` on `NIGHTPLOT_WEB_HOST`:`NIGHTPLOT_WEB_PORT` |
 | `all` | both (default `CMD`) |
 
-`docker-compose.yml` runs **two services** (web + api) from that image. The web build bakes Next rewrites to `http://api:43181` (the compose service name). Browser fetches stay same-origin on the web port; the Next server proxies `/api/*` and `/health`.
+`docker-compose.yml` runs **two services** (web + api) from that image. The web build bakes Next rewrites to `http://api:43181` (the compose service name). Browser fetches stay same-origin on the web port; the Next server proxies `/api/*` and `/health`. The entrypoint starts `tsx` / `next` from workspace bins so a running container does not download pnpm.
 
 One-container `all` needs the API hostname:
 

@@ -16,7 +16,6 @@ services:
         NIGHTPLOT_API_URL: http://api:43181
     image: nightplot-configure:local
     command: ["api"]
-    init: true
     environment:
       NIGHTPLOT_API_HOST: "0.0.0.0"
       NIGHTPLOT_API_PORT: "43181"
@@ -37,7 +36,6 @@ services:
         NIGHTPLOT_API_URL: http://api:43181
     image: nightplot-configure:local
     command: ["web"]
-    init: true
     environment:
       NIGHTPLOT_WEB_HOST: "0.0.0.0"
       NIGHTPLOT_WEB_PORT: "43180"

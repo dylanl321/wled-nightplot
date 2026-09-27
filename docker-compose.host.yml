@@ -15,7 +15,6 @@ services:
         NIGHTPLOT_API_URL: http://api:43181
     image: nightplot-configure:local
     command: ["all"]
-    init: true
     network_mode: host
     extra_hosts:
       - "api:127.0.0.1"

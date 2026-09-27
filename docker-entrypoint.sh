@@ -3,9 +3,14 @@
 #   api  — Hono on NIGHTPLOT_API_HOST:NIGHTPLOT_API_PORT
 #   web  — next start (rewrites /api and /health to hostname api)
 #   all  — both in one container (needs --add-host=api:127.0.0.1)
+#
+# Uses workspace bins, not `pnpm` — Corepack must not download at runtime.
 set -eu
 
 role="${1:-all}"
+ROOT=/app
+TSX="$ROOT/apps/server/node_modules/.bin/tsx"
+NEXT="$ROOT/apps/web/node_modules/.bin/next"
 
 need_api_hostname() {
   if getent hosts api >/dev/null 2>&1; then
@@ -22,7 +27,8 @@ start_api() {
   export NIGHTPLOT_API_HOST="${NIGHTPLOT_API_HOST:-0.0.0.0}"
   export NIGHTPLOT_API_PORT="${NIGHTPLOT_API_PORT:-43181}"
   export NIGHTPLOT_STORE_PATH="${NIGHTPLOT_STORE_PATH:-/data/lights.json}"
-  exec pnpm --filter @nightplot/server start
+  cd "$ROOT/apps/server"
+  exec "$TSX" src/index.ts
 }
 
 start_web() {
@@ -30,7 +36,8 @@ start_web() {
   export NIGHTPLOT_WEB_HOST="${NIGHTPLOT_WEB_HOST:-0.0.0.0}"
   export NIGHTPLOT_WEB_PORT="${NIGHTPLOT_WEB_PORT:-43180}"
   export NIGHTPLOT_API_URL="${NIGHTPLOT_API_URL:-http://api:43181}"
-  exec pnpm --filter @nightplot/web start
+  cd "$ROOT/apps/web"
+  exec "$NEXT" start --hostname "${NIGHTPLOT_WEB_HOST}" --port "${NIGHTPLOT_WEB_PORT}"
 }
 
 start_all() {
@@ -42,9 +49,11 @@ start_all() {
   export NIGHTPLOT_WEB_PORT="${NIGHTPLOT_WEB_PORT:-43180}"
   export NIGHTPLOT_API_URL="${NIGHTPLOT_API_URL:-http://api:43181}"
 
-  pnpm --filter @nightplot/server start &
+  cd "$ROOT/apps/server"
+  "$TSX" src/index.ts &
   api_pid=$!
-  pnpm --filter @nightplot/web start &
+  cd "$ROOT/apps/web"
+  "$NEXT" start --hostname "${NIGHTPLOT_WEB_HOST}" --port "${NIGHTPLOT_WEB_PORT}" &
   web_pid=$!
 
   term() {
