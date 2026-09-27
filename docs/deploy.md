@@ -1,8 +1,8 @@
 # Deploy
 
-Nightplot Configure is a LAN utility. This page is how to run the **production-shaped** Docker image and compose file. The product is **not production-ready** and **not production certified**. There is no auth, no TLS, no public-internet recipe.
+Nightplot Configure is a LAN utility. This page is how to run the Docker image and compose file on a local machine or home network. There is no authentication and no TLS; do not publish the API on the public internet.
 
-`pnpm dev` on loopback is still the supported operator path. See [install.md](install.md).
+`pnpm dev` on loopback is still the usual operator path. See [install.md](install.md).
 
 ## What the image is
 
@@ -46,7 +46,7 @@ Pass-through only:
 - `NIGHTPLOT_DISCOVERY_TARGETS` — typed Find extras (`host` or `host:port`)
 - `NIGHTPLOT_CORS_ORIGINS` — extra API CORS origins (see below)
 
-Open `http://127.0.0.1:43180`. Typed address enroll still works from the container (the API probes the LAN). Preview is not Apply. A fixture report is not Hardware Done.
+Open `http://127.0.0.1:43180`. Typed address enroll still works from the container (the API probes the LAN). Preview is temporary; Apply persists. A fixture report is a development stub, not a verified real strip.
 
 `docker compose config` must validate this file.
 
@@ -54,7 +54,7 @@ Open `http://127.0.0.1:43180`. Typed address enroll still works from the contain
 
 From a **bridge** network, multicast Find often sees nothing. That is expected. Typed address and `NIGHTPLOT_DISCOVERY_TARGETS` are the escape hatch.
 
-The honest Find path on **Linux** is host networking:
+The Find path that can see multicast on **Linux** is host networking:
 
 ```bash
 docker compose -f docker-compose.host.yml up --build
@@ -92,7 +92,7 @@ Override the process: `docker run … nightplot-configure api`.
 - How to run by hand: GitHub → Actions → Docker → Run workflow.
 - Push to `ghcr.io/<owner>/<repo>` only on `main` / tags, and only when GHCR login succeeds (`GITHUB_TOKEN`, `packages: write`). A skipped or failed login still builds; it does not push.
 
-This is an image builder, not a claim the product is production-ready.
+The workflow packages a local/LAN image. It does not add authentication or TLS.
 
 ## If the web cannot reach the API
 
@@ -104,20 +104,18 @@ Restart the same way you started. The Lights recovery screen names both paths �
 
 Do not run host `pnpm dev` against a container-only install.
 
-## What is still not here
+## What this package does not include
 
 - Authentication
 - TLS / reverse-proxy recipe
 - Health-checked multi-host deploy
 - k8s / helm
-- Migrating old Nightplot SQLite
-- Hardware Done
 
-Binding `0.0.0.0` in a container is so the published port works on a LAN. It is not a supported public-internet deploy. See [SECURITY.md](../SECURITY.md).
+Binding `0.0.0.0` in a container is so the published port works on a LAN. It is not a public-internet deploy. See [SECURITY.md](../SECURITY.md).
 
-## Honest “run it on this machine” without Docker
+## Run it on this machine without Docker
 
 1. Install ([install.md](install.md)).
 2. `pnpm dev` or `pnpm dev:demo`.
 3. Open `http://127.0.0.1:43180`.
-4. Enroll a LAN WLED (or the fixture). Preview is not Apply. Fixture green is not Hardware Done.
+4. Enroll a LAN WLED (or the fixture). Preview is temporary; Apply persists. Fixture green is a development stub, not a verified real strip.

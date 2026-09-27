@@ -1,6 +1,6 @@
 # Contributing
 
-Nightplot Configure is the configure spine only. Read [AGENTS.md](AGENTS.md) and [CONSTITUTION.md](CONSTITUTION.md) before changing behaviour. Plane coordinates and agent duties: [docs/PLANE.md](docs/PLANE.md).
+Nightplot Configure is a LAN utility: find a WLED controller, enroll it as a Light, describe Elements as ranges, Preview live, Apply, manage a few, All Off. Read [AGENTS.md](AGENTS.md) and [CONSTITUTION.md](CONSTITUTION.md) before changing behaviour. Plane coordinates and agent duties: [docs/PLANE.md](docs/PLANE.md).
 
 ## Run
 
@@ -16,7 +16,7 @@ pnpm dev
 - App: `http://127.0.0.1:43180`
 - API: `http://127.0.0.1:43181`
 
-Without a box on the LAN: `pnpm fixture` (`127.0.0.1:48210`) or `pnpm dev:demo`. The fixture is not Hardware Done.
+Without a box on the LAN: `pnpm fixture` (`127.0.0.1:48210`) or `pnpm dev:demo`. The fixture is a software stub for development, not a verified real strip.
 
 v2 prototype: `pnpm proto` → `http://127.0.0.1:43182`. See [docs/ui/README.md](docs/ui/README.md).
 
@@ -24,17 +24,17 @@ v2 prototype: `pnpm proto` → `http://127.0.0.1:43182`. See [docs/ui/README.md]
 
 Use: **Lights**, **Elements**, Preview, Apply, Blink, All Off.
 
-Do not put these in chrome, routes, or user-facing copy: Yard, Tonight, Studio, Scene, Show, Schedule, Devices (as a noun).
-
 A Light is one enrolled controller + one strip. An Element is a contiguous inclusive–exclusive range on that strip.
+
+Use this product’s vocabulary in chrome, routes, and user-facing copy.
 
 ## PR expectations
 
-- One CONFIG slice per PR. Gaps (CONFIG-9, CONFIG-11, CONFIG-45, …) are not the next R-slice. Do not start the next CONFIG ticket in the same run.
+- One CONFIG slice per PR. Gaps are not the next R-slice. Do not start the next CONFIG ticket in the same run.
 - Title like `CONFIG-N: …`. Body includes `Fixes CONFIG-N` (or equivalent) so intake can match.
 - CHANGELOG and public docs land in the **same commit** as the code they describe.
 - `pnpm test` and `pnpm typecheck` pass.
-- Honesty stays: grey unreachable, Preview ≠ Apply, fail-closed Safe / provision, fixture ≠ Hardware Done.
+- Honesty stays: unreachable beads stay grey with last-seen (never last colour); Preview is temporary and Apply persists; Safe / provision refuse unsupported firmware; the fixture is a development stub, not Hardware Done.
 - Adjacent bugs: leave them out of this PR. File or comment as a separate intake stub.
 
 Branch off `main`. Do not force-push `main`.

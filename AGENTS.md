@@ -1,24 +1,22 @@
 # Nightplot Configure
 
-Leave-and-cut from Nightplot. This repo is the **configure spine** only: discover → setup → visualize a strip (Elements / ranges) → live test → manage a few → All Off.
-
-It is not a lighting control room. It does not host playback, mapping, or scheduling.
+Nightplot Configure is a LAN utility: discover a WLED controller, enroll it as a **Light**, describe **Elements** as ranges on the strip, Preview live, Apply, manage a few, All Off.
 
 ## Product words
 
 Use: **Lights**, **Elements**, Preview, Apply, Blink, All Off.
 
-Do not put these in chrome, routes, or user-facing copy: Yard, Tonight, Studio, Scene, Show, Schedule, Devices (as a noun).
-
 A Light is one enrolled controller + one strip. An Element is a contiguous inclusive–exclusive range on that strip.
+
+Use this product’s vocabulary. Do not invent alternate product nouns (control room / scenes / schedules / etc.).
 
 ## Honesty
 
 - Unreachable beads are grey, with last-seen copy. Never the last colour.
-- Preview is not Apply.
+- Preview is temporary. Apply persists.
 - All Off cancels without restoring.
 - Delete is a check that runs, not an “I understand” override on unknown.
-- A registered catalog member is not Hardware Done. A stub endpoint must say it sent nothing.
+- A registered catalog member is a slot in the table. It is not proof hardware passed. A stub endpoint must say it sent nothing.
 
 ## Architecture
 
@@ -37,11 +35,11 @@ New controllers or strip types register a member. They do not rewrite the rack.
 Layout:
 
 - `apps/web` — Quiet-utility shell (Next.js)
-- `apps/server` — catalogs, Discover/connect, JSON Light store, placeholder live actions
+- `apps/server` — catalogs, Discover/connect, JSON Light store, live / Apply / provision / Safe / All Off
 - `packages/shared` — types and catalogs
 - `docs/ui/` — v2 prototype (visual source of truth)
 
-Fresh schema when persistence arrives. Do not migrate old Nightplot SQLite.
+The store is `data/lights.json`.
 
 ## Slices
 

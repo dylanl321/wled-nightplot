@@ -1,8 +1,6 @@
 # Security
 
-Nightplot Configure is a **LAN utility**. It talks to WLED boxes on a home network. It is not hardened for the public internet.
-
-The product is not production-ready. This file records the assumptions that are already in the tree.
+Nightplot Configure is a **LAN utility**. It talks to WLED boxes on a home network. It is early software: there is no authentication and no TLS. Do not publish the API on the public internet.
 
 ## LAN assumptions
 
@@ -11,7 +9,7 @@ The product is not production-ready. This file records the assumptions that are 
 - There is **no authentication** on the API. Anyone who can reach it can enroll, Preview, Apply, provision, and All Off.
 - Enrolled Lights persist in a local JSON file (`data/lights.json`, or `NIGHTPLOT_STORE_PATH`). That file is not a secret store.
 
-Do not publish the API on a public interface and call it done. The Docker image and compose file are production-*shaped* only — see [docs/deploy.md](docs/deploy.md). They are not production certified.
+The Docker image and compose file package the same local/LAN run — see [docs/deploy.md](docs/deploy.md). They do not add authentication or TLS.
 
 ## Discovery refuses public IPs
 

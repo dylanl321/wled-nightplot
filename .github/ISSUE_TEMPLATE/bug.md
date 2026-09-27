@@ -7,7 +7,7 @@ labels: ""
 
 ## What happened
 
-<!-- Lights / Elements / Preview / Apply / Blink / All Off. Not Yard / Tonight / Studio / Scene / Show. -->
+<!-- Lights / Elements / Preview / Apply / Blink / All Off. -->
 
 ## What you expected
 

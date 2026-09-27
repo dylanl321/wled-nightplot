@@ -1,6 +1,6 @@
 # Install
 
-Local run only. This is not a packaged appliance. Docker / compose / GHCR: [deploy.md](deploy.md). The product is not production certified.
+Run Nightplot Configure on the machine in front of you with Node and pnpm. Docker / compose / GHCR: [deploy.md](deploy.md). This is a LAN utility — there is no authentication and no TLS.
 
 ## Needs
 
@@ -52,7 +52,7 @@ pnpm fixture
 
 serves WLED-shaped `/json` at `127.0.0.1:48210` (`apps/server/src/wled-fixture.ts`). Then `pnpm dev:demo` (sets `NIGHTPLOT_DISCOVERY_TARGETS=127.0.0.1:48210`) or type that address on Add a Light.
 
-The fixture is a software stub — **not Hardware Done**.
+The fixture is a software stub for development. A green readback there is not proof that a real strip passed.
 
 ## Prototype
 

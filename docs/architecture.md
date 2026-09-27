@@ -1,8 +1,8 @@
 # Architecture
 
-One code basis. Do not fork the Lights / Elements / live stack per vendor or strip type. New members register; they do not rewrite the rack.
+One code basis. New controllers or strip types register a catalog member; they do not fork the Lights / Elements / live stack.
 
-The product is not production-ready. Paths below are the real tree on `main`.
+This is early software. Paths below are the real tree on `main`.
 
 ## Layout
 
@@ -25,9 +25,9 @@ First members. Home directories are the registration point.
 | Strip / driver | WS281x | `packages/shared/src/strip/` | `ws281xStrip` — `wired: false`. Pixels go through WLED, not a local driver |
 | Discovery | mDNS / SSDP / address probe | `packages/shared/src/discovery/` | `implementation: "registered"`. Empty results are honest |
 
-`GET /api/catalogs` returns `catalogSnapshot()` (`packages/shared/src/catalog.ts`). `CURRENT_SLICE` is `"R6"`. `stripPresets` is the CONFIG-41 catalog (`packages/shared/src/strip/presets.ts`).
+`GET /api/catalogs` returns `catalogSnapshot()` (`packages/shared/src/catalog.ts`). `CURRENT_SLICE` is `"R6"`. Named strip presets live in `packages/shared/src/strip/presets.ts` (`stripPresets` on that payload).
 
-`registered` is not Hardware Done. `ControllerDescriptor.implementation` / `wired` / `capabilities` stay honest (`packages/shared/src/controller/types.ts`).
+`registered` means the slot exists. It is not proof hardware passed. `ControllerDescriptor.implementation` / `wired` / `capabilities` stay honest (`packages/shared/src/controller/types.ts`).
 
 ## Domain types
 
@@ -60,7 +60,7 @@ Unreachable: `markUnreachable` in `apps/server/src/domain.ts` clears `on` / `bri
 
 `GET /health` returns `{ ok, service: "nightplot-configure", slice: CURRENT_SLICE }`.
 
-`GET /api/lights` still calls `refreshOne` (a probe) for every enrolled Light, then `lightDetail`. The Lights **list component** does not start its own probes; Inspect Refresh is the one-Light UI probe. The server list path is a known gap (CONFIG-10) — do not “fix” it inside a docs slice.
+`GET /api/lights` still calls `refreshOne` (a probe) for every enrolled Light, then `lightDetail`. The Lights **list component** does not start its own probes; Inspect Refresh is the one-Light UI probe. The server list path is a known gap — leave it unless that gap is the slice you are on.
 
 ## LAN guard
 
@@ -70,16 +70,15 @@ Find must use an advertised port (SSDP `LOCATION` in `apps/server/src/discovery/
 
 ## Persistence
 
-`FileLightsStore` writes `{ version: 1, lights, elements }`. Fresh schema when a later store arrives. Do not migrate old Nightplot SQLite.
+`FileLightsStore` writes `{ version: 1, lights, elements }` to `data/lights.json` (or `NIGHTPLOT_STORE_PATH`).
 
 ## Stubs / NYI (honest)
 
 | Thing | Status |
 | --- | --- |
-| Docker / compose / GHCR | Production-*shaped* image + compose. See [deploy.md](deploy.md). Not production certified |
+| Docker / compose / GHCR | Image + compose for local/LAN run. See [deploy.md](deploy.md). No auth or TLS |
 | Local WS281x driver | Catalog member registered; `wired: false` |
-| Auth / public bind | Not present. Defaults loopback. Containers bind `0.0.0.0` for published ports — not a public-internet deploy |
-| Hardware Done | Not claimed. Fixture is software-green |
-| Playback / mapping / scheduling | Out of product. Will not land here |
+| Auth / public bind | Not present. Defaults loopback. Containers bind `0.0.0.0` for published ports — LAN publish, not a public-internet deploy |
+| Hardware Done | Not claimed. The fixture is a software stub for development |
 
 API routes: [README.md](../README.md#api). UI routes: [README.md](../README.md#ui).

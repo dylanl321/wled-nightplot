@@ -41,8 +41,7 @@ python3 -m http.server 43182 --directory docs/ui
 - The strip is glowing LED beads on a dark rail, not chips or progress bars.
 - Declared brackets sit above the beads; reported brackets sit below. Drift is a visible gap. Preview match counts are not those reported brackets.
 - Unreachable beads are grey with last-seen copy. Never the last colour.
-- Product words: Lights, Elements, Preview, Apply, Blink, All Off.
-- Do not import Yard, Tonight, Studio, Scene, Show, Schedule, or Devices-as-noun chrome.
+- Product words: Lights, Elements, Preview, Apply, Blink, All Off. Use this product’s vocabulary.
 - Discover listed hosts follow `displayHost`: omit `:80` unless the port is not 80. A default-port not-WLED reject is `192.168.1.80`, not `192.168.1.80:80`.
 - Espalexa `portWarning` copy and Lights last-seen / unknown-bead honesty are locked by `apps/web` component tests (`pnpm --filter @nightplot/web test`).
 
