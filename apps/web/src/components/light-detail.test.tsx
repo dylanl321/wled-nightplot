@@ -200,6 +200,9 @@ describe("LightDetail info-only segments", () => {
     const row = screen.getByRole("button", { name: /Door 0–60/ });
     expect(row.textContent).toMatch(/no compare/);
     expect(row.textContent).not.toMatch(/matches/);
+    const apply = screen.getByRole("button", { name: "Apply" });
+    expect((apply as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/leftover segments can be cleared/)).toBeTruthy();
   });
 
   it("still compares a known empty seg list as empty when editing ranges", () => {
@@ -450,7 +453,7 @@ describe("LightDetail Apply unknown colour", () => {
             on: null,
             brightness: null,
             bead: "unknown",
-            segmentCount: null,
+            segmentCount: 1,
             lastSeenAt: "2026-09-26T18:00:00.000Z",
           }),
           snapshotAt: "2026-09-26T18:00:00.000Z",

@@ -21,6 +21,43 @@ const known: WledSnapshot = {
   segments: [{ start: 0, stop: 60 }],
 };
 
+describe("applyRangesWrite leftover clears", () => {
+  const ranges = [
+    { start: 0, stop: 24 },
+    { start: 24, stop: 50 },
+  ];
+
+  it("refuses leftover clears when previous segment count is unknown — never invents 0", () => {
+    const refused = applyRangesWrite(ranges, null, "#ffa000");
+    expect(refused).toEqual({ ok: false, reason: "unknown-segment-count" });
+    expect(refused.ok).toBe(false);
+    if (refused.ok) throw new Error("unknown count must not author a write");
+    expect(refused).not.toHaveProperty("body");
+  });
+
+  it("writes no leftover stop:0 clears when previous count is known empty — distinct from unknown", () => {
+    const planned = applyRangesWrite(ranges, 0, "#ffa000");
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) throw new Error("known empty must write");
+    expect(planned.body.seg).toEqual([
+      { id: 0, start: 0, stop: 24, col: [[255, 160, 0]] },
+      { id: 1, start: 24, stop: 50, col: [[255, 160, 0]] },
+    ]);
+    expect(planned.body.seg?.some((seg) => seg.stop === 0)).toBe(false);
+  });
+
+  it("appends stop:0 leftover clears when previous count is known and higher", () => {
+    const planned = applyRangesWrite([{ start: 0, stop: 24 }], 3, "#4f7dff");
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) throw new Error("known count must write");
+    expect(planned.body.seg).toEqual([
+      { id: 0, start: 0, stop: 24, col: [[79, 125, 255]] },
+      { id: 1, start: 0, stop: 0, col: [[79, 125, 255]] },
+      { id: 2, start: 0, stop: 0, col: [[79, 125, 255]] },
+    ]);
+  });
+});
+
 describe("restoreOnField", () => {
   it("preserves known on and known off", () => {
     expect(restoreOnField(true)).toEqual({ on: true });
@@ -142,21 +179,25 @@ describe("restoreWriteFromSnapshot", () => {
 
 describe("applyRangesWrite", () => {
   it("writes a known colour — does not default to #ffa000", () => {
-    const write = applyRangesWrite([{ start: 0, stop: 24 }], 2, "#4f7dff");
-    expect(write.seg?.[0]).toMatchObject({
+    const planned = applyRangesWrite([{ start: 0, stop: 24 }], 2, "#4f7dff");
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) throw new Error("known count must write");
+    expect(planned.body.seg?.[0]).toMatchObject({
       id: 0,
       start: 0,
       stop: 24,
       col: [[79, 125, 255]],
     });
-    expect(write.seg?.[1]).toMatchObject({ id: 1, start: 0, stop: 0, col: [[79, 125, 255]] });
-    expect(JSON.stringify(write)).not.toContain("255,160,0");
+    expect(planned.body.seg?.[1]).toMatchObject({ id: 1, start: 0, stop: 0, col: [[79, 125, 255]] });
+    expect(JSON.stringify(planned.body)).not.toContain("255,160,0");
   });
 
   it("omits col when colour is not a hex — never invents #ffa000", () => {
-    const write = applyRangesWrite([{ start: 0, stop: 24 }], 0, "");
-    expect(write.seg?.[0]).toEqual({ id: 0, start: 0, stop: 24 });
-    expect(write.seg?.[0]).not.toHaveProperty("col");
-    expect(JSON.stringify(write)).not.toContain("255,160,0");
+    const planned = applyRangesWrite([{ start: 0, stop: 24 }], 0, "");
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) throw new Error("known empty must write");
+    expect(planned.body.seg?.[0]).toEqual({ id: 0, start: 0, stop: 24 });
+    expect(planned.body.seg?.[0]).not.toHaveProperty("col");
+    expect(JSON.stringify(planned.body)).not.toContain("255,160,0");
   });
 });
