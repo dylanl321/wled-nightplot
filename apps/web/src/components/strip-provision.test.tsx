@@ -17,6 +17,7 @@ const CFG_MISMATCH_MESSAGE =
 const DIDNT_STICK_MESSAGE = "Apply didn’t stick. Your draft is kept.";
 const CFG_REFUSE_MESSAGE =
   "This firmware isn’t in the strip compatibility table. Nothing was written.";
+const BUILD_REFUSE_MESSAGE = "No LED bus on this firmware. Nothing was written.";
 
 const provision: ProvisionRead = {
   settings: {
@@ -239,6 +240,57 @@ describe("Strip provision", () => {
     expect(screen.queryByText("Apply didn’t stick")).toBeNull();
     expect(screen.queryByText(DIDNT_STICK_MESSAGE)).toBeNull();
     expect(screen.queryByText(CFG_MISMATCH_MESSAGE)).toBeNull();
+  });
+
+  it("titles a buildProvisionWrite refuse from provisionWrite — failure panel, not notice-only", async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      if (path.endsWith("/provision") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            ...payload(),
+            provisionWrite: {
+              status: "refused",
+              matched: false,
+              sent: { ledType: "ws281x", length: 80, gpio: 2 },
+              read: provision.settings,
+              snapshotLedCount: 60,
+              fingerprint: provision.fingerprint,
+              message: BUILD_REFUSE_MESSAGE,
+              caption: provision.caption,
+            },
+            message: BUILD_REFUSE_MESSAGE,
+          }),
+          { status: 422, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (path.endsWith("/provision")) {
+        return new Response(JSON.stringify(payload()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ message: "unexpected path" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Apply" }));
+
+    const title = await screen.findByText(BUILD_REFUSE_MESSAGE);
+    expect(title.tagName).toBe("SPAN");
+    expect(title.textContent).not.toMatch(/didn’t stick/);
+    expect(screen.getByText("Sent")).toBeTruthy();
+    expect(screen.getByText(/ws281x · 80 nodes · GPIO 2/)).toBeTruthy();
+    expect(screen.getByText("Read back")).toBeTruthy();
+    expect(screen.queryByText("Apply didn’t stick")).toBeNull();
+    expect(screen.queryByText(DIDNT_STICK_MESSAGE)).toBeNull();
+    expect(screen.queryByText(CFG_MISMATCH_MESSAGE)).toBeNull();
+    expect(screen.queryByText(CFG_REFUSE_MESSAGE)).toBeNull();
+    expect(screen.getByText(/Not Hardware Done/)).toBeTruthy();
   });
 
   it("fills the form from a catalog product, persists attach, and Apply posts provision only", async () => {

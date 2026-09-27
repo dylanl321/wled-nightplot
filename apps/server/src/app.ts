@@ -933,7 +933,24 @@ export function createApp(deps: AppDeps) {
     }
     const built = buildProvisionWrite(draft, raw, provision.fingerprint);
     if (!built.ok) {
-      return c.json({ error: "refused", message: built.message, provision }, 422);
+      return c.json(
+        {
+          error: "refused",
+          message: built.message,
+          provision,
+          provisionWrite: {
+            status: "refused" as const,
+            matched: false,
+            sent: draft,
+            read: provision.settings,
+            snapshotLedCount: snap?.ledCount ?? light.ledCount,
+            fingerprint: provision.fingerprint,
+            message: built.message,
+            caption: provision.caption,
+          },
+        },
+        422,
+      );
     }
     const written = await deps.writeCfg(dest, built.body);
     if (!written) {
