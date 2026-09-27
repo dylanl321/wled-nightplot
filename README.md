@@ -23,6 +23,8 @@ pnpm typecheck
 pnpm test
 ```
 
+`pnpm test` includes `apps/web` component tests (Vitest + Testing Library): Espalexa `portWarning` copy on Discover / the unenrolled tray, and Lights last-seen / unknown beads with Inspect Refresh as the one-Light probe. The list component does not re-probe.
+
 ### Discover → Add without a box on the LAN
 
 `pnpm fixture` serves a WLED-shaped `/json` at `127.0.0.1:48210`. Then either:

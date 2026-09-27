@@ -40,4 +40,9 @@ export type DiscoverRow = {
   on: boolean | null;
   bead: BeadColor | null;
   foundAt: string;
+  /**
+   * Espalexa-shaped SSDP honesty (CONFIG-14/25). LOCATION :80 may be a lie.
+   * Optional on this stack — Find may omit it until that producer lands.
+   */
+  portWarning?: string | null;
 };

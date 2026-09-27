@@ -85,6 +85,13 @@ export function DiscoverPanel({
     router.refresh();
   }
 
+  function focusTypedAddress(hostname: string) {
+    setAddress(`${hostname}:`);
+    setNotice(null);
+    setInfo(null);
+    addressRef.current?.focus();
+  }
+
   async function blinkHost(host: string) {
     setBusy("blink");
     setNotice(null);
@@ -132,6 +139,7 @@ export function DiscoverPanel({
           busy={busy !== null}
           onAdd={() => void addHost(row.displayHost)}
           onBlink={() => void blinkHost(row.displayHost)}
+          onTypePort={() => focusTypedAddress(row.hostname)}
         />
       ))}
 
@@ -159,18 +167,18 @@ export function DiscoverPanel({
               </span>
               <span className="text-sm text-[#c9c3b8]">
                 {row.name ?? row.reason ?? row.status}
+                {row.portWarning ? (
+                  <span className="mt-1 block text-xs leading-5 text-primary">
+                    {row.portWarning}
+                  </span>
+                ) : null}
               </span>
-              {row.reasonCode === "missing-port" ? (
+              {row.reasonCode === "missing-port" || row.portWarning ? (
                 <button
                   type="button"
                   className="justify-self-start text-xs text-primary underline-offset-2 hover:underline md:justify-self-end"
                   disabled={busy !== null}
-                  onClick={() => {
-                    setAddress(`${row.hostname}:`);
-                    setNotice(null);
-                    setInfo(null);
-                    addressRef.current?.focus();
-                  }}
+                  onClick={() => focusTypedAddress(row.hostname)}
                 >
                   Type host:port
                 </button>
@@ -257,11 +265,13 @@ function FoundCard({
   busy,
   onAdd,
   onBlink,
+  onTypePort,
 }: {
   row: DiscoverRow;
   busy: boolean;
   onAdd: () => void;
   onBlink: () => void;
+  onTypePort: () => void;
 }) {
   return (
     <div className="flex flex-col gap-3.5 rounded-xl border border-[#3a4150] bg-[#12141a] p-[18px]">
@@ -272,6 +282,19 @@ function FoundCard({
         </span>
         <span className="ml-auto text-xs text-online">Answered · via {viaLabel(row.via)}</span>
       </div>
+      {row.portWarning ? (
+        <div className="rounded-md border-l-2 border-primary bg-[#1a1812] px-3 py-2.5">
+          <p className="text-xs leading-5 text-primary">{row.portWarning}</p>
+          <button
+            type="button"
+            className="mt-2 text-xs text-primary underline-offset-2 hover:underline"
+            disabled={busy}
+            onClick={onTypePort}
+          >
+            Type host:port
+          </button>
+        </div>
+      ) : null}
       <div className="rounded-lg bg-card p-3.5">
         <MiniStrip
           id={`cand-${row.key}`}

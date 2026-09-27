@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.4 — Discover / Lights component tests (CONFIG-23)
+
+- `apps/web` has a Vitest + Testing Library harness (`pnpm --filter @nightplot/web test`, included in `pnpm test`).
+- Discover and the unenrolled tray render Espalexa `portWarning` and offer Type host:port. Listed host stays `displayHost` (hide default `:80`) while the warning may still talk about `:80`.
+- Lights list paints cached last-seen / unknown grey beads and does not probe. Inspect Refresh is the one-Light live probe.
+
 ## 0.7.3 — Discover canvas default-port host matches displayHost (CONFIG-32)
 
 - v2 Discover not-WLED reject row shows `192.168.1.80`, not `192.168.1.80:80`. Same as live `displayHost` (hide default `:80`). Desktop 2b and the phone frame.

@@ -170,6 +170,9 @@ function UnenrolledTray({ rows }: { rows: DiscoverRow[] }) {
             <span className="font-mono text-[11px] text-quiet">
               {row.displayHost} · found via {row.via === "targets" ? "listed address" : row.via}
             </span>
+            {row.portWarning ? (
+              <span className="mt-1 text-xs leading-5 text-primary">{row.portWarning}</span>
+            ) : null}
           </div>
           <Link href="/discover" className="text-primary sm:ml-auto">
             Look at it
