@@ -76,9 +76,9 @@ Find must use an advertised port (SSDP `LOCATION` in `apps/server/src/discovery/
 
 | Thing | Status |
 | --- | --- |
-| Docker / compose / GHCR | CONFIG-45. Not in this tree |
+| Docker / compose / GHCR | Production-*shaped* image + compose. See [deploy.md](deploy.md). Not production certified |
 | Local WS281x driver | Catalog member registered; `wired: false` |
-| Auth / public bind | Not present. LAN + loopback only |
+| Auth / public bind | Not present. Defaults loopback. Containers bind `0.0.0.0` for published ports — not a public-internet deploy |
 | Hardware Done | Not claimed. Fixture is software-green |
 | Playback / mapping / scheduling | Out of product. Will not land here |
 

@@ -7,11 +7,11 @@ The product is not production-ready. This file records the assumptions that are 
 ## LAN assumptions
 
 - The API binds `127.0.0.1:43181` by default (`NIGHTPLOT_API_HOST` / `NIGHTPLOT_API_PORT`). The web app binds `127.0.0.1:43180`.
-- CORS on the API allows `http://127.0.0.1:43180` and `http://localhost:43180` only (`apps/server/src/app.ts`).
+- CORS on the API allows `http://127.0.0.1:43180` and `http://localhost:43180` by default (`apps/server/src/cors-origins.ts`). `NIGHTPLOT_CORS_ORIGINS` may add http(s) origins. `*` is ignored.
 - There is **no authentication** on the API. Anyone who can reach it can enroll, Preview, Apply, provision, and All Off.
 - Enrolled Lights persist in a local JSON file (`data/lights.json`, or `NIGHTPLOT_STORE_PATH`). That file is not a secret store.
 
-Do not publish the API on a public interface and call it done. Docker / compose / GHCR is CONFIG-45 and is not in this repo yet.
+Do not publish the API on a public interface and call it done. The Docker image and compose file are production-*shaped* only — see [docs/deploy.md](docs/deploy.md). They are not production certified.
 
 ## Discovery refuses public IPs
 

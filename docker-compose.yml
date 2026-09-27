@@ -1,0 +1,47 @@
+# Nightplot Configure — local-ish compose. Not production certified.
+# One image, two services. Web shares the API network namespace so
+# Next rewrites to http://127.0.0.1:43181 reach the API. Typed address
+# works. Find (mDNS / SSDP) usually does not — see docker-compose.host.yml.
+#
+# Do not env_file .env.example as-is: that file is the loopback pnpm-dev
+# default. Bind is set here on purpose.
+
+name: nightplot-configure
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nightplot-configure:local
+    command: ["api"]
+    environment:
+      NIGHTPLOT_API_HOST: "0.0.0.0"
+      NIGHTPLOT_API_PORT: "43181"
+      NIGHTPLOT_STORE_PATH: /data/lights.json
+      NIGHTPLOT_DISCOVERY_TARGETS: ${NIGHTPLOT_DISCOVERY_TARGETS:-}
+      NIGHTPLOT_CORS_ORIGINS: ${NIGHTPLOT_CORS_ORIGINS:-}
+    volumes:
+      - lights-store:/data
+    ports:
+      - "43180:43180"
+      - "43181:43181"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nightplot-configure:local
+    command: ["web"]
+    network_mode: "service:api"
+    environment:
+      NIGHTPLOT_WEB_HOST: "0.0.0.0"
+      NIGHTPLOT_WEB_PORT: "43180"
+      NIGHTPLOT_API_URL: http://127.0.0.1:43181
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  lights-store:

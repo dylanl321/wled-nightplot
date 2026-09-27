@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1 --port 43180",
     "build": "next build",
-    "start": "next start --hostname 127.0.0.1 --port 43180",
+    "start": "next start --hostname ${NIGHTPLOT_WEB_HOST:-127.0.0.1} --port ${NIGHTPLOT_WEB_PORT:-43180}",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run"

@@ -1,0 +1,31 @@
+# Linux Find path (mDNS / SSDP). Host network; not a merge overlay.
+#   docker compose -f docker-compose.host.yml up --build
+# One image, process `all`. Typed address also works.
+# Docker Desktop / VM: host networking is not the same as a Linux LAN —
+# typed address stays the escape hatch.
+
+name: nightplot-configure-host
+
+services:
+  nightplot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nightplot-configure:local
+    command: ["all"]
+    network_mode: host
+    environment:
+      NIGHTPLOT_API_HOST: "0.0.0.0"
+      NIGHTPLOT_API_PORT: "43181"
+      NIGHTPLOT_WEB_HOST: "0.0.0.0"
+      NIGHTPLOT_WEB_PORT: "43180"
+      NIGHTPLOT_STORE_PATH: /data/lights.json
+      NIGHTPLOT_API_URL: http://127.0.0.1:43181
+      NIGHTPLOT_DISCOVERY_TARGETS: ${NIGHTPLOT_DISCOVERY_TARGETS:-}
+      NIGHTPLOT_CORS_ORIGINS: ${NIGHTPLOT_CORS_ORIGINS:-}
+    volumes:
+      - lights-store:/data
+    restart: unless-stopped
+
+volumes:
+  lights-store:

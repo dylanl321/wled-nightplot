@@ -1,6 +1,6 @@
 # Install
 
-Local run only. This is not a packaged appliance. Docker / compose / GHCR is CONFIG-45.
+Local run only. This is not a packaged appliance. Docker / compose / GHCR: [deploy.md](deploy.md). The product is not production certified.
 
 ## Needs
 
@@ -36,6 +36,9 @@ Copy [`.env.example`](../.env.example). Both apps read process env; there is no 
 | `NIGHTPLOT_DISCOVERY_TARGETS` | empty | Extra Find hosts (`host` or `host:port`) |
 | `NIGHTPLOT_FIXTURE_PORT` | `48210` | Local WLED-shaped stub |
 | `NIGHTPLOT_FIXTURE_INFO_NAME_LAG` | off | Keep `/json/info` name stale after a cfg rename |
+| `NIGHTPLOT_WEB_HOST` | `127.0.0.1` | `next start` bind (`pnpm dev` stays loopback) |
+| `NIGHTPLOT_WEB_PORT` | `43180` | `next start` port |
+| `NIGHTPLOT_CORS_ORIGINS` | empty | Extra API CORS origins; defaults stay 127.0.0.1 / localhost :43180. `*` ignored |
 
 `data/` is gitignored. The store is created on first enroll.
 
