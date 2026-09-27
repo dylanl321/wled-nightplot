@@ -7,7 +7,7 @@ Nightplot Configure is a **LAN utility**. It talks to WLED boxes on a home netwo
 - The API binds `127.0.0.1:43181` by default (`NIGHTPLOT_API_HOST` / `NIGHTPLOT_API_PORT`). The web app binds `127.0.0.1:43180`.
 - CORS on the API allows `http://127.0.0.1:43180` and `http://localhost:43180` by default (`apps/server/src/cors-origins.ts`). `NIGHTPLOT_CORS_ORIGINS` may add http(s) origins. `*` is ignored.
 - There is **no authentication** on the API. Anyone who can reach it can enroll, Preview, Apply, provision, and All Off.
-- Enrolled Lights persist in a local JSON file (`data/lights.json`, or `NIGHTPLOT_STORE_PATH`). That file is not a secret store.
+- Enrolled Lights persist in a local JSON file (`data/lights.json`, or `NIGHTPLOT_STORE_PATH`). Operator LED products persist in `data/led-products.json` (`NIGHTPLOT_LED_PRODUCTS_PATH`). Those files are not a secret store.
 
 The Docker image and compose file package the same local/LAN run — see [docs/deploy.md](docs/deploy.md). They do not add authentication or TLS.
 

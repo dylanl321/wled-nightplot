@@ -1,5 +1,7 @@
 export type StripChannel = "r" | "g" | "b" | "w";
 
+export type StripBead = "rgb" | "rgbw";
+
 /**
  * A strip/driver member owns channels, colour order, and the bead picture.
  * Elements (ranges) stay the same when a new strip type slots in.
@@ -14,6 +16,6 @@ export type StripDriverDescriptor = {
   wired: boolean;
   channels: readonly StripChannel[];
   colorOrder: string;
-  bead: "rgb" | "rgbw";
+  bead: StripBead;
   notes: string;
 };

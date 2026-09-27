@@ -62,6 +62,7 @@ describe("catalog snapshot", () => {
     expect(snap.controllers).toHaveLength(1);
     expect(snap.strips).toHaveLength(1);
     expect(snap.stripPresets.length).toBeGreaterThanOrEqual(3);
+    expect(snap.ledProducts).toEqual([]);
     expect(snap.discovery).toHaveLength(3);
   });
 });

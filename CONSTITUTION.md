@@ -47,4 +47,4 @@ Work the CONFIG series in order. R6 is Safe settings (the small `WledSafeSetting
 
 ## Persistence
 
-Enrolled Lights and declared Elements persist in `data/lights.json` (`FileLightsStore`).
+Enrolled Lights and declared Elements persist in `data/lights.json` (`FileLightsStore`). Operator LED products persist in `data/led-products.json` (`FileLedProductsStore`).

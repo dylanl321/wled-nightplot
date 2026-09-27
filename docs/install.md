@@ -33,6 +33,7 @@ Copy [`.env.example`](../.env.example). Both apps read process env; there is no 
 | `NIGHTPLOT_API_HOST` | `127.0.0.1` | API bind |
 | `NIGHTPLOT_API_PORT` | `43181` | API bind |
 | `NIGHTPLOT_STORE_PATH` | `data/lights.json` | Enrolled Lights + Elements |
+| `NIGHTPLOT_LED_PRODUCTS_PATH` | `data/led-products.json` | Operator LED product catalog |
 | `NIGHTPLOT_DISCOVERY_TARGETS` | empty | Extra Find hosts (`host` or `host:port`) |
 | `NIGHTPLOT_FIXTURE_PORT` | `48210` | Local WLED-shaped stub |
 | `NIGHTPLOT_FIXTURE_INFO_NAME_LAG` | off | Keep `/json/info` name stale after a cfg rename |
@@ -40,7 +41,7 @@ Copy [`.env.example`](../.env.example). Both apps read process env; there is no 
 | `NIGHTPLOT_WEB_PORT` | `43180` | `next start` port |
 | `NIGHTPLOT_CORS_ORIGINS` | empty | Extra API CORS origins; defaults stay 127.0.0.1 / localhost :43180. `*` ignored |
 
-`data/` is gitignored. The store is created on first enroll.
+`data/` is gitignored. The Lights store is created on first enroll. The LED product catalog is seeded on first API boot.
 
 ## Fixture
 

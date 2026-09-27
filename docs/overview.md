@@ -23,7 +23,7 @@ It is early software. There is no authentication and no TLS. A fixture report is
 6. **Safe settings** — small `WledSafeSettings` set, fingerprint-gated. Unsupported firmware is refused.
 7. **Manage** — Lights rack, All Off (cancels without restoring), Delete (checks that run).
 
-The catalog slice id is `R6` (`CURRENT_SLICE` in `packages/shared/src/catalog.ts`). Strip provision, named presets, and range reconcile sit on that same flow.
+The catalog slice id is `R6` (`CURRENT_SLICE` in `packages/shared/src/catalog.ts`). Strip provision, named presets, and range reconcile sit on that same flow. Operator LED products (`LedProduct`) are a Nightplot catalog of specific SKUs — form factor, driver, optional defaults — stored in `data/led-products.json`. They are not written to WLED. Attaching a product to a Light is a later ticket.
 
 ## Honesty
 
