@@ -9,7 +9,7 @@ It is early software. There is no authentication and no TLS. A fixture report is
 - A **Light** is one enrolled controller + one strip (`packages/shared/src/lights.ts`).
 - An **Element** is a contiguous inclusive–exclusive range on that strip.
 - **Preview** is temporary colour and brightness; it restores (or cancels without restore). Restore writes power, brightness, and colour only when the last snapshot knew them — an info-only report does not invent on, brightness 128, or `#ffa000`.
-- **Apply** writes the controller and re-reads. Success only on match.
+- **Apply** writes the controller and re-reads. Success only on match. Unknown reread segments are not treated as empty and are not a match.
 - **Blink** is an identify pulse.
 - **All Off** cancels live sessions without restoring, then powers off enrolled Lights. Probes up to four Lights at a time; each Light is listed by what it reported. Unknown stays unknown.
 
@@ -27,7 +27,7 @@ The catalog slice id is `R6` (`CURRENT_SLICE` in `packages/shared/src/catalog.ts
 
 ## Honesty
 
-- Unreachable beads are grey (`BeadColor` `"unknown"`), with last-seen. Never the last colour. Missing `on` after an info-only snapshot is the same class: **Online · unknown**, unknown-grey beads — not “Online · off”. Missing `state.seg` is the same class: **segments unknown**, not “0 segments”. A known empty `seg` stays 0. Unknown segments are not compared as an empty report — drift waits until `state.seg` is known. A detail miss on Inspect does not paint a last colour or claim the list is down.
+- Unreachable beads are grey (`BeadColor` `"unknown"`), with last-seen. Never the last colour. Missing `on` after an info-only snapshot is the same class: **Online · unknown**, unknown-grey beads — not “Online · off”. Missing `state.seg` is the same class: **segments unknown**, not “0 segments”. A known empty `seg` stays 0. Unknown segments are not compared as an empty report — drift waits until `state.seg` is known. Apply reread skips the match compare when segments are unknown — it does not coalesce `null` to `[]`. A detail miss on Inspect does not paint a last colour or claim the list is down.
 - RGB vs RGBW on Inspect and the Lights rack follows the attached LED product or the persisted strip driver — not a hardcoded WS281x label from `/json/info` `leds.rgbw`. Opening Inspect on a Light that still has the default driver and no product may persist a known `/json/cfg` bus type (the same mapping as Strip). The Lights list does not read cfg. RGBW beads show two dies (colour + white). That is not Hardware Done.
 - Preview is temporary. Apply persists. Preview restore does not invent on, brightness, or colour from an info-only snapshot.
 - All Off cancels without restoring. An unknown row names the wait that happened, or a generic refuse — not a claimed 3 s.

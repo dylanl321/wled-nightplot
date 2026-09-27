@@ -1,9 +1,11 @@
 export {
+  APPLY_UNKNOWN_SEGMENTS_MESSAGE,
   adoptReportedRanges,
   applyCaption,
   applyOutcome,
   applyRefuseReason,
   applyRows,
+  applyUnknownSegments,
   macsMatch,
   normalizeMac,
   readdressContinuity,

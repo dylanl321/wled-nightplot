@@ -26,6 +26,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Fixed
 
+- Apply reread no longer coalesces unknown segments (`null` after info-only / skipped `/json/state`) to `[]` before `applyOutcome`. Unknown skips the match compare and stays failed — not a false empty match. A known empty `seg: []` still compares as empty. Same honesty class as CONFIG-75 drift skip and CONFIG-71 **segments unknown** ≠ 0. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-78).
 - Unknown segments (`null` after info-only / skipped `/json/state`) no longer feed empty rails into drift compare. Inspect, Lights, and Edit ranges skip declared-vs-report until `state.seg` is known. A known empty `seg: []` still compares as empty. Same honesty class as **segments unknown** ≠ 0. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-75).
 - Inspect loads enrolled Lights and one-Light detail separately. A detail-only miss keeps the enrolled rail and says this Light did not load (or is not on Lights) — it does not claim the configure server or the list is down. Lights-only outage still uses ServerDown. Unreachable beads stay grey with last-seen (CONFIG-16).
 - Info-only live (skipped or hung `/json/state`) no longer reports `segmentCount: 0` for a missing `seg`. Lights and Inspect say **segments unknown**. A known empty `seg: []` stays **0 segments**. Same honesty class as missing `on`. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-71).

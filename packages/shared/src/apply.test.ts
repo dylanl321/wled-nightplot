@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  APPLY_UNKNOWN_SEGMENTS_MESSAGE,
   applyCaption,
   applyOutcome,
   applyRefuseReason,
+  applyUnknownSegments,
   macsMatch,
   readdressContinuity,
   spansMatch,
@@ -63,6 +65,45 @@ describe("apply match", () => {
     expect(result.message).toMatch(/didn’t stick/);
     expect(result.rows[0]?.matched).toBe(false);
     expect(applyCaption("fixture")).toMatch(/Not Hardware Done/);
+  });
+
+  it("does not treat unknown reread segments as empty before outcome", () => {
+    const sent = [{ label: "Right run", start: 24, stop: 50 }];
+    const unknown = applyUnknownSegments(sent, "controller");
+    expect(unknown.matched).toBe(false);
+    expect(unknown.status).toBe("failed");
+    expect(unknown.read).toBeNull();
+    expect(unknown.rows).toEqual([]);
+    expect(unknown.message).toBe(APPLY_UNKNOWN_SEGMENTS_MESSAGE);
+    expect(unknown.caption).toMatch(/Not Hardware Done/);
+
+    const viaOutcome = applyOutcome(sent, null, "fixture");
+    expect(viaOutcome).toEqual(applyUnknownSegments(sent, "fixture"));
+    expect(viaOutcome.status).not.toBe("matched");
+    expect(viaOutcome.status).not.toBe("mismatch");
+
+    const emptyUnknown = applyOutcome([], null, "controller");
+    expect(emptyUnknown.matched).toBe(false);
+    expect(emptyUnknown.status).toBe("failed");
+    expect(emptyUnknown.read).toBeNull();
+  });
+
+  it("still compares a known empty seg list as empty — distinct from unknown", () => {
+    const emptyVsEmpty = applyOutcome([], [], "controller");
+    expect(emptyVsEmpty.matched).toBe(true);
+    expect(emptyVsEmpty.status).toBe("matched");
+    expect(emptyVsEmpty.read).toEqual([]);
+
+    const declaredVsEmpty = applyOutcome(
+      [{ label: "Right run", start: 24, stop: 50 }],
+      [],
+      "controller",
+    );
+    expect(declaredVsEmpty.matched).toBe(false);
+    expect(declaredVsEmpty.status).toBe("mismatch");
+    expect(declaredVsEmpty.read).toEqual([]);
+    expect(declaredVsEmpty.message).toMatch(/didn’t stick/);
+    expect(declaredVsEmpty.message).not.toBe(APPLY_UNKNOWN_SEGMENTS_MESSAGE);
   });
 });
 

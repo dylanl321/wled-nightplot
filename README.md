@@ -17,7 +17,7 @@ GitHub: [`dylanl321/wled-nightplot`](https://github.com/dylanl321/wled-nightplot
 
 ## How it behaves
 
-- An unreachable Light stays **grey**, with last-seen copy. The rack never shows a stored last colour. If `/json/info` answered but `/json/state` was skipped or hung, power is **unknown** (Online · unknown, unknown-grey beads) — not “Online · off”. Reported segments are **unknown** — not “0 segments”. A known empty `seg` stays 0. Drift is not compared until segments are known — unknown is not an empty report.
+- An unreachable Light stays **grey**, with last-seen copy. The rack never shows a stored last colour. If `/json/info` answered but `/json/state` was skipped or hung, power is **unknown** (Online · unknown, unknown-grey beads) — not “Online · off”. Reported segments are **unknown** — not “0 segments”. A known empty `seg` stays 0. Drift is not compared until segments are known — unknown is not an empty report. Apply reread does the same: unknown segments are not treated as empty, and are not a match.
 - RGB vs RGBW on the beads and Inspect chip follows the attached LED product or the persisted strip driver. RGBW shows two dies. `/json/info` `leds.rgbw` is not labeled WS281x RGBW.
 - Preview is temporary. Apply is what persists on the controller. Ending Preview writes power, brightness, and colour only when the last snapshot knew them — an info-only report (info answered, state skipped or hung) does not invent on, brightness 128, or `#ffa000`.
 - All Off cancels without restoring the previous look.
@@ -114,7 +114,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | GET | `/api/lights/:id` | Inspect payload: identity, declared Elements, reported segments, drift, live session. When `stripKind` is still the default and no LED product is attached, a live Inspect may persist a known `/json/cfg` bus type. |
 | GET | `/api/lights/:id/live` | Same Light plus current `/json/live` beads |
 | PATCH | `/api/lights/:id/elements` | Save declared ranges. 422 on invert / overlap / over-ledCount. Does not write WLED. |
-| POST | `/api/lights/:id/apply` | Write declared ranges, re-read snapshot. 200 only on match. 409 keeps the failure. |
+| POST | `/api/lights/:id/apply` | Write declared ranges, re-read snapshot. 200 only on match. 409 keeps the failure. Unknown reread segments are not an empty match. |
 | POST | `/api/lights/:id/readdress` | `{ host }` — probe first, same-MAC continuity, persist address + last-good snapshot. |
 | POST | `/api/lights/:id/preview` | Temporary colour/brightness on one Element. Reads `/json/live`. `reported` stays range rails; match counts are `liveMatch`. |
 | POST | `/api/lights/:id/preview/end` | Restore previous look (`restore: false` cancels without restore). |
