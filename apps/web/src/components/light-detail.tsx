@@ -778,7 +778,7 @@ function EditRanges({
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-[11px] text-quiet" aria-label="Element kind">
                 {selectedKind(
-                  selectedRail?.error === true,
+                  selectedIssues[0]?.code,
                   selectedRail?.differs === true,
                   comparable,
                 )}
@@ -886,7 +886,7 @@ function EditRanges({
                       "text-destructive",
                   )}
                 >
-                  {status === "over-ledCount" ? "past strip" : status}
+                  {rangeErrorLabel(rowIssues[0]?.code) ?? status}
                 </span>
               </button>
             );
@@ -976,15 +976,20 @@ function ModeButton({
   );
 }
 
+function rangeErrorLabel(
+  code: "invert" | "overlap" | "over-ledCount" | undefined,
+): "invert" | "overlap" | "past strip" | undefined {
+  if (code === "over-ledCount") return "past strip";
+  if (code) return code;
+  return undefined;
+}
+
 function selectedKind(
-  error: boolean,
+  code: "invert" | "overlap" | "over-ledCount" | undefined,
   differs: boolean,
   comparable: boolean,
-): "overlap" | "drift" | "no compare" | "seg" {
-  if (error) return "overlap";
-  if (differs) return "drift";
-  if (!comparable) return "no compare";
-  return "seg";
+): "overlap" | "invert" | "past strip" | "drift" | "no compare" | "seg" {
+  return rangeErrorLabel(code) ?? (differs ? "drift" : comparable ? "seg" : "no compare");
 }
 
 function rowStatus(

@@ -532,7 +532,8 @@ describe("LightDetail Elements after length change", () => {
     expect(screen.getAllByText(/Door 0–60 runs past the strip \(30 LEDs\)/).length).toBeGreaterThan(
       0,
     );
-    expect(screen.getByText("past strip")).toBeTruthy();
+    expect(selectedKindChip().textContent).toBe("past strip");
+    expect(screen.getAllByText("past strip")).toHaveLength(2);
   });
 });
 
@@ -605,6 +606,55 @@ describe("LightDetail selected Element kind chip", () => {
     );
 
     expect(selectedKindChip().textContent).toBe("overlap");
+  });
+
+  it("says invert when the selected range is inverted — not overlap", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: null,
+            brightness: null,
+            bead: "unknown",
+            segmentCount: null,
+            lastSeenAt: "2026-09-26T18:00:00.000Z",
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+          elements: [{ id: "el-door", lightId: "light-garage", label: "Door", start: 40, stop: 20 }],
+        })}
+        mode="ranges"
+      />,
+    );
+
+    expect(selectedKindChip().textContent).toBe("invert");
+    expect(screen.getAllByText("invert")).toHaveLength(2);
+    expect(selectedKindChip().textContent).not.toBe("overlap");
+  });
+
+  it("says past strip when the selected range runs past the strip — not overlap", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: null,
+            brightness: null,
+            bead: "unknown",
+            segmentCount: null,
+            lastSeenAt: "2026-09-26T18:00:00.000Z",
+            ledCount: 60,
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+          elements: [{ id: "el-door", lightId: "light-garage", label: "Door", start: 0, stop: 80 }],
+        })}
+        mode="ranges"
+      />,
+    );
+
+    expect(selectedKindChip().textContent).toBe("past strip");
+    expect(screen.getAllByText("past strip")).toHaveLength(2);
+    expect(selectedKindChip().textContent).not.toBe("overlap");
   });
 
   it("still says drift when a known report differs", () => {
