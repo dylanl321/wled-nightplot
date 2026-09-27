@@ -219,14 +219,14 @@ describe("LightDetail info-only segments", () => {
             ],
             reported: [],
             regions: [{ kind: "drift", start: 0, stop: 60 }],
-            notes: [{ text: "Door 0–60 is not on the controller" }],
+            notes: [{ text: "Door is not on the controller" }],
           },
         })}
         mode="ranges"
       />,
     );
 
-    expect(screen.getByText("Door 0–60 is not on the controller")).toBeTruthy();
+    expect(screen.getByText("Door is not on the controller")).toBeTruthy();
     expect(screen.queryByText("Segments unknown — no report to compare.")).toBeNull();
   });
 

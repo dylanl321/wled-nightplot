@@ -111,7 +111,7 @@ describe("buildRangeDisplay", () => {
     expect(display.declared[0]?.differs).toBe(true);
     expect(display.regions).toEqual([{ kind: "drift", start: 0, stop: 60 }]);
     expect(display.notes.map((note) => note.text)).toEqual([
-      "Door 0–60 is not on the controller",
+      "Door is not on the controller",
     ]);
   });
 });
