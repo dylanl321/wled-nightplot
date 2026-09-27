@@ -1192,6 +1192,145 @@ describe("apply + re-address", () => {
     expect(store.findById(id)?.lastSnapshot).toBeFalsy();
   });
 
+  it("refuses leftover-segment clears when pre-apply segment count is unknown — does not invent 0", async () => {
+    const writes: import("./wled/live.ts").WledStateWrite[] = [];
+    const infoOnly = {
+      ...snapshot,
+      on: null,
+      brightness: null,
+      segmentColor: null,
+      segments: null,
+    };
+    const { app } = testApp({
+      probe: async () => ({ kind: "found" as const, snapshot: infoOnly }),
+      write: async (_target, body) => {
+        writes.push(body);
+        return true;
+      },
+    });
+    const enrolled = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.90" }),
+    });
+    const { light } = (await enrolled.json()) as { light: { id: string } };
+    const save = await app.request(`/api/lights/${light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [
+          { label: "Left run", start: 0, stop: 24 },
+          { label: "Right run", start: 24, stop: 50 },
+        ],
+      }),
+    });
+    const detail = (await save.json()) as {
+      elements: { id: string; label: string; start: number; stop: number }[];
+    };
+    const res = await app.request(`/api/lights/${light.id}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: detail.elements }),
+    });
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: string; message: string };
+    expect(body.error).toBe("refused");
+    expect(body.message).toMatch(/segments unknown/i);
+    expect(body.message).toMatch(/leftover/);
+    expect(writes).toEqual([]);
+  });
+
+  it("applies with no leftover clears when previous segment count is known empty — distinct from unknown", async () => {
+    const writes: import("./wled/live.ts").WledStateWrite[] = [];
+    const emptySeg = { ...snapshot, segments: [] };
+    const { app } = testApp({
+      probe: async () => ({ kind: "found" as const, snapshot: emptySeg }),
+      write: async (_target, body) => {
+        writes.push(body);
+        return true;
+      },
+    });
+    const enrolled = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.91" }),
+    });
+    const { light } = (await enrolled.json()) as { light: { id: string } };
+    const save = await app.request(`/api/lights/${light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [
+          { label: "Left run", start: 0, stop: 24 },
+          { label: "Right run", start: 24, stop: 50 },
+        ],
+      }),
+    });
+    const detail = (await save.json()) as {
+      elements: { id: string; label: string; start: number; stop: number }[];
+    };
+    const res = await app.request(`/api/lights/${light.id}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: detail.elements }),
+    });
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.seg).toEqual([
+      { id: 0, start: 0, stop: 24, col: [[255, 160, 0]] },
+      { id: 1, start: 24, stop: 50, col: [[255, 160, 0]] },
+    ]);
+    expect(writes[0]?.seg?.some((seg) => seg.stop === 0)).toBe(false);
+    expect(res.status).not.toBe(422);
+    expect(((await res.json()) as { error?: string }).error).not.toBe("refused");
+  });
+
+  it("clears leftover segments when the previous count is known and higher than the draft", async () => {
+    const writes: import("./wled/live.ts").WledStateWrite[] = [];
+    const three = {
+      ...snapshot,
+      segments: [
+        { start: 0, stop: 20 },
+        { start: 20, stop: 40 },
+        { start: 40, stop: 60 },
+      ],
+    };
+    const { app } = testApp({
+      probe: async () => ({ kind: "found" as const, snapshot: three }),
+      write: async (_target, body) => {
+        writes.push(body);
+        return true;
+      },
+    });
+    const enrolled = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.92" }),
+    });
+    const { light } = (await enrolled.json()) as { light: { id: string } };
+    const save = await app.request(`/api/lights/${light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [{ label: "Door", start: 0, stop: 24 }],
+      }),
+    });
+    const detail = (await save.json()) as {
+      elements: { id: string; label: string; start: number; stop: number }[];
+    };
+    const res = await app.request(`/api/lights/${light.id}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: detail.elements }),
+    });
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.seg).toEqual([
+      { id: 0, start: 0, stop: 24, col: [[255, 160, 0]] },
+      { id: 1, start: 0, stop: 0, col: [[255, 160, 0]] },
+      { id: 2, start: 0, stop: 0, col: [[255, 160, 0]] },
+    ]);
+    expect(res.status).not.toBe(422);
+  });
+
   it("still compares a known empty reread seg list as empty — distinct from unknown", async () => {
     let written = false;
     const { app, store } = testApp({
@@ -1260,15 +1399,12 @@ describe("apply + re-address", () => {
 
   it("refuses Apply when colour is unknown — does not invent #ffa000", async () => {
     const writes: import("./wled/live.ts").WledStateWrite[] = [];
-    const infoOnly = {
+    const noColour = {
       ...snapshot,
-      on: null,
-      brightness: null,
       segmentColor: null,
-      segments: null,
     };
     const { app } = testApp({
-      probe: async () => ({ kind: "found" as const, snapshot: infoOnly }),
+      probe: async () => ({ kind: "found" as const, snapshot: noColour }),
       write: async (_target, body) => {
         writes.push(body);
         return true;

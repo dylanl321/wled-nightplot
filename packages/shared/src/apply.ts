@@ -39,6 +39,13 @@ export const APPLY_ADOPT_UNKNOWN_REASON =
 export const APPLY_ADOPT_EMPTY_REASON =
   "The controller reported no ranges to take.";
 
+/**
+ * Fail-closed Apply copy when leftover-segment clears cannot run because
+ * the pre-apply segment count is unknown — not zero.
+ */
+export const APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE =
+  "Segments unknown. Refresh first so leftover segments can be cleared.";
+
 export type ReaddressStep = {
   done: boolean;
   text: string;
@@ -66,6 +73,8 @@ export function applyRefuseReason(input: {
   issueMessage?: string | null;
   elementCount: number;
   busyKind?: LiveSessionKind | null;
+  /** Known `state.seg` length, or `null` when unknown — not zero. */
+  segmentCount?: number | null;
   /** Live snapshot colour. Missing or non-hex refuses — never invent `#ffa000`. */
   segmentColor?: string | null;
 }): string | null {
@@ -77,6 +86,9 @@ export function applyRefuseReason(input: {
   }
   if (input.busyKind === "blink") {
     return "Wait for Blink to finish.";
+  }
+  if (input.segmentCount === null) {
+    return APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE;
   }
   if (input.issueMessage) return input.issueMessage;
   if (input.elementCount < 1) return "Declare at least one Element first.";

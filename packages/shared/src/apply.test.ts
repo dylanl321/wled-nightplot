@@ -3,6 +3,7 @@ import {
   APPLY_ADOPT_EMPTY_REASON,
   APPLY_ADOPT_UNKNOWN_REASON,
   APPLY_UNKNOWN_COLOUR_REASON,
+  APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE,
   APPLY_UNKNOWN_SEGMENTS_MESSAGE,
   adoptControllerRangesReason,
   adoptableControllerRanges,
@@ -19,25 +20,57 @@ import {
 describe("apply refuse", () => {
   it("refuses Apply when offline, invalid, empty, or Preview is live", () => {
     expect(
-      applyRefuseReason({ reachable: false, elementCount: 2 }),
+      applyRefuseReason({ reachable: false, elementCount: 2, segmentCount: 1 }),
     ).toMatch(/hasn’t answered/);
     expect(
       applyRefuseReason({
         reachable: true,
         elementCount: 2,
         issueMessage: "Overlaps Right run on LEDs 20–24.",
+        segmentCount: 1,
       }),
     ).toMatch(/Overlaps/);
-    expect(applyRefuseReason({ reachable: true, elementCount: 0 })).toMatch(
-      /at least one Element/,
-    );
+    expect(
+      applyRefuseReason({ reachable: true, elementCount: 0, segmentCount: 1 }),
+    ).toMatch(/at least one Element/);
     expect(
       applyRefuseReason({
         reachable: true,
         elementCount: 2,
         busyKind: "preview",
+        segmentCount: 1,
       }),
     ).toMatch(/Preview is not Apply/);
+  });
+
+  it("refuses leftover-segment clears when segment count is unknown — not zero", () => {
+    expect(
+      applyRefuseReason({
+        reachable: true,
+        elementCount: 2,
+        segmentCount: null,
+        segmentColor: "#4f7dff",
+      }),
+    ).toBe(APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE);
+    expect(
+      applyRefuseReason({ reachable: false, elementCount: 2, segmentCount: null }),
+    ).toMatch(/hasn’t answered/);
+    expect(
+      applyRefuseReason({
+        reachable: true,
+        elementCount: 2,
+        segmentCount: 0,
+        segmentColor: "#4f7dff",
+      }),
+    ).toBeNull();
+    expect(
+      applyRefuseReason({
+        reachable: true,
+        elementCount: 2,
+        segmentCount: 3,
+        segmentColor: "#4f7dff",
+      }),
+    ).toBeNull();
   });
 
   it("refuses Apply when colour is unknown — never invents #ffa000", () => {
@@ -47,15 +80,21 @@ describe("apply refuse", () => {
     expect(knownApplyColor("unknown")).toBeNull();
     expect(knownApplyColor("#ffa000")).toBe("#ffa000");
     expect(
-      applyRefuseReason({ reachable: true, elementCount: 2, segmentColor: null }),
+      applyRefuseReason({
+        reachable: true,
+        elementCount: 2,
+        segmentCount: 1,
+        segmentColor: null,
+      }),
     ).toBe(APPLY_UNKNOWN_COLOUR_REASON);
     expect(
-      applyRefuseReason({ reachable: true, elementCount: 2 }),
+      applyRefuseReason({ reachable: true, elementCount: 2, segmentCount: 1 }),
     ).toBe(APPLY_UNKNOWN_COLOUR_REASON);
     expect(
       applyRefuseReason({
         reachable: true,
         elementCount: 2,
+        segmentCount: 1,
         segmentColor: "#4f7dff",
       }),
     ).toBeNull();

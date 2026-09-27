@@ -122,6 +122,7 @@ export function LightDetail({
     issueMessage: firstIssue?.message ?? null,
     elementCount: draft.length,
     busyKind: detail.session?.kind ?? null,
+    segmentCount: light.segmentCount,
     segmentColor: knownApplyColor(typeof light.bead === "string" ? light.bead : null),
   });
   const canApply = applyReason === null && busy === null;

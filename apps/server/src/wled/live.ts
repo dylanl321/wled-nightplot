@@ -143,16 +143,25 @@ export function restoreWriteFromSnapshot(snapshot: WledSnapshot): WledStateWrite
   });
 }
 
+export type ApplyRangesWriteResult =
+  | { ok: true; body: WledStateWrite }
+  | { ok: false; reason: "unknown-segment-count" };
+
 /**
- * Apply range write. Colour is only attached when it is a known hex —
- * never `null → #ffa000`. Apply itself refuses unknown colour before this
- * runs. Preview is not Apply.
+ * Apply writes declared ranges, then `stop: 0` leftover-segment clears for
+ * ids from `ranges.length` .. `previousSegmentCount` when that count is known.
+ * Unknown (`null`) is not zero — leftover clears are refused, not invented.
+ * Colour is only attached when it is a known hex — never `null → #ffa000`.
+ * Apply itself refuses unknown colour before this runs. Preview is not Apply.
  */
 export function applyRangesWrite(
   ranges: { start: number; stop: number }[],
-  previousSegmentCount: number,
+  previousSegmentCount: number | null,
   color: string,
-): WledStateWrite {
+): ApplyRangesWriteResult {
+  if (previousSegmentCount === null) {
+    return { ok: false, reason: "unknown-segment-count" };
+  }
   const col = restoreColField(color);
   const seg: NonNullable<WledStateWrite["seg"]> = ranges.map((range, id) => ({
     id,
@@ -163,7 +172,7 @@ export function applyRangesWrite(
   for (let id = ranges.length; id < previousSegmentCount; id += 1) {
     seg.push({ id, start: 0, stop: 0, ...col });
   }
-  return { seg };
+  return { ok: true, body: { seg } };
 }
 
 export function previewWrite(

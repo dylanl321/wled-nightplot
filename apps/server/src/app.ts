@@ -5,12 +5,14 @@ import {
   CURRENT_SLICE,
   allOffNoAnswerReason,
   allOffSummary,
+  APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE,
   applyCaption,
   applyOutcome,
   APPLY_UNKNOWN_COLOUR_REASON,
   applyRefuseReason,
   applyUnknownSegments,
   knownApplyColor,
+  snapshotSegmentCount,
   buildDeleteChecks,
   canDelete,
   catalogSnapshot,
@@ -374,12 +376,14 @@ export function createApp(deps: AppDeps) {
       return c.json({ error: "invalid", message: "Send { elements: [{ label, start, stop }] }." }, 400);
     }
     const issues = validateDeclaredRanges(drafts, light.ledCount);
+    const previousSegmentCount = snapshotSegmentCount(snap);
     const color = knownApplyColor(snap?.segmentColor);
     const reason = applyRefuseReason({
       reachable: light.reachability === "online" && snap !== null,
       issueMessage: issues[0]?.message ?? null,
       elementCount: drafts.length,
       busyKind: live.get(light.id)?.kind ?? null,
+      segmentCount: previousSegmentCount,
       segmentColor: color,
     });
     if (reason || !color) {
@@ -394,10 +398,11 @@ export function createApp(deps: AppDeps) {
       stop: row.stop,
     }));
     const dest: HostPort = { hostname: light.hostname, port: light.port };
-    const written = await deps.write(
-      dest,
-      applyRangesWrite(sent, snap?.segments?.length ?? 0, color),
-    );
+    const planned = applyRangesWrite(sent, previousSegmentCount, color);
+    if (!planned.ok) {
+      return c.json({ error: "refused", message: APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE }, 422);
+    }
+    const written = await deps.write(dest, planned.body);
     if (!written) {
       return c.json(
         {
