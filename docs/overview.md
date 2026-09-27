@@ -21,13 +21,13 @@ It is early software. There is no authentication and no TLS. A fixture report is
 4. **Elements** — declare ranges. Save writes Nightplot only. Apply writes the controller, then re-reads. 200 only on match.
 5. **Test live** — Preview and Blink. Preview is temporary; Apply is what persists. Proof ladder: sent → controller reports → a person confirms.
 6. **Safe settings** — small `WledSafeSettings` set, fingerprint-gated. Unsupported firmware is refused.
-7. **Manage** — Lights rack, All Off (cancels without restoring; up to four Light probes at a time), Delete (checks that run).
+7. **Manage** — Lights rack, All Off (cancels without restoring; up to four Light probes at a time), Delete (checks that run). If one Light’s Inspect cannot load, enrolled Lights stay listed — that is not a claim the configure server is down.
 
 The catalog slice id is `R6` (`CURRENT_SLICE` in `packages/shared/src/catalog.ts`). Strip provision, named presets (seeds), LED product attach, and range reconcile sit on that same flow. Operator LED products (`LedProduct`) are a Nightplot catalog of specific SKUs — form factor, driver, optional defaults — stored in `data/led-products.json`. Attaching one to a Light stores `ledProductId`. That is not a WLED write and not Hardware Done.
 
 ## Honesty
 
-- Unreachable beads are grey (`BeadColor` `"unknown"`), with last-seen. Never the last colour. Missing `on` after an info-only snapshot is the same class: **Online · unknown**, unknown-grey beads — not “Online · off”. Missing `state.seg` is the same class: **segments unknown**, not “0 segments”. A known empty `seg` stays 0.
+- Unreachable beads are grey (`BeadColor` `"unknown"`), with last-seen. Never the last colour. Missing `on` after an info-only snapshot is the same class: **Online · unknown**, unknown-grey beads — not “Online · off”. Missing `state.seg` is the same class: **segments unknown**, not “0 segments”. A known empty `seg` stays 0. A detail miss on Inspect does not paint a last colour or claim the list is down.
 - RGB vs RGBW on Inspect and the Lights rack follows the attached LED product or the persisted strip driver — not a hardcoded WS281x label from `/json/info` `leds.rgbw`. Opening Inspect on a Light that still has the default driver and no product may persist a known `/json/cfg` bus type (the same mapping as Strip). The Lights list does not read cfg. RGBW beads show two dies (colour + white). That is not Hardware Done.
 - Preview is temporary. Apply persists. Preview restore does not invent on, brightness, or colour from an info-only snapshot.
 - All Off cancels without restoring. An unknown row names the wait that happened, or a generic refuse — not a claimed 3 s.

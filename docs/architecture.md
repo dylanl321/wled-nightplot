@@ -13,7 +13,7 @@ This is early software. Paths below are the real tree on `main`.
 | `packages/shared` | `@nightplot/shared` | Types, catalogs, LAN guard, parse, range / live / safe / provision |
 | `docs/ui/` | — | v2 prototype (visual source of truth) |
 
-Web talks to the API by rewrite: `/api/:path*` and `/health` → `NIGHTPLOT_API_URL` (default `http://127.0.0.1:43181`). Browser fetches use same-origin paths (`apps/web/src/lib/api.ts`). Add a Light (`/discover`) loads `GET /api/lights` and `GET /api/discover` independently: a Find miss keeps enrolled Lights and does not render ServerDown; a Lights miss still does.
+Web talks to the API by rewrite: `/api/:path*` and `/health` → `NIGHTPLOT_API_URL` (default `http://127.0.0.1:43181`). Browser fetches use same-origin paths (`apps/web/src/lib/api.ts`). Add a Light (`/discover`) loads `GET /api/lights` and `GET /api/discover` independently: a Find miss keeps enrolled Lights and does not render ServerDown; a Lights miss still does. Inspect (`/lights/:id`) loads `GET /api/lights` and `GET /api/lights/:id` the same way: a detail miss keeps enrolled Lights; a Lights miss still uses ServerDown.
 
 ## Catalog seams
 

@@ -26,6 +26,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Fixed
 
+- Inspect loads enrolled Lights and one-Light detail separately. A detail-only miss keeps the enrolled rail and says this Light did not load (or is not on Lights) — it does not claim the configure server or the list is down. Lights-only outage still uses ServerDown. Unreachable beads stay grey with last-seen (CONFIG-16).
 - Info-only live (skipped or hung `/json/state`) no longer reports `segmentCount: 0` for a missing `seg`. Lights and Inspect say **segments unknown**. A known empty `seg: []` stays **0 segments**. Same honesty class as missing `on`. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-71).
 - Preview restore no longer invents brightness or colour from an info-only snapshot. When `/json/info` answered but `/json/state` was skipped or hung (`brightness: null`, `segmentColor: null`), end-Preview / Blink restore and Find Blink restore omit `bri` and segment `col` instead of writing brightness `128` or `#ffa000`. Known values stay. Same honesty class as omitted `on`. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-73).
 - Preview restore no longer invents power from an info-only snapshot. When `/json/info` answered but `/json/state` was skipped or hung (`on: null`), end-Preview / Blink restore and Find Blink restore omit `on` instead of writing `on: true`. Known off stays off. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-72).
