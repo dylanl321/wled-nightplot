@@ -1422,6 +1422,182 @@ describe("strip provision", () => {
     expect(cfg.cfg).toEqual(before);
   });
 
+  it("clips declared ranges that run past a shorter strip", async () => {
+    const box = createFixtureBox({ ledCount: 60, gpio: 16 });
+    const { app, store, id } = await enrollFixture(box);
+    const save = await app.request(`/api/lights/${id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [
+          { label: "Left run", start: 0, stop: 24 },
+          { label: "Right run", start: 24, stop: 60 },
+        ],
+      }),
+    });
+    expect(save.status).toBe(200);
+
+    const res = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provision: { ledType: "ws281x", length: 30, gpio: 16 } }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      light: { ledCount: number; driftLabel: string | null };
+      elements: { label: string; start: number; stop: number }[];
+      display: { notes: { text: string }[] };
+      provisionWrite: {
+        matched: boolean;
+        ranges: {
+          rewritten: boolean;
+          kind: string;
+          notes: string[];
+          clipped: { label: string; previousStop: number; stop: number }[];
+        };
+      };
+    };
+    expect(body.provisionWrite.matched).toBe(true);
+    expect(body.light.ledCount).toBe(30);
+    expect(body.provisionWrite.ranges.kind).toBe("shrink");
+    expect(body.provisionWrite.ranges.rewritten).toBe(true);
+    expect(body.provisionWrite.ranges.clipped).toEqual([
+      expect.objectContaining({ label: "Right run", previousStop: 60, stop: 30 }),
+    ]);
+    expect(body.provisionWrite.ranges.notes.join(" ")).toMatch(/clipped to 24–30/);
+    expect(body.elements).toEqual([
+      expect.objectContaining({ label: "Left run", start: 0, stop: 24 }),
+      expect.objectContaining({ label: "Right run", start: 24, stop: 30 }),
+    ]);
+    expect(store.elementsFor(id).map((element) => ({ start: element.start, stop: element.stop }))).toEqual(
+      [
+        { start: 0, stop: 24 },
+        { start: 24, stop: 30 },
+      ],
+    );
+    expect(body.display.notes.some((note) => /past the strip/.test(note.text))).toBe(false);
+  });
+
+  it("drops a range that starts past the new length and flags leftover coverage", async () => {
+    const box = createFixtureBox({ ledCount: 60, gpio: 16 });
+    const { app, store, id } = await enrollFixture(box);
+    await app.request(`/api/lights/${id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [
+          { label: "Door", start: 0, stop: 24 },
+          { label: "Peak", start: 40, stop: 60 },
+        ],
+      }),
+    });
+    const res = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provision: { ledType: "ws281x", length: 30, gpio: 16 } }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      elements: { label: string; start: number; stop: number }[];
+      provisionWrite: { ranges: { dropped: { label: string }[]; uncovered: { start: number; stop: number }[]; notes: string[] } };
+    };
+    expect(body.elements).toEqual([expect.objectContaining({ label: "Door", start: 0, stop: 24 })]);
+    expect(body.provisionWrite.ranges.dropped).toEqual([
+      expect.objectContaining({ label: "Peak" }),
+    ]);
+    expect(body.provisionWrite.ranges.uncovered).toEqual([{ start: 24, stop: 30 }]);
+    expect(body.provisionWrite.ranges.notes.join(" ")).toMatch(/Peak 40–60 was dropped/);
+    expect(store.elementsFor(id)).toHaveLength(1);
+  });
+
+  it("flags grow without inventing Elements", async () => {
+    const box = createFixtureBox({ ledCount: 60, gpio: 16 });
+    const { app, store, id } = await enrollFixture(box);
+    await app.request(`/api/lights/${id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: [{ label: "Door", start: 0, stop: 60 }] }),
+    });
+    const res = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provision: { ledType: "ws281x", length: 150, gpio: 16 } }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      light: { ledCount: number; driftLabel: string | null };
+      elements: { label: string; start: number; stop: number }[];
+      provisionWrite: {
+        ranges: {
+          rewritten: boolean;
+          kind: string;
+          uncovered: { start: number; stop: number }[];
+          notes: string[];
+        };
+      };
+    };
+    expect(body.light.ledCount).toBe(150);
+    expect(body.provisionWrite.ranges.kind).toBe("grow");
+    expect(body.provisionWrite.ranges.rewritten).toBe(false);
+    expect(body.provisionWrite.ranges.uncovered).toEqual([{ start: 60, stop: 150 }]);
+    expect(body.provisionWrite.ranges.notes.join(" ")).toMatch(/were not extended/);
+    expect(body.elements).toEqual([expect.objectContaining({ label: "Door", start: 0, stop: 60 })]);
+    expect(store.elementsFor(id)).toEqual([
+      expect.objectContaining({ label: "Door", start: 0, stop: 60 }),
+    ]);
+    expect(body.light.driftLabel).toMatch(/more LEDs than declared|not in an Element|reports/);
+  });
+
+  it("does not rewrite Elements when snapshot length does not match", async () => {
+    const box = createFixtureBox({ ledCount: 60, gpio: 16, infoCountLag: true });
+    const { app, store, id } = await enrollFixture(box);
+    await app.request(`/api/lights/${id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: [{ label: "Door", start: 0, stop: 60 }] }),
+    });
+    const res = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provision: { ledType: "ws281x", length: 30, gpio: 16 } }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as {
+      provisionWrite: { matched: boolean; ranges?: unknown };
+      elements: { start: number; stop: number }[];
+    };
+    expect(body.provisionWrite.matched).toBe(false);
+    expect(body.provisionWrite.ranges).toBeUndefined();
+    expect(body.elements).toEqual([expect.objectContaining({ start: 0, stop: 60 })]);
+    expect(store.elementsFor(id)).toEqual([
+      expect.objectContaining({ start: 0, stop: 60 }),
+    ]);
+  });
+
+  it("does not rewrite Elements when only GPIO changes", async () => {
+    const box = createFixtureBox({ ledCount: 60, gpio: 16 });
+    const { app, store, id } = await enrollFixture(box);
+    await app.request(`/api/lights/${id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: [{ label: "Door", start: 0, stop: 60 }] }),
+    });
+    const res = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provision: { ledType: "ws281x", length: 60, gpio: 2 } }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      provisionWrite: { matched: boolean; ranges?: unknown };
+      elements: { start: number; stop: number }[];
+    };
+    expect(body.provisionWrite.matched).toBe(true);
+    expect(body.provisionWrite.ranges).toBeUndefined();
+    expect(body.elements).toEqual([expect.objectContaining({ start: 0, stop: 60 })]);
+    expect(store.elementsFor(id)[0]).toMatchObject({ start: 0, stop: 60 });
+  });
+
   it("refuses an unknown LED type without writing", async () => {
     const box = createFixtureBox();
     const { app, id } = await enrollFixture(box);

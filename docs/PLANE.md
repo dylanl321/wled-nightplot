@@ -42,6 +42,7 @@ Gaps (not the next R-slice; do not fold into an R-ticket):
 | CONFIG-13 | mDNS SRV-only .local may not resolve in Node |
 | CONFIG-40 | First-time WLED strip provision — length / GPIO / type via cfg |
 | CONFIG-41 | Strip presets — 3 named defaults (type + length + GPIO) |
+| CONFIG-43 | Declared Elements not rewritten when strip length changes |
 
 Issue id for CONFIG-1: `298cb9ff-bacb-4c20-83c6-54d5ba8f5747`.  
 Issue id for CONFIG-2: `70d76b1b-ba37-4181-8e90-138cdddb3b57`.  
@@ -58,6 +59,7 @@ Issue id for CONFIG-12: `114c5135-9689-4b08-b80f-7cdfae017695`.
 Issue id for CONFIG-13: `6f028d65-c85e-4649-8a61-595c2b32ea31`.  
 Issue id for CONFIG-40: `33b603a5-f883-476c-8a4b-68720c18a580`.  
 Issue id for CONFIG-41: `63882929-398d-43a7-ac45-1d9f25109134`.
+Issue id for CONFIG-43: `b8004089-34cb-4a0f-be4f-926d2c0b80d2`.
 
 ## States
 

@@ -78,8 +78,16 @@ export function buildRangeDisplay(
   const reachable = options.reachable ?? true;
   const liveReported = reachable ? reported.filter((span) => span.start < span.stop) : [];
   const overlapIssues = issues.filter((issue) => issue.code === "overlap");
+  const validityIssues = issues.filter(
+    (issue) => issue.code === "over-ledCount" || issue.code === "invert",
+  );
   const erroredIds = new Set(
-    overlapIssues.flatMap((issue) => [issue.elementId, issue.otherId].filter(Boolean)),
+    issues
+      .filter(
+        (issue) =>
+          issue.code === "overlap" || issue.code === "over-ledCount" || issue.code === "invert",
+      )
+      .flatMap((issue) => [issue.elementId, issue.otherId].filter(Boolean)),
   );
 
   const declaredRails: DeclaredRail[] = declared.map((draft) => ({
@@ -110,6 +118,7 @@ export function buildRangeDisplay(
   }
 
   const notes: DriftNote[] = [];
+  pushValidityNotes(notes, validityIssues);
 
   if (!reachable) {
     notes.push({ text: "No current report to compare." });
@@ -227,4 +236,15 @@ function pairByOverlap<A extends RangeSpan, B extends RangeSpan>(
     }
   }
   return pairs;
+}
+
+function pushValidityNotes(notes: DriftNote[], issues: RangeIssue[]): void {
+  for (const issue of issues) {
+    notes.push({
+      text: issue.message,
+      start: issue.start,
+      stop: issue.stop,
+      elementId: issue.elementId,
+    });
+  }
 }

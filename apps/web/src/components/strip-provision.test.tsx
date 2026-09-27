@@ -212,4 +212,192 @@ describe("Strip provision", () => {
       "false",
     );
   });
+
+  it("shows the Element rewrite story after a length-changing Apply", async () => {
+    const after = payload({
+      light: lightView({
+        reachability: "online",
+        on: true,
+        brightness: 128,
+        bead: "#ffa000",
+        ledCount: 30,
+        elementCount: 1,
+        driftLabel: null,
+      }),
+      elements: [{ id: "el-door", lightId: "light-garage", label: "Door", start: 0, stop: 30 }],
+    });
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      if (path.endsWith("/provision") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            ...after,
+            provision: {
+              ...provision,
+              settings: { ...provision.settings, length: 30 },
+            },
+            provisionWrite: {
+              status: "matched",
+              matched: true,
+              sent: { ledType: "ws281x", length: 30, gpio: 16 },
+              read: { ledType: "ws281x", length: 30, gpio: 16, nativeType: 22 },
+              snapshotLedCount: 30,
+              fingerprint: provision.fingerprint,
+              message: "Controller reports the strip we sent.",
+              caption: provision.caption,
+              ranges: {
+                previousLedCount: 60,
+                nextLedCount: 30,
+                kind: "shrink",
+                rewritten: true,
+                clipped: [
+                  {
+                    id: "el-door",
+                    label: "Door",
+                    start: 0,
+                    previousStop: 60,
+                    stop: 30,
+                  },
+                ],
+                dropped: [],
+                uncovered: [],
+                notes: [
+                  "Door 0–60 was clipped to 0–30. It ran past the new strip (30 LEDs).",
+                ],
+              },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (path.endsWith("/provision")) {
+        return new Response(JSON.stringify(payload()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ message: "unexpected path" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Apply" }));
+
+    expect(await screen.findByText("Controller reports the strip we sent.")).toBeTruthy();
+    expect(
+      screen.getByText("Door 0–60 was clipped to 0–30. It ran past the new strip (30 LEDs)."),
+    ).toBeTruthy();
+  });
+
+  it("adopts rewritten Elements on the open Light after Strip Apply", async () => {
+    const initial = payload({
+      light: lightView({
+        reachability: "online",
+        on: true,
+        brightness: 128,
+        bead: "#ffa000",
+        ledCount: 60,
+        elementCount: 1,
+      }),
+      elements: [{ id: "el-door", lightId: "light-garage", label: "Door", start: 0, stop: 60 }],
+    });
+    const after: LightDetailPayload = {
+      ...initial,
+      light: { ...initial.light, ledCount: 30 },
+      elements: [{ id: "el-door", lightId: "light-garage", label: "Door", start: 0, stop: 30 }],
+      reported: [{ start: 0, stop: 30, differs: false }],
+      display: {
+        declared: [
+          {
+            id: "el-door",
+            label: "Door",
+            start: 0,
+            stop: 30,
+            length: 30,
+            differs: false,
+            error: false,
+          },
+        ],
+        reported: [{ start: 0, stop: 30, differs: false }],
+        regions: [],
+        notes: [],
+      },
+    };
+
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      if (path.endsWith("/provision") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            ...after,
+            provision: {
+              ...provision,
+              settings: { ...provision.settings, length: 30 },
+            },
+            provisionWrite: {
+              status: "matched",
+              matched: true,
+              sent: { ledType: "ws281x", length: 30, gpio: 16 },
+              read: { ledType: "ws281x", length: 30, gpio: 16, nativeType: 22 },
+              snapshotLedCount: 30,
+              fingerprint: provision.fingerprint,
+              message: "Controller reports the strip we sent.",
+              caption: provision.caption,
+              ranges: {
+                previousLedCount: 60,
+                nextLedCount: 30,
+                kind: "shrink",
+                rewritten: true,
+                clipped: [
+                  {
+                    id: "el-door",
+                    label: "Door",
+                    start: 0,
+                    previousStop: 60,
+                    stop: 30,
+                  },
+                ],
+                dropped: [],
+                uncovered: [],
+                notes: [
+                  "Door 0–60 was clipped to 0–30. It ran past the new strip (30 LEDs).",
+                ],
+              },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (path.endsWith("/provision")) {
+        return new Response(JSON.stringify({ ...initial, provision }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (path === `/api/lights/${initial.light.id}`) {
+        return new Response(JSON.stringify(after), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ message: "unexpected path" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<LightDetail initial={initial} mode="strip" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Apply" }));
+    expect(
+      await screen.findByText("Door 0–60 was clipped to 0–30. It ran past the new strip (30 LEDs)."),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit ranges" }));
+    expect(await screen.findByText("0–30")).toBeTruthy();
+    expect(screen.queryByText("0–60")).toBeNull();
+  });
 });

@@ -7,6 +7,8 @@
  * replaced with guessed defaults.
  */
 
+import type { RangeLengthStory } from "./range.ts";
+
 export const PROVISION_LED_TYPES = ["ws281x"] as const;
 export type ProvisionLedType = (typeof PROVISION_LED_TYPES)[number];
 
@@ -107,6 +109,8 @@ export type ProvisionWriteResult = {
   fingerprint: ProvisionFingerprint;
   message: string;
   caption: string;
+  /** Present after a successful length-changing Apply. Absent on same length / mismatch. */
+  ranges?: RangeLengthStory | null;
 };
 
 const emptySettings = (): WledStripProvision => ({

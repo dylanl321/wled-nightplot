@@ -67,6 +67,14 @@ describe("buildRangeDisplay", () => {
     expect(display.declared.every((rail) => rail.error)).toBe(true);
   });
 
+  it("flags a declared range that runs past the strip — not a match", () => {
+    const declared = [{ id: "d", label: "Door", start: 0, stop: 60 }];
+    const issues = validateDeclaredRanges(declared, 30);
+    const display = buildRangeDisplay(declared, [{ start: 0, stop: 30 }], issues);
+    expect(display.declared[0]?.error).toBe(true);
+    expect(display.notes[0]?.text).toMatch(/Door 0–60 runs past the strip \(30 LEDs\)/);
+  });
+
   it("does not invent a last report when the Light is unreachable", () => {
     const display = buildRangeDisplay(
       [{ id: "d", label: "Door", start: 0, stop: 90 }],

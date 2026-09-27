@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.11 — Elements after strip length change (CONFIG-43)
+
+- After a successful length-changing Strip Apply, declared Elements are reconciled against the new `ledCount`. Ranges that run past the new strip are clipped; ranges that start past it are dropped. Grow does not invent Elements — leftover coverage is flagged.
+- The Apply result names what changed. Inspect / Edit ranges / the Lights row use the re-read drift story and do not claim Elements still match the new strip.
+- Mismatch / GPIO-only Apply does not rewrite ranges. Fixture software-green is not Hardware Done.
+
 ## 0.7.10 — Named strip presets (CONFIG-41)
 
 - The strip catalog ships at least three built-in presets: WS281x with documented length / GPIO defaults (60 · GPIO 16, 150 · GPIO 16, 300 · GPIO 2). Labels name the fields they fill. These are not a confirmed install pinout.

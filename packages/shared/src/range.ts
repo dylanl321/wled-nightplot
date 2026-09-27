@@ -21,6 +21,38 @@ export type RangeIssue = {
   stop: number;
 };
 
+export type RangeLengthKind = "same" | "grow" | "shrink";
+
+export type RangeLengthClip = {
+  id?: string;
+  label: string;
+  start: number;
+  previousStop: number;
+  stop: number;
+};
+
+export type RangeLengthDrop = {
+  id?: string;
+  label: string;
+  start: number;
+  stop: number;
+};
+
+export type RangeLengthStory = {
+  previousLedCount: number;
+  nextLedCount: number;
+  kind: RangeLengthKind;
+  rewritten: boolean;
+  clipped: RangeLengthClip[];
+  dropped: RangeLengthDrop[];
+  uncovered: RangeSpan[];
+  notes: string[];
+};
+
+export type RangeLengthReconcile<T extends DraftRange = DraftRange> = RangeLengthStory & {
+  elements: T[];
+};
+
 export function elementLength(start: number, stop: number): number {
   return stop - start;
 }
@@ -147,6 +179,184 @@ export function symmetricDifference(a: RangeSpan[], b: RangeSpan[]): RangeSpan[]
 
 export function overlapOf(a: RangeSpan, b: RangeSpan): number {
   return Math.max(0, Math.min(a.stop, b.stop) - Math.max(a.start, b.start));
+}
+
+/**
+ * After a length-changing Strip Apply: clip or drop ranges that run past the
+ * new strip (honest rewrite + flag). Grow does not invent Elements — leftover
+ * coverage is flagged. Same length is a no-op.
+ */
+export function reconcileDeclaredRangesForLedCount<T extends DraftRange>(
+  drafts: T[],
+  previousLedCount: number,
+  nextLedCount: number,
+): RangeLengthReconcile<T> {
+  const kind: RangeLengthKind =
+    nextLedCount === previousLedCount ? "same" : nextLedCount > previousLedCount ? "grow" : "shrink";
+
+  if (kind === "same") {
+    return {
+      previousLedCount,
+      nextLedCount,
+      kind,
+      rewritten: false,
+      clipped: [],
+      dropped: [],
+      uncovered: uncoveredOnStrip(drafts, nextLedCount),
+      notes: [],
+      elements: drafts,
+    };
+  }
+
+  if (kind === "grow") {
+    const uncovered = uncoveredOnStrip(drafts, nextLedCount);
+    return {
+      previousLedCount,
+      nextLedCount,
+      kind,
+      rewritten: false,
+      clipped: [],
+      dropped: [],
+      uncovered,
+      notes: growLengthNotes(drafts, previousLedCount, nextLedCount, uncovered),
+      elements: drafts,
+    };
+  }
+
+  const clipped: RangeLengthClip[] = [];
+  const dropped: RangeLengthDrop[] = [];
+  const elements: T[] = [];
+
+  for (const draft of drafts) {
+    if (!isWholeIndex(draft.start) || !isWholeIndex(draft.stop)) {
+      elements.push(draft);
+      continue;
+    }
+    if (draft.start >= nextLedCount) {
+      dropped.push({
+        id: draft.id,
+        label: draft.label,
+        start: draft.start,
+        stop: draft.stop,
+      });
+      continue;
+    }
+    if (draft.stop > nextLedCount) {
+      clipped.push({
+        id: draft.id,
+        label: draft.label,
+        start: draft.start,
+        previousStop: draft.stop,
+        stop: nextLedCount,
+      });
+      elements.push({ ...draft, stop: nextLedCount });
+      continue;
+    }
+    elements.push(draft);
+  }
+
+  const uncovered = uncoveredOnStrip(elements, nextLedCount);
+  return {
+    previousLedCount,
+    nextLedCount,
+    kind,
+    rewritten: clipped.length > 0 || dropped.length > 0,
+    clipped,
+    dropped,
+    uncovered,
+    notes: shrinkLengthNotes({
+      previousLedCount,
+      nextLedCount,
+      clipped,
+      dropped,
+      remaining: elements,
+      uncovered,
+    }),
+    elements,
+  };
+}
+
+export function rangeLengthStory<T extends DraftRange>(
+  reconcile: RangeLengthReconcile<T>,
+): RangeLengthStory {
+  return {
+    previousLedCount: reconcile.previousLedCount,
+    nextLedCount: reconcile.nextLedCount,
+    kind: reconcile.kind,
+    rewritten: reconcile.rewritten,
+    clipped: reconcile.clipped,
+    dropped: reconcile.dropped,
+    uncovered: reconcile.uncovered,
+    notes: reconcile.notes,
+  };
+}
+
+function uncoveredOnStrip(drafts: DraftRange[], ledCount: number): RangeSpan[] {
+  if (!isWholeIndex(ledCount) || ledCount < 1) return [];
+  const covering = drafts.filter(
+    (draft) =>
+      isOpenRange(draft) && draft.start >= 0 && draft.stop <= ledCount,
+  );
+  return intervalDifference([{ start: 0, stop: ledCount }], covering);
+}
+
+function growLengthNotes(
+  drafts: DraftRange[],
+  previousLedCount: number,
+  nextLedCount: number,
+  uncovered: RangeSpan[],
+): string[] {
+  if (drafts.length === 0) {
+    return [
+      `Strip grew from ${previousLedCount} to ${nextLedCount} LEDs. No Elements declared.`,
+    ];
+  }
+  const notes = [
+    `Strip grew from ${previousLedCount} to ${nextLedCount} LEDs. Declared Elements were not extended.`,
+  ];
+  for (const gap of uncovered) {
+    notes.push(`LEDs ${gap.start}–${gap.stop} are not in an Element.`);
+  }
+  return notes;
+}
+
+function shrinkLengthNotes(input: {
+  previousLedCount: number;
+  nextLedCount: number;
+  clipped: RangeLengthClip[];
+  dropped: RangeLengthDrop[];
+  remaining: DraftRange[];
+  uncovered: RangeSpan[];
+}): string[] {
+  if (
+    input.clipped.length === 0 &&
+    input.dropped.length === 0 &&
+    input.remaining.length === 0
+  ) {
+    return [
+      `Strip shrank from ${input.previousLedCount} to ${input.nextLedCount} LEDs. No Elements declared.`,
+    ];
+  }
+  const notes: string[] = [];
+  for (const row of input.clipped) {
+    notes.push(
+      `${rangeLabel(row)} ${row.start}–${row.previousStop} was clipped to ${row.start}–${row.stop}. It ran past the new strip (${input.nextLedCount} LEDs).`,
+    );
+  }
+  for (const row of input.dropped) {
+    notes.push(
+      `${rangeLabel(row)} ${row.start}–${row.stop} was dropped. It started past the new strip (${input.nextLedCount} LEDs).`,
+    );
+  }
+  if (input.clipped.length === 0 && input.dropped.length === 0) {
+    notes.push(
+      `Strip shrank from ${input.previousLedCount} to ${input.nextLedCount} LEDs.`,
+    );
+  }
+  for (const gap of input.uncovered) {
+    notes.push(`LEDs ${gap.start}–${gap.stop} are not in an Element.`);
+  }
+  return notes;
 }
 
 function isOpenRange(span: RangeSpan): boolean {

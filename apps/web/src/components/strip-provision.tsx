@@ -136,8 +136,9 @@ export function StripProvisionPanel({
         <h2 className="text-[20px] font-semibold">Strip</h2>
         <p className="text-[13px] leading-5 text-[#c9c3b8]">
           First-time bus: LED type, node count, and GPIO. A named default fills the form; fields
-          still override. Apply writes /json/cfg, then reads the snapshot back. Preview is not
-          Apply.
+          still override. Apply writes /json/cfg, then reads the snapshot back. A length change
+          clips or drops declared ranges that run past the new strip, and flags leftover coverage.
+          Preview is not Apply.
         </p>
       </div>
 
@@ -254,7 +255,14 @@ export function StripProvisionPanel({
       ) : null}
 
       {result?.matched ? (
-        <p className="text-[13px] text-primary">{result.message}</p>
+        <div className="flex flex-col gap-2">
+          <p className="text-[13px] text-primary">{result.message}</p>
+          {result.ranges?.notes.map((note) => (
+            <p key={note} className="text-[13px] text-primary">
+              {note}
+            </p>
+          ))}
+        </div>
       ) : null}
       {notice && !failed ? <p className="text-[13px] text-destructive">{notice}</p> : null}
       {!failed ? <p className="text-[12px] text-primary">{read.caption}</p> : null}

@@ -128,3 +128,45 @@ describe("LightDetail reported rails", () => {
     expect(screen.getByText(/Controller reports 60 \/ 60 in Door/)).toBeTruthy();
   });
 });
+
+describe("LightDetail Elements after length change", () => {
+  it("does not claim declared ranges still match when they run past the strip", () => {
+    const initial = lightDetail({
+      light: lightView({
+        reachability: "online",
+        on: true,
+        brightness: 128,
+        bead: "#ffa000",
+        ledCount: 30,
+        elementCount: 1,
+        driftLabel: "Door 0–60 runs past the strip (30 LEDs).",
+      }),
+      elements: [{ id: "el-door", lightId: "light-garage", label: "Door", start: 0, stop: 60 }],
+      reported: [{ start: 0, stop: 30, differs: true }],
+      display: {
+        declared: [
+          {
+            id: "el-door",
+            label: "Door",
+            start: 0,
+            stop: 60,
+            length: 60,
+            differs: true,
+            error: true,
+          },
+        ],
+        reported: [{ start: 0, stop: 30, differs: true }],
+        regions: [],
+        notes: [{ text: "Door 0–60 runs past the strip (30 LEDs)." }],
+      },
+    });
+
+    render(<LightDetail initial={initial} mode="ranges" />);
+
+    expect(screen.queryByText("Declared ranges match the last save")).toBeNull();
+    expect(screen.getAllByText(/Door 0–60 runs past the strip \(30 LEDs\)/).length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.getByText("past strip")).toBeTruthy();
+  });
+});

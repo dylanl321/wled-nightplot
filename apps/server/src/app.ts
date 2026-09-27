@@ -25,6 +25,8 @@ import {
   provisionMismatchNote,
   provisionRefuseReason,
   provisionSnapshotMatch,
+  rangeLengthStory,
+  reconcileDeclaredRangesForLedCount,
   resolveLightName,
   safeFieldsMatch,
   safeInfoNameLagNote,
@@ -848,6 +850,7 @@ export function createApp(deps: AppDeps) {
         422,
       );
     }
+    const previousLedCount = snap?.ledCount ?? light.ledCount;
     const rereadRaw = await deps.readCfg(dest);
     const reread = await readProvision(light, snap?.firmware ?? light.firmware, rereadRaw);
     const { light: refreshed, live: nextSnap } = await refreshOne(stored);
@@ -862,6 +865,18 @@ export function createApp(deps: AppDeps) {
     } else if (nextSnap) {
       deps.store.replace(next);
     }
+    let ranges: ReturnType<typeof rangeLengthStory> | null = null;
+    if (matched && previousLedCount !== built.sent.length) {
+      const reconcile = reconcileDeclaredRangesForLedCount(
+        deps.store.elementsFor(light.id),
+        previousLedCount,
+        built.sent.length,
+      );
+      if (reconcile.rewritten) {
+        deps.store.replaceElements(light.id, reconcile.elements);
+      }
+      ranges = rangeLengthStory(reconcile);
+    }
     const detail = await decorateDetail(next, nextSnap);
     const result = {
       status: matched ? ("matched" as const) : ("mismatch" as const),
@@ -872,6 +887,7 @@ export function createApp(deps: AppDeps) {
       fingerprint: reread.fingerprint,
       message: provisionMismatchNote(built.sent, reread.settings, nextSnap?.ledCount ?? null),
       caption: reread.caption,
+      ...(ranges ? { ranges } : {}),
     };
     if (!matched) {
       return c.json({ ...detail, provision: reread, provisionWrite: result }, 409);

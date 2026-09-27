@@ -14,7 +14,7 @@ import {
 } from "@nightplot/shared";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DeleteLight } from "@/components/delete-light";
 import { SafeSettingsPanel } from "@/components/safe-settings";
 import { StripBeads, type StripSpan } from "@/components/strip-beads";
@@ -53,11 +53,16 @@ export function LightDetail({
 
   const light = detail.light;
   const unreachable = light.reachability === "no-answer";
+  const detailRef = useRef(detail);
+  const draftRef = useRef(draft);
+  detailRef.current = detail;
+  draftRef.current = draft;
 
   useEffect(() => {
     function onLightsChanged() {
       void fetchJson<LightDetailPayload>(`/api/lights/${initial.light.id}`)
         .then((next) => {
+          setDraft(adoptElementsAfterStrip(detailRef.current, draftRef.current, next));
           setDetail(next);
         })
         .catch(() => {
@@ -415,6 +420,7 @@ export function LightDetail({
           lightId={light.id}
           unreachable={unreachable}
           onUpdated={(next) => {
+            setDraft(adoptElementsAfterStrip(detailRef.current, draftRef.current, next));
             setDetail(next);
             router.refresh();
           }}
@@ -466,14 +472,22 @@ export function LightDetail({
       {mode === "ranges" ? (
         <div className="mt-auto flex flex-col gap-3 rounded-[10px] border border-input bg-[#12141a] px-4 py-3 sm:flex-row sm:items-center">
           <div className="flex flex-col gap-1">
-            <span className={dirty ? "text-primary" : "text-quiet"}>
+            <span
+              className={
+                dirty || firstIssue || display.notes[0] ? "text-primary" : "text-quiet"
+              }
+            >
               {dirty
                 ? `${changedCount(draft, detail.elements)} unsaved change${
                     changedCount(draft, detail.elements) === 1 ? "" : "s"
                   }`
                 : apply?.matched
                   ? "Controller reports the ranges we sent"
-                  : "Declared ranges match the last save"}
+                  : firstIssue
+                    ? firstIssue.message
+                    : display.notes[0]?.text
+                      ? display.notes[0].text
+                      : "Declared ranges match the last save"}
             </span>
             <span className="text-[13px] text-quiet">
               Apply writes to the controller, then reads it back. Preview stays temporary.
@@ -927,6 +941,17 @@ function parseIndex(raw: string, fallback: number): number {
   if (raw.trim() === "") return fallback;
   const n = Number.parseInt(raw, 10);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function adoptElementsAfterStrip(
+  current: LightDetailPayload,
+  draftNow: Element[],
+  next: LightDetailPayload,
+): Element[] {
+  const lengthChanged = next.light.ledCount !== current.light.ledCount;
+  const dirtyNow = !sameRanges(draftNow, current.elements);
+  if (lengthChanged || !dirtyNow) return next.elements;
+  return draftNow;
 }
 
 function sameRanges(a: Element[], b: Element[]): boolean {

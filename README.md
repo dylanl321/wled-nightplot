@@ -6,7 +6,7 @@ This is not a playback desk. It does not ship Yard, Tonight, Studio, Scene, or S
 
 R6 wires the small Safe settings set on an enrolled Light, gated by the firmware’s `/json/cfg` fingerprint. Unsupported firmware is refused — nothing is written. After a display-name write, the rack title uses the `/json/cfg` name even when metal `/json/info` still lags until reboot.
 
-CONFIG-40 adds first-time **Strip** provision on an enrolled Light: WS281x type, node count, and GPIO. CONFIG-41 adds named catalog presets (common WS281x length / GPIO defaults) that fill that form; fields still override. Apply writes reviewed `/json/cfg` bus fields, then re-reads cfg and the snapshot. A mismatch stays on the failure UI. A fixture report is not Hardware Done.
+CONFIG-40 adds first-time **Strip** provision on an enrolled Light: WS281x type, node count, and GPIO. CONFIG-41 adds named catalog presets (common WS281x length / GPIO defaults) that fill that form; fields still override. Apply writes reviewed `/json/cfg` bus fields, then re-reads cfg and the snapshot. A mismatch stays on the failure UI. CONFIG-43: a length-changing Apply clips or drops declared Elements that run past the new strip, and flags leftover coverage on grow — the UI does not claim they still match without that story. A fixture report is not Hardware Done.
 
 ## Run
 
@@ -71,7 +71,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | GET | `/api/lights/:id/safe` | Fingerprinted Safe settings from `/json/cfg`. Empty fingerprint → refuse. |
 | POST | `/api/lights/:id/safe` | `{ settings }` — write only understood fields, then reread. 422 if unsupported. A matched display-name write patches the enrolled title from cfg even when `/json/info` still lags. |
 | GET | `/api/lights/:id/provision` | First-time strip bus from `/json/cfg` (`hw.led.ins[0]`). Empty / multi-bus / unsupported firmware → refuse. |
-| POST | `/api/lights/:id/provision` | `{ provision: { ledType, length, gpio } }` — WS281x only. Writes reviewed cfg bus fields, then rereads cfg and snapshot. 200 only on match. 409 keeps the failure. 422 if unsupported. |
+| POST | `/api/lights/:id/provision` | `{ provision: { ledType, length, gpio } }` — WS281x only. Writes reviewed cfg bus fields, then rereads cfg and snapshot. 200 only on match. 409 keeps the failure. 422 if unsupported. A successful length change reconciles declared Elements (clip / drop / flag leftover coverage) and returns `provisionWrite.ranges`. |
 
 ## UI
 
