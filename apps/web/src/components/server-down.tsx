@@ -10,8 +10,16 @@ export function ServerDown({ detail }: { detail?: string }) {
         <p className="font-mono text-xs text-quiet">{detail}</p>
       ) : null}
       <p className="text-sm text-muted-foreground">
-        From the repo root, run <span className="font-mono text-foreground">pnpm dev</span> so
-        the API on 43181 is up with the web app.
+        Local: from the repo root, run{" "}
+        <span className="font-mono text-foreground">pnpm dev</span> so the API
+        on 43181 is up with the web app.
+      </p>
+      <p className="text-sm text-muted-foreground">
+        Docker: restart{" "}
+        <span className="font-mono text-foreground">docker compose</span> or the
+        container. See{" "}
+        <span className="font-mono text-foreground">docs/deploy.md</span> — do
+        not assume a host pnpm workspace.
       </p>
     </div>
   );

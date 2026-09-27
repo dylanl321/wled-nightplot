@@ -94,6 +94,16 @@ Override the process: `docker run … nightplot-configure api`.
 
 This is an image builder, not a claim the product is production-ready.
 
+## If the web cannot reach the API
+
+Restart the same way you started. The Lights recovery screen names both paths — it does not assume one run mode.
+
+- Local: `pnpm dev` from the repo root so the API on 43181 is up with the web app.
+- Compose: restart the compose project (`docker compose up --build`, or `docker compose -f docker-compose.host.yml up --build` on Linux host networking).
+- One-container: restart the `docker run` process.
+
+Do not run host `pnpm dev` against a container-only install.
+
 ## What is still not here
 
 - Authentication
