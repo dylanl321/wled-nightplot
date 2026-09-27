@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { WledSnapshot } from "@nightplot/shared";
-import { restoreOnField, restoreWriteFromSnapshot } from "./live.ts";
+import {
+  restoreBriField,
+  restoreColField,
+  restoreOnField,
+  restoreWriteFromSnapshot,
+} from "./live.ts";
 
 const known: WledSnapshot = {
   name: "WLED",
@@ -27,8 +32,35 @@ describe("restoreOnField", () => {
   });
 });
 
+describe("restoreBriField", () => {
+  it("preserves known brightness, including zero", () => {
+    expect(restoreBriField(128)).toEqual({ bri: 128 });
+    expect(restoreBriField(0)).toEqual({ bri: 0 });
+  });
+
+  it("omits brightness when unknown — never invents 128", () => {
+    expect(restoreBriField(null)).toEqual({});
+    expect(restoreBriField(undefined)).toEqual({});
+    expect(restoreBriField(null)).not.toHaveProperty("bri");
+  });
+});
+
+describe("restoreColField", () => {
+  it("preserves a known colour", () => {
+    expect(restoreColField("#ffa000")).toEqual({ col: [[255, 160, 0]] });
+    expect(restoreColField("#4f7dff")).toEqual({ col: [[79, 125, 255]] });
+  });
+
+  it("omits colour when unknown — never invents #ffa000", () => {
+    expect(restoreColField(null)).toEqual({});
+    expect(restoreColField(undefined)).toEqual({});
+    expect(restoreColField("")).toEqual({});
+    expect(restoreColField(null)).not.toHaveProperty("col");
+  });
+});
+
 describe("restoreWriteFromSnapshot", () => {
-  it("does not invent on from an info-only snapshot", () => {
+  it("does not invent on, brightness, or colour from an info-only snapshot", () => {
     const write = restoreWriteFromSnapshot({
       ...known,
       on: null,
@@ -37,14 +69,30 @@ describe("restoreWriteFromSnapshot", () => {
       segments: null,
     });
     expect(write).not.toHaveProperty("on");
+    expect(write).not.toHaveProperty("bri");
+    expect(write).not.toHaveProperty("seg");
     expect(write.on).toBeUndefined();
+    expect(write.bri).toBeUndefined();
   });
 
   it("writes known off — does not flip off to on", () => {
     expect(restoreWriteFromSnapshot({ ...known, on: false }).on).toBe(false);
   });
 
-  it("writes known on", () => {
-    expect(restoreWriteFromSnapshot(known).on).toBe(true);
+  it("writes known on, brightness, and colour", () => {
+    const write = restoreWriteFromSnapshot(known);
+    expect(write.on).toBe(true);
+    expect(write.bri).toBe(128);
+    expect(write.seg?.[0]?.col).toEqual([[255, 160, 0]]);
+  });
+
+  it("omits colour on known ranges when segmentColor is missing", () => {
+    const write = restoreWriteFromSnapshot({
+      ...known,
+      segmentColor: null,
+    });
+    expect(write.bri).toBe(128);
+    expect(write.seg).toEqual([{ start: 0, stop: 60 }]);
+    expect(write.seg?.[0]).not.toHaveProperty("col");
   });
 });

@@ -46,14 +46,15 @@ function memoryBox() {
     if (body.seg) {
       const next: { start: number; stop: number }[] = [];
       for (const seg of body.seg) {
-        const rgb = seg.col[0] ?? [255, 160, 0];
+        if (seg.stop <= seg.start) continue;
+        next.push({ start: seg.start, stop: seg.stop });
+        const rgb = seg.col?.[0];
+        if (!rgb) continue;
         const hex = `#${rgb
           .slice(0, 3)
           .map((n) => n.toString(16).padStart(2, "0"))
           .join("")}`;
         color = hex;
-        if (seg.stop <= seg.start) continue;
-        next.push({ start: seg.start, stop: seg.stop });
         for (let i = seg.start; i < seg.stop && i < leds.length; i += 1) {
           leds[i] = hex;
         }
@@ -885,6 +886,8 @@ describe("preview + blink", () => {
     expect(((await ended.json()) as { restored: boolean }).restored).toBe(true);
     expect(writes[0]).toBeDefined();
     expect(writes[0]).not.toHaveProperty("on");
+    expect(writes[0]).not.toHaveProperty("bri");
+    expect(writes[0]).not.toHaveProperty("seg");
   });
 
   it("keeps the original restore if Preview is sent again", async () => {

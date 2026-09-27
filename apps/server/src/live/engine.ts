@@ -4,7 +4,6 @@ import {
   blinkRefuseReason,
   countRangeMatches,
   fixtureCaption,
-  hexToRgb,
   parseHexColor,
   previewRefuseReason,
   resolveLiveTarget,
@@ -22,7 +21,7 @@ import {
 } from "@nightplot/shared";
 import {
   previewWrite,
-  restoreOnField,
+  restoreWrite,
   restoreWriteFromSnapshot,
   type ReadLiveFn,
   type WriteStateFn,
@@ -162,7 +161,10 @@ export function createLiveEngine(deps: {
     const dest: HostPort = { hostname: light.hostname, port: light.port };
     let restored = false;
     if (shouldRestoreOnEnd(kind)) {
-      restored = await deps.write(dest, restoreBody(session.restore, light.ledCount));
+      restored = await deps.write(
+        dest,
+        restoreWrite({ ...session.restore, ledCount: light.ledCount }),
+      );
     }
     const live = await deps.readLive(dest, light.ledCount);
     sessions.delete(lightId);
@@ -225,24 +227,6 @@ function restoreFrom(snapshot: WledSnapshot): LiveRestoreSnapshot {
       start: seg.start,
       stop: seg.stop,
       color: snapshot.segmentColor,
-    })),
-  };
-}
-
-function restoreBody(restore: LiveRestoreSnapshot, ledCount: number) {
-  const color = restore.color ?? "#ffa000";
-  const rgb = hexToRgb(color) ?? [255, 160, 0];
-  const segs =
-    restore.segments.length > 0
-      ? restore.segments
-      : [{ start: 0, stop: ledCount, color }];
-  return {
-    ...restoreOnField(restore.on),
-    bri: restore.brightness ?? 128,
-    seg: segs.map((seg) => ({
-      start: seg.start,
-      stop: seg.stop,
-      col: [rgb],
     })),
   };
 }
