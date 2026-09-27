@@ -115,6 +115,9 @@ export function LightDetail({
 
   const dirty = useMemo(() => !sameRanges(draft, detail.elements), [draft, detail.elements]);
   const selected = draft.find((element) => element.id === selectedId) ?? null;
+  const selectedRangeIssues = issuesForElement(issues, selected?.id);
+  const rangeErrorKey =
+    rangeErrorLabel(selectedRangeIssues[0]?.code) ?? rangeErrorLabel(issues[0]?.code);
   const firstIssue = issues[0] ?? null;
   const canSave = dirty && issues.length === 0 && busy === null;
   const applyReason = applyRefuseReason({
@@ -377,10 +380,15 @@ export function LightDetail({
                 <span className="h-2 w-3 rounded-[2px] border border-dashed border-primary" />
                 drift
               </span>
-              <span className="inline-flex items-center gap-1.5 text-destructive">
-                <span className="h-2 w-3 rounded-[2px] border border-destructive bg-[rgba(224,112,112,0.2)]" />
-                overlap
-              </span>
+              {rangeErrorKey ? (
+                <span
+                  className="inline-flex items-center gap-1.5 text-destructive"
+                  aria-label="Range error key"
+                >
+                  <span className="h-2 w-3 rounded-[2px] border border-destructive bg-[rgba(224,112,112,0.2)]" />
+                  {rangeErrorKey}
+                </span>
+              ) : null}
             </>
           ) : null}
           <span className="sm:ml-auto">
@@ -755,9 +763,7 @@ function EditRanges({
   onAdd: () => void;
   onRemove: () => void;
 }) {
-  const selectedIssues = issues.filter(
-    (issue) => issue.elementId === selected?.id || issue.otherId === selected?.id,
-  );
+  const selectedIssues = issuesForElement(issues, selected?.id);
   const selectedRail = display.declared.find((rail) => rail.id === selected?.id);
   const reportedForSelected = display.reported.find(
     (rail) => selected && rail.start <= selected.start && rail.stop >= selected.stop,
@@ -973,6 +979,15 @@ function ModeButton({
     >
       {children}
     </button>
+  );
+}
+
+function issuesForElement(
+  issues: ReturnType<typeof validateDeclaredRanges>,
+  elementId: string | undefined | null,
+) {
+  return issues.filter(
+    (issue) => issue.elementId === elementId || issue.otherId === elementId,
   );
 }
 

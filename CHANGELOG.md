@@ -26,6 +26,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Fixed
 
+- Edit ranges bead legend red key no longer hardcodes **overlap**. Invert and past strip use the same words as the selected kind chip and list row. The key only appears when invert, past strip, or overlap is present. True overlap still says overlap. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-92).
 - ApplyFailed caption no longer says **The controller reported these ranges** when nothing was read. Write-failed, reread-failed, and unknown-reread (`apply.read` null) use unread caption. A known reread keeps the reported-ranges wording. Caption follows the read, not the source. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-90).
 - Strip Apply `buildProvisionWrite` refuse 422 now includes `provisionWrite`, same as `provisionRefuseReason`. Strip shows the failure panel — not a notice-only line that can be mistaken for a lesser miss. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-89).
 - Edit ranges selected-Element kind chip no longer says **overlap** when the rail error is invert or past-strip (`over-ledCount`). The chip uses the same words as the list row. True overlap still says overlap. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-87).
