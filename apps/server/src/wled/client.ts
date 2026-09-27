@@ -13,6 +13,12 @@ export type ProbeFn = (target: HostPort) => Promise<ProbeOutcome>;
 
 const TIMEOUT_MS = 3000;
 
+/**
+ * After /json/info already proved liveness, /json/state is enrichment only.
+ * A hang must not add another full CONFIG-15 abort budget.
+ */
+export const PROBE_STATE_AFTER_INFO_MS = 400;
+
 /** Below this, a duration in the reason would be misleading (instant refuse). */
 export const PROBE_FAILED_ELAPSED_MIN_MS = 500;
 
@@ -55,16 +61,28 @@ export async function probeWled(
     if (!info.ok) {
       return failed();
     }
-    const state = await getJson(fetchFn, `${base}/json/state`, timeoutMs);
-    const snap = parseWledPayload({
+    const infoOnly = parseWledPayload({ info: info.body });
+    if (!infoOnly) {
+      return {
+        kind: "not-wled",
+        reason: "Answered, but /json/info isn’t WLED. Not added.",
+      };
+    }
+
+    const remaining = timeoutMs - (Date.now() - started);
+    const stateTimeout = Math.min(PROBE_STATE_AFTER_INFO_MS, remaining);
+    if (stateTimeout <= 0) {
+      return { kind: "found", snapshot: infoOnly };
+    }
+    const state = await getJson(fetchFn, `${base}/json/state`, stateTimeout);
+    if (!state.ok) {
+      return { kind: "found", snapshot: infoOnly };
+    }
+    const enriched = parseWledPayload({
       info: info.body,
-      state: state.ok ? state.body : undefined,
+      state: state.body,
     });
-    if (snap) return { kind: "found", snapshot: snap };
-    return {
-      kind: "not-wled",
-      reason: "Answered, but /json/info isn’t WLED. Not added.",
-    };
+    return { kind: "found", snapshot: enriched ?? infoOnly };
   } catch {
     return failed();
   }

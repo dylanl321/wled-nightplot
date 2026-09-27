@@ -48,6 +48,20 @@ describe("parseWledPayload", () => {
     ]);
   });
 
+  it("reads identity from /json/info when state is missing", () => {
+    const snap = parseWledPayload({ info: wledJson.info });
+    expect(snap).toMatchObject({
+      name: "WLED-7F2A",
+      firmware: "WLED 0.15.4",
+      mac: "e8:9f:6d:7f:2a:04",
+      ledCount: 60,
+      on: null,
+      brightness: null,
+      segmentColor: null,
+      segments: [],
+    });
+  });
+
   it("rejects HTML or a non-WLED JSON box", () => {
     expect(parseWledPayload({ ok: true, server: "nginx" })).toBeNull();
     expect(parseWledPayload("<html>not wled</html>")).toBeNull();

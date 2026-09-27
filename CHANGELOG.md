@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.7 — Bound hanging /json/state after /json/info (CONFIG-29)
+
+- After `/json/info` proves liveness, `/json/state` is optional enrichment. A hang uses a short dedicated timeout (and never more than the remaining CONFIG-15 ~3 s budget). It does not add another full abort wait.
+- If state is slow or missing, Find / Inspect still enroll from info: identity and `ledCount` stay; `on` / reported segments stay unknown — not a last colour. Unreachable stays grey with last-seen.
+- Combined `/json` is unchanged. CONFIG-28 elapsed / generic `probe-failed` copy is unchanged. Fixture / stub answers are still not Hardware Done.
+
 ## 0.7.6 — Probe-failed copy uses elapsed or generic (CONFIG-28)
 
 - `probe-failed` no longer always says “in 3 s”. Instant refuse (connection refused, fast HTTP miss) is generic **probe failed.** A wait of at least ~0.5 s names the actual elapsed seconds.
