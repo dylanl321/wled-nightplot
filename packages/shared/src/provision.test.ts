@@ -168,10 +168,17 @@ describe("provision write", () => {
   });
 
   it("writes SK6812 RGBW type 30 / order 0 when converting from WS281x", () => {
-    const read = parseWledProvision(cfg, "WLED 0.15.4");
+    const raw = {
+      hw: {
+        led: {
+          ins: [{ start: 0, len: 60, pin: [16], type: 22, order: 2, extra: "keep" }],
+        },
+      },
+    };
+    const read = parseWledProvision(raw, "WLED 0.15.4");
     const built = buildProvisionWrite(
       { ledType: "sk6812-rgbw", length: 80, gpio: 2 },
-      cfg,
+      raw,
       read.fingerprint,
     );
     expect(built.ok).toBe(true);
@@ -183,6 +190,7 @@ describe("provision write", () => {
     expect(bus.order).toBe(0);
     expect(bus.len).toBe(80);
     expect(bus.pin).toEqual([2]);
+    expect(bus.extra).toBe("keep");
     expect(built.sent.ledType).toBe("sk6812-rgbw");
   });
 
@@ -210,6 +218,31 @@ describe("provision write", () => {
     expect(bus.order).toBe(1);
     expect(bus.len).toBe(90);
     expect(bus.extra).toBe("keep");
+  });
+
+  it("preserves SK6812 order on a same-type GPIO write", () => {
+    const raw = {
+      hw: {
+        led: {
+          ins: [{ start: 0, len: 60, pin: [16], type: 30, order: 3 }],
+        },
+      },
+    };
+    const read = parseWledProvision(raw, "0.15.4");
+    const built = buildProvisionWrite(
+      { ledType: "sk6812-rgbw", length: 60, gpio: 2 },
+      raw,
+      read.fingerprint,
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    const bus = (
+      built.body as { hw: { led: { ins: Record<string, unknown>[] } } }
+    ).hw.led.ins[0]!;
+    expect(bus.type).toBe(30);
+    expect(bus.order).toBe(3);
+    expect(bus.pin).toEqual([2]);
+    expect(bus.len).toBe(60);
   });
 
   it("refuses SK6812 writes on firmware outside the table", () => {

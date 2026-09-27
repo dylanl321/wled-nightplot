@@ -59,6 +59,10 @@ export type NativeCompatibilityMapping = {
  * SK6812 RGBW is `TYPE_SK6812_RGBW` (30). Order 0 is `COL_ORDER_GRB`,
  * documented as GRB(w) — GRBW on RGBW types. RGBWW (e.g. `TYPE_WS2805` 32)
  * is not mapped.
+ *
+ * Convert authors that mapping `order` (GRBW / 0 for SK6812) only when the
+ * native type changes. Same-type length / GPIO writes preserve the live
+ * `order`. Extra colour-order rows and an order picker are out of scope.
  */
 export const WLED_COMPATIBILITY_MAPPINGS: readonly NativeCompatibilityMapping[] = [
   {
@@ -397,6 +401,13 @@ export function validateProvisionDraft(draft: WledStripProvisionDraft): string |
   return null;
 }
 
+/**
+ * Strip Apply `/json/cfg` patch. Length and GPIO always land on a cloned bus.
+ * Native `type` + `order` come from the firmware mapping only when the live
+ * native type differs (convert, including unknown → mapped). Convert to
+ * SK6812 RGBW therefore authors GRBW (`order: 0`). Same-type writes leave
+ * the existing `order` untouched.
+ */
 export function buildProvisionWrite(
   draft: WledStripProvisionDraft,
   rawCfg: unknown,
@@ -434,6 +445,7 @@ export function buildProvisionWrite(
   next.pin = [draft.gpio];
   next.len = draft.length;
   const nativeType = busNativeType(current);
+  // Convert only. Same-type length / GPIO must not rewrite colour order.
   if (nativeType !== mapping.native.type) {
     next.type = mapping.native.type;
     next.order = mapping.native.order;
