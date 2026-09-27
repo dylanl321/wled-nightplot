@@ -12,7 +12,7 @@ const infoOnly: WledSnapshot = {
   on: null,
   brightness: null,
   segmentColor: null,
-  segments: [],
+  segments: null,
 };
 
 const light: Light = {

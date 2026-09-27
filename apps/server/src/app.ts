@@ -388,7 +388,7 @@ export function createApp(deps: AppDeps) {
     const dest: HostPort = { hostname: light.hostname, port: light.port };
     const written = await deps.write(
       dest,
-      applyRangesWrite(sent, snap?.segments.length ?? 0, snap?.segmentColor ?? "#ffa000"),
+      applyRangesWrite(sent, snap?.segments?.length ?? 0, snap?.segmentColor ?? "#ffa000"),
     );
     if (!written) {
       return c.json(
@@ -429,7 +429,7 @@ export function createApp(deps: AppDeps) {
     }
     const liveRead = await live.read({ ...light, reachability: "online" });
     const source = liveRead?.source === "fixture" ? "fixture" : "controller";
-    const outcome = applyOutcome(sent, reread.snapshot.segments, source);
+    const outcome = applyOutcome(sent, reread.snapshot.segments ?? [], source);
     const next = lightFromSnapshot(dest, reread.snapshot, nowIso(), light);
     if (outcome.matched) {
       next.lastSnapshot = reread.snapshot;
@@ -1430,6 +1430,6 @@ function emptySnap(): WledSnapshot {
     on: null,
     brightness: null,
     segmentColor: null,
-    segments: [],
+    segments: null,
   };
 }

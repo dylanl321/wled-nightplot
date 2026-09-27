@@ -728,6 +728,61 @@ describe("declared Elements", () => {
   });
 });
 
+describe("info-only segmentCount", () => {
+  it("does not report segmentCount 0 when state.seg is unknown", async () => {
+    const infoOnly = {
+      ...snapshot,
+      on: null,
+      brightness: null,
+      segmentColor: null,
+      segments: null,
+    };
+    const { app } = testApp({
+      probe: async () => ({ kind: "found" as const, snapshot: infoOnly }),
+    });
+    const enrolled = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.90" }),
+    });
+    const { light } = (await enrolled.json()) as {
+      light: { id: string; segmentCount: number | null; on: boolean | null };
+    };
+    expect(enrolled.status).toBe(201);
+    expect(light.on).toBeNull();
+    expect(light.segmentCount).toBeNull();
+    expect(light.segmentCount).not.toBe(0);
+
+    const list = (await (await app.request("/api/lights")).json()) as {
+      lights: { segmentCount: number | null }[];
+    };
+    expect(list.lights[0]?.segmentCount).toBeNull();
+
+    const inspect = (await (await app.request(`/api/lights/${light.id}`)).json()) as {
+      light: { segmentCount: number | null };
+    };
+    expect(inspect.light.segmentCount).toBeNull();
+  });
+
+  it("keeps a known empty seg list as zero — distinct from unknown", async () => {
+    const { app } = testApp({
+      probe: async () => ({
+        kind: "found" as const,
+        snapshot: { ...snapshot, segments: [] },
+      }),
+    });
+    const enrolled = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.91" }),
+    });
+    const { light } = (await enrolled.json()) as {
+      light: { segmentCount: number | null };
+    };
+    expect(light.segmentCount).toBe(0);
+  });
+});
+
 describe("preview + blink", () => {
   async function enroll(app: ReturnType<typeof testApp>["app"]) {
     const res = await app.request("/api/lights", {
@@ -802,7 +857,7 @@ describe("preview + blink", () => {
       on: null,
       brightness: null,
       segmentColor: null,
-      segments: [],
+      segments: null,
     };
     const { app } = testApp({
       probe: async () => ({ kind: "found" as const, snapshot: infoOnly }),

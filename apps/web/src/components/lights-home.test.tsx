@@ -99,6 +99,46 @@ describe("LightsHome cached beads", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("says segments unknown when segmentCount is missing — not 0 segments", () => {
+    render(
+      <LightsHome
+        unenrolled={[]}
+        lights={[
+          lightView({
+            reachability: "online",
+            on: null,
+            brightness: null,
+            bead: "unknown",
+            segmentCount: null,
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(/segments unknown/)).toBeTruthy();
+    expect(screen.queryByText(/0 segments/)).toBeNull();
+  });
+
+  it("still names a known empty segment list", () => {
+    render(
+      <LightsHome
+        unenrolled={[]}
+        lights={[
+          lightView({
+            reachability: "online",
+            on: true,
+            brightness: 128,
+            bead: "#ffa000",
+            segmentCount: 0,
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(/0 segments/)).toBeTruthy();
+    expect(screen.queryByText(/segments unknown/)).toBeNull();
+  });
+
   it("still names known off", () => {
     render(
       <LightsHome
