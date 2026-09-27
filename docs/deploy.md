@@ -92,7 +92,7 @@ Override the process: `docker run … nightplot-configure api`.
 - How to run by hand: GitHub → Actions → Docker → Run workflow.
 - Push to `ghcr.io/<owner>/<repo>` only on `main` / tags, and only when GHCR login succeeds (`GITHUB_TOKEN`, `packages: write`). A skipped or failed login still builds; it does not push.
 
-This is an image builder, not a claim the yard is production.
+This is an image builder, not a claim the product is production-ready.
 
 ## What is still not here
 
