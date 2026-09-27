@@ -9,7 +9,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Added
 
-- Production-shaped Docker image, compose, and GHCR workflow (CONFIG-45). One image (`api` / `web` / `all`); `docker-compose.yml` runs web + api with a lights-store volume. Bind `0.0.0.0` and optional `NIGHTPLOT_CORS_ORIGINS` are env-gated for containers — `pnpm dev` stays loopback. Find multicast from a bridge often fails; `docker-compose.host.yml` is the Linux host-network path. Typed address still works on bridge. Not production certified.
+- Production-shaped Docker image, compose, and GHCR workflow (CONFIG-45). One image (`api` / `web` / `all`); `docker-compose.yml` runs web + api in a shared network namespace with a lights-store volume. Bind `0.0.0.0` and optional `NIGHTPLOT_CORS_ORIGINS` are env-gated for containers — `pnpm dev` stays loopback. Find multicast from a container often fails; `docker-compose.host.yml` is the Linux host-network path. Typed address still works. Not production certified.
 - Production-shaped repo documentation and governance scaffold (CONFIG-44): README hub, CONTRIBUTING, CONSTITUTION, SECURITY, MIT LICENSE, `docs/overview.md` / `install.md` / `deploy.md` / `architecture.md`, GitHub issue and PR templates. Product is not production-ready. Docker / compose / GHCR is CONFIG-45 — not this slice.
 
 ## 0.7.11 — Elements after strip length change (CONFIG-43)

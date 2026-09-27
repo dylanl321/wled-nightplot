@@ -11,20 +11,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        NIGHTPLOT_API_URL: http://api:43181
     image: nightplot-configure:local
     command: ["all"]
     network_mode: host
-    extra_hosts:
-      - "api:127.0.0.1"
     environment:
       NIGHTPLOT_API_HOST: "0.0.0.0"
       NIGHTPLOT_API_PORT: "43181"
       NIGHTPLOT_WEB_HOST: "0.0.0.0"
       NIGHTPLOT_WEB_PORT: "43180"
       NIGHTPLOT_STORE_PATH: /data/lights.json
-      NIGHTPLOT_API_URL: http://api:43181
+      NIGHTPLOT_API_URL: http://127.0.0.1:43181
       NIGHTPLOT_DISCOVERY_TARGETS: ${NIGHTPLOT_DISCOVERY_TARGETS:-}
       NIGHTPLOT_CORS_ORIGINS: ${NIGHTPLOT_CORS_ORIGINS:-}
     volumes:

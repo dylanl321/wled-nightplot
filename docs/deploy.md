@@ -14,24 +14,16 @@ One image, three processes (`docker-entrypoint.sh`):
 | `web` | `next start` on `NIGHTPLOT_WEB_HOST`:`NIGHTPLOT_WEB_PORT` |
 | `all` | both (default `CMD`) |
 
-`docker-compose.yml` runs **two services** (web + api) from that image. The web build bakes Next rewrites to `http://api:43181` (the compose service name). Browser fetches stay same-origin on the web port; the Next server proxies `/api/*` and `/health`. The entrypoint starts `tsx` / `next` from workspace bins so a running container does not download pnpm.
+`docker-compose.yml` runs **two services** (web + api) from that image. Next rewrites `/api/*` and `/health` to `http://127.0.0.1:43181`. Web uses `network_mode: service:api` so that loopback is the API — not a bet on Docker bridge iptables. Browser fetches stay same-origin on the web port. The entrypoint starts `tsx` / `next` from workspace bins so a running container does not download pnpm. Ports are published on the **api** service (web has no own network).
 
-One-container `all` needs the API hostname:
+`all` is the same loopback story in one container (`docker run -p 43180:43180 -p 43181:43181 …`).
 
-```bash
-docker run --add-host=api:127.0.0.1 -p 43180:43180 -p 43181:43181 …
-```
+A split onto a Docker *bridge* (two netns) needs a rebuild with `--build-arg NIGHTPLOT_API_URL=http://<api-service>:43181` and a working engine. That is not the default.
 
 ## Build
 
 ```bash
 docker build -t nightplot-configure .
-```
-
-Optional build-arg (default is already the compose name):
-
-```bash
-docker build --build-arg NIGHTPLOT_API_URL=http://api:43181 -t nightplot-configure .
 ```
 
 ## Compose (bridge)
@@ -47,7 +39,7 @@ docker compose up --build
 
 Volume `lights-store` → `/data/lights.json` (`NIGHTPLOT_STORE_PATH`).
 
-Compose **does not** `env_file` [`.env.example`](../.env.example). That file is the loopback `pnpm dev` default. A loopback bind *inside* the container is not reachable from the published port. Compose sets `0.0.0.0` and `NIGHTPLOT_API_URL=http://api:43181` on purpose.
+Compose **does not** `env_file` [`.env.example`](../.env.example). That file is the loopback `pnpm dev` default. A loopback *bind* inside the container is not reachable from the published port — compose sets `NIGHTPLOT_API_HOST=0.0.0.0`. The web→API URL stays `http://127.0.0.1:43181` because the two services share a network namespace.
 
 Pass-through only:
 
@@ -68,7 +60,7 @@ The honest Find path on **Linux** is host networking:
 docker compose -f docker-compose.host.yml up --build
 ```
 
-That file is a standalone compose (one service, `all`, `network_mode: host`, `--add-host=api:127.0.0.1`). It is not merged with the bridge file.
+That file is a standalone compose (one service, `all`, `network_mode: host`). It is not merged with the default file.
 
 Docker Desktop / a VM is not a Linux LAN. Host networking there does not make mDNS/SSDP magically work. Type `host:port`.
 
@@ -83,7 +75,6 @@ If something hits the API from another published web origin, set `NIGHTPLOT_CORS
 ```bash
 docker build -t nightplot-configure .
 docker run --rm \
-  --add-host=api:127.0.0.1 \
   -p 43180:43180 -p 43181:43181 \
   -v nightplot-lights:/data \
   -e NIGHTPLOT_STORE_PATH=/data/lights.json \

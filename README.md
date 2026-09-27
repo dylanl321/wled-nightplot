@@ -44,7 +44,7 @@ More: [docs/install.md](docs/install.md). Docker / compose: [docs/deploy.md](doc
 
 ## Docker
 
-One image (`Dockerfile`); compose runs **web** + **api**. Not production certified. Find (mDNS / SSDP) from a bridge network usually fails — typed address still works. Linux host networking is the honest Find path (`docker-compose.host.yml`).
+One image (`Dockerfile`); compose runs **web** + **api** in a shared network namespace (web rewrites to `127.0.0.1:43181`). Not production certified. Find (mDNS / SSDP) from a container usually fails — typed address still works. Linux host networking is the honest Find path (`docker-compose.host.yml`).
 
 ```bash
 docker build -t nightplot-configure .

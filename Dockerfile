@@ -1,8 +1,8 @@
 # Nightplot Configure — production-*shaped* image, not production certified.
 # One image. Process model (see docker-entrypoint.sh):
 #   api | web | all (default)
-# Web rewrites /api and /health to http://api:43181 (compose service name).
-# One-container `all` needs --add-host=api:127.0.0.1.
+# Web rewrites /api and /health to http://127.0.0.1:43181 — compose puts
+# web on the API network namespace; `all` is the same loopback.
 
 FROM node:20-bookworm-slim AS base
 WORKDIR /app
@@ -20,8 +20,9 @@ RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
 COPY . .
-# Baked into Next rewrites at `next build`. Compose names the API service `api`.
-ARG NIGHTPLOT_API_URL=http://api:43181
+# Baked into Next rewrites at `next build`. Loopback: web shares the API netns,
+# or both run in `all`. Rebuild with this ARG only if you split onto a bridge.
+ARG NIGHTPLOT_API_URL=http://127.0.0.1:43181
 ENV NIGHTPLOT_API_URL=${NIGHTPLOT_API_URL}
 RUN pnpm --filter @nightplot/web build
 
@@ -34,7 +35,7 @@ LABEL org.opencontainers.image.title="nightplot-configure"
 LABEL org.opencontainers.image.description="Nightplot Configure image. Not production certified."
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NIGHTPLOT_API_URL=http://api:43181
+ENV NIGHTPLOT_API_URL=http://127.0.0.1:43181
 ENV NIGHTPLOT_API_HOST=0.0.0.0
 ENV NIGHTPLOT_API_PORT=43181
 ENV NIGHTPLOT_WEB_HOST=0.0.0.0
