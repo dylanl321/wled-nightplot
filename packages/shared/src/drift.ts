@@ -67,16 +67,19 @@ export function reportedRangeRails(reported: unknown): RangeSpan[] {
 /**
  * Dual-rail display data: declared above, reported below.
  * Drift is the coverage gap. Overlap paints red. Unreachable (no reported)
- * does not invent a last report.
+ * does not invent a last report. Unknown segments (`null`, not `[]`) do not
+ * compare as empty — drift is skipped until `state.seg` is known.
  */
 export function buildRangeDisplay(
   declared: DraftRange[],
-  reported: RangeSpan[],
+  reported: RangeSpan[] | null,
   issues: RangeIssue[] = [],
   options: { reachable?: boolean } = {},
 ): RangeDisplay {
   const reachable = options.reachable ?? true;
-  const liveReported = reachable ? reported.filter((span) => span.start < span.stop) : [];
+  const segmentsKnown = reported !== null;
+  const comparable = reachable && segmentsKnown;
+  const liveReported = comparable ? reported.filter((span) => span.start < span.stop) : [];
   const overlapIssues = issues.filter((issue) => issue.code === "overlap");
   const validityIssues = issues.filter(
     (issue) => issue.code === "over-ledCount" || issue.code === "invert",
@@ -97,7 +100,7 @@ export function buildRangeDisplay(
     stop: draft.stop,
     length: elementLength(draft.start, draft.stop),
     differs:
-      reachable &&
+      comparable &&
       !liveReported.some((span) => span.start === draft.start && span.stop === draft.stop),
     error: Boolean(draft.id && erroredIds.has(draft.id)) || overlapIssues.some((issue) =>
       issue.elementId === draft.id || issue.otherId === draft.id,
@@ -122,6 +125,11 @@ export function buildRangeDisplay(
 
   if (!reachable) {
     notes.push({ text: "No current report to compare." });
+    return { declared: declaredRails, reported: [], regions, notes };
+  }
+
+  if (!segmentsKnown) {
+    notes.push({ text: "Segments unknown — no report to compare." });
     return { declared: declaredRails, reported: [], regions, notes };
   }
 

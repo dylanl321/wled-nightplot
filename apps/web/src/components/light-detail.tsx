@@ -95,9 +95,19 @@ export function LightDetail({
   );
   const display = useMemo(() => {
     if (mode === "inspect") return detail.display;
-    const reported = unreachable ? [] : reportedRangeRails(detail.reported);
+    const segmentsKnown = detail.light.segmentCount !== null;
+    const reported =
+      unreachable || !segmentsKnown ? null : reportedRangeRails(detail.reported);
     return buildRangeDisplay(draft, reported, issues, { reachable: !unreachable });
-  }, [detail.display, detail.reported, draft, issues, mode, unreachable]);
+  }, [
+    detail.display,
+    detail.light.segmentCount,
+    detail.reported,
+    draft,
+    issues,
+    mode,
+    unreachable,
+  ]);
 
   const dirty = useMemo(() => !sameRanges(draft, detail.elements), [draft, detail.elements]);
   const selected = draft.find((element) => element.id === selectedId) ?? null;

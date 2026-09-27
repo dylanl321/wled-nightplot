@@ -103,7 +103,7 @@ export function lightDetail(
   product: LedProduct | null = null,
 ): LightDetail {
   const reachable = light.reachability === "online" && live !== null;
-  const reported = live?.segments ?? [];
+  const reported = live?.segments ?? null;
   const issues = validateDeclaredRanges(elements, light.ledCount);
   const display = buildRangeDisplay(elements, reported, issues, { reachable });
   return {
