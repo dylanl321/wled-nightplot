@@ -2307,8 +2307,76 @@ describe("strip provision", () => {
       body: JSON.stringify({ provision: { ledType: "ws281x", length: 80, gpio: 2 } }),
     });
     expect(res.status).toBe(422);
-    expect(((await res.json()) as { message: string }).message).toMatch(/isn’t a shape we write|compatibility table/);
+    const body = (await res.json()) as {
+      error: string;
+      message: string;
+      provisionWrite?: { status: string; matched: boolean; message: string };
+    };
+    expect(body.error).toBe("refused");
+    expect(body.message).toMatch(/isn’t a shape we write|compatibility table/);
+    expect(body.provisionWrite).toMatchObject({
+      status: "refused",
+      matched: false,
+    });
+    expect(body.provisionWrite?.message).toBe(body.message);
     expect(cfg.cfg).toEqual(before);
+  });
+
+  it("buildProvisionWrite refuse 422 includes provisionWrite — not notice-only", async () => {
+    const bus = { start: 0, len: 60, pin: [16], type: 22, order: 0 };
+    let insReads = 0;
+    let wrote = false;
+    const { app } = testApp({
+      readCfg: async () => ({
+        hw: {
+          led: {
+            get ins() {
+              insReads += 1;
+              // readProvision parse hits ins twice (has-list + buses) and is writable.
+              // buildProvisionWrite re-parses; an empty list is that refuse.
+              return insReads <= 2 ? [bus] : [];
+            },
+          },
+        },
+      }),
+      writeCfg: async () => {
+        wrote = true;
+        return true;
+      },
+    });
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.72" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const res = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provision: { ledType: "ws281x", length: 80, gpio: 2 } }),
+    });
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as {
+      error: string;
+      message: string;
+      provisionWrite?: {
+        status: string;
+        matched: boolean;
+        sent: { ledType: string; length: number; gpio: number };
+        message: string;
+      };
+    };
+    expect(body.error).toBe("refused");
+    expect(body.message).toMatch(/No LED bus/);
+    expect(body.provisionWrite).toEqual(
+      expect.objectContaining({
+        status: "refused",
+        matched: false,
+        sent: { ledType: "ws281x", length: 80, gpio: 2 },
+        message: body.message,
+      }),
+    );
+    expect(wrote).toBe(false);
   });
 
   it("clips declared ranges that run past a shorter strip", async () => {
