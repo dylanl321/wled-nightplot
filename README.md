@@ -6,7 +6,7 @@ This is not a playback desk. It does not ship Yard, Tonight, Studio, Scene, or S
 
 R6 wires the small Safe settings set on an enrolled Light, gated by the firmware’s `/json/cfg` fingerprint. Unsupported firmware is refused — nothing is written. After a display-name write, the rack title uses the `/json/cfg` name even when metal `/json/info` still lags until reboot.
 
-CONFIG-40 adds first-time **Strip** provision on an enrolled Light: WS281x type, node count, and GPIO. Apply writes reviewed `/json/cfg` bus fields, then re-reads cfg and the snapshot. A mismatch stays on the failure UI. A fixture report is not Hardware Done.
+CONFIG-40 adds first-time **Strip** provision on an enrolled Light: WS281x type, node count, and GPIO. CONFIG-41 adds named catalog presets (common WS281x length / GPIO defaults) that fill that form; fields still override. Apply writes reviewed `/json/cfg` bus fields, then re-reads cfg and the snapshot. A mismatch stays on the failure UI. A fixture report is not Hardware Done.
 
 ## Run
 
@@ -35,7 +35,7 @@ pnpm test
 pnpm dev:demo
 ```
 
-or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light for Inspect, then **Strip** to set WS281x / node count / GPIO and **Apply** (writes `/json/cfg`, then re-reads the snapshot), **Edit ranges** to declare Elements, **Test live** to Preview or Blink, or **Safe settings** for the small `/json/cfg` set. **All Off** is on the rail / thumb bar. **Remove this Light** on Inspect runs three checks and refuses until they complete. The fixture is a software stub — not Hardware Done.
+or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light for Inspect, then **Strip** to pick a named default or set WS281x / node count / GPIO and **Apply** (writes `/json/cfg`, then re-reads the snapshot), **Edit ranges** to declare Elements, **Test live** to Preview or Blink, or **Safe settings** for the small `/json/cfg` set. **All Off** is on the rail / thumb bar. **Remove this Light** on Inspect runs three checks and refuses until they complete. The fixture is a software stub — not Hardware Done.
 
 By default the fixture updates `/json/info` and `/json/cfg` together. Real metal often keeps the old `/json/info` name until reboot. To simulate that lag: `NIGHTPLOT_FIXTURE_INFO_NAME_LAG=1 pnpm fixture`, or `POST http://127.0.0.1:48210/nightplot/info-name-lag` with `{ "on": true }`. Safe settings rename still updates the rack title from cfg. `{ "on": false }` copies cfg → info.
 
@@ -48,7 +48,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | Method | Path | What |
 | --- | --- | --- |
 | GET | `/health` | Slice + liveness |
-| GET | `/api/catalogs` | Controller / strip / discovery seams |
+| GET | `/api/catalogs` | Controller / strip / discovery seams, plus named strip presets (`stripPresets`) |
 | GET | `/api/lights` | Enrolled Lights (live snapshot or grey + last-seen), declared Elements, unenrolled tray |
 | GET | `/api/lights/:id` | Inspect payload: identity, declared Elements, reported segments, drift, live session |
 | GET | `/api/lights/:id/live` | Same Light plus current `/json/live` beads |
@@ -80,7 +80,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | `/` | Lights rack + unenrolled tray. All Off on the rail / thumb bar |
 | `/discover` | Find / type an address / add |
 | `/lights/:id` | Inspect — identity + StripBeads + declared vs reported + Delete checks |
-| `/lights/:id?mode=strip` | Strip — WS281x type, node count, GPIO; Apply writes `/json/cfg` then re-reads. Mismatch stays. |
+| `/lights/:id?mode=strip` | Strip — named WS281x defaults fill type / length / GPIO; fields still override. Apply writes `/json/cfg` then re-reads. Mismatch stays. |
 | `/lights/:id?mode=safe` | Safe settings — name, boot, transition, current limit; refuse if unsupported. A rename updates the title from `/json/cfg` without waiting for reboot. |
 | `/lights/:id?mode=ranges` | Edit ranges — draft save, Apply write+reread, failed Apply stays |
 | `/lights/:id?mode=live` | Test live — Preview / Blink, proof ladder, `/json/live` beads |

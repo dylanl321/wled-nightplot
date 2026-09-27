@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.10 — Named strip presets (CONFIG-41)
+
+- The strip catalog ships at least three built-in presets: WS281x with documented length / GPIO defaults (60 · GPIO 16, 150 · GPIO 16, 300 · GPIO 2). Labels name the fields they fill. These are not a confirmed install pinout.
+- Selecting a preset fills the CONFIG-40 Strip form. Fields still override. Apply is the same write → cfg reread → snapshot check. Preview is not Apply.
+- Presets live in `packages/shared` and appear on `GET /api/catalogs` (`stripPresets`). The form is not a one-off hardcoded blob.
+- Fixture software-green is not Hardware Done.
+
 ## 0.7.9 — First-time WLED strip provision (CONFIG-40)
 
 - An enrolled Light can set LED type (WS281x first), length (node count), and GPIO/pin on **Strip**.

@@ -17,5 +17,5 @@ export const wledController: ControllerDescriptor = {
     provision: true,
   },
   notes:
-    "Discover through Safe settings and first-time strip provision are live on WLED. Provision writes only reviewed /json/cfg bus fields (WS281x type, length, GPIO) this firmware actually exposed. A fixture report is software-green — not Hardware Done.",
+    "Discover through Safe settings and first-time strip provision are live on WLED. Named strip presets fill type / length / GPIO; Apply still writes only reviewed /json/cfg bus fields this firmware actually exposed, then re-reads. A fixture report is software-green — not Hardware Done.",
 };

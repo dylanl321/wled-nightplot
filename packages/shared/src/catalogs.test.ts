@@ -4,7 +4,7 @@ import { catalogSnapshot } from "./catalog.ts";
 import { getController, listControllers } from "./controller/catalog.ts";
 import { listDiscoveryMechanisms } from "./discovery/catalog.ts";
 import { emptyLightsPayload } from "./lights.ts";
-import { getStrip, listStrips } from "./strip/catalog.ts";
+import { getStrip, listStripPresets, listStrips } from "./strip/catalog.ts";
 
 describe("controller catalog", () => {
   it("registers WLED with discover, snapshot, preview, blink, and apply", () => {
@@ -33,6 +33,12 @@ describe("strip catalog", () => {
     expect(strip?.channels).toEqual(["r", "g", "b"]);
     expect(listStrips().map((entry) => entry.id)).toEqual(["ws281x"]);
   });
+
+  it("registers named strip presets as catalog data", () => {
+    const presets = listStripPresets();
+    expect(presets.length).toBeGreaterThanOrEqual(3);
+    expect(presets.every((entry) => entry.ledType === "ws281x")).toBe(true);
+  });
 });
 
 describe("discovery catalog", () => {
@@ -55,6 +61,7 @@ describe("catalog snapshot", () => {
     expect(snap.slice).toBe("R6");
     expect(snap.controllers).toHaveLength(1);
     expect(snap.strips).toHaveLength(1);
+    expect(snap.stripPresets.length).toBeGreaterThanOrEqual(3);
     expect(snap.discovery).toHaveLength(3);
   });
 });

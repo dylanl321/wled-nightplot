@@ -1,9 +1,15 @@
 "use client";
 
 import {
+  defaultStripPreset,
+  getStripPreset,
+  listStripPresets,
+  matchingStripPresetId,
+  provisionDraftFromPreset,
   type LightDetail,
   type ProvisionRead,
   type ProvisionWriteResult,
+  type StripPreset,
   type WledStripProvisionDraft,
 } from "@nightplot/shared";
 import { useEffect, useState } from "react";
@@ -39,10 +45,11 @@ export function StripProvisionPanel({
       .then((payload) => {
         if (cancelled) return;
         setRead(payload.provision);
+        const fallback = defaultStripPreset();
         setDraft({
           ledType: "ws281x",
-          length: payload.provision.settings.length ?? 60,
-          gpio: payload.provision.settings.gpio ?? 16,
+          length: payload.provision.settings.length ?? fallback.length,
+          gpio: payload.provision.settings.gpio ?? fallback.gpio,
         });
         setNotice(payload.provision.refuse);
       })
@@ -69,13 +76,20 @@ export function StripProvisionPanel({
     setNotice(null);
   }
 
+  function applyPreset(preset: StripPreset) {
+    setDraft(provisionDraftFromPreset(preset));
+    setResult(null);
+    setNotice(null);
+  }
+
   async function apply() {
     if (!draft || !read) return;
     setBusy("apply");
     setNotice(null);
-    const res = await postJson<ProvisionPayload>(`/api/lights/${lightId}/provision`, {
-      provision: draft,
-    });
+    const res = await postJson<ProvisionPayload>(
+      `/api/lights/${lightId}/provision`,
+      { provision: draft },
+    );
     setBusy(null);
     const payload = res.data as ProvisionPayload;
     if (payload.provision) {
@@ -113,14 +127,17 @@ export function StripProvisionPanel({
   }
 
   const failed = result && !result.matched;
+  const selectedPresetId = matchingStripPresetId(draft);
+  const selectedPreset = selectedPresetId ? getStripPreset(selectedPresetId) : undefined;
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
         <h2 className="text-[20px] font-semibold">Strip</h2>
         <p className="text-[13px] leading-5 text-[#c9c3b8]">
-          First-time bus: LED type, node count, and GPIO. Apply writes /json/cfg, then reads the
-          snapshot back. Preview is not Apply.
+          First-time bus: LED type, node count, and GPIO. A named default fills the form; fields
+          still override. Apply writes /json/cfg, then reads the snapshot back. Preview is not
+          Apply.
         </p>
       </div>
 
@@ -134,7 +151,39 @@ export function StripProvisionPanel({
           <p className="mt-2 text-[12px] text-primary">{read.caption}</p>
         </div>
       ) : (
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="flex flex-col gap-3">
+          <fieldset className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
+            <legend className="px-1 font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
+              Named default
+            </legend>
+            <p className="text-[12px] text-quiet">
+              Catalog presets — common WS281x length and GPIO. Not a confirmed install pinout.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {listStripPresets().map((preset) => {
+                const selected = selectedPresetId === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => applyPreset(preset)}
+                    className={`rounded-lg border px-3 py-2 text-left text-[13px] font-semibold ${
+                      selected
+                        ? "border-primary bg-secondary text-foreground"
+                        : "border-input bg-[#07080a] text-[#c9c3b8] hover:bg-secondary"
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[12px] text-quiet">
+              {selectedPreset ? selectedPreset.notes : "Fields override the catalog values."}
+            </p>
+          </fieldset>
+          <div className="grid gap-3 md:grid-cols-3">
           <label className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
             <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
               LED type
@@ -172,6 +221,7 @@ export function StripProvisionPanel({
             />
             <span className="text-[12px] text-quiet">Single data pin for WS281x.</span>
           </label>
+          </div>
         </div>
       )}
 
@@ -213,10 +263,11 @@ export function StripProvisionPanel({
         <Button
           variant="outline"
           onClick={() => {
+            const fallback = defaultStripPreset();
             setDraft({
               ledType: "ws281x",
-              length: read.settings.length ?? 60,
-              gpio: read.settings.gpio ?? 16,
+              length: read.settings.length ?? fallback.length,
+              gpio: read.settings.gpio ?? fallback.gpio,
             });
             setResult(null);
             setNotice(read.refuse);

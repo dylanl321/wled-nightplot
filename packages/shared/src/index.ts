@@ -129,8 +129,19 @@ export {
   type RangeIssue,
   type RangeSpan,
 } from "./range.ts";
-export { getStrip, listStrips } from "./strip/catalog.ts";
+export {
+  defaultStripPreset,
+  getStrip,
+  getStripPreset,
+  listStripPresets,
+  listStrips,
+  matchingStripPresetId,
+  provisionApplyBodyFromPreset,
+  provisionDraftFromPreset,
+  STRIP_PRESETS,
+} from "./strip/catalog.ts";
 export type { StripChannel, StripDriverDescriptor } from "./strip/types.ts";
+export type { StripPreset } from "./strip/presets.ts";
 export { ws281xStrip } from "./strip/ws281x.ts";
 export {
   PROVISION_GPIO_MAX,

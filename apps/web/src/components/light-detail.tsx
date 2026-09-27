@@ -582,7 +582,7 @@ function InspectFacts({
             {light.firmware ? ` ${light.firmware}.` : null}
           </p>
           <button type="button" onClick={onStrip} className="text-[13px] text-foreground">
-            Strip — type, length, GPIO
+            Strip — type, length, GPIO, or a named default
           </button>
           {detail.elements.length === 0 ? (
             <p className="text-[12px] text-quiet">

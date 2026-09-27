@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { listStripPresets, provisionApplyBodyFromPreset } from "@nightplot/shared";
 import { createApp, type AppDeps } from "./app.ts";
 import { FIND_PROBE_CONCURRENCY } from "./discovery/map-limit.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
@@ -137,6 +138,17 @@ describe("configure server", () => {
       ok: true,
       slice: "R6",
     });
+  });
+
+  it("exposes strip presets on the catalog snapshot", async () => {
+    const { app } = testApp();
+    const res = await app.request("/api/catalogs");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      stripPresets: { id: string; ledType: string; length: number; gpio: number }[];
+    };
+    expect(body.stripPresets.length).toBeGreaterThanOrEqual(3);
+    expect(body.stripPresets.every((entry) => entry.ledType === "ws281x")).toBe(true);
   });
 
   it("keeps root Apply off the Light path; root Preview is not Apply", async () => {
@@ -1314,6 +1326,32 @@ describe("strip provision", () => {
     expect(box.cfg.hw.led.ins[0]).toMatchObject({ len: 150, pin: [2], type: 22 });
     expect(box.info.leds.count).toBe(150);
     expect(store.findById(id)?.ledCount).toBe(150);
+  });
+
+  it("accepts a catalog preset as the provision Apply payload", async () => {
+    const preset = listStripPresets().find((entry) => entry.id === "ws281x-150-gpio16");
+    expect(preset).toBeDefined();
+    const box = createFixtureBox({ ledCount: 60, gpio: 16 });
+    const { app, id } = await enrollFixture(box);
+    const res = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(provisionApplyBodyFromPreset(preset!)),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      provisionWrite: { matched: boolean; sent: { length: number; gpio: number } };
+    };
+    expect(body.provisionWrite.matched).toBe(true);
+    expect(body.provisionWrite.sent).toEqual({
+      ledType: "ws281x",
+      length: preset!.length,
+      gpio: preset!.gpio,
+    });
+    expect(box.cfg.hw.led.ins[0]).toMatchObject({
+      len: preset!.length,
+      pin: [preset!.gpio],
+    });
   });
 
   it("keeps a cfg/snapshot mismatch on the failure contract — no silent success", async () => {
