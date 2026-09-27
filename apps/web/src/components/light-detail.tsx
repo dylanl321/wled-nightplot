@@ -24,7 +24,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TestLivePanel, liveBeadColor } from "@/components/test-live";
 import { fetchJson, patchJson, postJson } from "@/lib/api";
-import { brightnessPct, lastSeenLabel, snapshotLabel } from "@/lib/time";
+import { displayBead, inspectPowerHow, lightPowerStatus } from "@/lib/power-status";
+import { lastSeenLabel, snapshotLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 export function LightDetail({
@@ -267,12 +268,8 @@ export function LightDetail({
   }
 
   const pitch = light.ledCount <= 80 ? 13.4 : 8.7;
-  const pct = brightnessPct(light.brightness);
-  const status = unreachable
-    ? `No answer · ${lastSeenLabel(light.lastSeenAt)}`
-    : light.on
-      ? `Online · on${pct !== null ? ` · ${pct}%` : ""}`
-      : "Online · off";
+  const bead = displayBead(light);
+  const status = lightPowerStatus(light);
 
   return (
     <div className="mx-auto flex w-full max-w-[980px] flex-1 flex-col gap-4 px-5 py-6 sm:px-8 sm:py-8">
@@ -380,7 +377,7 @@ export function LightDetail({
             perRow={Math.min(Math.max(light.ledCount, 1), 100)}
             pitch={pitch}
             color={(index) =>
-              mode === "live" ? liveBeadColor(index, detail, light.bead) : light.bead
+              mode === "live" ? liveBeadColor(index, detail, bead) : bead
             }
             brightness={
               unreachable
@@ -432,7 +429,6 @@ export function LightDetail({
         <InspectFacts
           detail={detail}
           status={status}
-          unreachable={unreachable}
           addressOpen={addressOpen}
           addressHost={addressHost}
           addressSteps={addressSteps}
@@ -539,7 +535,6 @@ export function LightDetail({
 function InspectFacts({
   detail,
   status,
-  unreachable,
   addressOpen,
   addressHost,
   addressSteps,
@@ -552,7 +547,6 @@ function InspectFacts({
 }: {
   detail: LightDetailPayload;
   status: string;
-  unreachable: boolean;
   addressOpen: boolean;
   addressHost: string;
   addressSteps: ReaddressStep[] | null;
@@ -564,12 +558,7 @@ function InspectFacts({
   onStrip: () => void;
 }) {
   const light = detail.light;
-  const pct = brightnessPct(light.brightness);
-  const how = unreachable
-    ? "Not answering. Beads stay grey — the last colour is not shown."
-    : light.on
-      ? `Answering. On${pct !== null ? ` at ${pct}%` : ""}.`
-      : "Answering. Off.";
+  const how = inspectPowerHow(light);
   const drift = detail.display.notes[0]?.text;
 
   return (

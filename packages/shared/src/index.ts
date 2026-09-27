@@ -40,7 +40,7 @@ export {
   type DeleteCheckKey,
   type DeleteCheckStatus,
 } from "./manage.ts";
-export { isLitBead, isUnknownBead, type BeadColor } from "./bead.ts";
+export { beadForReportedOn, isLitBead, isUnknownBead, type BeadColor } from "./bead.ts";
 export { catalogSnapshot, CURRENT_SLICE, type CatalogSnapshot } from "./catalog.ts";
 export {
   BLINK_COLOR,

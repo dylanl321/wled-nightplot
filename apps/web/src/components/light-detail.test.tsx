@@ -129,6 +129,58 @@ describe("LightDetail reported rails", () => {
   });
 });
 
+describe("LightDetail info-only power", () => {
+  it("does not say Online · off when on is missing — unknown-grey, not null-as-off", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: null,
+            brightness: null,
+            bead: null,
+            lastSeenAt: "2026-09-26T18:00:00.000Z",
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+        })}
+        mode="inspect"
+      />,
+    );
+
+    expect(screen.getByText("Online · unknown")).toBeTruthy();
+    expect(screen.queryByText("Online · off")).toBeNull();
+    expect(screen.getByText(/Power unknown/)).toBeTruthy();
+    expect(screen.queryByText("Answering. Off.")).toBeNull();
+    const strip = screen.getByRole("img", { name: "Garage strip, 60 LEDs, RGB" });
+    expect(strip.innerHTML).not.toContain("#ffa000");
+    expect(strip.innerHTML).toContain("#1d1d1f");
+    expect(strip.innerHTML).not.toContain("#141519");
+  });
+
+  it("still names known off on Inspect", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: false,
+            brightness: 0,
+            bead: null,
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+        })}
+        mode="inspect"
+      />,
+    );
+
+    expect(screen.getByText("Online · off")).toBeTruthy();
+    expect(screen.getByText("Answering. Off.")).toBeTruthy();
+    const strip = screen.getByRole("img", { name: "Garage strip, 60 LEDs, RGB" });
+    expect(strip.innerHTML).toContain("#141519");
+    expect(strip.innerHTML).not.toContain("#1d1d1f");
+  });
+});
+
 describe("LightDetail RGBW honesty", () => {
   it("names the driver chip — not WS281x RGBW from snapshot.rgbw", () => {
     render(

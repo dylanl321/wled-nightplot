@@ -73,6 +73,53 @@ describe("LightsHome cached beads", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("does not say Online · off when on is missing — unknown-grey, not null-as-off", () => {
+    const fetch = fetchSpy();
+
+    render(
+      <LightsHome
+        unenrolled={[]}
+        lights={[
+          lightView({
+            reachability: "online",
+            on: null,
+            brightness: null,
+            bead: null,
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Online · unknown")).toBeTruthy();
+    expect(screen.queryByText("Online · off")).toBeNull();
+    const strip = screen.getByRole("img", { name: "Garage strip, RGB" });
+    expect(strip.innerHTML).not.toContain(LAST_COLOUR);
+    expect(strip.innerHTML).toContain("#1d1d1f");
+    expect(strip.innerHTML).not.toContain("#141519");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("still names known off", () => {
+    render(
+      <LightsHome
+        unenrolled={[]}
+        lights={[
+          lightView({
+            reachability: "online",
+            on: false,
+            brightness: 0,
+            bead: null,
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Online · off")).toBeTruthy();
+    const strip = screen.getByRole("img", { name: "Garage strip, RGB" });
+    expect(strip.innerHTML).toContain("#141519");
+    expect(strip.innerHTML).not.toContain("#1d1d1f");
+  });
+
   it("keeps cached Online status on unknown beads without probing the list", () => {
     const fetch = fetchSpy();
 
