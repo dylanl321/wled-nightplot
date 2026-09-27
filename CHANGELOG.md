@@ -7,6 +7,12 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+### Added
+
+- Operator LED product catalog (CONFIG-52): Nightplot-owned SKUs (`id`, `label`, `notes`, `formFactor` discrete / cob / diffused, `driverId` against the strip driver catalog, optional channel / color-order / bead overrides or inherit from the driver, optional `defaultLength` / `defaultGpio` / `densityNotes`). JSON store `data/led-products.json` (`NIGHTPLOT_LED_PRODUCTS_PATH`). First boot seeds three WS281x rows from `STRIP_PRESETS`. `GET`/`POST /api/led-products` and `GET /api/led-products/:id`; `GET /api/catalogs` includes `ledProducts`. Fail closed on unknown `driverId`, bad `formFactor`, or bad defaults. Form factor is metadata — not written to WLED. A catalog row is not Hardware Done. Strip UI attach is CONFIG-53.
+- Docker image, compose, and GHCR workflow (CONFIG-45). One image (`api` / `web` / `all`); `docker-compose.yml` runs web + api in a shared network namespace with a lights-store volume. Bind `0.0.0.0` and optional `NIGHTPLOT_CORS_ORIGINS` are env-gated for containers — `pnpm dev` stays loopback. Find multicast from a container often fails; `docker-compose.host.yml` is the Linux host-network path. Typed address still works. The image packages local/LAN run; there is no auth or TLS.
+- Repo documentation and governance files (CONFIG-44): README hub, CONTRIBUTING, CONSTITUTION, SECURITY, MIT LICENSE, `docs/overview.md` / `install.md` / `deploy.md` / `architecture.md`, GitHub issue and PR templates. Docker / compose / GHCR landed in CONFIG-45.
+
 ### Changed
 
 - `docs/PLANE.md` lists filed CONFIG tickets through CONFIG-50 and records the live GitHub home `dylanl321/wled-nightplot` with package name `nightplot-configure` (CONFIG-34).
@@ -15,11 +21,6 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 ### Fixed
 
 - ServerDown recovery copy names both the local `pnpm dev` path and Docker compose / `docker run` restart (`docs/deploy.md`). It no longer tells a compose operator to run host `pnpm dev` (CONFIG-46).
-
-### Added
-
-- Docker image, compose, and GHCR workflow (CONFIG-45). One image (`api` / `web` / `all`); `docker-compose.yml` runs web + api in a shared network namespace with a lights-store volume. Bind `0.0.0.0` and optional `NIGHTPLOT_CORS_ORIGINS` are env-gated for containers — `pnpm dev` stays loopback. Find multicast from a container often fails; `docker-compose.host.yml` is the Linux host-network path. Typed address still works. The image packages local/LAN run; there is no auth or TLS.
-- Repo documentation and governance files (CONFIG-44): README hub, CONTRIBUTING, CONSTITUTION, SECURITY, MIT LICENSE, `docs/overview.md` / `install.md` / `deploy.md` / `architecture.md`, GitHub issue and PR templates. Docker / compose / GHCR landed in CONFIG-45.
 
 ## 0.7.11 — Elements after strip length change (CONFIG-43)
 

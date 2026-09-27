@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { listStripPresets, provisionApplyBodyFromPreset } from "@nightplot/shared";
 import { createApp, type AppDeps } from "./app.ts";
 import { FIND_PROBE_CONCURRENCY } from "./discovery/map-limit.ts";
+import { FileLedProductsStore } from "./store/led-products-store.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
 import { createFixtureBox } from "./wled-fixture-box.ts";
 import { createWledCfgReader, createWledCfgWriter } from "./wled/cfg.ts";
@@ -113,11 +114,13 @@ function memoryCfg(name = "WLED") {
 function testApp(overrides: Partial<AppDeps> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
   const store = overrides.store ?? new FileLightsStore(join(dir, "lights.json"));
+  const products = overrides.products ?? new FileLedProductsStore(join(dir, "led-products.json"));
   const box = memoryBox();
   const cfg = memoryCfg();
   const probe: ProbeFn = overrides.probe ?? box.probe;
   const app = createApp({
     store,
+    products,
     probe,
     write: overrides.write ?? box.write,
     readLive: overrides.readLive ?? box.readLive,
@@ -126,7 +129,7 @@ function testApp(overrides: Partial<AppDeps> = {}) {
     collect: overrides.collect ?? (async () => []),
     now: overrides.now ?? (() => new Date("2026-09-26T18:00:00.000Z")),
   });
-  return { app, store, dir, box, cfg };
+  return { app, store, products, dir, box, cfg };
 }
 
 describe("configure server", () => {
@@ -175,9 +178,12 @@ describe("configure server", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       stripPresets: { id: string; ledType: string; length: number; gpio: number }[];
+      ledProducts: { id: string; driverId: string; formFactor: string }[];
     };
     expect(body.stripPresets.length).toBeGreaterThanOrEqual(3);
     expect(body.stripPresets.every((entry) => entry.ledType === "ws281x")).toBe(true);
+    expect(body.ledProducts.length).toBeGreaterThanOrEqual(2);
+    expect(body.ledProducts.every((entry) => entry.driverId === "ws281x")).toBe(true);
   });
 
   it("keeps root Apply off the Light path; root Preview is not Apply", async () => {
@@ -1638,6 +1644,110 @@ describe("strip provision", () => {
     });
     expect(res.status).toBe(400);
     expect(box.cfg.hw.led.ins[0]).toEqual(before);
+  });
+});
+
+describe("LED product catalog", () => {
+  it("lists seeded products and fetches one by id", async () => {
+    const { app, products } = testApp();
+    const list = await app.request("/api/led-products");
+    expect(list.status).toBe(200);
+    const body = (await list.json()) as {
+      products: { id: string; driverId: string; formFactor: string; defaultLength?: number }[];
+    };
+    expect(body.products.length).toBeGreaterThanOrEqual(2);
+    expect(body.products.every((row) => row.driverId === "ws281x")).toBe(true);
+    expect(products.list()).toEqual(body.products);
+
+    const first = body.products[0]!;
+    const found = await app.request(`/api/led-products/${first.id}`);
+    expect(found.status).toBe(200);
+    await expect(found.json()).resolves.toEqual({ product: first });
+
+    const missing = await app.request("/api/led-products/no-such-sku");
+    expect(missing.status).toBe(404);
+  });
+
+  it("creates a product and refuses unknown driver, form factor, and bad defaults", async () => {
+    const writeCfg = vi.fn(async () => true);
+    const { app } = testApp({ writeCfg });
+
+    const created = await app.request("/api/led-products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "eave-cob",
+        label: "Eave COB",
+        formFactor: "cob",
+        driverId: "ws281x",
+        defaultLength: 120,
+        defaultGpio: 16,
+        notes: "Operator SKU. Not written to WLED.",
+      }),
+    });
+    expect(created.status).toBe(201);
+    const createdBody = (await created.json()) as {
+      product: { id: string; formFactor: string; driverId: string };
+    };
+    expect(createdBody.product).toMatchObject({
+      id: "eave-cob",
+      formFactor: "cob",
+      driverId: "ws281x",
+    });
+    expect(writeCfg).not.toHaveBeenCalled();
+
+    const again = await app.request("/api/led-products/eave-cob");
+    expect(again.status).toBe(200);
+
+    const unknownDriver = await app.request("/api/led-products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        label: "Mystery",
+        formFactor: "discrete",
+        driverId: "apa102",
+      }),
+    });
+    expect(unknownDriver.status).toBe(422);
+    expect(((await unknownDriver.json()) as { error: string }).error).toBe("unknown_driver");
+
+    const badForm = await app.request("/api/led-products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        label: "Tape",
+        formFactor: "tape",
+        driverId: "ws281x",
+      }),
+    });
+    expect(badForm.status).toBe(422);
+    expect(((await badForm.json()) as { error: string }).error).toBe("bad_form_factor");
+
+    const badLength = await app.request("/api/led-products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        label: "Too long",
+        formFactor: "discrete",
+        driverId: "ws281x",
+        defaultLength: 0,
+      }),
+    });
+    expect(badLength.status).toBe(422);
+    expect(((await badLength.json()) as { error: string }).error).toBe("bad_defaults");
+
+    const duplicate = await app.request("/api/led-products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "eave-cob",
+        label: "Eave COB again",
+        formFactor: "cob",
+        driverId: "ws281x",
+      }),
+    });
+    expect(duplicate.status).toBe(409);
+    expect(writeCfg).not.toHaveBeenCalled();
   });
 });
 

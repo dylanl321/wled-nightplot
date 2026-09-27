@@ -147,7 +147,23 @@ export {
   provisionDraftFromPreset,
   STRIP_PRESETS,
 } from "./strip/catalog.ts";
-export type { StripChannel, StripDriverDescriptor } from "./strip/types.ts";
+export {
+  inheritLedProductFields,
+  isLedFormFactor,
+  LED_FORM_FACTORS,
+  parseLedProductInput,
+  seedLedProductsFromPresets,
+  validateLedProduct,
+} from "./strip/products.ts";
+export type {
+  InheritedLedFields,
+  LedFormFactor,
+  LedProduct,
+  LedProductDraft,
+  LedProductIssue,
+  LedProductParse,
+} from "./strip/products.ts";
+export type { StripBead, StripChannel, StripDriverDescriptor } from "./strip/types.ts";
 export type { StripPreset } from "./strip/presets.ts";
 export { ws281xStrip } from "./strip/ws281x.ts";
 export {

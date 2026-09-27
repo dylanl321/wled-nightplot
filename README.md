@@ -61,7 +61,7 @@ docker compose up --build
 - App: [http://127.0.0.1:43180](http://127.0.0.1:43180)
 - API: [http://127.0.0.1:43181](http://127.0.0.1:43181)
 
-Store volume: `lights-store` → `/data/lights.json`. `pnpm dev` bind stays loopback; compose publishes `0.0.0.0` on purpose.
+Store volume: `lights-store` → `/data` (`lights.json`, `led-products.json`). `pnpm dev` bind stays loopback; compose publishes `0.0.0.0` on purpose.
 
 GHCR build: Actions → Docker → Run workflow, or push to `main` / a `v*` tag. Images push only when GHCR login succeeds. Workflow does not run on pull requests.
 
@@ -81,7 +81,7 @@ By default the fixture updates `/json/info` and `/json/cfg` together. Real metal
 
 **Ports.** Find uses a real advertised port: SSDP `LOCATION`, mDNS SRV. It does not assume `:80`. A host with no port from find is listed as needs host:port — it is not Add-able. Typed address is the escape hatch (a typed host with no port still means `:80`). Listed hosts use `displayHost` and hide default `:80` (a not-WLED reject on port 80 is `192.168.1.80`, not `192.168.1.80:80`). The fixture is **not** on 80; type `127.0.0.1:48210` or use the demo target list.
 
-Enrolled Lights and declared Elements persist in `data/lights.json` (override with `NIGHTPLOT_STORE_PATH`). Find Lights also probes `NIGHTPLOT_DISCOVERY_TARGETS` (comma-separated `host` / `host:port` — include the port when it is not 80). Find probes up to **four** collected hosts at a time; a dead probe aborts in about 3 s and does not block the rest of the scan. After `/json/info` answers, `/json/state` is a short enrichment — a hang does not add another 3 s. The listed reason uses the time that actually elapsed, or generic **probe failed** when the refuse was instant.
+Enrolled Lights and declared Elements persist in `data/lights.json` (override with `NIGHTPLOT_STORE_PATH`). Operator LED products persist in `data/led-products.json` (override with `NIGHTPLOT_LED_PRODUCTS_PATH`). Find Lights also probes `NIGHTPLOT_DISCOVERY_TARGETS` (comma-separated `host` / `host:port` — include the port when it is not 80). Find probes up to **four** collected hosts at a time; a dead probe aborts in about 3 s and does not block the rest of the scan. After `/json/info` answers, `/json/state` is a short enrichment — a hang does not add another 3 s. The listed reason uses the time that actually elapsed, or generic **probe failed** when the refuse was instant.
 
 ## Docs
 
@@ -105,7 +105,10 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | Method | Path | What |
 | --- | --- | --- |
 | GET | `/health` | Slice + liveness |
-| GET | `/api/catalogs` | Controller / strip / discovery seams, plus named strip presets (`stripPresets`) |
+| GET | `/api/catalogs` | Controller / strip / discovery seams, named strip presets (`stripPresets`), operator LED products (`ledProducts`) |
+| GET | `/api/led-products` | Nightplot LED product catalog (seeded SKUs + operator creates). Does not write WLED. |
+| GET | `/api/led-products/:id` | One catalog row. 404 if missing. |
+| POST | `/api/led-products` | Create a product. 422 on unknown `driverId`, bad `formFactor`, or bad defaults. Does not write WLED. |
 | GET | `/api/lights` | Enrolled Lights (live snapshot or grey + last-seen), declared Elements, unenrolled tray |
 | GET | `/api/lights/:id` | Inspect payload: identity, declared Elements, reported segments, drift, live session |
 | GET | `/api/lights/:id/live` | Same Light plus current `/json/live` beads |
@@ -147,7 +150,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | Path | What |
 | --- | --- |
 | `apps/web` | Quiet-utility Lights rack, Discover, Inspect / Strip / Edit ranges / Test live / Safe settings, All Off, Delete, `StripBeads` |
-| `apps/server` | Discover/connect, JSON store, WLED snapshot + live + Apply + Strip provision + All Off + Delete + Safe settings + fixture |
+| `apps/server` | Discover/connect, JSON Light store, LED product catalog, WLED snapshot + live + Apply + Strip provision + All Off + Delete + Safe settings + fixture |
 | `packages/shared` | LAN guard, WLED parse, catalogs, Light / Element types |
 | `docs/ui/` | Nightplot Configure v2 prototype. See [docs/ui/README.md](docs/ui/README.md). |
 | `docs/PLANE.md` | CONFIG tickets, REST-only Plane duties. |

@@ -41,6 +41,7 @@ ENV NIGHTPLOT_API_PORT=43181
 ENV NIGHTPLOT_WEB_HOST=0.0.0.0
 ENV NIGHTPLOT_WEB_PORT=43180
 ENV NIGHTPLOT_STORE_PATH=/data/lights.json
+ENV NIGHTPLOT_LED_PRODUCTS_PATH=/data/led-products.json
 COPY --from=build /app /app
 RUN chmod +x /app/docker-entrypoint.sh \
   && mkdir -p /data \

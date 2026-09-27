@@ -16,6 +16,7 @@ start_api() {
   export NIGHTPLOT_API_HOST="${NIGHTPLOT_API_HOST:-0.0.0.0}"
   export NIGHTPLOT_API_PORT="${NIGHTPLOT_API_PORT:-43181}"
   export NIGHTPLOT_STORE_PATH="${NIGHTPLOT_STORE_PATH:-/data/lights.json}"
+  export NIGHTPLOT_LED_PRODUCTS_PATH="${NIGHTPLOT_LED_PRODUCTS_PATH:-/data/led-products.json}"
   cd "$ROOT/apps/server"
   exec "$TSX" src/index.ts
 }
@@ -32,6 +33,7 @@ start_all() {
   export NIGHTPLOT_API_HOST="${NIGHTPLOT_API_HOST:-0.0.0.0}"
   export NIGHTPLOT_API_PORT="${NIGHTPLOT_API_PORT:-43181}"
   export NIGHTPLOT_STORE_PATH="${NIGHTPLOT_STORE_PATH:-/data/lights.json}"
+  export NIGHTPLOT_LED_PRODUCTS_PATH="${NIGHTPLOT_LED_PRODUCTS_PATH:-/data/led-products.json}"
   export NIGHTPLOT_WEB_HOST="${NIGHTPLOT_WEB_HOST:-0.0.0.0}"
   export NIGHTPLOT_WEB_PORT="${NIGHTPLOT_WEB_PORT:-43180}"
   export NIGHTPLOT_API_URL="${NIGHTPLOT_API_URL:-http://127.0.0.1:43181}"

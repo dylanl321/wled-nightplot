@@ -25,7 +25,7 @@ First members. Home directories are the registration point.
 | Strip / driver | WS281x | `packages/shared/src/strip/` | `ws281xStrip` — `wired: false`. Pixels go through WLED, not a local driver |
 | Discovery | mDNS / SSDP / address probe | `packages/shared/src/discovery/` | `implementation: "registered"`. Empty results are honest |
 
-`GET /api/catalogs` returns `catalogSnapshot()` (`packages/shared/src/catalog.ts`). `CURRENT_SLICE` is `"R6"`. Named strip presets live in `packages/shared/src/strip/presets.ts` (`stripPresets` on that payload).
+`GET /api/catalogs` returns `catalogSnapshot()` (`packages/shared/src/catalog.ts`). `CURRENT_SLICE` is `"R6"`. Named strip presets live in `packages/shared/src/strip/presets.ts` (`stripPresets` on that payload). Operator LED products (`LedProduct`) live in `packages/shared/src/strip/products.ts` and on that payload as `ledProducts` — a Nightplot catalog, not a WLED write.
 
 `registered` means the slot exists. It is not proof hardware passed. `ControllerDescriptor.implementation` / `wired` / `capabilities` stay honest (`packages/shared/src/controller/types.ts`).
 
@@ -39,6 +39,7 @@ First members. Home directories are the registration point.
 | `WledSnapshot` | `packages/shared/src/wled/snapshot.ts` | Parsed `/json` (info + state) |
 | `WledSafeSettings` | `packages/shared/src/safe.ts` | Small Safe set; fingerprint-gated |
 | `WledStripProvision` | `packages/shared/src/provision.ts` | First-time bus: type / length / GPIO |
+| `LedProduct` | `packages/shared/src/strip/products.ts` | Operator LED SKU. `formFactor` is metadata. `driverId` must be a registered strip driver |
 
 Unreachable: `markUnreachable` in `apps/server/src/domain.ts` clears `on` / `brightness`. `beadFor` returns `"unknown"` — never a stored last colour.
 
@@ -50,6 +51,7 @@ Unreachable: `markUnreachable` in `apps/server/src/domain.ts` clears `on` / `bri
 | --- | --- | --- |
 | HTTP | `createApp` | `apps/server/src/app.ts` |
 | Store | `FileLightsStore` | `apps/server/src/store/lights-store.ts` |
+| LED products | `FileLedProductsStore` | `apps/server/src/store/led-products-store.ts` |
 | Probe | `createWledProbe` | `apps/server/src/wled/client.ts` (`TIMEOUT_MS` 3000) |
 | Live write / `/json/live` | `createWledWriter`, `createWledLiveReader` | `apps/server/src/wled/live.ts` |
 | cfg | `createWledCfgReader`, `createWledCfgWriter` | `apps/server/src/wled/cfg.ts` |
@@ -70,7 +72,7 @@ Find must use an advertised port (SSDP `LOCATION` in `apps/server/src/discovery/
 
 ## Persistence
 
-`FileLightsStore` writes `{ version: 1, lights, elements }` to `data/lights.json` (or `NIGHTPLOT_STORE_PATH`).
+`FileLightsStore` writes `{ version: 1, lights, elements }` to `data/lights.json` (or `NIGHTPLOT_STORE_PATH`). `FileLedProductsStore` writes `{ version: 1, products }` to `data/led-products.json` (or `NIGHTPLOT_LED_PRODUCTS_PATH`). First boot seeds from `STRIP_PRESETS`. Neither file is a WLED write.
 
 ## Stubs / NYI (honest)
 

@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   CURRENT_SLICE,
   allOffSummary,
@@ -8,6 +10,7 @@ import {
   buildDeleteChecks,
   canDelete,
   catalogSnapshot,
+  parseLedProductInput,
   deleteRefuseReason,
   decideProbeAddress,
   displayHost,
@@ -66,6 +69,7 @@ import {
   rowFromProbe,
 } from "./domain.ts";
 import { createLiveEngine } from "./live/engine.ts";
+import { FileLedProductsStore } from "./store/led-products-store.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
 import type { ProbeFn } from "./wled/client.ts";
 import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
@@ -73,6 +77,7 @@ import { applyRangesWrite, type ReadLiveFn, type WriteStateFn } from "./wled/liv
 
 export type AppDeps = {
   store: FileLightsStore;
+  products?: FileLedProductsStore;
   probe: ProbeFn;
   collect: CollectFn;
   write: WriteStateFn;
@@ -84,6 +89,9 @@ export type AppDeps = {
 
 export function createApp(deps: AppDeps) {
   const app = new Hono();
+  const products =
+    deps.products ??
+    new FileLedProductsStore(join(tmpdir(), `nightplot-led-products-${randomUUID()}.json`));
   const session: { rows: DiscoverRow[] } = { rows: [] };
   const nowIso = () => (deps.now ?? (() => new Date()))().toISOString();
   const live = createLiveEngine({
@@ -107,7 +115,43 @@ export function createApp(deps: AppDeps) {
     }),
   );
 
-  app.get("/api/catalogs", (c) => c.json(catalogSnapshot()));
+  app.get("/api/catalogs", (c) => c.json(catalogSnapshot(products.list())));
+
+  app.get("/api/led-products", (c) => c.json({ products: products.list() }));
+
+  app.get("/api/led-products/:id", (c) => {
+    const product = products.findById(c.req.param("id"));
+    if (!product) {
+      return c.json(
+        { error: "not_found", message: "That LED product is not in the catalog." },
+        404,
+      );
+    }
+    return c.json({ product });
+  });
+
+  app.post("/api/led-products", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const raw =
+      body && typeof body === "object" && "product" in (body as object)
+        ? (body as { product?: unknown }).product
+        : body;
+    const parsed = parseLedProductInput(raw);
+    if (!parsed.ok) {
+      const status = parsed.error === "invalid" ? 400 : 422;
+      return c.json({ error: parsed.error, message: parsed.message }, status);
+    }
+    const id = parsed.product.id || randomUUID();
+    if (products.findById(id)) {
+      return c.json(
+        { error: "duplicate", message: "A product with that id is already in the catalog." },
+        409,
+      );
+    }
+    const product = { ...parsed.product, id };
+    products.create(product);
+    return c.json({ product }, 201);
+  });
 
   app.get("/api/lights", async (c) => {
     const payload = await listLights();
