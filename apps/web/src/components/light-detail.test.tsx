@@ -201,7 +201,7 @@ describe("LightDetail info-only segments", () => {
     expect(row.textContent).toMatch(/no compare/);
     expect(row.textContent).not.toMatch(/matches/);
     const apply = screen.getByRole("button", { name: "Apply" });
-    expect(apply).toBeDisabled();
+    expect((apply as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/leftover segments can be cleared/)).toBeTruthy();
   });
 
