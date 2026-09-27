@@ -65,7 +65,12 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { resolveCorsOrigins } from "./cors-origins.ts";
 import type { CollectFn } from "./discovery/collect.ts";
-import { FIND_PROBE_CONCURRENCY, mapLimit } from "./discovery/map-limit.ts";
+import {
+  ALL_OFF_PROBE_CONCURRENCY,
+  FIND_PROBE_CONCURRENCY,
+  mapLimit,
+  mapLimitSettled,
+} from "./discovery/map-limit.ts";
 import {
   lightDetail,
   lightFromSnapshot,
@@ -1008,6 +1013,66 @@ export function createApp(deps: AppDeps) {
     });
   });
 
+  function allOffUnknownRow(
+    light: Pick<Light, "id" | "name" | "hostname" | "port">,
+    elapsedMs = 0,
+  ): AllOffRow {
+    const dest: HostPort = { hostname: light.hostname, port: light.port };
+    return {
+      lightId: light.id,
+      name: light.name,
+      status: "unknown",
+      detail: allOffNoAnswerReason(displayHost(dest), elapsedMs),
+    };
+  }
+
+  async function allOffOneLight(
+    stored: Light,
+    noteFixture: () => void,
+  ): Promise<AllOffRow> {
+    const dest: HostPort = { hostname: stored.hostname, port: stored.port };
+    const { light, live: snap, elapsedMs } = await refreshOne(stored);
+    const liveRead = snap ? await live.read(light) : null;
+    if (liveRead?.source === "fixture") noteFixture();
+    if (light.reachability !== "online" || !snap) {
+      return allOffUnknownRow(light, elapsedMs);
+    }
+    if (snap.on === false) {
+      return {
+        lightId: light.id,
+        name: light.name,
+        status: "already-off",
+        detail: "was already off",
+      };
+    }
+    const written = await deps.write(dest, { on: false });
+    const reread = await deps.probe(dest);
+    if (!written || reread.kind !== "found") {
+      return {
+        lightId: light.id,
+        name: light.name,
+        status: "failed",
+        detail: "The controller did not take off.",
+      };
+    }
+    const next = lightFromSnapshot(dest, reread.snapshot, nowIso(), light);
+    deps.store.replace(next);
+    if (reread.snapshot.on === false) {
+      return {
+        lightId: next.id,
+        name: next.name,
+        status: "off",
+        detail: "reports on: false",
+      };
+    }
+    return {
+      lightId: next.id,
+      name: next.name,
+      status: "failed",
+      detail: "still reports on",
+    };
+  }
+
   async function runAllOff(lightIds?: string[]): Promise<AllOffResult> {
     const enrolled = deps.store.load();
     const targets = lightIds?.length
@@ -1025,62 +1090,23 @@ export function createApp(deps: AppDeps) {
         name: owner?.name ?? session.target.label,
       });
     }
-    const rows: AllOffRow[] = [];
     let sawFixture = false;
-    for (const stored of targets) {
-      const dest: HostPort = { hostname: stored.hostname, port: stored.port };
-      const started = Date.now();
-      const { light, live: snap } = await refreshOne(stored);
-      const elapsedMs = Date.now() - started;
-      const liveRead = snap ? await live.read(light) : null;
-      if (liveRead?.source === "fixture") sawFixture = true;
-      if (light.reachability !== "online" || !snap) {
-        rows.push({
-          lightId: light.id,
-          name: light.name,
-          status: "unknown",
-          detail: allOffNoAnswerReason(displayHost(dest), elapsedMs),
-        });
-        continue;
-      }
-      if (snap.on === false) {
-        rows.push({
-          lightId: light.id,
-          name: light.name,
-          status: "already-off",
-          detail: "was already off",
-        });
-        continue;
-      }
-      const written = await deps.write(dest, { on: false });
-      const reread = await deps.probe(dest);
-      if (!written || reread.kind !== "found") {
-        rows.push({
-          lightId: light.id,
-          name: light.name,
-          status: "failed",
-          detail: "The controller did not take off.",
-        });
-        continue;
-      }
-      const next = lightFromSnapshot(dest, reread.snapshot, nowIso(), light);
+    // FileLightsStore.replace is a sync read-modify-write, so overlapping Light
+    // jobs do not drop a sibling update. Do not invent success across Lights.
+    const settled = await mapLimitSettled(targets, ALL_OFF_PROBE_CONCURRENCY, (stored) =>
+      allOffOneLight(stored, () => {
+        sawFixture = true;
+      }),
+    );
+    const rows: AllOffRow[] = settled.map((result, index) => {
+      if (result.status === "fulfilled") return result.value;
+      const stored = targets[index]!;
+      const current = deps.store.findById(stored.id) ?? stored;
+      const next = markUnreachable(current);
       deps.store.replace(next);
-      if (reread.snapshot.on === false) {
-        rows.push({
-          lightId: next.id,
-          name: next.name,
-          status: "off",
-          detail: "reports on: false",
-        });
-      } else {
-        rows.push({
-          lightId: next.id,
-          name: next.name,
-          status: "failed",
-          detail: "still reports on",
-        });
-      }
-    }
+      // Throw / unmeasured wait — generic refuse, not a claimed 3 s.
+      return allOffUnknownRow(next);
+    });
     const failedIds = rows
       .filter((row) => row.status === "failed" || row.status === "unknown")
       .map((row) => row.lightId);

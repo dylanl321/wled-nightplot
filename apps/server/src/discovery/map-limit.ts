@@ -4,6 +4,13 @@
  */
 export const FIND_PROBE_CONCURRENCY = 4;
 
+/**
+ * All Off probes this many enrolled Lights at once.
+ * Each Light still uses the ~3 s dead-host timeout from CONFIG-15.
+ * Fail-closed per Light — a refuse or throw does not invent success for the others.
+ */
+export const ALL_OFF_PROBE_CONCURRENCY = 4;
+
 export async function mapLimit<T, R>(
   items: readonly T[],
   limit: number,
@@ -37,4 +44,19 @@ export async function mapLimit<T, R>(
   );
   if (firstError !== undefined) throw firstError;
   return results;
+}
+
+/** Like mapLimit, but every item settles. Later items still run after an earlier throw. */
+export async function mapLimitSettled<T, R>(
+  items: readonly T[],
+  limit: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  return mapLimit(items, limit, async (item, index) => {
+    try {
+      return { status: "fulfilled" as const, value: await mapper(item, index) };
+    } catch (reason) {
+      return { status: "rejected" as const, reason };
+    }
+  });
 }
