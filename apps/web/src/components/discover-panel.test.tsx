@@ -13,6 +13,49 @@ describe("DiscoverPanel Find copy", () => {
     expect(screen.getByText(/dead probe stops/)).toBeTruthy();
     expect(screen.getByText(/3 s/)).toBeTruthy();
   });
+
+  it("shows generic probe-failed reason without inventing a 3 s wait", () => {
+    render(
+      <DiscoverPanel
+        enrolled={[]}
+        initialCandidates={[
+          discoverRow({
+            key: "192.168.1.90:80",
+            hostname: "192.168.1.90",
+            displayHost: "192.168.1.90",
+            status: "rejected",
+            reason: "probe failed.",
+            reasonCode: "probe-failed",
+          }),
+        ]}
+      />,
+    );
+    expect(screen.getByText("192.168.1.90")).toBeTruthy();
+    expect(screen.getByText("probe failed.")).toBeTruthy();
+    expect(screen.getAllByText("Probe failed").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/didn’t return a snapshot in 3 s/)).toBeNull();
+  });
+
+  it("shows elapsed probe-failed copy when the server measured a wait", () => {
+    render(
+      <DiscoverPanel
+        enrolled={[]}
+        initialCandidates={[
+          discoverRow({
+            key: "192.168.1.90:80",
+            hostname: "192.168.1.90",
+            displayHost: "192.168.1.90",
+            status: "rejected",
+            reason: "192.168.1.90 didn’t return a snapshot in 2 s.",
+            reasonCode: "probe-failed",
+          }),
+        ]}
+      />,
+    );
+    expect(
+      screen.getByText("192.168.1.90 didn’t return a snapshot in 2 s."),
+    ).toBeTruthy();
+  });
 });
 
 describe("DiscoverPanel portWarning", () => {

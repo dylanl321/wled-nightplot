@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.6 — Probe-failed copy uses elapsed or generic (CONFIG-28)
+
+- `probe-failed` no longer always says “in 3 s”. Instant refuse (connection refused, fast HTTP miss) is generic **probe failed.** A wait of at least ~0.5 s names the actual elapsed seconds.
+- Discover still shows the CONFIG-15 abort bound (“a dead probe stops in 3 s”). That is the budget, not a claim that this probe waited 3 s.
+- v2 Discover typed-address “Nothing added” example uses the generic string. All Off “no answer … in 3 s” is unchanged (adjacent).
+- Fixture / stub answers are still not Hardware Done. Unreachable stays grey with last-seen.
+
 ## 0.7.5 — Find probes collected hosts in parallel (CONFIG-27)
 
 - `POST /api/discover` probes collected hosts with a bound of **four** at a time (`FIND_PROBE_CONCURRENCY`). It no longer waits for one dead box before starting the next.
