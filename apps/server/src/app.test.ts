@@ -2157,7 +2157,18 @@ describe("safe settings", () => {
       body: JSON.stringify({ settings: { displayName: "Nope" } }),
     });
     expect(res.status).toBe(422);
-    expect(((await res.json()) as { message: string }).message).toMatch(/isn’t a shape we write/);
+    const body = (await res.json()) as {
+      error: string;
+      message: string;
+      safeWrite?: { status: string; matched: boolean; message: string };
+    };
+    expect(body.error).toBe("refused");
+    expect(body.message).toMatch(/isn’t a shape we write/);
+    expect(body.safeWrite).toMatchObject({
+      status: "refused",
+      matched: false,
+    });
+    expect(body.safeWrite?.message).toBe(body.message);
     expect(cfg.cfg).toEqual(before);
   });
 });
