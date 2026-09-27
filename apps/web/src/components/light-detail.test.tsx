@@ -2,6 +2,7 @@ import {
   APPLY_ADOPT_EMPTY_REASON,
   APPLY_ADOPT_UNKNOWN_REASON,
   APPLY_UNKNOWN_SEGMENTS_MESSAGE,
+  APPLY_UNREAD_CAPTION,
   applyOutcome,
   applyUnknownSegments,
   applyUnreadFailed,
@@ -751,6 +752,8 @@ describe("LightDetail ApplyFailed copy", () => {
     expect(screen.queryByText(/Nothing else on the controller changed/)).toBeNull();
     expect(screen.getByText("Your draft is kept.")).toBeTruthy();
     expect(screen.getByText("unknown")).toBeTruthy();
+    expect(screen.getByText(APPLY_UNREAD_CAPTION)).toBeTruthy();
+    expect(screen.queryByText(/The controller reported these ranges/)).toBeNull();
   });
 
   it("still titles a known mismatch as Apply didn’t stick", async () => {
@@ -768,6 +771,8 @@ describe("LightDetail ApplyFailed copy", () => {
     expect(await screen.findByText(/Apply didn’t stick/)).toBeTruthy();
     expect(screen.queryByText(APPLY_UNKNOWN_SEGMENTS_MESSAGE)).toBeNull();
     expect(screen.getByText(/Nothing else on the controller changed/)).toBeTruthy();
+    expect(screen.getByText(/The controller reported these ranges/)).toBeTruthy();
+    expect(screen.queryByText(APPLY_UNREAD_CAPTION)).toBeNull();
   });
 
   it("treats write-failed unread apply.read as unknown — not a known empty list", async () => {
@@ -789,6 +794,8 @@ describe("LightDetail ApplyFailed copy", () => {
     expect(screen.queryByText("nothing")).toBeNull();
     expect(screen.getByText(APPLY_ADOPT_UNKNOWN_REASON)).toBeTruthy();
     expect(screen.queryByText(APPLY_ADOPT_EMPTY_REASON)).toBeNull();
+    expect(screen.getByText(APPLY_UNREAD_CAPTION)).toBeTruthy();
+    expect(screen.queryByText(/The controller reported these ranges/)).toBeNull();
     expect(
       (screen.getByRole("button", { name: "Use controller’s" }) as HTMLButtonElement).disabled,
     ).toBe(true);
@@ -813,6 +820,8 @@ describe("LightDetail ApplyFailed copy", () => {
     expect(screen.queryByText("nothing")).toBeNull();
     expect(screen.getByText(APPLY_ADOPT_UNKNOWN_REASON)).toBeTruthy();
     expect(screen.queryByText(APPLY_ADOPT_EMPTY_REASON)).toBeNull();
+    expect(screen.getByText(APPLY_UNREAD_CAPTION)).toBeTruthy();
+    expect(screen.queryByText(/The controller reported these ranges/)).toBeNull();
   });
 });
 

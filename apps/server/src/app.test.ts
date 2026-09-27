@@ -1172,6 +1172,7 @@ describe("apply + re-address", () => {
         message: string;
         read: { start: number; stop: number }[] | null;
         rows: unknown[];
+        caption: string;
       };
     };
     expect(written).toBe(true);
@@ -1183,6 +1184,8 @@ describe("apply + re-address", () => {
     expect(body.apply.rows).toEqual([]);
     expect(body.apply.message).toMatch(/did not take the ranges/);
     expect(body.message).toMatch(/did not take the ranges/);
+    expect(body.apply.caption).toMatch(/Ranges were not read/);
+    expect(body.apply.caption).not.toMatch(/controller reported these ranges/);
   });
 
   it("reread-failed Apply does not invent apply.read as a known empty list", async () => {
@@ -1216,6 +1219,7 @@ describe("apply + re-address", () => {
         message: string;
         read: { start: number; stop: number }[] | null;
         rows: unknown[];
+        caption: string;
       };
     };
     expect(written).toBe(true);
@@ -1227,6 +1231,8 @@ describe("apply + re-address", () => {
     expect(body.apply.rows).toEqual([]);
     expect(body.apply.message).toMatch(/could not re-read/);
     expect(body.message).toMatch(/could not re-read/);
+    expect(body.apply.caption).toMatch(/Ranges were not read/);
+    expect(body.apply.caption).not.toMatch(/controller reported these ranges/);
   });
 
   it("does not treat unknown reread segments as empty before applyOutcome", async () => {
@@ -1260,6 +1266,7 @@ describe("apply + re-address", () => {
         message: string;
         read: { start: number; stop: number }[] | null;
         rows: unknown[];
+        caption: string;
       };
     };
     expect(written).toBe(true);
@@ -1273,6 +1280,8 @@ describe("apply + re-address", () => {
     expect(body.apply.message).toMatch(/segments are unknown/);
     expect(body.apply.message).not.toMatch(/didn’t stick/);
     expect(body.message).toMatch(/segments are unknown/);
+    expect(body.apply.caption).toMatch(/Software-green from the fixture/);
+    expect(body.apply.caption).not.toMatch(/controller reported these ranges/);
     expect(store.findById(id)?.lastSnapshot).toBeFalsy();
   });
 
