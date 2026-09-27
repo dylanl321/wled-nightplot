@@ -5,6 +5,7 @@ import {
   APPLY_UNKNOWN_COLOUR_REASON,
   APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE,
   APPLY_UNKNOWN_SEGMENTS_MESSAGE,
+  APPLY_UNREAD_CAPTION,
   adoptControllerRangesReason,
   adoptableControllerRanges,
   applyCaption,
@@ -131,7 +132,9 @@ describe("apply match", () => {
     expect(result.status).toBe("mismatch");
     expect(result.message).toMatch(/didn’t stick/);
     expect(result.rows[0]?.matched).toBe(false);
-    expect(applyCaption("fixture")).toMatch(/Not Hardware Done/);
+    expect(result.caption).toBe(applyCaption("fixture", [{ start: 24, stop: 40 }]));
+    expect(result.caption).toMatch(/Not Hardware Done/);
+    expect(result.caption).not.toMatch(/controller reported these ranges/);
   });
 
   it("does not invent a known empty read when segments were not read", () => {
@@ -146,6 +149,8 @@ describe("apply match", () => {
     expect(writeFailed.read).toBeNull();
     expect(writeFailed.read).not.toEqual([]);
     expect(writeFailed.rows).toEqual([]);
+    expect(writeFailed.caption).toBe(APPLY_UNREAD_CAPTION);
+    expect(writeFailed.caption).not.toMatch(/controller reported these ranges/);
     expect(adoptControllerRangesReason(writeFailed)).toBe(APPLY_ADOPT_UNKNOWN_REASON);
     expect(adoptControllerRangesReason(writeFailed)).not.toBe(APPLY_ADOPT_EMPTY_REASON);
 
@@ -156,11 +161,15 @@ describe("apply match", () => {
     );
     expect(rereadFailed.read).toBeNull();
     expect(rereadFailed.read).not.toEqual([]);
+    expect(rereadFailed.caption).toBe(APPLY_UNREAD_CAPTION);
+    expect(rereadFailed.caption).not.toMatch(/controller reported these ranges/);
     expect(adoptControllerRangesReason(rereadFailed)).toBe(APPLY_ADOPT_UNKNOWN_REASON);
 
     const knownEmpty = applyOutcome(sent, [], "controller");
     expect(knownEmpty.read).toEqual([]);
     expect(knownEmpty.status).toBe("mismatch");
+    expect(knownEmpty.caption).toMatch(/controller reported these ranges/);
+    expect(knownEmpty.caption).not.toBe(APPLY_UNREAD_CAPTION);
     expect(adoptControllerRangesReason(knownEmpty)).toBe(APPLY_ADOPT_EMPTY_REASON);
   });
 
@@ -172,7 +181,8 @@ describe("apply match", () => {
     expect(unknown.read).toBeNull();
     expect(unknown.rows).toEqual([]);
     expect(unknown.message).toBe(APPLY_UNKNOWN_SEGMENTS_MESSAGE);
-    expect(unknown.caption).toMatch(/Not Hardware Done/);
+    expect(unknown.caption).toBe(APPLY_UNREAD_CAPTION);
+    expect(unknown.caption).not.toMatch(/controller reported these ranges/);
 
     const viaOutcome = applyOutcome(sent, null, "fixture");
     expect(viaOutcome).toEqual(applyUnknownSegments(sent, "fixture"));
@@ -201,6 +211,21 @@ describe("apply match", () => {
     expect(declaredVsEmpty.read).toEqual([]);
     expect(declaredVsEmpty.message).toMatch(/didn’t stick/);
     expect(declaredVsEmpty.message).not.toBe(APPLY_UNKNOWN_SEGMENTS_MESSAGE);
+    expect(declaredVsEmpty.caption).toMatch(/controller reported these ranges/);
+  });
+
+  it("captions from the read, not the source — unread does not claim a report", () => {
+    expect(applyCaption("controller", null)).toBe(APPLY_UNREAD_CAPTION);
+    expect(applyCaption("controller", null)).not.toMatch(/controller reported these ranges/);
+    expect(applyCaption("fixture", null)).toMatch(/Software-green from the fixture/);
+    expect(applyCaption("fixture", null)).not.toMatch(/controller reported these ranges/);
+    expect(applyCaption("controller", [{ start: 0, stop: 24 }])).toMatch(
+      /controller reported these ranges/,
+    );
+    expect(applyCaption("controller", [])).toMatch(/controller reported these ranges/);
+    expect(applyCaption("fixture", [{ start: 0, stop: 24 }])).toMatch(
+      /Software-green from the fixture/,
+    );
   });
 
   it("offers adopt only when the reread named ranges", () => {

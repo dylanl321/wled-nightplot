@@ -4,6 +4,7 @@ export {
   APPLY_UNKNOWN_COLOUR_REASON,
   APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE,
   APPLY_UNKNOWN_SEGMENTS_MESSAGE,
+  APPLY_UNREAD_CAPTION,
   adoptControllerRangesReason,
   adoptableControllerRanges,
   adoptReportedRanges,

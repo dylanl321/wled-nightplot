@@ -39,6 +39,10 @@ export const APPLY_ADOPT_UNKNOWN_REASON =
 export const APPLY_ADOPT_EMPTY_REASON =
   "The controller reported no ranges to take.";
 
+/** ApplyFailed caption when no segment list was read (`apply.read` null). */
+export const APPLY_UNREAD_CAPTION =
+  "Ranges were not read. Not Hardware Done until you see them on the strip.";
+
 /**
  * Fail-closed Apply copy when leftover-segment clears cannot run because
  * the pre-apply segment count is unknown — not zero.
@@ -168,7 +172,7 @@ export function applyUnreadFailed(
     sent,
     read: null,
     message,
-    caption: applyCaption(source),
+    caption: applyCaption(source, null),
   };
 }
 
@@ -206,7 +210,7 @@ export function applyOutcome(
     message: matched
       ? "Controller reports the ranges we sent."
       : "Apply didn’t stick. Your draft is kept.",
-    caption: applyCaption(source),
+    caption: applyCaption(source, read),
   };
 }
 
@@ -225,9 +229,16 @@ export function adoptControllerRangesReason(apply: ApplyResult): string | null {
   return apply.read === null ? APPLY_ADOPT_UNKNOWN_REASON : APPLY_ADOPT_EMPTY_REASON;
 }
 
-export function applyCaption(source: "fixture" | "controller"): string {
+/** Caption from the reread. Unread (`null`) does not claim the controller reported ranges. */
+export function applyCaption(
+  source: "fixture" | "controller",
+  read: RangeSpan[] | null,
+): string {
   if (source === "fixture") {
     return "Software-green from the fixture. Not Hardware Done.";
+  }
+  if (read == null) {
+    return APPLY_UNREAD_CAPTION;
   }
   return "The controller reported these ranges. Not Hardware Done until you see them on the strip.";
 }
