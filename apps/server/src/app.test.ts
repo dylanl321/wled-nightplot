@@ -1982,7 +1982,12 @@ describe("strip provision", () => {
     const body = (await res.json()) as {
       light: { stripKind: string; stripBead: string; stripChip: string };
       provision: { settings: { ledType: string; length: number; gpio: number; nativeType: number } };
-      provisionWrite: { matched: boolean; sent: { ledType: string }; caption: string };
+      provisionWrite: {
+        matched: boolean;
+        sent: { ledType: string };
+        caption: string;
+        orderPreserved?: boolean;
+      };
     };
     expect(body.provisionWrite.matched).toBe(true);
     expect(body.provisionWrite.sent.ledType).toBe("sk6812-rgbw");
@@ -1994,10 +1999,68 @@ describe("strip provision", () => {
       length: 90,
       gpio: 2,
       nativeType: 30,
+      nativeOrder: 0,
+      colorOrder: "GRBW",
     });
     expect(body.provisionWrite.caption).toMatch(/Not Hardware Done/);
+    expect(body.provisionWrite.orderPreserved).toBe(false);
     expect(box.cfg.hw.led.ins[0]).toMatchObject({ type: 30, order: 0, len: 90, pin: [2] });
     expect(box.info.leds.rgbw).toBe(true);
+  });
+
+  it("returns the preserved SK6812 colour order after a same-type Apply", async () => {
+    const box = createFixtureBox({
+      ledCount: 60,
+      gpio: 16,
+      nativeType: 30,
+      nativeOrder: 1,
+    });
+    const { app, id } = await enrollFixture(box);
+    const loaded = await app.request(`/api/lights/${id}/provision`);
+    expect(loaded.status).toBe(200);
+    const before = (await loaded.json()) as {
+      provision: { settings: { colorOrder: string; nativeOrder: number } };
+    };
+    expect(before.provision.settings).toMatchObject({
+      colorOrder: "RGBW",
+      nativeOrder: 1,
+    });
+
+    const res = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provision: { ledType: "sk6812-rgbw", length: 90, gpio: 16 } }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      provision: {
+        settings: {
+          ledType: string;
+          length: number;
+          gpio: number;
+          nativeType: number;
+          nativeOrder: number;
+          colorOrder: string;
+        };
+      };
+      provisionWrite: {
+        matched: boolean;
+        orderPreserved: boolean;
+        read: { colorOrder: string; nativeOrder: number };
+      };
+    };
+    expect(body.provisionWrite.matched).toBe(true);
+    expect(body.provisionWrite.orderPreserved).toBe(true);
+    expect(body.provision.settings).toMatchObject({
+      ledType: "sk6812-rgbw",
+      length: 90,
+      gpio: 16,
+      nativeType: 30,
+      nativeOrder: 1,
+      colorOrder: "RGBW",
+    });
+    expect(body.provisionWrite.read.colorOrder).toBe("RGBW");
+    expect(box.cfg.hw.led.ins[0]).toMatchObject({ type: 30, order: 1, len: 90, pin: [16] });
   });
 
   it("Inspect seeds SK6812 from a type-30 fixture cfg after enroll", async () => {
@@ -2051,6 +2114,8 @@ describe("strip provision", () => {
     expect(body.provision.settings).toMatchObject({
       ledType: "sk6812-rgbw",
       nativeType: 30,
+      nativeOrder: 0,
+      colorOrder: "GRBW",
     });
     expect(box.cfg.hw.led.ins[0]?.type).toBe(30);
   });

@@ -34,6 +34,13 @@ export type WledStripProvision = {
   length: number | null;
   gpio: number | null;
   nativeType: number | null;
+  /** WLED `hw.led.ins[].order` (`COL_ORDER_*`). Null when cfg omitted it. */
+  nativeOrder: number | null;
+  /**
+   * Decoded live order (GRB / GRBW / …). Unknown encodings stay
+   * `WLED order N` — never a silent blank.
+   */
+  colorOrder: string | null;
 };
 
 export type WledStripProvisionDraft = {
@@ -161,6 +168,11 @@ export type ProvisionWriteResult = {
   caption: string;
   /** Present after a successful length-changing Apply. Absent on same length / mismatch. */
   ranges?: RangeLengthStory | null;
+  /**
+   * True when Apply did not change native type and therefore left `order`
+   * untouched. Absent when nothing was written.
+   */
+  orderPreserved?: boolean;
 };
 
 const emptySettings = (): WledStripProvision => ({
@@ -168,7 +180,60 @@ const emptySettings = (): WledStripProvision => ({
   length: null,
   gpio: null,
   nativeType: null,
+  nativeOrder: null,
+  colorOrder: null,
 });
+
+/**
+ * WLED `COL_ORDER_*` in `wled00/const.h` (0.14 / 0.15 / 16). RGBW types
+ * append W — order 0 is GRBW on SK6812. Extra packed encodings stay numeric.
+ */
+export const WLED_COL_ORDER_RGB = ["GRB", "RGB", "BRG", "RBG", "GBR", "BGR"] as const;
+
+export function busNativeOrder(bus: Record<string, unknown>): number | null {
+  return integer(bus.order);
+}
+
+export function colorOrderFromNative(
+  nativeOrder: number | null,
+  ledType: ProvisionLedType | "unknown",
+): string | null {
+  if (nativeOrder === null) return null;
+  const rgb =
+    Number.isInteger(nativeOrder) && nativeOrder >= 0
+      ? WLED_COL_ORDER_RGB[nativeOrder]
+      : undefined;
+  if (!rgb) return `WLED order ${nativeOrder}`;
+  return ledType === "sk6812-rgbw" ? `${rgb}W` : rgb;
+}
+
+/** Convert / catalog default for a mapped type. Null when the live type is unknown. */
+export function catalogColorOrder(ledType: ProvisionLedType | "unknown"): string | null {
+  if (ledType === "sk6812-rgbw") return "GRBW";
+  if (ledType === "ws281x") return "GRB";
+  return null;
+}
+
+/** Strip copy for the live bus order. Never a silent blank when order ≠ catalog default. */
+export function stripColorOrderCopy(input: {
+  colorOrder: string | null;
+  ledType: ProvisionLedType | "unknown";
+  afterSameTypeApply?: boolean;
+}): string {
+  const live = input.colorOrder;
+  if (!live) {
+    return "Colour order on this bus was not in /json/cfg.";
+  }
+  const catalog = catalogColorOrder(input.ledType);
+  const differs = catalog !== null && live !== catalog;
+  if (!differs) {
+    return `Colour order on this bus: ${live}.`;
+  }
+  if (input.afterSameTypeApply) {
+    return `Colour order on this bus: ${live}. This is not ${catalog} — Apply kept the order already on the box.`;
+  }
+  return `Colour order on this bus: ${live}. This is not ${catalog}.`;
+}
 
 export function provisionCaption(source: "fixture" | "controller"): string {
   if (source === "fixture") {
@@ -317,11 +382,15 @@ export function parseWledProvision(
     );
   }
 
+  const ledType = ledTypeFromNative(nativeType);
+  const nativeOrder = busNativeOrder(bus);
   const settings: WledStripProvision = {
-    ledType: ledTypeFromNative(nativeType),
+    ledType,
     length: busLength(bus),
     gpio: gpioList?.[0] ?? null,
     nativeType,
+    nativeOrder,
+    colorOrder: colorOrderFromNative(nativeOrder, ledType),
   };
 
   const typeMapping =
@@ -413,7 +482,12 @@ export function buildProvisionWrite(
   rawCfg: unknown,
   fingerprint: ProvisionFingerprint,
 ):
-  | { ok: true; body: Record<string, unknown>; sent: WledStripProvisionDraft }
+  | {
+      ok: true;
+      body: Record<string, unknown>;
+      sent: WledStripProvisionDraft;
+      orderPreserved: boolean;
+    }
   | { ok: false; message: string } {
   const parsed = parseWledProvision(rawCfg, fingerprint.firmware, "controller");
   const reason = provisionRefuseReason({
@@ -446,7 +520,8 @@ export function buildProvisionWrite(
   next.len = draft.length;
   const nativeType = busNativeType(current);
   // Convert only. Same-type length / GPIO must not rewrite colour order.
-  if (nativeType !== mapping.native.type) {
+  const orderPreserved = nativeType === mapping.native.type;
+  if (!orderPreserved) {
     next.type = mapping.native.type;
     next.order = mapping.native.order;
   }
@@ -460,6 +535,7 @@ export function buildProvisionWrite(
     ok: true,
     body: { hw: { led: { ins: [next] } } },
     sent,
+    orderPreserved,
   };
 }
 

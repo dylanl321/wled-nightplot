@@ -8,6 +8,8 @@ export type FixtureBoxOptions = {
   gpio?: number;
   /** WLED `hw.led.ins[0].type`. Default `TYPE_WS2812_RGB` (22). */
   nativeType?: number;
+  /** WLED `hw.led.ins[0].order`. Default `COL_ORDER_GRB` (0). */
+  nativeOrder?: number;
   cfgEnabled?: boolean;
   mismatch?: boolean;
   busMismatch?: boolean;
@@ -35,6 +37,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
   let ledCount = options.ledCount ?? 60;
   const gpio = options.gpio ?? 16;
   const nativeType = options.nativeType ?? WLED_WS281X_NATIVE_TYPE;
+  const nativeOrder = options.nativeOrder ?? 0;
   const info = {
     ver: options.ver ?? "0.15.4",
     name: options.name ?? "WLED",
@@ -63,7 +66,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
             len: ledCount,
             pin: [gpio],
             type: nativeType,
-            order: 0,
+            order: nativeOrder,
             rev: false,
             skip: 0,
           },
