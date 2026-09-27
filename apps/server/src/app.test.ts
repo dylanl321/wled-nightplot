@@ -1689,11 +1689,15 @@ describe("strip provision", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
+      light: { stripKind: string; stripBead: string; stripChip: string };
       provision: { settings: { ledType: string; length: number; gpio: number; nativeType: number } };
       provisionWrite: { matched: boolean; sent: { ledType: string }; caption: string };
     };
     expect(body.provisionWrite.matched).toBe(true);
     expect(body.provisionWrite.sent.ledType).toBe("sk6812-rgbw");
+    expect(body.light.stripKind).toBe("sk6812-rgbw");
+    expect(body.light.stripBead).toBe("rgbw");
+    expect(body.light.stripChip).toBe("SK6812 RGBW");
     expect(body.provision.settings).toMatchObject({
       ledType: "sk6812-rgbw",
       length: 90,
@@ -1707,16 +1711,21 @@ describe("strip provision", () => {
 
   it("reads an SK6812 fixture bus without writing", async () => {
     const box = createFixtureBox({ ledCount: 80, gpio: 16, nativeType: 30 });
-    const { app, id } = await enrollFixture(box);
+    const { app, store, id } = await enrollFixture(box);
     const res = await app.request(`/api/lights/${id}/provision`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
+      light: { stripKind: string; stripBead: string; stripChip: string };
       provision: {
         settings: { ledType: string; nativeType: number };
         refuse: string | null;
         fingerprint: { writable: boolean; mappingId: string | null };
       };
     };
+    expect(body.light.stripKind).toBe("sk6812-rgbw");
+    expect(body.light.stripBead).toBe("rgbw");
+    expect(body.light.stripChip).toBe("SK6812 RGBW");
+    expect(store.findById(id)?.stripKind).toBe("sk6812-rgbw");
     expect(body.provision.refuse).toBeNull();
     expect(body.provision.fingerprint.writable).toBe(true);
     expect(body.provision.fingerprint.mappingId).toBe("wled-0.15-sk6812-rgbw-grbw");
@@ -1926,6 +1935,122 @@ describe("LED product attach", () => {
     ).toBeNull();
     expect(store.findById(id)?.ledProductId).toBeNull();
     expect(writeCfg).not.toHaveBeenCalled();
+  });
+
+  it("Inspect chrome follows an attached SK6812 product — not snapshot rgbw", async () => {
+    const { app, store } = testApp();
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.72" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string; rgbw: boolean } }).light.id;
+    const created = await app.request("/api/led-products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "porch-sk6812",
+        label: "Porch SK6812",
+        formFactor: "discrete",
+        driverId: "sk6812-rgbw",
+      }),
+    });
+    expect(created.status).toBe(201);
+
+    const attached = await app.request(`/api/lights/${id}/led-product`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ledProductId: "porch-sk6812" }),
+    });
+    const attachedBody = (await attached.json()) as {
+      light: { rgbw: boolean; stripBead: string; stripChip: string; bead: string };
+    };
+    expect(attachedBody.light.rgbw).toBe(false);
+    expect(attachedBody.light.stripBead).toBe("rgbw");
+    expect(attachedBody.light.stripChip).toBe("SK6812 RGBW");
+    expect(store.findById(id)?.stripKind).toBe("ws281x");
+
+    const inspect = await app.request(`/api/lights/${id}`);
+    const inspectBody = (await inspect.json()) as {
+      light: { stripBead: string; stripChip: string; bead: string };
+    };
+    expect(inspectBody.light.stripBead).toBe("rgbw");
+    expect(inspectBody.light.stripChip).toBe("SK6812 RGBW");
+    expect(inspectBody.light.bead).toBe("#ffa000");
+  });
+});
+
+describe("bead / Inspect RGBW honesty", () => {
+  it("does not label snapshot rgbw as WS281x RGBW", async () => {
+    const { app, store } = testApp({
+      probe: async () => ({
+        kind: "found" as const,
+        snapshot: { ...snapshot, rgbw: true },
+      }),
+    });
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.72" }),
+    });
+    const body = (await enroll.json()) as {
+      light: { rgbw: boolean; stripKind: string; stripBead: string; stripChip: string };
+    };
+    expect(body.light.rgbw).toBe(true);
+    expect(body.light.stripKind).toBe("ws281x");
+    expect(body.light.stripBead).toBe("rgb");
+    expect(body.light.stripChip).toBe("WS281x RGB");
+    expect(store.load()[0]?.rgbw).toBe(true);
+    expect(store.load()[0]?.stripKind).toBe("ws281x");
+  });
+
+  it("keeps unreachable RGBW beads unknown — never a last colour", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
+    const file = join(dir, "lights.json");
+    const online = testApp({ store: new FileLightsStore(file) });
+    const enroll = await online.app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.40" }),
+    });
+    const { light } = (await enroll.json()) as { light: { id: string } };
+    await online.app.request("/api/led-products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "porch-sk6812",
+        label: "Porch SK6812",
+        formFactor: "discrete",
+        driverId: "sk6812-rgbw",
+      }),
+    });
+    await online.app.request(`/api/lights/${light.id}/led-product`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ledProductId: "porch-sk6812" }),
+    });
+
+    const offline = testApp({
+      store: new FileLightsStore(file),
+      products: online.products,
+      probe: async () => ({
+        kind: "probe-failed",
+        reason: "192.168.1.40 didn’t return a snapshot in 3 s.",
+      }),
+    });
+    const res = await offline.app.request(`/api/lights/${light.id}`);
+    const body = (await res.json()) as {
+      light: {
+        bead: string;
+        reachability: string;
+        stripBead: string;
+        stripChip: string;
+      };
+    };
+    expect(body.light.reachability).toBe("no-answer");
+    expect(body.light.bead).toBe("unknown");
+    expect(body.light.stripBead).toBe("rgbw");
+    expect(body.light.stripChip).toBe("SK6812 RGBW");
   });
 });
 

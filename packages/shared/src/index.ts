@@ -177,6 +177,12 @@ export type { StripPreset } from "./strip/presets.ts";
 export { sk6812RgbwStrip } from "./strip/sk6812-rgbw.ts";
 export { ws281xStrip } from "./strip/ws281x.ts";
 export {
+  knownStripKind,
+  stripBeadCaption,
+  stripHonestyForLight,
+} from "./strip/honesty.ts";
+export type { StripHonesty, StripHonestySource } from "./strip/honesty.ts";
+export {
   PROVISION_GPIO_MAX,
   PROVISION_GPIO_MIN,
   PROVISION_LED_TYPES,

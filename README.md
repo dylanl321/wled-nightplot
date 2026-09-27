@@ -18,6 +18,7 @@ GitHub: [`dylanl321/wled-nightplot`](https://github.com/dylanl321/wled-nightplot
 ## How it behaves
 
 - An unreachable Light stays **grey**, with last-seen copy. The rack never shows a stored last colour.
+- RGB vs RGBW on the beads and Inspect chip follows the attached LED product or the persisted strip driver. RGBW shows two dies. `/json/info` `leds.rgbw` is not labeled WS281x RGBW.
 - Preview is temporary. Apply is what persists on the controller.
 - All Off cancels without restoring the previous look.
 - **Remove this Light** runs checks (Elements, live sessions, controller state). Unknown is not safe; there is no “I understand” override.

@@ -36,12 +36,15 @@ First members. Home directories are the registration point.
 | `Light` | `packages/shared/src/lights.ts` | One enrolled controller + one strip. `ledProductId` is a catalog attach (null = manual fields) |
 | `Element` | same | Inclusive–exclusive range on that strip |
 | `BeadColor` | `packages/shared/src/bead.ts` | Colour, `null` (off), or `"unknown"` (grey) |
+| `stripHonestyForLight` | `packages/shared/src/strip/honesty.ts` | rgb / rgbw + chip caption from product, else `stripKind` |
 | `WledSnapshot` | `packages/shared/src/wled/snapshot.ts` | Parsed `/json` (info + state) |
 | `WledSafeSettings` | `packages/shared/src/safe.ts` | Small Safe set; fingerprint-gated |
 | `WledStripProvision` | `packages/shared/src/provision.ts` | First-time bus: type / length / GPIO |
 | `LedProduct` | `packages/shared/src/strip/products.ts` | Operator LED SKU. `formFactor` is metadata. `driverId` must be a registered strip driver |
 
 Unreachable: `markUnreachable` in `apps/server/src/domain.ts` clears `on` / `brightness`. `beadFor` returns `"unknown"` — never a stored last colour.
+
+`Light.rgbw` is the last `/json/info` `leds.rgbw`. Inspect and Lights beads use `LightView.stripBead` / `stripChip` from `stripHonestyForLight` (attached `LedProduct`, else persisted `stripKind`). A successful Strip cfg read or Apply stores a known `ledType` on `stripKind`. Snapshot rgbw is not a driver name.
 
 ## Server
 

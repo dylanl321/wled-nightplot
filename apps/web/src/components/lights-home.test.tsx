@@ -38,9 +38,38 @@ describe("LightsHome cached beads", () => {
     );
 
     expect(screen.getByText("No answer · last seen 2 h ago")).toBeTruthy();
-    const strip = screen.getByRole("img", { name: "Garage strip" });
+    const strip = screen.getByRole("img", { name: "Garage strip, RGB" });
     expect(strip.innerHTML).not.toContain(LAST_COLOUR);
     expect(strip.innerHTML).toContain("#1d1d1f");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("paints RGBW as two dies and keeps unreachable beads grey", () => {
+    const fetch = fetchSpy();
+    render(
+      <LightsHome
+        unenrolled={[]}
+        lights={[
+          lightView({
+            name: "Porch",
+            reachability: "no-answer",
+            bead: "unknown",
+            on: null,
+            brightness: null,
+            stripKind: "sk6812-rgbw",
+            stripBead: "rgbw",
+            stripChip: "SK6812 RGBW",
+            rgbw: true,
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(/60 LEDs · RGBW · 1 Element/)).toBeTruthy();
+    const strip = screen.getByRole("img", { name: "Porch strip, RGBW" });
+    expect(strip.innerHTML).not.toContain(LAST_COLOUR);
+    expect(strip.innerHTML).toContain("#141519");
+    expect(strip.querySelectorAll("circle").length).toBeGreaterThan(1);
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -62,7 +91,7 @@ describe("LightsHome cached beads", () => {
     );
 
     expect(screen.getByText("Online · on · 50%")).toBeTruthy();
-    const strip = screen.getByRole("img", { name: "Garage strip" });
+    const strip = screen.getByRole("img", { name: "Garage strip, RGB" });
     expect(strip.innerHTML).not.toContain(LAST_COLOUR);
     expect(strip.innerHTML).toContain("#1d1d1f");
     expect(fetch).not.toHaveBeenCalled();

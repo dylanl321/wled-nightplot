@@ -46,6 +46,7 @@ import {
   type DraftRange,
   type Element,
   type HostPort,
+  type LedProduct,
   type Light,
   type LightDetail,
   type LightView,
@@ -301,7 +302,7 @@ export function createApp(deps: AppDeps) {
     const light = lightFromSnapshot(decision.target, outcome.snapshot, nowIso());
     deps.store.upsert(light);
     session.rows = session.rows.filter((row) => row.key !== light.hostKey);
-    return c.json({ light: lightDetail(light, outcome.snapshot, []).light }, 201);
+    return c.json({ light: lightDetail(light, outcome.snapshot, [], attachedProduct(light)).light }, 201);
   });
 
   app.get("/api/lights/:id", async (c) => {
@@ -851,8 +852,9 @@ export function createApp(deps: AppDeps) {
     const dest: HostPort = { hostname: light.hostname, port: light.port };
     const raw = await deps.readCfg(dest);
     const provision = await readProvision(light, snap?.firmware ?? light.firmware, raw);
+    const next = rememberStripKind(light, provision.settings.ledType);
     return c.json({
-      ...(await decorateDetail(light, snap)),
+      ...(await decorateDetail(next, snap)),
       provision,
       ledProducts: products.list(),
     });
@@ -932,7 +934,7 @@ export function createApp(deps: AppDeps) {
     const cfgMatched = provisionFieldsMatch(built.sent, reread.settings);
     const snapMatched = provisionSnapshotMatch(built.sent, nextSnap?.ledCount ?? null);
     const matched = cfgMatched && snapMatched;
-    let next = refreshed;
+    let next = rememberStripKind(refreshed, reread.settings.ledType);
     if (matched && nextSnap) {
       next.lastSnapshot = nextSnap;
       next.lastSnapshotAt = next.lastSeenAt;
@@ -1164,6 +1166,18 @@ export function createApp(deps: AppDeps) {
     };
   }
 
+  function attachedProduct(light: Light): LedProduct | null {
+    if (!light.ledProductId) return null;
+    return products.findById(light.ledProductId) ?? null;
+  }
+
+  function rememberStripKind(light: Light, ledType: string | null | undefined): Light {
+    if (!isProvisionLedType(ledType) || light.stripKind === ledType) return light;
+    const next = { ...light, stripKind: ledType };
+    deps.store.replace(next);
+    return next;
+  }
+
   async function refreshOne(
     stored: Light,
   ): Promise<{ light: Light; live: WledSnapshot | null }> {
@@ -1186,7 +1200,7 @@ export function createApp(deps: AppDeps) {
     for (const light of stored) {
       const { light: next, live } = await refreshOne(light);
       const elements = allElements.filter((element) => element.lightId === next.id);
-      views.push(lightDetail(next, live, elements).light);
+      views.push(lightDetail(next, live, elements, attachedProduct(next)).light);
     }
     const enrolled = new Set(views.map((light) => light.hostKey));
     return {
@@ -1212,7 +1226,12 @@ export function createApp(deps: AppDeps) {
     snap: WledSnapshot | null,
     elements?: Element[],
   ): Promise<LightDetail> {
-    const detail = lightDetail(light, snap, elements ?? deps.store.elementsFor(light.id));
+    const detail = lightDetail(
+      light,
+      snap,
+      elements ?? deps.store.elementsFor(light.id),
+      attachedProduct(light),
+    );
     const liveRead = snap ? await live.read(light) : null;
     const current = live.get(light.id);
     const elems = elements ?? deps.store.elementsFor(light.id);

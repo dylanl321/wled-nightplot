@@ -129,6 +129,89 @@ describe("LightDetail reported rails", () => {
   });
 });
 
+describe("LightDetail RGBW honesty", () => {
+  it("names the driver chip — not WS281x RGBW from snapshot.rgbw", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: true,
+            brightness: 128,
+            bead: "#ffa000",
+            rgbw: true,
+            stripKind: "ws281x",
+            stripBead: "rgb",
+            stripChip: "WS281x RGB",
+          }),
+        })}
+        mode="inspect"
+      />,
+    );
+
+    expect(screen.getByText("WS281x RGB")).toBeTruthy();
+    expect(screen.queryByText("WS281x RGBW")).toBeNull();
+    expect(screen.getByText(/RGB · above: declared · below: reported/)).toBeTruthy();
+    expect(paragraphWith(/60 LEDs \(RGB\) in/)).toBeTruthy();
+  });
+
+  it("grows a second die for SK6812 RGBW", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            name: "Porch",
+            reachability: "online",
+            on: true,
+            brightness: 180,
+            bead: "#ffa000",
+            rgbw: true,
+            stripKind: "sk6812-rgbw",
+            stripBead: "rgbw",
+            stripChip: "SK6812 RGBW",
+          }),
+        })}
+        mode="inspect"
+      />,
+    );
+
+    expect(screen.getByText("SK6812 RGBW")).toBeTruthy();
+    expect(screen.getByText(/RGBW · above: declared · below: reported/)).toBeTruthy();
+    expect(paragraphWith(/60 LEDs \(RGBW\) in/)).toBeTruthy();
+    const lit = screen.getByRole("img", { name: "Porch strip, 60 LEDs, RGBW" });
+    expect(lit.innerHTML).toContain("#fff4dc");
+    expect(lit.innerHTML).toContain("#ffa000");
+  });
+
+  it("keeps unreachable RGBW beads grey — never the last colour", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            name: "Porch",
+            reachability: "no-answer",
+            on: null,
+            brightness: null,
+            bead: "unknown",
+            rgbw: true,
+            stripKind: "sk6812-rgbw",
+            stripBead: "rgbw",
+            stripChip: "SK6812 RGBW",
+          }),
+        })}
+        mode="inspect"
+      />,
+    );
+
+    const grey = screen.getByRole("img", { name: "Porch strip, 60 LEDs, RGBW" });
+    expect(grey.innerHTML).not.toContain("#ffa000");
+    expect(grey.innerHTML).not.toContain("#fff4dc");
+    expect(grey.innerHTML).toContain("#141519");
+    expect(screen.getByText(/Beads stay grey/)).toBeTruthy();
+    expect(screen.getByText("SK6812 RGBW")).toBeTruthy();
+  });
+});
+
 describe("LightDetail Elements after length change", () => {
   it("does not claim declared ranges still match when they run past the strip", () => {
     const initial = lightDetail({
@@ -170,3 +253,10 @@ describe("LightDetail Elements after length change", () => {
     expect(screen.getByText("past strip")).toBeTruthy();
   });
 });
+
+function paragraphWith(pattern: RegExp): HTMLElement {
+  return screen.getByText((_, node) => {
+    if (node?.tagName !== "P") return false;
+    return pattern.test(node.textContent ?? "");
+  });
+}

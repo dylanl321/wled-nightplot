@@ -5,6 +5,7 @@ import type { LiveMatch, LiveSession } from "./live.ts";
 import type { AllOffResult, DeleteCheck } from "./manage.ts";
 import type { ProvisionRead, ProvisionWriteResult } from "./provision.ts";
 import type { SafeRead, SafeWriteResult } from "./safe.ts";
+import type { StripBead } from "./strip/types.ts";
 import type { WledSnapshot } from "./wled/snapshot.ts";
 
 export type LightReachability = "online" | "no-answer";
@@ -33,6 +34,7 @@ export type Light = {
   mac: string | null;
   firmware: string | null;
   ledCount: number;
+  /** Last `/json/info` `leds.rgbw`. Inspect chrome uses `stripBead` / `stripChip`. */
   rgbw: boolean;
   reachability: LightReachability;
   lastSeenAt: string | null;
@@ -67,6 +69,10 @@ export type Element = {
 /** Live view: bead colour comes from the current snapshot, never a stored last colour. */
 export type LightView = Light & {
   bead: BeadColor;
+  /** rgb vs rgbw from attached product, else persisted strip driver. Not snapshot `rgbw`. */
+  stripBead: StripBead;
+  /** Driver chip caption (e.g. SK6812 RGBW). Not a hardcoded WS281x RGBW label. */
+  stripChip: string;
   displayHost: string;
   elementCount: number;
   segmentCount: number | null;

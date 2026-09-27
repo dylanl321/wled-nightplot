@@ -6,6 +6,7 @@ import {
   buildRangeDisplay,
   firstFreeRange,
   reportedRangeRails,
+  stripBeadCaption,
   validateDeclaredRanges,
   type ApplyResult,
   type Element,
@@ -297,7 +298,7 @@ export function LightDetail({
           </span>
           <div className="ml-auto flex gap-1.5">
             <Chip>{light.controllerKind.toUpperCase()}</Chip>
-            <Chip>{light.rgbw ? "WS281x RGBW" : "WS281x RGB"}</Chip>
+            <Chip>{light.stripChip}</Chip>
           </div>
         </div>
         <p className="font-mono text-xs text-quiet">
@@ -368,7 +369,9 @@ export function LightDetail({
               </span>
             </>
           ) : null}
-          <span className="sm:ml-auto">above: declared · below: reported</span>
+          <span className="sm:ml-auto">
+            {stripBeadCaption(light.stripBead)} · above: declared · below: reported
+          </span>
         </div>
         <div className="overflow-x-auto">
           <StripBeads
@@ -386,7 +389,7 @@ export function LightDetail({
                   ? Math.max(0.35, (detail.session.brightness ?? 180) / 255)
                   : 0.8
             }
-            rgbw={light.rgbw}
+            rgbw={light.stripBead === "rgbw"}
             declared={declared}
             reported={mode === "live" ? [] : display.reported}
             regions={
@@ -401,7 +404,7 @@ export function LightDetail({
                 : display.regions
             }
             handles={mode === "ranges" && Boolean(selected)}
-            ariaLabel={`${light.name} strip, ${light.ledCount} LEDs`}
+            ariaLabel={`${light.name} strip, ${light.ledCount} LEDs, ${stripBeadCaption(light.stripBead)}`}
           />
         </div>
       </div>
@@ -587,7 +590,9 @@ function InspectFacts({
         <FactCard eyebrow="What it has">
           <p className="leading-[1.55] text-[#c9c3b8]">
             <span className="text-foreground">{light.ledCount} LEDs</span>
-            {" in "}
+            {" ("}
+            <span className="text-foreground">{stripBeadCaption(light.stripBead)}</span>
+            {") in "}
             <span className="text-foreground">{detail.elements.length}</span>
             {detail.elements.length === 1 ? " Element" : " Elements"}.
             {light.segmentCount === null
