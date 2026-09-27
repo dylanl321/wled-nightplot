@@ -9,6 +9,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Changed
 
+- `docs/PLANE.md` lists filed CONFIG tickets through CONFIG-50 (titles and issue ids from Plane). Publishing name names the live GitHub home `dylanl321/wled-nightplot`; the package name stays `nightplot-configure` (CONFIG-34).
 - Public docs describe Nightplot Configure as a standalone LAN utility (CONFIG-50). README and overview open with what the product is, who it is for, and how to run it. Lights, Elements, Preview, Apply, Blink, and All Off are defined in positive vocabulary. Early-software facts (LAN, no auth, no TLS, fixture is a development stub) replace documentation-about-documentation meta.
 
 ### Fixed
