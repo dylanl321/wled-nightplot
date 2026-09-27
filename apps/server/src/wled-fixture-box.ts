@@ -164,7 +164,11 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       const start = typeof row.start === "number" ? row.start : 0;
       const stop = typeof row.stop === "number" ? row.stop : ledCount;
       if (!Number.isFinite(start) || !Number.isFinite(stop) || stop <= start) continue;
-      const col = Array.isArray(row.col) && Array.isArray(row.col[0]) ? row.col : [[[255, 160, 0]]];
+      const col = Array.isArray(row.col) && Array.isArray(row.col[0]) ? row.col : null;
+      if (!col) {
+        segs.push({ start, stop, col: state.seg[0]?.col ?? [] });
+        continue;
+      }
       const rgb = (col[0] as number[]).map(Number);
       segs.push({ start, stop, col: [rgb] });
       paint(pixels, start, stop, rgb);
