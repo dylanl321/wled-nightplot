@@ -49,7 +49,7 @@ describe("LightUnavailable detail miss", () => {
         lightCount={1}
         nav="light"
       >
-        <LightUnavailable kind="missing" detail="That Light is not on Lights" listed />
+        <LightUnavailable kind="missing" detail="That Light is not on Lights." listed />
       </AppShell>,
     );
 

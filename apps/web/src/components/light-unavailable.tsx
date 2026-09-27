@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
+function sameCopy(detail: string, title: string): boolean {
+  const fold = (value: string) => value.trim().replace(/\.+$/u, "").toLowerCase();
+  return fold(detail) === fold(title);
+}
+
 export function LightUnavailable({
   kind,
   detail,
@@ -27,7 +32,7 @@ export function LightUnavailable({
           server is down.
         </p>
       ) : null}
-      {detail && detail !== title ? (
+      {detail && !sameCopy(detail, title) ? (
         <p className="font-mono text-xs text-quiet">{detail}</p>
       ) : null}
       <Button asChild className="w-fit">
