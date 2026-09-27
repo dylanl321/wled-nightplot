@@ -43,5 +43,6 @@ python3 -m http.server 43182 --directory docs/ui
 - Unreachable beads are grey with last-seen copy. Never the last colour.
 - Product words: Lights, Elements, Preview, Apply, Blink, All Off.
 - Do not import Yard, Tonight, Studio, Scene, Show, Schedule, or Devices-as-noun chrome.
+- Discover listed hosts follow `displayHost`: omit `:80` unless the port is not 80. A default-port not-WLED reject is `192.168.1.80`, not `192.168.1.80:80`.
 
 The prototype’s populated racks (Eave front, Porch rail, Garage) are direction frames. The running app only shows Lights that were enrolled. Inspect, Edit ranges, Test live, Apply, All Off, Delete, and Safe settings follow this bead language. A fixture readback is not Hardware Done.

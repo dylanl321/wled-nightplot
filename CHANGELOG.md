@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.3 — Discover canvas default-port host matches displayHost (CONFIG-32)
+
+- v2 Discover not-WLED reject row shows `192.168.1.80`, not `192.168.1.80:80`. Same as live `displayHost` (hide default `:80`). Desktop 2b and the phone frame.
+- Discover honesty note: listed hosts follow `displayHost` — omit `:80` unless the port is not 80.
+
 ## 0.7.2 — Safe settings rename uses the cfg name (CONFIG-11)
 
 - After a successful display-name write, the enrolled Light title (rack, rail, Inspect) uses the name from `/json/cfg` immediately.
