@@ -12,6 +12,12 @@ import { lightDetail, lightView, requestPath } from "@/test/fixtures";
 
 const catalogProducts = seedLedProductsFromPresets();
 
+const CFG_MISMATCH_MESSAGE =
+  "Wrote, but /json/cfg did not match. Not treating as success.";
+const DIDNT_STICK_MESSAGE = "Apply didn’t stick. Your draft is kept.";
+const CFG_REFUSE_MESSAGE =
+  "This firmware isn’t in the strip compatibility table. Nothing was written.";
+
 const provision: ProvisionRead = {
   settings: {
     ledType: "ws281x",
@@ -93,10 +99,10 @@ describe("Strip provision", () => {
               },
               snapshotLedCount: 60,
               fingerprint: provision.fingerprint,
-              message: "Wrote, but /json/cfg did not match. Not treating as success.",
+              message: CFG_MISMATCH_MESSAGE,
               caption: provision.caption,
             },
-            message: "Wrote, but /json/cfg did not match. Not treating as success.",
+            message: CFG_MISMATCH_MESSAGE,
           }),
           { status: 409, headers: { "Content-Type": "application/json" } },
         );
@@ -119,7 +125,11 @@ describe("Strip provision", () => {
     expect(await screen.findByRole("button", { name: "Apply" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
-    expect(await screen.findByText("Apply didn’t stick")).toBeTruthy();
+    const title = await screen.findByText(CFG_MISMATCH_MESSAGE);
+    expect(title.tagName).toBe("SPAN");
+    expect(title.textContent).not.toMatch(/didn’t stick/);
+    expect(screen.queryByText("Apply didn’t stick")).toBeNull();
+    expect(screen.queryByText(DIDNT_STICK_MESSAGE)).toBeNull();
     expect(screen.getByText(/ws281x · 150 nodes · GPIO 2/)).toBeTruthy();
     expect(screen.getByText(/Not treating as success/)).toBeTruthy();
     expect(screen.getByText(/Not Hardware Done/)).toBeTruthy();
@@ -132,6 +142,103 @@ describe("Strip provision", () => {
       });
       expect(posts.length).toBe(1);
     });
+  });
+
+  it("still titles a didn’t-stick provision message as that copy", async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      if (path.endsWith("/provision") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            ...payload(),
+            provisionWrite: {
+              status: "failed",
+              matched: false,
+              sent: { ledType: "ws281x", length: 150, gpio: 2 },
+              read: {
+                ledType: "ws281x",
+                length: 60,
+                gpio: 16,
+                nativeType: 22,
+                nativeOrder: 0,
+                colorOrder: "GRB",
+              },
+              snapshotLedCount: 60,
+              fingerprint: provision.fingerprint,
+              message: DIDNT_STICK_MESSAGE,
+              caption: provision.caption,
+            },
+            message: DIDNT_STICK_MESSAGE,
+          }),
+          { status: 422, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (path.endsWith("/provision")) {
+        return new Response(JSON.stringify(payload()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ message: "unexpected path" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Apply" }));
+
+    const title = await screen.findByText(DIDNT_STICK_MESSAGE);
+    expect(title.tagName).toBe("SPAN");
+    expect(screen.queryByText(CFG_MISMATCH_MESSAGE)).toBeNull();
+    expect(screen.queryByText(CFG_REFUSE_MESSAGE)).toBeNull();
+  });
+
+  it("titles a cfg-refuse from the write message — not Apply didn’t stick", async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      if (path.endsWith("/provision") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            ...payload(),
+            provisionWrite: {
+              status: "refused",
+              matched: false,
+              sent: { ledType: "ws281x", length: 60, gpio: 16 },
+              read: provision.settings,
+              snapshotLedCount: 60,
+              fingerprint: provision.fingerprint,
+              message: CFG_REFUSE_MESSAGE,
+              caption: provision.caption,
+            },
+            message: CFG_REFUSE_MESSAGE,
+          }),
+          { status: 422, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (path.endsWith("/provision")) {
+        return new Response(JSON.stringify(payload()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ message: "unexpected path" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Apply" }));
+
+    const title = await screen.findByText(CFG_REFUSE_MESSAGE);
+    expect(title.tagName).toBe("SPAN");
+    expect(title.textContent).not.toMatch(/didn’t stick/);
+    expect(screen.queryByText("Apply didn’t stick")).toBeNull();
+    expect(screen.queryByText(DIDNT_STICK_MESSAGE)).toBeNull();
+    expect(screen.queryByText(CFG_MISMATCH_MESSAGE)).toBeNull();
   });
 
   it("fills the form from a catalog product, persists attach, and Apply posts provision only", async () => {
