@@ -433,6 +433,55 @@ describe("LightDetail RGBW honesty", () => {
   });
 });
 
+describe("LightDetail Apply unknown colour", () => {
+  it("disables Apply when colour is unknown — does not invent #ffa000", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: null,
+            brightness: null,
+            bead: "unknown",
+            segmentCount: null,
+            lastSeenAt: "2026-09-26T18:00:00.000Z",
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+        })}
+        mode="ranges"
+      />,
+    );
+
+    const apply = screen.getByRole("button", { name: "Apply" });
+    expect((apply as HTMLButtonElement).disabled).toBe(true);
+    expect(apply.getAttribute("title")).toMatch(/will not invent a look/);
+    expect(screen.getByText(/Colour is unknown/)).toBeTruthy();
+  });
+
+  it("keeps Apply available when the snapshot named a colour", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: true,
+            brightness: 128,
+            bead: "#4f7dff",
+            segmentCount: 1,
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+        })}
+        mode="ranges"
+      />,
+    );
+
+    expect((screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    expect(screen.queryByText(/Colour is unknown/)).toBeNull();
+  });
+});
+
 describe("LightDetail Elements after length change", () => {
   it("does not claim declared ranges still match when they run past the strip", () => {
     const initial = lightDetail({

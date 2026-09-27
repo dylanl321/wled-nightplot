@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  APPLY_UNKNOWN_COLOUR_REASON,
   APPLY_UNKNOWN_SEGMENTS_MESSAGE,
   applyCaption,
   applyOutcome,
   applyRefuseReason,
   applyUnknownSegments,
+  knownApplyColor,
   macsMatch,
   readdressContinuity,
   spansMatch,
@@ -32,6 +34,27 @@ describe("apply refuse", () => {
         busyKind: "preview",
       }),
     ).toMatch(/Preview is not Apply/);
+  });
+
+  it("refuses Apply when colour is unknown — never invents #ffa000", () => {
+    expect(knownApplyColor(null)).toBeNull();
+    expect(knownApplyColor(undefined)).toBeNull();
+    expect(knownApplyColor("")).toBeNull();
+    expect(knownApplyColor("unknown")).toBeNull();
+    expect(knownApplyColor("#ffa000")).toBe("#ffa000");
+    expect(
+      applyRefuseReason({ reachable: true, elementCount: 2, segmentColor: null }),
+    ).toBe(APPLY_UNKNOWN_COLOUR_REASON);
+    expect(
+      applyRefuseReason({ reachable: true, elementCount: 2 }),
+    ).toBe(APPLY_UNKNOWN_COLOUR_REASON);
+    expect(
+      applyRefuseReason({
+        reachable: true,
+        elementCount: 2,
+        segmentColor: "#4f7dff",
+      }),
+    ).toBeNull();
   });
 });
 

@@ -1,4 +1,5 @@
 export {
+  APPLY_UNKNOWN_COLOUR_REASON,
   APPLY_UNKNOWN_SEGMENTS_MESSAGE,
   adoptReportedRanges,
   applyCaption,
@@ -6,6 +7,7 @@ export {
   applyRefuseReason,
   applyRows,
   applyUnknownSegments,
+  knownApplyColor,
   macsMatch,
   normalizeMac,
   readdressContinuity,

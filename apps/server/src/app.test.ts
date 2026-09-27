@@ -1221,6 +1221,79 @@ describe("apply + re-address", () => {
     expect(((await invert.json()) as { message: string }).message).toMatch(/stop/i);
   });
 
+  it("refuses Apply when colour is unknown — does not invent #ffa000", async () => {
+    const writes: import("./wled/live.ts").WledStateWrite[] = [];
+    const infoOnly = {
+      ...snapshot,
+      on: null,
+      brightness: null,
+      segmentColor: null,
+      segments: null,
+    };
+    const { app } = testApp({
+      probe: async () => ({ kind: "found" as const, snapshot: infoOnly }),
+      write: async (_target, body) => {
+        writes.push(body);
+        return true;
+      },
+    });
+    const enrolled = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.72" }),
+    });
+    const { light } = (await enrolled.json()) as { light: { id: string } };
+    const elements = [
+      { label: "Left run", start: 0, stop: 24 },
+      { label: "Right run", start: 24, stop: 50 },
+    ];
+    await app.request(`/api/lights/${light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements }),
+    });
+    const res = await app.request(`/api/lights/${light.id}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements }),
+    });
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as { message: string }).message).toMatch(/will not invent a look/);
+    expect(writes).toEqual([]);
+
+    const onWithoutColour = testApp({
+      probe: async () => ({
+        kind: "found" as const,
+        snapshot: { ...snapshot, segmentColor: null },
+      }),
+      write: async (_target, body) => {
+        writes.push(body);
+        return true;
+      },
+    });
+    const onEnrolled = await onWithoutColour.app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.73" }),
+    });
+    const onId = ((await onEnrolled.json()) as { light: { id: string } }).light.id;
+    await onWithoutColour.app.request(`/api/lights/${onId}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements }),
+    });
+    const onRefused = await onWithoutColour.app.request(`/api/lights/${onId}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements }),
+    });
+    expect(onRefused.status).toBe(422);
+    expect(((await onRefused.json()) as { message: string }).message).toMatch(
+      /will not invent a look/,
+    );
+    expect(writes).toEqual([]);
+  });
+
   it("probes a new host before switching, and keeps the old address on failure", async () => {
     const { app, store } = testApp();
     const id = await enroll(app);
