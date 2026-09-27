@@ -5,35 +5,29 @@ import { AppShell } from "@/components/app-shell";
 import { DiscoverPanel } from "@/components/discover-panel";
 import { ServerDown } from "@/components/server-down";
 import { fetchJson } from "@/lib/api";
+import { discoverPageModel } from "@/lib/discover-page-load";
 
 export default async function DiscoverPage() {
-  let lights: LightsPayload | null = null;
-  let session: { candidates: DiscoverRow[] } | null = null;
-  let error: string | undefined;
+  const [lightsResult, discoverResult] = await Promise.allSettled([
+    fetchJson<LightsPayload>("/api/lights"),
+    fetchJson<{ candidates: DiscoverRow[] }>("/api/discover"),
+  ]);
+  const model = discoverPageModel(lightsResult, discoverResult);
 
-  try {
-    [lights, session] = await Promise.all([
-      fetchJson<LightsPayload>("/api/lights"),
-      fetchJson<{ candidates: DiscoverRow[] }>("/api/discover"),
-    ]);
-  } catch (caught) {
-    error = caught instanceof Error ? caught.message : "Unknown error";
-  }
-
-  if (!lights) {
+  if (model.kind === "server-down") {
     return (
       <AppShell lightCount={0} nav="discover">
-        <ServerDown detail={error} />
+        <ServerDown detail={model.error} />
       </AppShell>
     );
   }
 
   return (
     <AppShell
-      lights={lights.lights}
-      lightCount={lights.lights.length}
+      lights={model.lights.lights}
+      lightCount={model.lights.lights.length}
       nav="discover"
-      sessions={lights.sessions}
+      sessions={model.lights.sessions}
     >
       <div className="mx-auto flex w-full max-w-[880px] flex-1 flex-col gap-6 px-5 py-8 sm:px-8">
         <div className="flex flex-col gap-1">
@@ -47,8 +41,9 @@ export default async function DiscoverPage() {
           </p>
         </div>
         <DiscoverPanel
-          initialCandidates={session?.candidates ?? []}
-          enrolled={lights.lights}
+          initialCandidates={model.candidates}
+          enrolled={model.lights.lights}
+          findError={model.findError}
         />
       </div>
     </AppShell>
