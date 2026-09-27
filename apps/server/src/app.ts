@@ -502,12 +502,14 @@ export function createApp(deps: AppDeps) {
       brightness: body.brightness,
     });
     if (!result.ok) return c.json(result, result.status);
+    const detail = await decorateDetail(light, snap);
     return c.json({
-      ...(await decorateDetail(light, snap)),
+      ...detail,
       session: result.session,
       liveLeds: result.live?.leds ?? null,
       liveCaption: result.caption,
-      reported: result.reported,
+      // Keep Inspect range rails. Match counts are not `reported`.
+      liveMatch: result.reported,
     });
   });
 
@@ -550,12 +552,14 @@ export function createApp(deps: AppDeps) {
       elementId: body.elementId,
     });
     if (!result.ok) return c.json(result, result.status);
+    const detail = await decorateDetail(light, snap);
     return c.json({
-      ...(await decorateDetail(light, snap)),
+      ...detail,
       session: result.session,
       liveLeds: result.live?.leds ?? null,
       liveCaption: result.caption,
-      reported: result.reported,
+      // Keep Inspect range rails. Match counts are not `reported`.
+      liveMatch: result.reported,
     });
   });
 

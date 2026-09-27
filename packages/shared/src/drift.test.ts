@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRangeDisplay } from "./drift.ts";
+import { buildRangeDisplay, reportedRangeRails } from "./drift.ts";
 import { validateDeclaredRanges } from "./range.ts";
 
 describe("buildRangeDisplay", () => {
@@ -77,5 +77,15 @@ describe("buildRangeDisplay", () => {
     expect(display.reported).toEqual([]);
     expect(display.notes).toEqual([{ text: "No current report to compare." }]);
     expect(display.regions).toEqual([]);
+  });
+});
+
+describe("reportedRangeRails", () => {
+  it("keeps Inspect range rails and ignores Preview match counts", () => {
+    expect(reportedRangeRails([{ start: 0, stop: 60, differs: true }])).toEqual([
+      { start: 0, stop: 60 },
+    ]);
+    expect(reportedRangeRails({ matched: 26, total: 26 })).toEqual([]);
+    expect(reportedRangeRails(null)).toEqual([]);
   });
 });

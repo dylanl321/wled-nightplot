@@ -47,6 +47,24 @@ export type RangeDisplay = {
 };
 
 /**
+ * Inspect `reported` is range rails. A Preview match-count object is not.
+ * Non-arrays (and rows without start/stop) yield no rails — never `.map` a count.
+ */
+export function reportedRangeRails(reported: unknown): RangeSpan[] {
+  if (!Array.isArray(reported)) return [];
+  const rails: RangeSpan[] = [];
+  for (const row of reported) {
+    if (!row || typeof row !== "object") continue;
+    const start = (row as { start?: unknown }).start;
+    const stop = (row as { stop?: unknown }).stop;
+    if (typeof start === "number" && typeof stop === "number") {
+      rails.push({ start, stop });
+    }
+  }
+  return rails;
+}
+
+/**
  * Dual-rail display data: declared above, reported below.
  * Drift is the coverage gap. Overlap paints red. Unreachable (no reported)
  * does not invent a last report.

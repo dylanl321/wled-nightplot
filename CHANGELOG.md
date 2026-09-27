@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.8 — Preview keeps reported range rails (CONFIG-30)
+
+- POST `/api/lights/:id/preview` and `/blink` no longer overwrite Inspect `reported` (range rails) with live match counts `{ matched, total }`.
+- Match counts live on `liveMatch`. LightDetail maps `reported` as rails; a non-array payload is treated as no rails — no `.map` crash, and no ServerDown “list is not loaded” story for that contract throw.
+- Proof ladder prefers `liveMatch`, then `/json/live` beads. Preview is still not Apply. Fixture readback is not Hardware Done.
+
 ## 0.7.7 — Bound hanging /json/state after /json/info (CONFIG-29)
 
 - After `/json/info` proves liveness, `/json/state` is optional enrichment. A hang uses a short dedicated timeout (and never more than the remaining CONFIG-15 ~3 s budget). It does not add another full abort wait.

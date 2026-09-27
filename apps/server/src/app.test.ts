@@ -717,6 +717,8 @@ describe("preview + blink", () => {
       session: { kind: string; target: { label: string } };
       liveLeds: string[];
       liveCaption: string;
+      reported: { start: number; stop: number }[];
+      liveMatch: { matched: number; total: number } | null;
     };
     expect(live.session.kind).toBe("preview");
     expect(live.session.target.label).toBe("Right run");
@@ -724,6 +726,8 @@ describe("preview + blink", () => {
     expect(live.liveLeds[0]).toBe("#ffa000");
     expect(live.liveCaption).toMatch(/Not Hardware Done/);
     expect(box.leds[24]).toBe("#4f7dff");
+    expect(live.reported.map((row) => `${row.start}-${row.stop}`)).toEqual(["0-60"]);
+    expect(live.liveMatch).toEqual({ matched: 26, total: 26 });
 
     const ended = await app.request(`/api/lights/${id}/preview/end`, {
       method: "POST",
@@ -782,10 +786,17 @@ describe("preview + blink", () => {
       body: JSON.stringify({}),
     });
     expect(blink.status).toBe(200);
-    const pulsing = (await blink.json()) as { session: { kind: string }; liveLeds: string[] };
+    const pulsing = (await blink.json()) as {
+      session: { kind: string };
+      liveLeds: string[];
+      reported: { start: number; stop: number }[];
+      liveMatch: { matched: number; total: number } | null;
+    };
     expect(pulsing.session.kind).toBe("blink");
     expect(pulsing.liveLeds[0]).toBe("#f4f1ea");
     expect(box.leds[0]).toBe("#f4f1ea");
+    expect(pulsing.reported.map((row) => `${row.start}-${row.stop}`)).toEqual(["0-60"]);
+    expect(pulsing.liveMatch).toEqual({ matched: 60, total: 60 });
 
     const ended = await app.request(`/api/lights/${id}/blink/end`, { method: "POST" });
     expect(ended.status).toBe(200);

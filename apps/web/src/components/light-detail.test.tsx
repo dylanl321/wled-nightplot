@@ -1,3 +1,4 @@
+import type { LightDetail as LightDetailPayload } from "@nightplot/shared";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { LightDetail } from "@/components/light-detail";
@@ -45,5 +46,85 @@ describe("LightDetail Refresh", () => {
     const paths = fetch.mock.calls.map((call) => requestPath(String(call[0])));
     expect(paths.some((path) => isOneLightProbe(path, initial.light.id))).toBe(true);
     expect(paths.some(isLightsListPath)).toBe(false);
+  });
+});
+
+describe("LightDetail reported rails", () => {
+  it("does not crash when Preview match counts land on reported", () => {
+    const initial = {
+      ...lightDetail({
+        light: lightView({
+          reachability: "online",
+          on: true,
+          brightness: 180,
+          bead: "#ffa000",
+          segmentCount: 1,
+        }),
+      }),
+      reported: { matched: 26, total: 26 },
+    } as unknown as LightDetailPayload;
+
+    expect(() => render(<LightDetail initial={initial} mode="ranges" />)).not.toThrow();
+    expect(screen.getByText(/above: declared · below: reported/)).toBeTruthy();
+  });
+
+  it("keeps mapping reported rails after a successful Preview", async () => {
+    const initial = lightDetail({
+      light: lightView({
+        reachability: "online",
+        on: true,
+        brightness: 180,
+        bead: "#ffa000",
+        segmentCount: 1,
+      }),
+      reported: [{ start: 0, stop: 60, differs: false }],
+    });
+    const after: LightDetailPayload = {
+      ...initial,
+      session: {
+        id: "sess-preview",
+        kind: "preview",
+        lightId: initial.light.id,
+        target: { elementId: "el-door", label: "Door", start: 0, stop: 60 },
+        color: "#4f7dff",
+        brightness: 180,
+        startedAt: "2026-09-26T20:00:00.000Z",
+        restore: {
+          on: true,
+          brightness: 180,
+          color: "#ffa000",
+          segments: [{ start: 0, stop: 60, color: "#ffa000" }],
+        },
+        source: "fixture",
+        seenByYou: null,
+      },
+      liveLeds: Array.from({ length: 60 }, () => "#4f7dff"),
+      liveCaption: "Software-green from the fixture. Not Hardware Done.",
+      liveMatch: { matched: 60, total: 60 },
+      reported: [{ start: 0, stop: 60, differs: false }],
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = requestPath(String(input));
+        if (path === `/api/lights/${initial.light.id}/preview`) {
+          return new Response(JSON.stringify(after), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ message: "unexpected path" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    render(<LightDetail initial={initial} mode="live" />);
+    fireEvent.click(screen.getByRole("button", { name: /Preview on Door/ }));
+
+    expect(await screen.findByText(/Preview live on/)).toBeTruthy();
+    expect(screen.getByText(/Controller reports 60 \/ 60 in Door/)).toBeTruthy();
   });
 });

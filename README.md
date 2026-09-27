@@ -53,10 +53,10 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | PATCH | `/api/lights/:id/elements` | Save declared ranges. 422 on invert / overlap / over-ledCount. Does not write WLED. |
 | POST | `/api/lights/:id/apply` | Write declared ranges, re-read snapshot. 200 only on match. 409 keeps the failure. |
 | POST | `/api/lights/:id/readdress` | `{ host }` — probe first, same-MAC continuity, persist address + last-good snapshot. |
-| POST | `/api/lights/:id/preview` | Temporary colour/brightness on one Element. Reads `/json/live`. |
+| POST | `/api/lights/:id/preview` | Temporary colour/brightness on one Element. Reads `/json/live`. `reported` stays range rails; match counts are `liveMatch`. |
 | POST | `/api/lights/:id/preview/end` | Restore previous look (`restore: false` cancels without restore). |
 | POST | `/api/lights/:id/preview/seen` | Person rung: `{ seen: "yes" \| "no" }`. Not Hardware Done. |
-| POST | `/api/lights/:id/blink` | Identify pulse. Restore with `/blink/end` (UI does this after 3 s). |
+| POST | `/api/lights/:id/blink` | Identify pulse. Same `reported` / `liveMatch` contract as Preview. Restore with `/blink/end` (UI does this after 3 s). |
 | POST | `/api/discover/blink` | `{ host }` — pulse a candidate, then restore. |
 | POST | `/api/discover` | LAN find (mDNS, SSDP, env targets). Probes up to four collected hosts at a time. Does not enroll. |
 | GET | `/api/discover` | Last find/probe rows |

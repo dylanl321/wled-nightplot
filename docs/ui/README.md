@@ -39,7 +39,7 @@ python3 -m http.server 43182 --directory docs/ui
 ## What to take from it
 
 - The strip is glowing LED beads on a dark rail, not chips or progress bars.
-- Declared brackets sit above the beads; reported brackets sit below. Drift is a visible gap.
+- Declared brackets sit above the beads; reported brackets sit below. Drift is a visible gap. Preview match counts are not those reported brackets.
 - Unreachable beads are grey with last-seen copy. Never the last colour.
 - Product words: Lights, Elements, Preview, Apply, Blink, All Off.
 - Do not import Yard, Tonight, Studio, Scene, Show, Schedule, or Devices-as-noun chrome.

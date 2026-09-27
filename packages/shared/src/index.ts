@@ -56,6 +56,7 @@ export {
   rgbToHex,
   shouldRestoreOnEnd,
   type LiveEndKind,
+  type LiveMatch,
   type LiveRead,
   type LiveRestoreSnapshot,
   type LiveSession,
@@ -82,6 +83,7 @@ export type {
 } from "./discovery/types.ts";
 export {
   buildRangeDisplay,
+  reportedRangeRails,
   type DeclaredRail,
   type DisplayRegion,
   type DriftNote,

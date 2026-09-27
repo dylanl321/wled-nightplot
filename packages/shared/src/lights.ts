@@ -1,7 +1,7 @@
 import type { ApplyResult } from "./apply.ts";
 import type { BeadColor } from "./bead.ts";
 import type { RangeDisplay, ReportedRail } from "./drift.ts";
-import type { LiveSession } from "./live.ts";
+import type { LiveMatch, LiveSession } from "./live.ts";
 import type { AllOffResult, DeleteCheck } from "./manage.ts";
 import type { SafeRead, SafeWriteResult } from "./safe.ts";
 import type { WledSnapshot } from "./wled/snapshot.ts";
@@ -71,6 +71,8 @@ export type LightDetail = {
   session: LiveSession | null;
   liveLeds: (string | null)[] | null;
   liveCaption: string | null;
+  /** Preview / Blink match counts. Never overwrite `reported` rails with this. */
+  liveMatch?: LiveMatch | null;
   apply?: ApplyResult | null;
   deleteChecks?: DeleteCheck[] | null;
   safe?: SafeRead | null;

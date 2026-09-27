@@ -5,6 +5,7 @@ import {
   applyRefuseReason,
   buildRangeDisplay,
   firstFreeRange,
+  reportedRangeRails,
   validateDeclaredRanges,
   type ApplyResult,
   type Element,
@@ -82,9 +83,7 @@ export function LightDetail({
   );
   const display = useMemo(() => {
     if (mode === "inspect") return detail.display;
-    const reported = unreachable
-      ? []
-      : detail.reported.map((span) => ({ start: span.start, stop: span.stop }));
+    const reported = unreachable ? [] : reportedRangeRails(detail.reported);
     return buildRangeDisplay(draft, reported, issues, { reachable: !unreachable });
   }, [detail.display, detail.reported, draft, issues, mode, unreachable]);
 
@@ -186,8 +185,9 @@ export function LightDetail({
   }
 
   function useControllerRanges() {
-    if (detail.reported.length === 0) return;
-    const next = adoptReportedRanges(draft, detail.reported);
+    const rails = reportedRangeRails(detail.reported);
+    if (rails.length === 0) return;
+    const next = adoptReportedRanges(draft, rails);
     setDraft(next);
     setSelectedId(next[0]?.id ?? null);
     setApply(null);

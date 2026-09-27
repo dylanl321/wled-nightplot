@@ -55,6 +55,12 @@ export type ProofRung = {
   detail?: string;
 };
 
+/** Live readback counts for one Preview / Blink target. Not range rails. */
+export type LiveMatch = {
+  matched: number;
+  total: number;
+};
+
 export function parseHexColor(raw: string): string | null {
   const hex = raw.trim().replace(/^#/, "").toLowerCase();
   if (!/^[0-9a-f]{6}$/.test(hex)) return null;
@@ -229,7 +235,7 @@ export function fixtureCaption(source: LiveSource): string {
 
 export function proofLadder(input: {
   sentAt: string | null;
-  reported: { matched: number; total: number } | null;
+  reported: LiveMatch | null;
   seenByYou: SeenByYou;
   label: string;
 }): ProofRung[] {

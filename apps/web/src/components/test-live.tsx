@@ -131,14 +131,15 @@ export function TestLivePanel({
   const rungs = proofLadder({
     sentAt: session?.startedAt ?? null,
     reported:
-      session && detail.liveLeds
+      detail.liveMatch ??
+      (session && detail.liveLeds
         ? {
             matched: detail.liveLeds
               .slice(session.target.start, session.target.stop)
               .filter((led) => led === session.color).length,
             total: Math.max(0, session.target.stop - session.target.start),
           }
-        : null,
+        : null),
     seenByYou: session?.seenByYou ?? null,
     label: proofLabel,
   });
