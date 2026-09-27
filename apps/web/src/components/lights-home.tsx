@@ -3,7 +3,7 @@ import Link from "next/link";
 import { MiniStrip } from "@/components/mini-strip";
 import { StripBeads } from "@/components/strip-beads";
 import { Button } from "@/components/ui/button";
-import { brightnessPct, lastSeenLabel } from "@/lib/time";
+import { displayBead, lightPowerStatus } from "@/lib/power-status";
 
 export function LightsHome({
   lights,
@@ -86,12 +86,8 @@ function Header({ title, subtitle }: { title: string; subtitle: string }) {
 
 function LightRow({ light }: { light: LightView }) {
   const unreachable = light.reachability === "no-answer";
-  const pct = brightnessPct(light.brightness);
-  const status = unreachable
-    ? `No answer · ${lastSeenLabel(light.lastSeenAt)}`
-    : light.on
-      ? `Online · on${pct !== null ? ` · ${pct}%` : ""}`
-      : "Online · off";
+  const bead = displayBead(light);
+  const status = lightPowerStatus(light);
   const elementLine =
     light.elementCount === 0
       ? `${light.ledCount} LEDs · ${stripBeadCaption(light.stripBead)} · no Elements`
@@ -133,7 +129,7 @@ function LightRow({ light }: { light: LightView }) {
         gutter={0}
         top={8}
         bottom={4}
-        color={() => light.bead}
+        color={() => bead}
         brightness={unreachable ? 1 : 0.8}
         rgbw={light.stripBead === "rgbw"}
         ariaLabel={`${light.name} strip, ${stripBeadCaption(light.stripBead)}`}

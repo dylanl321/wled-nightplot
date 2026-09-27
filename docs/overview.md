@@ -27,7 +27,7 @@ The catalog slice id is `R6` (`CURRENT_SLICE` in `packages/shared/src/catalog.ts
 
 ## Honesty
 
-- Unreachable beads are grey (`BeadColor` `"unknown"`), with last-seen. Never the last colour.
+- Unreachable beads are grey (`BeadColor` `"unknown"`), with last-seen. Never the last colour. Missing `on` after an info-only snapshot is the same class: **Online · unknown**, unknown-grey beads — not “Online · off”.
 - RGB vs RGBW on Inspect and the Lights rack follows the attached LED product or the persisted strip driver — not a hardcoded WS281x label from `/json/info` `leds.rgbw`. Opening Inspect on a Light that still has the default driver and no product may persist a known `/json/cfg` bus type (the same mapping as Strip). The Lights list does not read cfg. RGBW beads show two dies (colour + white). That is not Hardware Done.
 - Preview is temporary. Apply persists.
 - All Off cancels without restoring. An unknown row names the wait that happened, or a generic refuse — not a claimed 3 s.

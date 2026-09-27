@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  beadForReportedOn,
   buildRangeDisplay,
   displayHost,
   knownStripKind,
@@ -123,8 +124,7 @@ export function lightDetail(
 
 function beadFor(light: Light, live: WledSnapshot | null): BeadColor {
   if (light.reachability === "no-answer" || !live) return "unknown";
-  if (live.on === false) return null;
-  return live.segmentColor;
+  return beadForReportedOn(live.on, live.segmentColor);
 }
 
 export function rowFromProbe(
@@ -168,7 +168,7 @@ export function rowFromProbe(
       firmware: outcome.snapshot.firmware,
       mac: outcome.snapshot.mac,
       on: outcome.snapshot.on,
-      bead: outcome.snapshot.on ? outcome.snapshot.segmentColor : null,
+      bead: beadForReportedOn(outcome.snapshot.on, outcome.snapshot.segmentColor),
     };
   }
   return {

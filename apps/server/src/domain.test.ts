@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lightFromSnapshot, toLightView } from "./domain.ts";
+import { lightFromSnapshot, rowFromProbe, toLightView } from "./domain.ts";
 
 const snapshot = {
   name: "WLED",
@@ -128,5 +128,54 @@ describe("toLightView strip honesty", () => {
     expect(view.bead).toBe("unknown");
     expect(view.stripBead).toBe("rgbw");
     expect(view.stripChip).toBe("SK6812 RGBW");
+  });
+
+  it("treats info-only missing on as unknown-grey — not null-as-off", () => {
+    const infoOnly = {
+      ...snapshot,
+      on: null,
+      brightness: null,
+      segmentColor: null,
+      segments: [],
+    };
+    const light = lightFromSnapshot(target, infoOnly, "2026-09-26T18:00:00.000Z");
+    const view = toLightView(light, infoOnly);
+    expect(light.reachability).toBe("online");
+    expect(light.on).toBeNull();
+    expect(view.bead).toBe("unknown");
+    expect(view.bead).not.toBeNull();
+  });
+
+  it("keeps known off as null — distinct from unknown", () => {
+    const off = { ...snapshot, on: false, brightness: 0, segmentColor: null };
+    const light = lightFromSnapshot(target, off, "2026-09-26T18:00:00.000Z");
+    const view = toLightView(light, off);
+    expect(view.on).toBe(false);
+    expect(view.bead).toBeNull();
+  });
+});
+
+describe("rowFromProbe info-only beads", () => {
+  const target = { hostname: "192.168.1.90", port: 80 };
+
+  it("uses unknown-grey when found snapshot has no on", () => {
+    const row = rowFromProbe(
+      target,
+      "address-probe",
+      {
+        kind: "found",
+        snapshot: {
+          ...snapshot,
+          on: null,
+          brightness: null,
+          segmentColor: null,
+          segments: [],
+        },
+      },
+      "2026-09-26T18:00:00.000Z",
+      false,
+    );
+    expect(row.on).toBeNull();
+    expect(row.bead).toBe("unknown");
   });
 });
