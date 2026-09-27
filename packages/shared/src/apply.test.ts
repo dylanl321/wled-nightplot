@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  APPLY_ADOPT_EMPTY_REASON,
+  APPLY_ADOPT_UNKNOWN_REASON,
   APPLY_UNKNOWN_COLOUR_REASON,
   APPLY_UNKNOWN_SEGMENTS_MESSAGE,
+  adoptControllerRangesReason,
+  adoptableControllerRanges,
   applyCaption,
   applyOutcome,
   applyRefuseReason,
@@ -127,6 +131,21 @@ describe("apply match", () => {
     expect(declaredVsEmpty.read).toEqual([]);
     expect(declaredVsEmpty.message).toMatch(/didn’t stick/);
     expect(declaredVsEmpty.message).not.toBe(APPLY_UNKNOWN_SEGMENTS_MESSAGE);
+  });
+
+  it("offers adopt only when the reread named ranges", () => {
+    const sent = [{ label: "Right run", start: 24, stop: 50 }];
+    const unknown = applyUnknownSegments(sent, "controller");
+    expect(adoptableControllerRanges(unknown)).toEqual([]);
+    expect(adoptControllerRangesReason(unknown)).toBe(APPLY_ADOPT_UNKNOWN_REASON);
+
+    const empty = applyOutcome(sent, [], "controller");
+    expect(adoptableControllerRanges(empty)).toEqual([]);
+    expect(adoptControllerRangesReason(empty)).toBe(APPLY_ADOPT_EMPTY_REASON);
+
+    const mismatch = applyOutcome(sent, [{ start: 24, stop: 40 }], "controller");
+    expect(adoptableControllerRanges(mismatch)).toEqual([{ start: 24, stop: 40 }]);
+    expect(adoptControllerRangesReason(mismatch)).toBeNull();
   });
 });
 

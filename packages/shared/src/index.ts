@@ -1,6 +1,10 @@
 export {
+  APPLY_ADOPT_EMPTY_REASON,
+  APPLY_ADOPT_UNKNOWN_REASON,
   APPLY_UNKNOWN_COLOUR_REASON,
   APPLY_UNKNOWN_SEGMENTS_MESSAGE,
+  adoptControllerRangesReason,
+  adoptableControllerRanges,
   adoptReportedRanges,
   applyCaption,
   applyOutcome,

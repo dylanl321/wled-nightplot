@@ -1,4 +1,10 @@
-import type { LightDetail as LightDetailPayload } from "@nightplot/shared";
+import {
+  APPLY_ADOPT_UNKNOWN_REASON,
+  applyOutcome,
+  applyUnknownSegments,
+  type ApplyResult,
+  type LightDetail as LightDetailPayload,
+} from "@nightplot/shared";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { LightDetail } from "@/components/light-detail";
@@ -670,8 +676,124 @@ describe("LightDetail selected Element kind chip", () => {
   });
 });
 
+describe("LightDetail ApplyFailed adopt", () => {
+  it("disables Use controller’s when the reread did not name ranges", async () => {
+    const initial = adoptRangesDetail();
+    const apply = applyUnknownSegments(
+      [{ label: "Door", start: 0, stop: 60 }],
+      "controller",
+    );
+    stubRangeApply(initial, apply);
+
+    render(<LightDetail initial={initial} mode="ranges" />);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(await screen.findByText("Apply didn’t stick")).toBeTruthy();
+    const adopt = screen.getByRole("button", { name: "Use controller’s" });
+    expect((adopt as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(APPLY_ADOPT_UNKNOWN_REASON)).toBeTruthy();
+    expect((screen.getByLabelText("Start, first LED, inclusive") as HTMLInputElement).value).toBe(
+      "0",
+    );
+    expect((screen.getByLabelText("Stop, after last LED, exclusive") as HTMLInputElement).value).toBe(
+      "60",
+    );
+
+    fireEvent.click(adopt);
+    expect((screen.getByLabelText("Start, first LED, inclusive") as HTMLInputElement).value).toBe(
+      "0",
+    );
+    expect((screen.getByLabelText("Stop, after last LED, exclusive") as HTMLInputElement).value).toBe(
+      "60",
+    );
+    expect(
+      (screen.getByRole("button", { name: "Use controller’s" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("adopts known controller ranges on a mismatch", async () => {
+    const initial = adoptRangesDetail();
+    const apply = applyOutcome(
+      [{ label: "Door", start: 0, stop: 60 }],
+      [{ start: 0, stop: 40 }],
+      "controller",
+    );
+    stubRangeApply(initial, apply);
+
+    render(<LightDetail initial={initial} mode="ranges" />);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(await screen.findByText("Apply didn’t stick")).toBeTruthy();
+    const adopt = screen.getByRole("button", { name: "Use controller’s" });
+    expect((adopt as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText(APPLY_ADOPT_UNKNOWN_REASON)).toBeNull();
+
+    fireEvent.click(adopt);
+    expect((screen.getByLabelText("Start, first LED, inclusive") as HTMLInputElement).value).toBe(
+      "0",
+    );
+    expect((screen.getByLabelText("Stop, after last LED, exclusive") as HTMLInputElement).value).toBe(
+      "40",
+    );
+    expect(screen.queryByRole("button", { name: "Use controller’s" })).toBeNull();
+  });
+});
+
 function selectedKindChip(): HTMLElement {
   return screen.getByLabelText("Element kind");
+}
+
+function adoptRangesDetail(): LightDetailPayload {
+  return lightDetail({
+    light: lightView({
+      reachability: "online",
+      on: true,
+      brightness: 128,
+      bead: "#ffa000",
+      segmentCount: 1,
+    }),
+    snapshotAt: "2026-09-26T20:00:00.000Z",
+    reported: [{ start: 0, stop: 60, differs: false }],
+    display: {
+      declared: [
+        {
+          id: "el-door",
+          label: "Door",
+          start: 0,
+          stop: 60,
+          length: 60,
+          differs: false,
+          error: false,
+        },
+      ],
+      reported: [{ start: 0, stop: 60, differs: false }],
+      regions: [],
+      notes: [],
+    },
+  });
+}
+
+function stubRangeApply(initial: LightDetailPayload, apply: ApplyResult): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const path = requestPath(String(input));
+      if (path === `/api/lights/${initial.light.id}/apply`) {
+        return new Response(
+          JSON.stringify({
+            ...initial,
+            apply,
+            message: apply.message,
+          }),
+          { status: 409, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ message: "unexpected path" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }),
+  );
 }
 
 function paragraphWith(pattern: RegExp): HTMLElement {

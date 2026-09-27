@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  adoptControllerRangesReason,
+  adoptableControllerRanges,
   adoptReportedRanges,
   applyRefuseReason,
   knownApplyColor,
@@ -209,7 +211,8 @@ export function LightDetail({
   }
 
   function useControllerRanges() {
-    const rails = reportedRangeRails(detail.reported);
+    if (!apply) return;
+    const rails = adoptableControllerRanges(apply);
     if (rails.length === 0) return;
     const next = adoptReportedRanges(draft, rails);
     setDraft(next);
@@ -667,6 +670,7 @@ function ApplyFailed({
   onAdopt: () => void;
   onRetry: () => void;
 }) {
+  const adoptReason = adoptControllerRangesReason(apply);
   return (
     <div className="flex flex-col gap-2 rounded-[14px] border border-[#5a2f33] bg-[#1a1113] p-4">
       <span className="text-[16px] font-semibold text-destructive">Apply didn’t stick</span>
@@ -688,13 +692,22 @@ function ApplyFailed({
         Your draft is kept. Nothing else on the controller changed.
       </p>
       <p className="text-[12px] text-primary">{apply.caption}</p>
-      <div className="mt-1 flex flex-col gap-2 sm:flex-row">
-        <Button variant="outline" className="flex-1" onClick={onAdopt}>
-          Use controller’s
-        </Button>
-        <Button className="flex-1" onClick={onRetry}>
-          Apply again
-        </Button>
+      <div className="mt-1 flex flex-col gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={onAdopt}
+            disabled={adoptReason !== null}
+            title={adoptReason ?? undefined}
+          >
+            Use controller’s
+          </Button>
+          <Button className="flex-1" onClick={onRetry}>
+            Apply again
+          </Button>
+        </div>
+        {adoptReason ? <p className="text-[12px] text-quiet">{adoptReason}</p> : null}
       </div>
     </div>
   );

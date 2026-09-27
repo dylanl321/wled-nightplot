@@ -31,6 +31,14 @@ export type ApplyResult = {
 export const APPLY_UNKNOWN_SEGMENTS_MESSAGE =
   "Wrote, but segments are unknown. Not treating as success.";
 
+/** ApplyFailed adopt copy when `apply.read` is unknown (`null`). */
+export const APPLY_ADOPT_UNKNOWN_REASON =
+  "Controller ranges are unknown. Nothing to take.";
+
+/** ApplyFailed adopt copy when the reread was a known empty list. */
+export const APPLY_ADOPT_EMPTY_REASON =
+  "The controller reported no ranges to take.";
+
 export type ReaddressStep = {
   done: boolean;
   text: string;
@@ -176,6 +184,21 @@ export function applyOutcome(
       : "Apply didn’t stick. Your draft is kept.",
     caption: applyCaption(source),
   };
+}
+
+/**
+ * Ranges ApplyFailed may adopt. Unknown (`read: null`) and a known empty
+ * list are none — never fall back to a last-known report.
+ */
+export function adoptableControllerRanges(apply: ApplyResult): RangeSpan[] {
+  if (apply.read == null || apply.read.length === 0) return [];
+  return apply.read;
+}
+
+/** Why **Use controller’s** is unavailable, or null when there are ranges to take. */
+export function adoptControllerRangesReason(apply: ApplyResult): string | null {
+  if (adoptableControllerRanges(apply).length > 0) return null;
+  return apply.read === null ? APPLY_ADOPT_UNKNOWN_REASON : APPLY_ADOPT_EMPTY_REASON;
 }
 
 export function applyCaption(source: "fixture" | "controller"): string {
