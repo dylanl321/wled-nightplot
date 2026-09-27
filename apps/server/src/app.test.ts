@@ -463,9 +463,13 @@ describe("discover + connect", () => {
       body: JSON.stringify({ host: "192.168.1.72" }),
     });
     expect(first.status).toBe(201);
-    const created = (await first.json()) as { light: { hostKey: string; name: string } };
+    const created = (await first.json()) as {
+      light: { hostKey: string; name: string; ledProductId: string | null };
+    };
     expect(created.light.name).toBe("WLED");
+    expect(created.light.ledProductId).toBeNull();
     expect(store.load()).toHaveLength(1);
+    expect(store.load()[0]?.ledProductId).toBeNull();
 
     const dup = await app.request("/api/lights", {
       method: "POST",
@@ -1633,6 +1637,32 @@ describe("strip provision", () => {
     expect(store.elementsFor(id)[0]).toMatchObject({ start: 0, stop: 60 });
   });
 
+  it("keeps ledProductId after a strip Apply", async () => {
+    const box = createFixtureBox({ ledCount: 60, gpio: 16 });
+    const { app, store, id } = await enrollFixture(box);
+    const list = await app.request("/api/led-products");
+    const product = ((await list.json()) as { products: { id: string }[] }).products[0]!;
+
+    const attached = await app.request(`/api/lights/${id}/led-product`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ledProductId: product.id }),
+    });
+    expect(attached.status).toBe(200);
+
+    const res = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provision: { ledType: "ws281x", length: 150, gpio: 2 } }),
+    });
+    expect(res.status).toBe(200);
+    expect(
+      ((await res.json()) as { light: { ledProductId: string | null } }).light.ledProductId,
+    ).toBe(product.id);
+    expect(store.findById(id)?.ledProductId).toBe(product.id);
+    expect(box.cfg.hw.led.ins[0]).toMatchObject({ len: 150, pin: [2], type: 22 });
+  });
+
   it("refuses an unknown LED type without writing", async () => {
     const box = createFixtureBox();
     const { app, id } = await enrollFixture(box);
@@ -1747,6 +1777,85 @@ describe("LED product catalog", () => {
       }),
     });
     expect(duplicate.status).toBe(409);
+    expect(writeCfg).not.toHaveBeenCalled();
+  });
+});
+
+describe("LED product attach", () => {
+  it("persists ledProductId on the Light and lists products on Strip GET", async () => {
+    const { app, store, products } = testApp();
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.72" }),
+    });
+    expect(enroll.status).toBe(201);
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const product = products.list()[0]!;
+
+    const attached = await app.request(`/api/lights/${id}/led-product`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ledProductId: product.id }),
+    });
+    expect(attached.status).toBe(200);
+    const attachedBody = (await attached.json()) as {
+      light: { ledProductId: string | null };
+      ledProducts: { id: string }[];
+    };
+    expect(attachedBody.light.ledProductId).toBe(product.id);
+    expect(attachedBody.ledProducts.map((row) => row.id)).toContain(product.id);
+    expect(store.findById(id)?.ledProductId).toBe(product.id);
+
+    const inspect = await app.request(`/api/lights/${id}`);
+    expect(
+      ((await inspect.json()) as { light: { ledProductId: string | null } }).light.ledProductId,
+    ).toBe(product.id);
+
+    const provision = await app.request(`/api/lights/${id}/provision`);
+    const provisionBody = (await provision.json()) as {
+      light: { ledProductId: string | null };
+      ledProducts: { id: string }[];
+    };
+    expect(provisionBody.light.ledProductId).toBe(product.id);
+    expect(provisionBody.ledProducts.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("clears ledProductId, refuses unknown ids, and does not write cfg", async () => {
+    const writeCfg = vi.fn(async () => true);
+    const { app, store, products } = testApp({ writeCfg });
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.72" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const product = products.list()[1]!;
+
+    await app.request(`/api/lights/${id}/led-product`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ledProductId: product.id }),
+    });
+
+    const missing = await app.request(`/api/lights/${id}/led-product`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ledProductId: "no-such-sku" }),
+    });
+    expect(missing.status).toBe(404);
+    expect(store.findById(id)?.ledProductId).toBe(product.id);
+
+    const cleared = await app.request(`/api/lights/${id}/led-product`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ledProductId: null }),
+    });
+    expect(cleared.status).toBe(200);
+    expect(
+      ((await cleared.json()) as { light: { ledProductId: string | null } }).light.ledProductId,
+    ).toBeNull();
+    expect(store.findById(id)?.ledProductId).toBeNull();
     expect(writeCfg).not.toHaveBeenCalled();
   });
 });

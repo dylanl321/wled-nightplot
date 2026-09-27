@@ -46,6 +46,7 @@ export function lightFromSnapshot(
     on: snapshot.on,
     brightness: snapshot.brightness,
     enrolledAt: existing?.enrolledAt ?? now,
+    ledProductId: existing?.ledProductId ?? null,
     lastSnapshot: existing?.lastSnapshot ?? null,
     lastSnapshotAt: existing?.lastSnapshotAt ?? null,
   };

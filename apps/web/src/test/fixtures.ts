@@ -44,6 +44,7 @@ export function lightView(overrides: Partial<LightView> = {}): LightView {
     on: null,
     brightness: null,
     enrolledAt: "2026-09-26T17:00:00.000Z",
+    ledProductId: null,
     bead: "unknown",
     displayHost: "192.168.1.40",
     elementCount: 1,

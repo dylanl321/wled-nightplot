@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { Element, Light } from "@nightplot/shared";
+import { normalizeLightLedProductId, type Element, type Light } from "@nightplot/shared";
 
 type FileShape = {
   version: 1;
@@ -77,7 +77,7 @@ export class FileLightsStore {
         return { lights: [], elements: [] };
       }
       return {
-        lights: parsed.lights,
+        lights: parsed.lights.map(withLedProductId),
         elements: Array.isArray(parsed.elements)
           ? parsed.elements.filter(isElement)
           : [],
@@ -94,6 +94,13 @@ export class FileLightsStore {
     writeFileSync(tmp, `${JSON.stringify(body, null, 2)}\n`, "utf8");
     renameSync(tmp, this.filePath);
   }
+}
+
+function withLedProductId(light: Light): Light {
+  return {
+    ...light,
+    ledProductId: normalizeLightLedProductId(light.ledProductId),
+  };
 }
 
 function isElement(value: unknown): value is Element {

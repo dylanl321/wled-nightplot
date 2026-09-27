@@ -20,7 +20,7 @@ Auth: Cloud Agent secret `PLANE_API_KEY` as header `X-API-Key`.
 
 CONFIG tickets are serial. R0 is skeleton only. Do not start the next slice in the same run.
 
-Filed tickets through CONFIG-50, plus CONFIG-52 (LED product catalog). Do not invent unfiled numbers. Gaps and repo/ops are not the next R-slice; do not fold them into an R-ticket.
+Filed tickets through CONFIG-50, plus CONFIG-52 (LED product catalog) and CONFIG-53 (Strip attach). Do not invent unfiled numbers. Gaps and repo/ops are not the next R-slice; do not fold them into an R-ticket.
 
 | Issue | Title (as filed) |
 | --- | --- |
@@ -70,6 +70,7 @@ Gaps (not the next R-slice; do not fold into an R-ticket):
 | CONFIG-43 | Declared Elements not rewritten when strip length changes |
 | CONFIG-49 | Discover Promise.all couples Find failure to ServerDown |
 | CONFIG-52 | LED product catalog — model + JSON store + list/create API |
+| CONFIG-53 | Strip: attach LED product to Light + fill provision draft |
 
 Repo / ops (not the next R-slice; do not fold into an R-ticket):
 
@@ -139,6 +140,7 @@ Repo / ops (not the next R-slice; do not fold into an R-ticket):
 | CONFIG-49 | `f6f055b4-79c2-4b1f-bd11-f880233fd1ca` |
 | CONFIG-50 | `b2bb41fd-beea-4771-a6f8-df112be8cf73` |
 | CONFIG-52 | `4ef696a0-77d4-4442-8018-2b5f8d71d68d` |
+| CONFIG-53 | `e86daa83-0f56-4ca2-b9e5-4ee932ba9283` |
 
 ## States
 

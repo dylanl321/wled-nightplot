@@ -2,24 +2,22 @@
 
 import {
   defaultStripPreset,
-  getStripPreset,
-  listStripPresets,
-  matchingStripPresetId,
-  provisionDraftFromPreset,
+  provisionDraftFromProduct,
+  type LedProduct,
   type LightDetail,
   type ProvisionRead,
   type ProvisionWriteResult,
-  type StripPreset,
   type WledStripProvisionDraft,
 } from "@nightplot/shared";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fetchJson, postJson } from "@/lib/api";
+import { fetchJson, patchJson, postJson } from "@/lib/api";
 
 type ProvisionPayload = LightDetail & {
   provision: ProvisionRead;
   provisionWrite?: ProvisionWriteResult;
+  ledProducts?: LedProduct[];
   message?: string;
 };
 
@@ -34,7 +32,9 @@ export function StripProvisionPanel({
 }) {
   const [read, setRead] = useState<ProvisionRead | null>(null);
   const [draft, setDraft] = useState<WledStripProvisionDraft | null>(null);
-  const [busy, setBusy] = useState<"load" | "apply" | null>("load");
+  const [products, setProducts] = useState<LedProduct[]>([]);
+  const [attachedId, setAttachedId] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"load" | "apply" | "attach" | null>("load");
   const [notice, setNotice] = useState<string | null>(null);
   const [result, setResult] = useState<ProvisionWriteResult | null>(null);
 
@@ -45,6 +45,9 @@ export function StripProvisionPanel({
       .then((payload) => {
         if (cancelled) return;
         setRead(payload.provision);
+        const catalog = payload.ledProducts ?? [];
+        setProducts(catalog);
+        setAttachedId(payload.light.ledProductId ?? null);
         const fallback = defaultStripPreset();
         setDraft({
           ledType: "ws281x",
@@ -66,6 +69,7 @@ export function StripProvisionPanel({
   }, [lightId]);
 
   const writable = Boolean(read?.fingerprint.writable) && !unreachable;
+  const selected = products.find((product) => product.id === attachedId);
 
   function patch<K extends keyof WledStripProvisionDraft>(
     key: K,
@@ -76,10 +80,32 @@ export function StripProvisionPanel({
     setNotice(null);
   }
 
-  function applyPreset(preset: StripPreset) {
-    setDraft(provisionDraftFromPreset(preset));
+  async function attachProduct(product: LedProduct | null) {
     setResult(null);
     setNotice(null);
+    if (product) {
+      const filled = provisionDraftFromProduct(product, draft ?? undefined);
+      if (!filled.ok) {
+        setNotice(filled.message);
+        return;
+      }
+      setDraft(filled.draft);
+    }
+    setBusy("attach");
+    const res = await patchJson<ProvisionPayload>(`/api/lights/${lightId}/led-product`, {
+      ledProductId: product?.id ?? null,
+    });
+    setBusy(null);
+    const payload = res.data as ProvisionPayload;
+    if (payload.light) {
+      setAttachedId(payload.light.ledProductId ?? null);
+      if (payload.ledProducts) setProducts(payload.ledProducts);
+      onUpdated?.(payload);
+    }
+    if (!res.ok) {
+      setNotice(payload.message ?? "LED product was not attached.");
+      return;
+    }
   }
 
   async function apply() {
@@ -102,8 +128,11 @@ export function StripProvisionPanel({
         });
       }
     }
+    if (payload.light) {
+      setAttachedId(payload.light.ledProductId ?? null);
+      onUpdated?.(payload);
+    }
     if (payload.provisionWrite) setResult(payload.provisionWrite);
-    if (payload.light) onUpdated?.(payload);
     if (res.ok) {
       window.dispatchEvent(new Event("nightplot:lights-changed"));
     }
@@ -127,20 +156,69 @@ export function StripProvisionPanel({
   }
 
   const failed = result && !result.matched;
-  const selectedPresetId = matchingStripPresetId(draft);
-  const selectedPreset = selectedPresetId ? getStripPreset(selectedPresetId) : undefined;
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
         <h2 className="text-[20px] font-semibold">Strip</h2>
         <p className="text-[13px] leading-5 text-[#c9c3b8]">
-          First-time bus: LED type, node count, and GPIO. A named default fills the form; fields
-          still override. Apply writes /json/cfg, then reads the snapshot back. A length change
-          clips or drops declared ranges that run past the new strip, and flags leftover coverage.
-          Preview is not Apply.
+          First-time bus: LED type, node count, and GPIO. A catalog product fills the form from
+          that SKU and its driver; fields still override. Attaching a product is Nightplot
+          bookkeeping — not Apply, not a WLED write, not Hardware Done. Apply writes /json/cfg,
+          then reads the snapshot back. A length change clips or drops declared ranges that run
+          past the new strip, and flags leftover coverage. Preview is not Apply.
         </p>
       </div>
+
+      <fieldset className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
+        <legend className="px-1 font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
+          LED product
+        </legend>
+        <p className="text-[12px] text-quiet">
+          Operator catalog. Form factor is metadata. RGBW maps are not written on this path.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            aria-pressed={attachedId === null}
+            onClick={() => void attachProduct(null)}
+            disabled={busy !== null}
+            className={`rounded-lg border px-3 py-2 text-left text-[13px] font-semibold ${
+              attachedId === null
+                ? "border-primary bg-secondary text-foreground"
+                : "border-input bg-[#07080a] text-[#c9c3b8] hover:bg-secondary"
+            }`}
+          >
+            Manual fields
+          </button>
+          {products.map((product) => {
+            const selectedProduct = attachedId === product.id;
+            return (
+              <button
+                key={product.id}
+                type="button"
+                aria-pressed={selectedProduct}
+                onClick={() => void attachProduct(product)}
+                disabled={busy !== null}
+                className={`rounded-lg border px-3 py-2 text-left text-[13px] font-semibold ${
+                  selectedProduct
+                    ? "border-primary bg-secondary text-foreground"
+                    : "border-input bg-[#07080a] text-[#c9c3b8] hover:bg-secondary"
+                }`}
+              >
+                {product.label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[12px] text-quiet">
+          {selected
+            ? selected.notes
+            : products.length === 0
+              ? "No LED products in the catalog. Fields stay manual."
+              : "Fields override the catalog values. Manual fields keeps no product attached."}
+        </p>
+      </fieldset>
 
       {read.refuse || unreachable ? (
         <div className="rounded-[14px] border border-[#5a2f33] bg-[#1a1113] p-4">
@@ -152,39 +230,7 @@ export function StripProvisionPanel({
           <p className="mt-2 text-[12px] text-primary">{read.caption}</p>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          <fieldset className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
-            <legend className="px-1 font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
-              Named default
-            </legend>
-            <p className="text-[12px] text-quiet">
-              Catalog presets — common WS281x length and GPIO. Not a confirmed install pinout.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {listStripPresets().map((preset) => {
-                const selected = selectedPresetId === preset.id;
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => applyPreset(preset)}
-                    className={`rounded-lg border px-3 py-2 text-left text-[13px] font-semibold ${
-                      selected
-                        ? "border-primary bg-secondary text-foreground"
-                        : "border-input bg-[#07080a] text-[#c9c3b8] hover:bg-secondary"
-                    }`}
-                  >
-                    {preset.label}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-[12px] text-quiet">
-              {selectedPreset ? selectedPreset.notes : "Fields override the catalog values."}
-            </p>
-          </fieldset>
-          <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-3">
           <label className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
             <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
               LED type
@@ -222,7 +268,6 @@ export function StripProvisionPanel({
             />
             <span className="text-[12px] text-quiet">Single data pin for WS281x.</span>
           </label>
-          </div>
         </div>
       )}
 

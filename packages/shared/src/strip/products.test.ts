@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { getStrip } from "./catalog.ts";
-import { STRIP_PRESETS } from "./presets.ts";
+import { defaultStripPreset, STRIP_PRESETS } from "./presets.ts";
 import {
   inheritLedProductFields,
+  parseLedProductAttach,
   parseLedProductInput,
+  provisionApplyBodyFromProduct,
+  provisionDraftFromProduct,
+  provisionLedTypeForDriver,
+  resolveLedProductAttach,
   seedLedProductsFromPresets,
   validateLedProduct,
 } from "./products.ts";
@@ -111,5 +116,120 @@ describe("LED product catalog", () => {
       driverId: "ws281x",
       colorOrder: "yes",
     })).toMatchObject({ ok: false, error: "bad_override" });
+  });
+});
+
+describe("LED product attach + draft fill", () => {
+  it("fills ledType / length / GPIO from the product and its driver", () => {
+    const product = seedLedProductsFromPresets().find(
+      (row) => row.id === "led-ws281x-300-gpio2",
+    );
+    expect(product).toBeDefined();
+    const filled = provisionDraftFromProduct(product!);
+    expect(filled).toEqual({
+      ok: true,
+      draft: { ledType: "ws281x", length: 300, gpio: 2 },
+    });
+    const apply = provisionApplyBodyFromProduct(product!);
+    expect(apply).toEqual({
+      ok: true,
+      body: { provision: { ledType: "ws281x", length: 300, gpio: 2 } },
+    });
+  });
+
+  it("uses product defaults over fallback, then fallback over the seeded preset", () => {
+    const withDefaults = provisionDraftFromProduct(
+      {
+        id: "eave-reel",
+        label: "Eave reel",
+        notes: "",
+        formFactor: "diffused",
+        driverId: "ws281x",
+        defaultLength: 150,
+        defaultGpio: 16,
+      },
+      { length: 99, gpio: 4 },
+    );
+    expect(withDefaults).toEqual({
+      ok: true,
+      draft: { ledType: "ws281x", length: 150, gpio: 16 },
+    });
+
+    const seeded = defaultStripPreset();
+    const withoutDefaults = provisionDraftFromProduct(
+      {
+        id: "porch-cob",
+        label: "Porch cob",
+        notes: "",
+        formFactor: "cob",
+        driverId: "ws281x",
+      },
+      { length: 180, gpio: 5 },
+    );
+    expect(withoutDefaults).toEqual({
+      ok: true,
+      draft: { ledType: "ws281x", length: 180, gpio: 5 },
+    });
+
+    const noFallback = provisionDraftFromProduct({
+      id: "manual-seed",
+      label: "Manual seed",
+      notes: "",
+      formFactor: "discrete",
+      driverId: "ws281x",
+    });
+    expect(noFallback).toEqual({
+      ok: true,
+      draft: { ledType: "ws281x", length: seeded.length, gpio: seeded.gpio },
+    });
+  });
+
+  it("fails closed when the driver is missing or not a provision LED type", () => {
+    expect(provisionLedTypeForDriver("ws281x")).toBe("ws281x");
+    expect(provisionLedTypeForDriver("apa102")).toBeNull();
+
+    expect(
+      provisionDraftFromProduct({
+        id: "mystery",
+        label: "Mystery",
+        notes: "",
+        formFactor: "discrete",
+        driverId: "apa102",
+      }),
+    ).toMatchObject({ ok: false, error: "unknown_driver" });
+  });
+
+  it("parses attach null and a catalog id; unknown ids fail closed", () => {
+    expect(parseLedProductAttach({ ledProductId: null })).toEqual({
+      ok: true,
+      ledProductId: null,
+    });
+    expect(parseLedProductAttach({ ledProductId: "led-ws281x-60-gpio16" })).toEqual({
+      ok: true,
+      ledProductId: "led-ws281x-60-gpio16",
+    });
+    expect(parseLedProductAttach({})).toMatchObject({ ok: false, error: "invalid" });
+    expect(parseLedProductAttach({ ledProductId: "" })).toMatchObject({
+      ok: false,
+      error: "invalid",
+    });
+
+    const catalog = seedLedProductsFromPresets();
+    const lookup = (id: string) => catalog.find((row) => row.id === id);
+    expect(resolveLedProductAttach(null, lookup)).toEqual({
+      ok: true,
+      ledProductId: null,
+      product: null,
+    });
+    const first = catalog[0]!;
+    expect(resolveLedProductAttach(first.id, lookup)).toEqual({
+      ok: true,
+      ledProductId: first.id,
+      product: first,
+    });
+    expect(resolveLedProductAttach("no-such-sku", lookup)).toMatchObject({
+      ok: false,
+      error: "not_found",
+    });
   });
 });

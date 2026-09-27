@@ -1,14 +1,15 @@
 import type { LightDetail as LightDetailPayload, ProvisionRead } from "@nightplot/shared";
 import {
-  getStripPreset,
-  listStripPresets,
-  provisionApplyBodyFromPreset,
+  provisionApplyBodyFromProduct,
+  seedLedProductsFromPresets,
 } from "@nightplot/shared";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { LightDetail } from "@/components/light-detail";
 import { StripProvisionPanel } from "@/components/strip-provision";
 import { lightDetail, lightView, requestPath } from "@/test/fixtures";
+
+const catalogProducts = seedLedProductsFromPresets();
 
 const provision: ProvisionRead = {
   settings: { ledType: "ws281x", length: 60, gpio: 16, nativeType: 22 },
@@ -35,8 +36,9 @@ function payload(overrides: Partial<LightDetailPayload> = {}): LightDetailPayloa
       }),
     }),
     provision,
+    ledProducts: catalogProducts,
     ...overrides,
-  };
+  } as LightDetailPayload & { ledProducts: typeof catalogProducts };
 }
 
 describe("Strip provision", () => {
@@ -101,27 +103,40 @@ describe("Strip provision", () => {
     });
   });
 
-  it("fills the form from a catalog preset and Apply posts that payload", async () => {
-    const preset = getStripPreset("ws281x-300-gpio2") ?? listStripPresets()[2]!;
+  it("fills the form from a catalog product, persists attach, and Apply posts provision only", async () => {
+    const product = catalogProducts.find((row) => row.id === "led-ws281x-300-gpio2")!;
+    const applyBody = provisionApplyBodyFromProduct(product);
+    expect(applyBody.ok).toBe(true);
+    if (!applyBody.ok) return;
     const posts: unknown[] = [];
+    const attaches: unknown[] = [];
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = requestPath(String(input));
+      if (path.endsWith("/led-product") && init?.method === "PATCH") {
+        attaches.push(JSON.parse(String(init.body)));
+        return new Response(
+          JSON.stringify({
+            ...payload({ light: lightView({ ledProductId: product.id }) }),
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
       if (path.endsWith("/provision") && init?.method === "POST") {
         posts.push(JSON.parse(String(init.body)));
         return new Response(
           JSON.stringify({
-            ...payload(),
+            ...payload({ light: lightView({ ledProductId: product.id }) }),
             provisionWrite: {
               status: "matched",
               matched: true,
-              sent: preset,
+              sent: applyBody.body.provision,
               read: {
-                ledType: preset.ledType,
-                length: preset.length,
-                gpio: preset.gpio,
+                ledType: applyBody.body.provision.ledType,
+                length: applyBody.body.provision.length,
+                gpio: applyBody.body.provision.gpio,
                 nativeType: 22,
               },
-              snapshotLedCount: preset.length,
+              snapshotLedCount: applyBody.body.provision.length,
               fingerprint: provision.fingerprint,
               message: "Controller reports the strip we sent.",
               caption: provision.caption,
@@ -145,41 +160,53 @@ describe("Strip provision", () => {
 
     render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
 
-    expect(await screen.findByRole("button", { name: preset.label })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: product.label })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Manual fields" })).toBeTruthy();
     expect((screen.getByLabelText("Node count") as HTMLInputElement).value).toBe("60");
     expect((screen.getByLabelText("GPIO pin") as HTMLInputElement).value).toBe("16");
 
-    fireEvent.click(screen.getByRole("button", { name: preset.label }));
+    fireEvent.click(screen.getByRole("button", { name: product.label }));
 
     await waitFor(() => {
       expect((screen.getByLabelText("Node count") as HTMLInputElement).value).toBe(
-        String(preset.length),
+        String(product.defaultLength),
       );
       expect((screen.getByLabelText("GPIO pin") as HTMLInputElement).value).toBe(
-        String(preset.gpio),
+        String(product.defaultGpio),
       );
     });
-    expect(screen.getByRole("button", { name: preset.label }).getAttribute("aria-pressed")).toBe(
+    expect(screen.getByRole("button", { name: product.label }).getAttribute("aria-pressed")).toBe(
       "true",
     );
+    await waitFor(() => {
+      expect(attaches).toEqual([{ ledProductId: product.id }]);
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
-      expect(posts).toEqual([provisionApplyBodyFromPreset(preset)]);
+      expect(posts).toEqual([applyBody.body]);
     });
   });
 
-  it("lets fields override a selected preset before Apply", async () => {
-    const preset = listStripPresets()[1]!;
+  it("lets fields override a selected product before Apply; product stays attached", async () => {
+    const product = catalogProducts[1]!;
     const posts: unknown[] = [];
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = requestPath(String(input));
+      if (path.endsWith("/led-product") && init?.method === "PATCH") {
+        return new Response(
+          JSON.stringify({
+            ...payload({ light: lightView({ ledProductId: product.id }) }),
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
       if (path.endsWith("/provision") && init?.method === "POST") {
         posts.push(JSON.parse(String(init.body)));
         return new Response(
           JSON.stringify({
-            ...payload(),
+            ...payload({ light: lightView({ ledProductId: product.id }) }),
             message: "Strip provision was not written.",
           }),
           { status: 422, headers: { "Content-Type": "application/json" } },
@@ -199,17 +226,25 @@ describe("Strip provision", () => {
     vi.stubGlobal("fetch", fetch);
 
     render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
-    fireEvent.click(await screen.findByRole("button", { name: preset.label }));
+    fireEvent.click(await screen.findByRole("button", { name: product.label }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: product.label }).getAttribute("aria-pressed")).toBe(
+        "true",
+      );
+      expect((screen.getByLabelText("Node count") as HTMLInputElement).value).toBe(
+        String(product.defaultLength),
+      );
+    });
     fireEvent.change(screen.getByLabelText("Node count"), { target: { value: "180" } });
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
       expect(posts).toEqual([
-        { provision: { ledType: "ws281x", length: 180, gpio: preset.gpio } },
+        { provision: { ledType: "ws281x", length: 180, gpio: product.defaultGpio } },
       ]);
     });
-    expect(screen.getByRole("button", { name: preset.label }).getAttribute("aria-pressed")).toBe(
-      "false",
+    expect(screen.getByRole("button", { name: product.label }).getAttribute("aria-pressed")).toBe(
+      "true",
     );
   });
 

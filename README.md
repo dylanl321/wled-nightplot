@@ -26,7 +26,7 @@ GitHub: [`dylanl321/wled-nightplot`](https://github.com/dylanl321/wled-nightplot
 
 After a Safe display-name write, the rack title uses the `/json/cfg` name even when metal `/json/info` still lags until reboot.
 
-**Strip** sets WS281x type, node count, and GPIO on an enrolled Light. Named catalog presets fill that form; fields still override. Apply writes reviewed `/json/cfg` bus fields, then re-reads cfg and the snapshot. A mismatch stays on the failure UI. A length-changing Apply clips or drops declared Elements that run past the new strip, and flags leftover coverage on grow — the UI does not claim they still match.
+**Strip** sets WS281x type, node count, and GPIO on an enrolled Light. A catalog LED product fills that form from the SKU and its driver; fields still override. Attaching a product stores `ledProductId` on the Light and does not write the controller. Apply writes reviewed `/json/cfg` bus fields, then re-reads cfg and the snapshot. A mismatch stays on the failure UI. A length-changing Apply clips or drops declared Elements that run past the new strip, and flags leftover coverage on grow — the UI does not claim they still match.
 
 ## Quick start
 
@@ -75,7 +75,7 @@ Full build / run / multicast caveats: [docs/deploy.md](docs/deploy.md).
 pnpm dev:demo
 ```
 
-or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light for Inspect, then **Strip** to pick a named default or set WS281x / node count / GPIO and **Apply** (writes `/json/cfg`, then re-reads the snapshot), **Edit ranges** to declare Elements, **Test live** to Preview or Blink, or **Safe settings** for the small `/json/cfg` set. **All Off** is on the rail / thumb bar. **Remove this Light** on Inspect runs three checks and refuses until they complete. The fixture is a software stub for development, not a verified real strip.
+or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light for Inspect, then **Strip** to pick a catalog LED product or set WS281x / node count / GPIO and **Apply** (writes `/json/cfg`, then re-reads the snapshot), **Edit ranges** to declare Elements, **Test live** to Preview or Blink, or **Safe settings** for the small `/json/cfg` set. **All Off** is on the rail / thumb bar. **Remove this Light** on Inspect runs three checks and refuses until they complete. The fixture is a software stub for development, not a verified real strip.
 
 By default the fixture updates `/json/info` and `/json/cfg` together. Real metal often keeps the old `/json/info` name until reboot. To simulate that lag: `NIGHTPLOT_FIXTURE_INFO_NAME_LAG=1 pnpm fixture`, or `POST http://127.0.0.1:48210/nightplot/info-name-lag` with `{ "on": true }`. Safe settings rename still updates the rack title from cfg. `{ "on": false }` copies cfg → info.
 
@@ -130,6 +130,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | DELETE | `/api/lights/:id` | 422 until every check is `ok`. Does not write the controller. |
 | GET | `/api/lights/:id/safe` | Fingerprinted Safe settings from `/json/cfg`. Empty fingerprint → refuse. |
 | POST | `/api/lights/:id/safe` | `{ settings }` — write only understood fields, then reread. 422 if unsupported. A matched display-name write patches the enrolled title from cfg even when `/json/info` still lags. |
+| PATCH | `/api/lights/:id/led-product` | `{ ledProductId }` — attach a catalog product or `null` for manual fields. Persists on the Light. Does not write WLED. |
 | GET | `/api/lights/:id/provision` | First-time strip bus from `/json/cfg` (`hw.led.ins[0]`). Empty / multi-bus / unsupported firmware → refuse. |
 | POST | `/api/lights/:id/provision` | `{ provision: { ledType, length, gpio } }` — WS281x only. Writes reviewed cfg bus fields, then rereads cfg and snapshot. 200 only on match. 409 keeps the failure. 422 if unsupported. A successful length change reconciles declared Elements (clip / drop / flag leftover coverage) and returns `provisionWrite.ranges`. |
 
