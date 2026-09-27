@@ -153,11 +153,12 @@ export function applyRows(sent: AppliedRange[], read: RangeSpan[]): ApplyRow[] {
 }
 
 /**
- * Honest Apply result when reread `segments` is unknown (`null`).
- * Does not call `applyOutcome` and does not invent a match against `[]`.
+ * Honest Apply result when no segment list was read.
+ * `read` is `null` — not a known empty `[]`.
  */
-export function applyUnknownSegments(
+export function applyUnreadFailed(
   sent: AppliedRange[],
+  message: string,
   source: "fixture" | "controller",
 ): ApplyResult {
   return {
@@ -166,9 +167,20 @@ export function applyUnknownSegments(
     rows: [],
     sent,
     read: null,
-    message: APPLY_UNKNOWN_SEGMENTS_MESSAGE,
+    message,
     caption: applyCaption(source),
   };
+}
+
+/**
+ * Honest Apply result when reread `segments` is unknown (`null`).
+ * Does not call `applyOutcome` and does not invent a match against `[]`.
+ */
+export function applyUnknownSegments(
+  sent: AppliedRange[],
+  source: "fixture" | "controller",
+): ApplyResult {
+  return applyUnreadFailed(sent, APPLY_UNKNOWN_SEGMENTS_MESSAGE, source);
 }
 
 /**
