@@ -765,6 +765,54 @@ describe("info-only segmentCount", () => {
     expect(inspect.light.segmentCount).toBeNull();
   });
 
+  it("does not treat unknown segments as empty rails for declared-vs-report", async () => {
+    const infoOnly = {
+      ...snapshot,
+      on: null,
+      brightness: null,
+      segmentColor: null,
+      segments: null,
+    };
+    const { app } = testApp({
+      probe: async () => ({ kind: "found" as const, snapshot: infoOnly }),
+    });
+    const enrolled = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.90" }),
+    });
+    const { light } = (await enrolled.json()) as { light: { id: string } };
+    const save = await app.request(`/api/lights/${light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [{ label: "Door", start: 0, stop: 60 }],
+      }),
+    });
+    const detail = (await save.json()) as {
+      light: { segmentCount: number | null; driftLabel: string | null };
+      display: {
+        notes: { text: string }[];
+        regions: { kind: string }[];
+        declared: { differs: boolean }[];
+      };
+    };
+    expect(save.status).toBe(200);
+    expect(detail.light.segmentCount).toBeNull();
+    expect(detail.light.driftLabel).toBe("Segments unknown — no report to compare.");
+    expect(detail.light.driftLabel).not.toMatch(/not on the controller/);
+    expect(detail.display.declared[0]?.differs).toBe(false);
+    expect(detail.display.regions).not.toContainEqual(
+      expect.objectContaining({ kind: "drift" }),
+    );
+
+    const list = (await (await app.request("/api/lights")).json()) as {
+      lights: { driftLabel: string | null; segmentCount: number | null }[];
+    };
+    expect(list.lights[0]?.segmentCount).toBeNull();
+    expect(list.lights[0]?.driftLabel).toBe("Segments unknown — no report to compare.");
+  });
+
   it("keeps a known empty seg list as zero — distinct from unknown", async () => {
     const { app } = testApp({
       probe: async () => ({

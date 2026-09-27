@@ -199,11 +199,42 @@ describe("lightDetail segmentCount honesty", () => {
     expect(detail.reported).toEqual([]);
   });
 
+  it("does not compare unknown segments as empty rails against declared Elements", () => {
+    const infoOnly = {
+      ...snapshot,
+      on: null,
+      brightness: null,
+      segmentColor: null,
+      segments: null,
+    };
+    const light = lightFromSnapshot(target, infoOnly, "2026-09-26T18:00:00.000Z");
+    const detail = lightDetail(light, infoOnly, [
+      { id: "el-door", lightId: light.id, label: "Door", start: 0, stop: 60 },
+    ]);
+    expect(detail.light.segmentCount).toBeNull();
+    expect(detail.light.driftLabel).toBe("Segments unknown — no report to compare.");
+    expect(detail.light.driftLabel).not.toMatch(/not on the controller/);
+    expect(detail.display.declared[0]?.differs).toBe(false);
+    expect(detail.display.regions).toEqual([]);
+    expect(detail.reported).toEqual([]);
+  });
+
   it("keeps a known empty seg list as zero — distinct from unknown", () => {
     const empty = { ...snapshot, on: true, segments: [] };
     const light = lightFromSnapshot(target, empty, "2026-09-26T18:00:00.000Z");
     const detail = lightDetail(light, empty, []);
     expect(detail.light.segmentCount).toBe(0);
+  });
+
+  it("still flags declared-vs-no-report when seg is a known empty list", () => {
+    const empty = { ...snapshot, on: true, segments: [] };
+    const light = lightFromSnapshot(target, empty, "2026-09-26T18:00:00.000Z");
+    const detail = lightDetail(light, empty, [
+      { id: "el-door", lightId: light.id, label: "Door", start: 0, stop: 60 },
+    ]);
+    expect(detail.light.segmentCount).toBe(0);
+    expect(detail.light.driftLabel).toMatch(/not on the controller/);
+    expect(detail.display.declared[0]?.differs).toBe(true);
   });
 
   it("counts reported segments when state.seg is present", () => {

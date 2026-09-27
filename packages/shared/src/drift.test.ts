@@ -86,6 +86,34 @@ describe("buildRangeDisplay", () => {
     expect(display.notes).toEqual([{ text: "No current report to compare." }]);
     expect(display.regions).toEqual([]);
   });
+
+  it("does not treat unknown segments as an empty report", () => {
+    const display = buildRangeDisplay(
+      [{ id: "d", label: "Door", start: 0, stop: 60 }],
+      null,
+    );
+    expect(display.declared[0]?.differs).toBe(false);
+    expect(display.reported).toEqual([]);
+    expect(display.regions).toEqual([]);
+    expect(display.notes).toEqual([
+      { text: "Segments unknown — no report to compare." },
+    ]);
+    expect(display.notes.map((note) => note.text).join(" ")).not.toMatch(
+      /not on the controller/,
+    );
+  });
+
+  it("still compares a known empty seg list as empty — distinct from unknown", () => {
+    const display = buildRangeDisplay(
+      [{ id: "d", label: "Door", start: 0, stop: 60 }],
+      [],
+    );
+    expect(display.declared[0]?.differs).toBe(true);
+    expect(display.regions).toEqual([{ kind: "drift", start: 0, stop: 60 }]);
+    expect(display.notes.map((note) => note.text)).toEqual([
+      "Door 0–60 is not on the controller",
+    ]);
+  });
 });
 
 describe("reportedRangeRails", () => {

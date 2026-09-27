@@ -152,6 +152,84 @@ describe("LightDetail info-only segments", () => {
     expect(screen.queryByText(/0 segments reported/)).toBeNull();
   });
 
+  it("does not treat unknown segments as empty rails when editing ranges", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: null,
+            brightness: null,
+            bead: "unknown",
+            segmentCount: null,
+            lastSeenAt: "2026-09-26T18:00:00.000Z",
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+          reported: [],
+          display: {
+            declared: [
+              {
+                id: "el-door",
+                label: "Door",
+                start: 0,
+                stop: 60,
+                length: 60,
+                differs: false,
+                error: false,
+              },
+            ],
+            reported: [],
+            regions: [],
+            notes: [{ text: "Segments unknown — no report to compare." }],
+          },
+        })}
+        mode="ranges"
+      />,
+    );
+
+    expect(screen.getByText("Segments unknown — no report to compare.")).toBeTruthy();
+    expect(screen.queryByText(/not on the controller/)).toBeNull();
+    expect(screen.queryByText("Declared ranges match the last save")).toBeNull();
+  });
+
+  it("still compares a known empty seg list as empty when editing ranges", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: true,
+            brightness: 128,
+            bead: "#ffa000",
+            segmentCount: 0,
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+          reported: [],
+          display: {
+            declared: [
+              {
+                id: "el-door",
+                label: "Door",
+                start: 0,
+                stop: 60,
+                length: 60,
+                differs: true,
+                error: false,
+              },
+            ],
+            reported: [],
+            regions: [{ kind: "drift", start: 0, stop: 60 }],
+            notes: [{ text: "Door 0–60 is not on the controller" }],
+          },
+        })}
+        mode="ranges"
+      />,
+    );
+
+    expect(screen.getByText("Door 0–60 is not on the controller")).toBeTruthy();
+    expect(screen.queryByText("Segments unknown — no report to compare.")).toBeNull();
+  });
+
   it("still names a known empty segment list on Inspect", () => {
     render(
       <LightDetail
