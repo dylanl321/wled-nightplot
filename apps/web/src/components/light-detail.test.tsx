@@ -1,5 +1,6 @@
 import {
   APPLY_ADOPT_UNKNOWN_REASON,
+  APPLY_UNKNOWN_SEGMENTS_MESSAGE,
   applyOutcome,
   applyUnknownSegments,
   type ApplyResult,
@@ -676,19 +677,58 @@ describe("LightDetail selected Element kind chip", () => {
   });
 });
 
-describe("LightDetail ApplyFailed adopt", () => {
-  it("disables Use controller’s when the reread did not name ranges", async () => {
-    const initial = adoptRangesDetail();
+describe("LightDetail ApplyFailed copy", () => {
+  it("does not title unknown-reread refuse as Apply didn’t stick", async () => {
+    const initial = applyRangesDetail();
     const apply = applyUnknownSegments(
       [{ label: "Door", start: 0, stop: 60 }],
       "controller",
     );
-    stubRangeApply(initial, apply);
+    stubApplyResult(initial, apply);
 
     render(<LightDetail initial={initial} mode="ranges" />);
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
-    expect(await screen.findByText("Apply didn’t stick")).toBeTruthy();
+    const title = await screen.findByText(APPLY_UNKNOWN_SEGMENTS_MESSAGE);
+    expect(title.tagName).toBe("SPAN");
+    expect(title.textContent).not.toMatch(/didn’t stick/);
+    expect(screen.queryByText("Apply didn’t stick")).toBeNull();
+    expect(screen.queryByText(/Nothing else on the controller changed/)).toBeNull();
+    expect(screen.getByText("Your draft is kept.")).toBeTruthy();
+    expect(screen.getByText("unknown")).toBeTruthy();
+  });
+
+  it("still titles a known mismatch as Apply didn’t stick", async () => {
+    const initial = applyRangesDetail();
+    const apply = applyOutcome(
+      [{ label: "Door", start: 0, stop: 60 }],
+      [{ start: 0, stop: 40 }],
+      "controller",
+    );
+    stubApplyResult(initial, apply);
+
+    render(<LightDetail initial={initial} mode="ranges" />);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(await screen.findByText(/Apply didn’t stick/)).toBeTruthy();
+    expect(screen.queryByText(APPLY_UNKNOWN_SEGMENTS_MESSAGE)).toBeNull();
+    expect(screen.getByText(/Nothing else on the controller changed/)).toBeTruthy();
+  });
+});
+
+describe("LightDetail ApplyFailed adopt", () => {
+  it("disables Use controller’s when the reread did not name ranges", async () => {
+    const initial = applyRangesDetail();
+    const apply = applyUnknownSegments(
+      [{ label: "Door", start: 0, stop: 60 }],
+      "controller",
+    );
+    stubApplyResult(initial, apply);
+
+    render(<LightDetail initial={initial} mode="ranges" />);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(await screen.findByText(APPLY_UNKNOWN_SEGMENTS_MESSAGE)).toBeTruthy();
     const adopt = screen.getByRole("button", { name: "Use controller’s" });
     expect((adopt as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(APPLY_ADOPT_UNKNOWN_REASON)).toBeTruthy();
@@ -712,18 +752,18 @@ describe("LightDetail ApplyFailed adopt", () => {
   });
 
   it("adopts known controller ranges on a mismatch", async () => {
-    const initial = adoptRangesDetail();
+    const initial = applyRangesDetail();
     const apply = applyOutcome(
       [{ label: "Door", start: 0, stop: 60 }],
       [{ start: 0, stop: 40 }],
       "controller",
     );
-    stubRangeApply(initial, apply);
+    stubApplyResult(initial, apply);
 
     render(<LightDetail initial={initial} mode="ranges" />);
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
-    expect(await screen.findByText("Apply didn’t stick")).toBeTruthy();
+    expect(await screen.findByText(/Apply didn’t stick/)).toBeTruthy();
     const adopt = screen.getByRole("button", { name: "Use controller’s" });
     expect((adopt as HTMLButtonElement).disabled).toBe(false);
     expect(screen.queryByText(APPLY_ADOPT_UNKNOWN_REASON)).toBeNull();
@@ -743,7 +783,7 @@ function selectedKindChip(): HTMLElement {
   return screen.getByLabelText("Element kind");
 }
 
-function adoptRangesDetail(): LightDetailPayload {
+function applyRangesDetail(): LightDetailPayload {
   return lightDetail({
     light: lightView({
       reachability: "online",
@@ -773,7 +813,7 @@ function adoptRangesDetail(): LightDetailPayload {
   });
 }
 
-function stubRangeApply(initial: LightDetailPayload, apply: ApplyResult): void {
+function stubApplyResult(initial: LightDetailPayload, apply: ApplyResult): void {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {

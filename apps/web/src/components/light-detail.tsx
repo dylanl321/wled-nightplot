@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  APPLY_UNKNOWN_SEGMENTS_MESSAGE,
   adoptControllerRangesReason,
   adoptableControllerRanges,
   adoptReportedRanges,
@@ -671,25 +672,44 @@ function ApplyFailed({
   onRetry: () => void;
 }) {
   const adoptReason = adoptControllerRangesReason(apply);
+  const unknownReread =
+    apply.read === null || apply.message === APPLY_UNKNOWN_SEGMENTS_MESSAGE;
+  const rows =
+    apply.rows.length > 0
+      ? apply.rows
+      : apply.sent.map((item) => ({
+          label: item.label,
+          sent: { start: item.start, stop: item.stop },
+          read: null,
+          matched: false,
+        }));
   return (
     <div className="flex flex-col gap-2 rounded-[14px] border border-[#5a2f33] bg-[#1a1113] p-4">
-      <span className="text-[16px] font-semibold text-destructive">Apply didn’t stick</span>
-      <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[13px]">
-        {apply.rows.map((row) => (
-          <div key={`${row.label}-${row.sent.start}`} className="contents">
-            <span className="text-muted-foreground">Sent</span>
-            <span className="font-mono">
-              {row.label} {row.sent.start}–{row.sent.stop}
-            </span>
-            <span className="text-muted-foreground">Read back</span>
-            <span className={cn("font-mono", row.matched ? undefined : "text-destructive")}>
-              {row.read ? `${row.label} ${row.read.start}–${row.read.stop}` : "nothing"}
-            </span>
-          </div>
-        ))}
-      </div>
+      <span className="text-[16px] font-semibold text-destructive">{apply.message}</span>
+      {rows.length > 0 ? (
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[13px]">
+          {rows.map((row) => (
+            <div key={`${row.label}-${row.sent.start}`} className="contents">
+              <span className="text-muted-foreground">Sent</span>
+              <span className="font-mono">
+                {row.label} {row.sent.start}–{row.sent.stop}
+              </span>
+              <span className="text-muted-foreground">Read back</span>
+              <span className={cn("font-mono", row.matched ? undefined : "text-destructive")}>
+                {row.read
+                  ? `${row.label} ${row.read.start}–${row.read.stop}`
+                  : unknownReread
+                    ? "unknown"
+                    : "nothing"}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <p className="text-[12px] leading-5 text-[#c9c3b8]">
-        Your draft is kept. Nothing else on the controller changed.
+        {unknownReread
+          ? "Your draft is kept."
+          : "Your draft is kept. Nothing else on the controller changed."}
       </p>
       <p className="text-[12px] text-primary">{apply.caption}</p>
       <div className="mt-1 flex flex-col gap-2">
