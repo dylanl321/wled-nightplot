@@ -72,6 +72,15 @@ export async function readWledLive(
   }
 }
 
+/**
+ * Preview / Blink restore writes power only when the snapshot knew it.
+ * Info-only `on: null` (skipped or hung `/json/state`) stays omitted —
+ * never `null → true`. That would invent power. Preview is not Apply.
+ */
+export function restoreOnField(on: boolean | null | undefined): Pick<WledStateWrite, "on"> {
+  return typeof on === "boolean" ? { on } : {};
+}
+
 export function restoreWriteFromSnapshot(snapshot: WledSnapshot): WledStateWrite {
   const color = snapshot.segmentColor ?? "#ffa000";
   const rgb = hexToTriple(color);
@@ -80,7 +89,7 @@ export function restoreWriteFromSnapshot(snapshot: WledSnapshot): WledStateWrite
       ? snapshot.segments
       : [{ start: 0, stop: snapshot.ledCount }];
   return {
-    on: snapshot.on ?? true,
+    ...restoreOnField(snapshot.on),
     bri: snapshot.brightness ?? 128,
     seg: segs.map((seg) => ({ start: seg.start, stop: seg.stop, col: [rgb] })),
   };

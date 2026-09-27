@@ -19,7 +19,7 @@ GitHub: [`dylanl321/wled-nightplot`](https://github.com/dylanl321/wled-nightplot
 
 - An unreachable Light stays **grey**, with last-seen copy. The rack never shows a stored last colour. If `/json/info` answered but `/json/state` was skipped or hung, power is **unknown** (Online · unknown, unknown-grey beads) — not “Online · off”.
 - RGB vs RGBW on the beads and Inspect chip follows the attached LED product or the persisted strip driver. RGBW shows two dies. `/json/info` `leds.rgbw` is not labeled WS281x RGBW.
-- Preview is temporary. Apply is what persists on the controller.
+- Preview is temporary. Apply is what persists on the controller. Ending Preview writes power only when the last snapshot knew it — an info-only report (info answered, state skipped or hung) does not invent on.
 - All Off cancels without restoring the previous look.
 - **Remove this Light** runs checks (Elements, live sessions, controller state). Unknown is not safe; there is no “I understand” override.
 - Safe settings and first-time Strip provision write only understood, fingerprinted fields. Unsupported firmware is refused — nothing is written.

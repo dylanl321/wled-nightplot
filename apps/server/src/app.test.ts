@@ -795,6 +795,43 @@ describe("preview + blink", () => {
     expect(box.leds[24]).toBe("#ffa000");
   });
 
+  it("does not invent on when Preview ends from an info-only snapshot", async () => {
+    const writes: import("./wled/live.ts").WledStateWrite[] = [];
+    const infoOnly = {
+      ...snapshot,
+      on: null,
+      brightness: null,
+      segmentColor: null,
+      segments: [],
+    };
+    const { app } = testApp({
+      probe: async () => ({ kind: "found" as const, snapshot: infoOnly }),
+      write: async (_target, body) => {
+        writes.push(body);
+        return true;
+      },
+    });
+    const id = await enroll(app);
+    const preview = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ color: "#4f7dff", brightness: 180 }),
+    });
+    expect(preview.status).toBe(200);
+    expect(writes[0]?.on).toBe(true);
+    writes.length = 0;
+
+    const ended = await app.request(`/api/lights/${id}/preview/end`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(ended.status).toBe(200);
+    expect(((await ended.json()) as { restored: boolean }).restored).toBe(true);
+    expect(writes[0]).toBeDefined();
+    expect(writes[0]).not.toHaveProperty("on");
+  });
+
   it("keeps the original restore if Preview is sent again", async () => {
     const { app, box } = testApp();
     const id = await enroll(app);
