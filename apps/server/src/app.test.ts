@@ -179,11 +179,14 @@ describe("configure server", () => {
     const body = (await res.json()) as {
       stripPresets: { id: string; ledType: string; length: number; gpio: number }[];
       ledProducts: { id: string; driverId: string; formFactor: string }[];
+      strips: { id: string; bead: string }[];
     };
     expect(body.stripPresets.length).toBeGreaterThanOrEqual(3);
     expect(body.stripPresets.every((entry) => entry.ledType === "ws281x")).toBe(true);
     expect(body.ledProducts.length).toBeGreaterThanOrEqual(2);
     expect(body.ledProducts.every((entry) => entry.driverId === "ws281x")).toBe(true);
+    expect(body.strips.map((row) => row.id)).toEqual(["ws281x", "sk6812-rgbw"]);
+    expect(body.strips.find((row) => row.id === "sk6812-rgbw")?.bead).toBe("rgbw");
   });
 
   it("keeps root Apply off the Light path; root Preview is not Apply", async () => {
@@ -1675,6 +1678,54 @@ describe("strip provision", () => {
     expect(res.status).toBe(400);
     expect(box.cfg.hw.led.ins[0]).toEqual(before);
   });
+
+  it("writes SK6812 RGBW type 30 and rereads a matching fixture bus", async () => {
+    const box = createFixtureBox({ ledCount: 60, gpio: 16 });
+    const { app, id } = await enrollFixture(box);
+    const res = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provision: { ledType: "sk6812-rgbw", length: 90, gpio: 2 } }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      provision: { settings: { ledType: string; length: number; gpio: number; nativeType: number } };
+      provisionWrite: { matched: boolean; sent: { ledType: string }; caption: string };
+    };
+    expect(body.provisionWrite.matched).toBe(true);
+    expect(body.provisionWrite.sent.ledType).toBe("sk6812-rgbw");
+    expect(body.provision.settings).toMatchObject({
+      ledType: "sk6812-rgbw",
+      length: 90,
+      gpio: 2,
+      nativeType: 30,
+    });
+    expect(body.provisionWrite.caption).toMatch(/Not Hardware Done/);
+    expect(box.cfg.hw.led.ins[0]).toMatchObject({ type: 30, order: 0, len: 90, pin: [2] });
+    expect(box.info.leds.rgbw).toBe(true);
+  });
+
+  it("reads an SK6812 fixture bus without writing", async () => {
+    const box = createFixtureBox({ ledCount: 80, gpio: 16, nativeType: 30 });
+    const { app, id } = await enrollFixture(box);
+    const res = await app.request(`/api/lights/${id}/provision`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      provision: {
+        settings: { ledType: string; nativeType: number };
+        refuse: string | null;
+        fingerprint: { writable: boolean; mappingId: string | null };
+      };
+    };
+    expect(body.provision.refuse).toBeNull();
+    expect(body.provision.fingerprint.writable).toBe(true);
+    expect(body.provision.fingerprint.mappingId).toBe("wled-0.15-sk6812-rgbw-grbw");
+    expect(body.provision.settings).toMatchObject({
+      ledType: "sk6812-rgbw",
+      nativeType: 30,
+    });
+    expect(box.cfg.hw.led.ins[0]?.type).toBe(30);
+  });
 });
 
 describe("LED product catalog", () => {
@@ -1777,6 +1828,24 @@ describe("LED product catalog", () => {
       }),
     });
     expect(duplicate.status).toBe(409);
+    expect(writeCfg).not.toHaveBeenCalled();
+
+    const rgbw = await app.request("/api/led-products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "porch-sk6812",
+        label: "Porch SK6812",
+        formFactor: "discrete",
+        driverId: "sk6812-rgbw",
+        defaultLength: 90,
+        defaultGpio: 16,
+      }),
+    });
+    expect(rgbw.status).toBe(201);
+    expect(((await rgbw.json()) as { product: { driverId: string } }).product.driverId).toBe(
+      "sk6812-rgbw",
+    );
     expect(writeCfg).not.toHaveBeenCalled();
   });
 });

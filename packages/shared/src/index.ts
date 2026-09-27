@@ -174,6 +174,7 @@ export type {
 } from "./strip/products.ts";
 export type { StripBead, StripChannel, StripDriverDescriptor } from "./strip/types.ts";
 export type { StripPreset } from "./strip/presets.ts";
+export { sk6812RgbwStrip } from "./strip/sk6812-rgbw.ts";
 export { ws281xStrip } from "./strip/ws281x.ts";
 export {
   PROVISION_GPIO_MAX,
@@ -182,6 +183,7 @@ export {
   PROVISION_LENGTH_MAX,
   PROVISION_LENGTH_MIN,
   WLED_COMPATIBILITY_MAPPINGS,
+  WLED_SK6812_RGBW_NATIVE_TYPE,
   WLED_WS281X_NATIVE_TYPE,
   baseFirmwareVersion,
   buildProvisionWrite,
@@ -189,15 +191,20 @@ export {
   busLength,
   busNativeType,
   busPins,
+  draftLedTypeFromSettings,
+  isProvisionLedType,
   isSupportedProvisionFirmware,
   ledTypeFromNative,
   parseWledProvision,
   provisionCaption,
   provisionFieldsMatch,
+  provisionLedTypeLabel,
   provisionMismatchNote,
   provisionRefuseReason,
   provisionSnapshotMatch,
   rawWledBuses,
+  resolveAnyProvisionMapping,
+  resolveProvisionMapping,
   resolveWs281xMapping,
   validateProvisionDraft,
   type NativeCompatibilityMapping,

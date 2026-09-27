@@ -10,5 +10,5 @@ export const ws281xStrip: StripDriverDescriptor = {
   colorOrder: "GRB",
   bead: "rgb",
   notes:
-    "First strip/driver member. A later RGBW member grows a second die on the bead; ranges stay untouched.",
+    "First strip/driver member. Three RGB channels. Ranges stay the same when SK6812 RGBW is selected.",
 };

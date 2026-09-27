@@ -184,6 +184,43 @@ describe("LED product attach + draft fill", () => {
     });
   });
 
+  it("fills SK6812 RGBW ledType when the product names that driver", () => {
+    const filled = provisionDraftFromProduct({
+      id: "porch-sk6812",
+      label: "Porch SK6812",
+      notes: "",
+      formFactor: "discrete",
+      driverId: "sk6812-rgbw",
+      defaultLength: 120,
+      defaultGpio: 16,
+    });
+    expect(filled).toEqual({
+      ok: true,
+      draft: { ledType: "sk6812-rgbw", length: 120, gpio: 16 },
+    });
+    expect(provisionLedTypeForDriver("sk6812-rgbw")).toBe("sk6812-rgbw");
+    expect(
+      parseLedProductInput({
+        label: "Porch SK6812",
+        formFactor: "discrete",
+        driverId: "sk6812-rgbw",
+      }),
+    ).toMatchObject({ ok: true, product: { driverId: "sk6812-rgbw" } });
+    expect(
+      inheritLedProductFields({
+        id: "porch-sk6812",
+        label: "Porch SK6812",
+        notes: "",
+        formFactor: "discrete",
+        driverId: "sk6812-rgbw",
+      }),
+    ).toEqual({
+      channels: ["r", "g", "b", "w"],
+      colorOrder: "GRBW",
+      bead: "rgbw",
+    });
+  });
+
   it("fails closed when the driver is missing or not a provision LED type", () => {
     expect(provisionLedTypeForDriver("ws281x")).toBe("ws281x");
     expect(provisionLedTypeForDriver("apa102")).toBeNull();

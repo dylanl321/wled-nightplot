@@ -71,6 +71,23 @@ describe("fixture info/cfg name divergence", () => {
     expect(box.info.name).toBe("Porch rail");
   });
 
+  it("starts as SK6812 RGBW when nativeType is 30", () => {
+    const box = createFixtureBox({ nativeType: 30, ledCount: 80 });
+    expect(box.cfg.hw.led.ins[0]).toMatchObject({ type: 30, order: 0, len: 80 });
+    expect(box.info.leds.rgbw).toBe(true);
+  });
+
+  it("applies an SK6812 RGBW bus write and sets info rgbw", () => {
+    const box = createFixtureBox({ ledCount: 60, gpio: 16 });
+    expect(box.info.leds.rgbw).toBe(false);
+    box.applyCfg({
+      hw: { led: { ins: [{ start: 0, len: 90, pin: [2], type: 30, order: 0 }] } },
+    });
+    expect(box.cfg.hw.led.ins[0]).toMatchObject({ len: 90, pin: [2], type: 30, order: 0 });
+    expect(box.info.leds.rgbw).toBe(true);
+    expect(box.info.leds.count).toBe(90);
+  });
+
   it("applies a WS281x bus write to cfg and info count", async () => {
     const box = createFixtureBox({ ledCount: 60, gpio: 16 });
     box.applyCfg({
