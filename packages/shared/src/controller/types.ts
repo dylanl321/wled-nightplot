@@ -5,7 +5,8 @@ export type ControllerCapability =
   | "preview"
   | "apply"
   | "allOff"
-  | "safe";
+  | "safe"
+  | "provision";
 
 /**
  * A controller member talks to hardware.

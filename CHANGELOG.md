@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.9 — First-time WLED strip provision (CONFIG-40)
+
+- An enrolled Light can set LED type (WS281x first), length (node count), and GPIO/pin on **Strip**.
+- Apply writes reviewed `/json/cfg` bus fields (`hw.led.ins[]` pin / len / type) from the Nightplot compatibility mappings, then re-reads cfg **and** the snapshot. Mismatch stays on the failure UI — no silent success.
+- Fail closed: no `ins` list, empty or multi-bus, analog/network/HUB75 types, more than one pin, or firmware outside the WS281x table. Unknown types are not written; unsupported firmware is not silently written.
+- Existing unknown bus fields are cloned, not replaced. Fixture software-green is not Hardware Done. Preview is not Apply.
+
 ## 0.7.8 — Preview keeps reported range rails (CONFIG-30)
 
 - POST `/api/lights/:id/preview` and `/blink` no longer overwrite Inspect `reported` (range rails) with live match counts `{ matched, total }`.

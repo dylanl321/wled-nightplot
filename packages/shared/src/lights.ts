@@ -3,6 +3,7 @@ import type { BeadColor } from "./bead.ts";
 import type { RangeDisplay, ReportedRail } from "./drift.ts";
 import type { LiveMatch, LiveSession } from "./live.ts";
 import type { AllOffResult, DeleteCheck } from "./manage.ts";
+import type { ProvisionRead, ProvisionWriteResult } from "./provision.ts";
 import type { SafeRead, SafeWriteResult } from "./safe.ts";
 import type { WledSnapshot } from "./wled/snapshot.ts";
 
@@ -77,6 +78,8 @@ export type LightDetail = {
   deleteChecks?: DeleteCheck[] | null;
   safe?: SafeRead | null;
   safeWrite?: SafeWriteResult | null;
+  provision?: ProvisionRead | null;
+  provisionWrite?: ProvisionWriteResult | null;
 };
 
 export const emptyLightsPayload = {

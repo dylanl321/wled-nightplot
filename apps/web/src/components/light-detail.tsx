@@ -18,6 +18,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DeleteLight } from "@/components/delete-light";
 import { SafeSettingsPanel } from "@/components/safe-settings";
 import { StripBeads, type StripSpan } from "@/components/strip-beads";
+import { StripProvisionPanel } from "@/components/strip-provision";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TestLivePanel, liveBeadColor } from "@/components/test-live";
@@ -30,10 +31,12 @@ export function LightDetail({
   mode: initialMode,
 }: {
   initial: LightDetailPayload;
-  mode: "inspect" | "ranges" | "live" | "safe";
+  mode: "inspect" | "ranges" | "live" | "safe" | "strip";
 }) {
   const router = useRouter();
-  const [mode, setMode] = useState<"inspect" | "ranges" | "live" | "safe">(initialMode);
+  const [mode, setMode] = useState<"inspect" | "ranges" | "live" | "safe" | "strip">(
+    initialMode,
+  );
   const [detail, setDetail] = useState(initial);
   const [draft, setDraft] = useState<Element[]>(initial.elements);
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -65,7 +68,7 @@ export function LightDetail({
     return () => window.removeEventListener("nightplot:lights-changed", onLightsChanged);
   }, [initial.light.id]);
 
-  function goMode(next: "inspect" | "ranges" | "live" | "safe") {
+  function goMode(next: "inspect" | "ranges" | "live" | "safe" | "strip") {
     setMode(next);
     const path =
       next === "ranges"
@@ -74,7 +77,9 @@ export function LightDetail({
           ? `/lights/${light.id}?mode=live`
           : next === "safe"
             ? `/lights/${light.id}?mode=safe`
-            : `/lights/${light.id}`;
+            : next === "strip"
+              ? `/lights/${light.id}?mode=strip`
+              : `/lights/${light.id}`;
     window.history.replaceState(null, "", path);
   }
   const issues = useMemo(
@@ -309,6 +314,9 @@ export function LightDetail({
           <ModeButton active={mode === "inspect"} onClick={() => goMode("inspect")}>
             Inspect
           </ModeButton>
+          <ModeButton active={mode === "strip"} onClick={() => goMode("strip")}>
+            Strip
+          </ModeButton>
           <ModeButton active={mode === "ranges"} onClick={() => goMode("ranges")}>
             Edit ranges
           </ModeButton>
@@ -339,7 +347,7 @@ export function LightDetail({
               ? "Draft"
               : mode === "live"
                 ? "What the strip reports"
-                : mode === "safe"
+                : mode === "safe" || mode === "strip"
                   ? "Last snapshot"
                   : "Last snapshot"}
           </span>
@@ -402,6 +410,15 @@ export function LightDetail({
             router.refresh();
           }}
         />
+      ) : mode === "strip" ? (
+        <StripProvisionPanel
+          lightId={light.id}
+          unreachable={unreachable}
+          onUpdated={(next) => {
+            setDetail(next);
+            router.refresh();
+          }}
+        />
       ) : mode === "inspect" ? (
         <InspectFacts
           detail={detail}
@@ -419,6 +436,7 @@ export function LightDetail({
           onHost={setAddressHost}
           onCheck={() => void readdress()}
           onSafe={() => goMode("safe")}
+          onStrip={() => goMode("strip")}
         />
       ) : mode === "live" ? (
         <TestLivePanel
@@ -495,7 +513,7 @@ export function LightDetail({
       ) : null}
 
       <p className="text-[11px] tracking-[0.14em] text-quiet uppercase">
-        configure · r6 · safe settings
+        configure · r6 · strip + safe
       </p>
     </div>
   );
@@ -513,6 +531,7 @@ function InspectFacts({
   onHost,
   onCheck,
   onSafe,
+  onStrip,
 }: {
   detail: LightDetailPayload;
   status: string;
@@ -525,6 +544,7 @@ function InspectFacts({
   onHost: (value: string) => void;
   onCheck: () => void;
   onSafe: () => void;
+  onStrip: () => void;
 }) {
   const light = detail.light;
   const pct = brightnessPct(light.brightness);
@@ -561,6 +581,9 @@ function InspectFacts({
               : ` ${light.segmentCount} segment${light.segmentCount === 1 ? "" : "s"} reported.`}
             {light.firmware ? ` ${light.firmware}.` : null}
           </p>
+          <button type="button" onClick={onStrip} className="text-[13px] text-foreground">
+            Strip — type, length, GPIO
+          </button>
           {detail.elements.length === 0 ? (
             <p className="text-[12px] text-quiet">
               No Elements declared yet. Edit ranges to name them.

@@ -4,19 +4,33 @@ export type FixtureBoxOptions = {
   name?: string;
   ver?: string;
   ledCount?: number;
+  gpio?: number;
   cfgEnabled?: boolean;
   mismatch?: boolean;
+  busMismatch?: boolean;
+  infoCountLag?: boolean;
   infoNameLag?: boolean;
 };
 
 type Seg = { start: number; stop: number; col: number[][] };
+type BusIns = {
+  start: number;
+  len: number;
+  pin: number[];
+  type: number;
+  order: number;
+  rev: boolean;
+  skip: number;
+};
 
 /**
  * In-memory WLED-shaped box. `infoNameLag` keeps `/json/info` on the old
  * display name after a `/json/cfg` write — the metal behaviour tests used to miss.
+ * `busMismatch` accepts a bus write but leaves `hw.led.ins` / `leds.count` stale.
  */
 export function createFixtureBox(options: FixtureBoxOptions = {}) {
-  const ledCount = options.ledCount ?? 60;
+  let ledCount = options.ledCount ?? 60;
+  const gpio = options.gpio ?? 16;
   const info = {
     ver: options.ver ?? "0.15.4",
     name: options.name ?? "WLED",
@@ -26,11 +40,32 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     leds: { count: ledCount, rgbw: false },
   };
   const cfgEnabled = options.cfgEnabled ?? true;
-  const cfg = {
+  const cfg: {
+    id: { name: string };
+    def: { on: boolean; bri: number; ps: number };
+    light: { tr: { dur: number } };
+    hw: { led: { maxpwr: number; total: number; ins: BusIns[] } };
+  } = {
     id: { name: info.name },
     def: { on: true, bri: 128, ps: 0 },
     light: { tr: { dur: 7 } },
-    hw: { led: { maxpwr: 850, total: ledCount } },
+    hw: {
+      led: {
+        maxpwr: 850,
+        total: ledCount,
+        ins: [
+          {
+            start: 0,
+            len: ledCount,
+            pin: [gpio],
+            type: 22,
+            order: 0,
+            rev: false,
+            skip: 0,
+          },
+        ],
+      },
+    },
   };
   const state: { on: boolean; bri: number; seg: Seg[] } = {
     on: true,
@@ -39,7 +74,21 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
   };
   const pixels = Array.from({ length: ledCount }, () => "#ffa000");
   let mismatch = options.mismatch ?? false;
+  let busMismatch = options.busMismatch ?? false;
+  let infoCountLag = options.infoCountLag ?? false;
   let infoNameLag = options.infoNameLag ?? false;
+
+  function resizeStrip(nextCount: number) {
+    const count = Math.max(1, Math.min(2048, Math.round(nextCount)));
+    ledCount = count;
+    info.leds.count = count;
+    cfg.hw.led.total = count;
+    cfg.hw.led.ins[0]!.len = count;
+    const col = state.seg[0]?.col ?? [[255, 160, 0]];
+    state.seg = [{ start: 0, stop: count, col }];
+    while (pixels.length < count) pixels.push("#000000");
+    pixels.length = count;
+  }
 
   function applyCfg(body: unknown) {
     if (!body || typeof body !== "object") return;
@@ -47,7 +96,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       id?: { name?: unknown };
       def?: { on?: unknown; bri?: unknown; ps?: unknown };
       light?: { tr?: { dur?: unknown } };
-      hw?: { led?: { maxpwr?: unknown } };
+      hw?: { led?: { maxpwr?: unknown; ins?: unknown } };
     };
     if (typeof next.id?.name === "string" && next.id.name.trim()) {
       const name = next.id.name.trim().slice(0, 32);
@@ -68,6 +117,27 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     }
     if (typeof next.hw?.led?.maxpwr === "number") {
       cfg.hw.led.maxpwr = Math.max(0, Math.min(65000, Math.round(next.hw.led.maxpwr)));
+    }
+    if (Array.isArray(next.hw?.led?.ins) && next.hw.led.ins[0] && !busMismatch) {
+      const row = next.hw.led.ins[0] as Record<string, unknown>;
+      const bus = cfg.hw.led.ins[0]!;
+      if (typeof row.start === "number") bus.start = Math.max(0, Math.round(row.start));
+      if (typeof row.type === "number") bus.type = Math.round(row.type);
+      if (typeof row.order === "number") bus.order = Math.round(row.order);
+      if (typeof row.rev === "boolean") bus.rev = row.rev;
+      if (typeof row.skip === "number") bus.skip = Math.round(row.skip);
+      if (Array.isArray(row.pin) && typeof row.pin[0] === "number") {
+        bus.pin = [Math.round(row.pin[0])];
+      }
+      if (typeof row.len === "number") {
+        if (infoCountLag) {
+          const count = Math.max(1, Math.min(2048, Math.round(row.len)));
+          bus.len = count;
+          cfg.hw.led.total = count;
+        } else {
+          resizeStrip(row.len);
+        }
+      }
     }
   }
 
@@ -200,8 +270,17 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     get infoNameLag() {
       return infoNameLag;
     },
+    get busMismatch() {
+      return busMismatch;
+    },
+    get ledCount() {
+      return ledCount;
+    },
     applyCfg,
     setInfoNameLag,
+    setBusMismatch(on: boolean) {
+      busMismatch = on;
+    },
     handle,
     listen(port = 0, hostname = "127.0.0.1"): Server {
       return createServer(handle).listen(port, hostname);

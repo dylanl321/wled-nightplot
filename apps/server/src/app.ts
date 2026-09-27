@@ -18,7 +18,13 @@ import {
   parseWledCfg,
   readdressContinuity,
   applyResolvedName,
+  buildProvisionWrite,
   buildSafeWrite,
+  parseWledProvision,
+  provisionFieldsMatch,
+  provisionMismatchNote,
+  provisionRefuseReason,
+  provisionSnapshotMatch,
   resolveLightName,
   safeFieldsMatch,
   safeInfoNameLagNote,
@@ -38,9 +44,11 @@ import {
   type LightsPayload,
   type LiveEndKind,
   type ReaddressStep,
+  type ProvisionRead,
   type SafeRead,
   type WledSafeSettings,
   type WledSnapshot,
+  type WledStripProvisionDraft,
 } from "@nightplot/shared";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -758,6 +766,119 @@ export function createApp(deps: AppDeps) {
     return c.json({ ...detail, safe: reread, safeWrite: result });
   });
 
+  app.get("/api/lights/:id/provision", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    const { light, live: snap } = await refreshOne(stored);
+    const dest: HostPort = { hostname: light.hostname, port: light.port };
+    const raw = await deps.readCfg(dest);
+    const provision = await readProvision(light, snap?.firmware ?? light.firmware, raw);
+    return c.json({
+      ...(await decorateDetail(light, snap)),
+      provision,
+    });
+  });
+
+  app.post("/api/lights/:id/provision", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    const { light, live: snap } = await refreshOne(stored);
+    const dest: HostPort = { hostname: light.hostname, port: light.port };
+    const raw = await deps.readCfg(dest);
+    const provision = await readProvision(light, snap?.firmware ?? light.firmware, raw);
+    const draft = await readProvisionBody(c);
+    if (!draft) {
+      return c.json(
+        { error: "invalid", message: "Send { provision: { ledType, length, gpio } }." },
+        400,
+      );
+    }
+    const reason = provisionRefuseReason({
+      reachable: light.reachability === "online" && snap !== null,
+      read: provision,
+      busyKind: live.get(light.id)?.kind ?? null,
+      draft,
+    });
+    if (reason) {
+      return c.json(
+        {
+          error: "refused",
+          message: reason,
+          provision,
+          provisionWrite: {
+            status: "refused" as const,
+            matched: false,
+            sent: draft,
+            read: provision.settings,
+            snapshotLedCount: snap?.ledCount ?? light.ledCount,
+            fingerprint: provision.fingerprint,
+            message: reason,
+            caption: provision.caption,
+          },
+        },
+        422,
+      );
+    }
+    const built = buildProvisionWrite(draft, raw, provision.fingerprint);
+    if (!built.ok) {
+      return c.json({ error: "refused", message: built.message, provision }, 422);
+    }
+    const written = await deps.writeCfg(dest, built.body);
+    if (!written) {
+      return c.json(
+        {
+          error: "write-failed",
+          message: "The controller did not take strip provision. Nothing else changed.",
+          provision,
+          provisionWrite: {
+            status: "failed" as const,
+            matched: false,
+            sent: built.sent,
+            read: provision.settings,
+            snapshotLedCount: snap?.ledCount ?? light.ledCount,
+            fingerprint: provision.fingerprint,
+            message: "The controller did not take strip provision. Nothing else changed.",
+            caption: provision.caption,
+          },
+        },
+        422,
+      );
+    }
+    const rereadRaw = await deps.readCfg(dest);
+    const reread = await readProvision(light, snap?.firmware ?? light.firmware, rereadRaw);
+    const { light: refreshed, live: nextSnap } = await refreshOne(stored);
+    const cfgMatched = provisionFieldsMatch(built.sent, reread.settings);
+    const snapMatched = provisionSnapshotMatch(built.sent, nextSnap?.ledCount ?? null);
+    const matched = cfgMatched && snapMatched;
+    let next = refreshed;
+    if (matched && nextSnap) {
+      next.lastSnapshot = nextSnap;
+      next.lastSnapshotAt = next.lastSeenAt;
+      deps.store.replace(next);
+    } else if (nextSnap) {
+      deps.store.replace(next);
+    }
+    const detail = await decorateDetail(next, nextSnap);
+    const result = {
+      status: matched ? ("matched" as const) : ("mismatch" as const),
+      matched,
+      sent: built.sent,
+      read: reread.settings,
+      snapshotLedCount: nextSnap?.ledCount ?? null,
+      fingerprint: reread.fingerprint,
+      message: provisionMismatchNote(built.sent, reread.settings, nextSnap?.ledCount ?? null),
+      caption: reread.caption,
+    };
+    if (!matched) {
+      return c.json({ ...detail, provision: reread, provisionWrite: result }, 409);
+    }
+    return c.json({ ...detail, provision: reread, provisionWrite: result });
+  });
+
   app.get("/api/lights/:id/delete-checks", async (c) => {
     const stored = deps.store.findById(c.req.param("id"));
     if (!stored) {
@@ -872,6 +993,36 @@ export function createApp(deps: AppDeps) {
       failedIds,
       message: allOffSummary(rows, cancelled),
       caption: manageCaption(sawFixture ? "fixture" : "controller"),
+    };
+  }
+
+  async function readProvision(
+    light: Light,
+    firmware: string | null,
+    raw: unknown,
+  ): Promise<ProvisionRead> {
+    const liveRead = await live.read(light);
+    const source = liveRead?.source === "fixture" ? "fixture" : "controller";
+    if (raw === null) {
+      return parseWledProvision(null, firmware, source);
+    }
+    return parseWledProvision(raw, firmware, source);
+  }
+
+  async function readProvisionBody(
+    c: { req: { json: () => Promise<unknown> } },
+  ): Promise<WledStripProvisionDraft | null> {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") return null;
+    const raw = (body as { provision?: unknown }).provision;
+    if (!raw || typeof raw !== "object") return null;
+    const row = raw as Record<string, unknown>;
+    if (row.ledType !== "ws281x") return null;
+    if (typeof row.length !== "number" || typeof row.gpio !== "number") return null;
+    return {
+      ledType: "ws281x",
+      length: row.length,
+      gpio: row.gpio,
     };
   }
 

@@ -70,4 +70,23 @@ describe("fixture info/cfg name divergence", () => {
     expect(box.cfg.id.name).toBe("Porch rail");
     expect(box.info.name).toBe("Porch rail");
   });
+
+  it("applies a WS281x bus write to cfg and info count", async () => {
+    const box = createFixtureBox({ ledCount: 60, gpio: 16 });
+    box.applyCfg({
+      hw: { led: { ins: [{ start: 0, len: 120, pin: [2], type: 22, order: 0 }] } },
+    });
+    expect(box.cfg.hw.led.ins[0]).toMatchObject({ len: 120, pin: [2], type: 22 });
+    expect(box.info.leds.count).toBe(120);
+    expect(box.ledCount).toBe(120);
+  });
+
+  it("leaves the bus stale when busMismatch is on", async () => {
+    const box = createFixtureBox({ ledCount: 60, busMismatch: true });
+    box.applyCfg({
+      hw: { led: { ins: [{ start: 0, len: 200, pin: [4], type: 22 }] } },
+    });
+    expect(box.cfg.hw.led.ins[0]?.len).toBe(60);
+    expect(box.info.leds.count).toBe(60);
+  });
 });

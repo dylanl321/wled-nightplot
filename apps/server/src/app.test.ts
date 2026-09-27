@@ -1252,6 +1252,152 @@ describe("safe settings", () => {
   });
 });
 
+describe("strip provision", () => {
+  let server: Server | undefined;
+
+  afterEach(async () => {
+    if (!server) return;
+    await new Promise<void>((resolve) => server!.close(() => resolve()));
+    server = undefined;
+  });
+
+  async function enrollFixture(
+    box: ReturnType<typeof createFixtureBox>,
+    writeCfg = createWledCfgWriter(),
+  ) {
+    server = box.listen(0, "127.0.0.1");
+    const port = await listenReady(server);
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
+    const store = new FileLightsStore(join(dir, "lights.json"));
+    const app = createApp({
+      store,
+      probe: (target) => probeWled(target, fetch, 500),
+      write: async () => true,
+      readLive: async () => ({ source: "fixture", leds: [] }),
+      readCfg: createWledCfgReader(),
+      writeCfg,
+      collect: async () => [],
+    });
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: `127.0.0.1:${port}` }),
+    });
+    expect(enroll.status).toBe(201);
+    const id = ((await enroll.json()) as { light: { id: string; ledCount: number } }).light.id;
+    return { app, store, id, port };
+  }
+
+  it("writes WS281x length and GPIO, then rereads a matching snapshot", async () => {
+    const box = createFixtureBox({ ledCount: 60, gpio: 16 });
+    const { app, store, id } = await enrollFixture(box);
+    const res = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provision: { ledType: "ws281x", length: 150, gpio: 2 } }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      light: { ledCount: number };
+      provision: { settings: { ledType: string; length: number; gpio: number } };
+      provisionWrite: { matched: boolean; caption: string; snapshotLedCount: number };
+    };
+    expect(body.provisionWrite.matched).toBe(true);
+    expect(body.provision.settings).toMatchObject({
+      ledType: "ws281x",
+      length: 150,
+      gpio: 2,
+    });
+    expect(body.light.ledCount).toBe(150);
+    expect(body.provisionWrite.snapshotLedCount).toBe(150);
+    expect(body.provisionWrite.caption).toMatch(/Not Hardware Done/);
+    expect(box.cfg.hw.led.ins[0]).toMatchObject({ len: 150, pin: [2], type: 22 });
+    expect(box.info.leds.count).toBe(150);
+    expect(store.findById(id)?.ledCount).toBe(150);
+  });
+
+  it("keeps a cfg/snapshot mismatch on the failure contract — no silent success", async () => {
+    const box = createFixtureBox({ ledCount: 60, gpio: 16, busMismatch: true });
+    const { app, store, id } = await enrollFixture(box);
+    const before = store.findById(id)?.ledCount;
+    const res = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provision: { ledType: "ws281x", length: 200, gpio: 4 } }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as {
+      provisionWrite: { matched: boolean; status: string; message: string };
+      light: { ledCount: number };
+    };
+    expect(body.provisionWrite.matched).toBe(false);
+    expect(body.provisionWrite.status).toBe("mismatch");
+    expect(body.provisionWrite.message).toMatch(/Not treating as success/);
+    expect(box.cfg.hw.led.ins[0]?.len).toBe(60);
+    expect(body.light.ledCount).toBe(before);
+  });
+
+  it("treats a matching cfg with a stale snapshot as failure", async () => {
+    const box = createFixtureBox({ ledCount: 60, gpio: 16, infoCountLag: true });
+    const { app, id } = await enrollFixture(box);
+    const res = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provision: { ledType: "ws281x", length: 180, gpio: 5 } }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as {
+      provisionWrite: {
+        matched: boolean;
+        message: string;
+        read: { length: number; gpio: number };
+        snapshotLedCount: number;
+      };
+    };
+    expect(body.provisionWrite.matched).toBe(false);
+    expect(body.provisionWrite.read.length).toBe(180);
+    expect(body.provisionWrite.read.gpio).toBe(5);
+    expect(body.provisionWrite.snapshotLedCount).toBe(60);
+    expect(body.provisionWrite.message).toMatch(/snapshot still has 60 LEDs/);
+    expect(box.cfg.hw.led.ins[0]?.len).toBe(180);
+    expect(box.info.leds.count).toBe(60);
+  });
+
+  it("refuses unsupported firmware without writing", async () => {
+    const { app, cfg } = testApp({
+      readCfg: async () => ({ vid: 1903252, rev: [1, 0] }),
+    });
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.72" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const before = structuredClone(cfg.cfg);
+    const res = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provision: { ledType: "ws281x", length: 80, gpio: 2 } }),
+    });
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as { message: string }).message).toMatch(/isn’t a shape we write|compatibility table/);
+    expect(cfg.cfg).toEqual(before);
+  });
+
+  it("refuses an unknown LED type without writing", async () => {
+    const box = createFixtureBox();
+    const { app, id } = await enrollFixture(box);
+    const before = structuredClone(box.cfg.hw.led.ins[0]);
+    const res = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provision: { ledType: "apa102", length: 80, gpio: 2 } }),
+    });
+    expect(res.status).toBe(400);
+    expect(box.cfg.hw.led.ins[0]).toEqual(before);
+  });
+});
+
 function listen(server: Server): Promise<number> {
   return new Promise((resolve, reject) => {
     server.listen(0, "127.0.0.1", () => {

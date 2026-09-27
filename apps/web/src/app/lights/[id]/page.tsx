@@ -23,7 +23,9 @@ export default async function LightPage({
         ? "live"
         : requested === "safe"
           ? "safe"
-          : "inspect";
+          : requested === "strip"
+            ? "strip"
+            : "inspect";
   let lights: LightsPayload | null = null;
   let detail: LightDetailPayload | null = null;
   let missing = false;

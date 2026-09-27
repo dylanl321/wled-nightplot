@@ -19,6 +19,7 @@ describe("controller catalog", () => {
     expect(wled?.capabilities.apply).toBe(true);
     expect(wled?.capabilities.allOff).toBe(true);
     expect(wled?.capabilities.safe).toBe(true);
+    expect(wled?.capabilities.provision).toBe(true);
     expect(listControllers().map((entry) => entry.id)).toEqual(["wled"]);
   });
 });

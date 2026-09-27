@@ -14,7 +14,8 @@ export const wledController: ControllerDescriptor = {
     apply: true,
     allOff: true,
     safe: true,
+    provision: true,
   },
   notes:
-    "Discover through Safe settings are live on WLED. Safe settings write only /json/cfg fields this firmware actually exposed. A fixture report is software-green — not Hardware Done.",
+    "Discover through Safe settings and first-time strip provision are live on WLED. Provision writes only reviewed /json/cfg bus fields (WS281x type, length, GPIO) this firmware actually exposed. A fixture report is software-green — not Hardware Done.",
 };
