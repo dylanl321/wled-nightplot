@@ -182,7 +182,7 @@ export function previewRefuseReason(input: {
     return "This Light hasn’t answered. Refresh it first.";
   }
   if (!input.hasTarget) {
-    return "Pick an Element, or Preview the whole strip.";
+    return "Pick a Segment, or Preview the whole strip.";
   }
   if (input.busyKind === "blink") {
     return "A Blink is already running.";

@@ -28,7 +28,7 @@ import {
   type Range,
 } from "./ops";
 
-export type Tool = "select" | "range" | "split";
+export type Tool = "select" | "range" | "split" | "locate";
 
 export type Drag =
   | { kind: "move"; id: string; anchor: number; orig: Element; pre: Element[] }
@@ -42,6 +42,8 @@ export type EditorState = {
   ledSel: LedSelection | null;
   mode: Tool;
   hover: Hit | null;
+  cursor: number | null;
+  markedStart: number | null;
   drag: Drag | null;
   draftRange: Range | null;
   hist: Element[][];
@@ -53,6 +55,10 @@ export type EditorState = {
 };
 
 export type EditorAction =
+  | { type: "cursor-set"; index: number }
+  | { type: "cursor-step"; delta: number }
+  | { type: "mark-start" }
+  | { type: "mark-end" }
   | { type: "tool"; mode: Tool }
   | { type: "snap" }
   | { type: "hover"; hover: Hit | null }
@@ -175,6 +181,8 @@ export function initialEditorState(
     ledSel: null,
     mode: "select",
     hover: null,
+    cursor: null,
+    markedStart: null,
     drag: null,
     draftRange: null,
     hist: [],
@@ -188,6 +196,31 @@ export function initialEditorState(
 
 export function editorReducer(state: EditorState, action: EditorAction): EditorState {
   switch (action.type) {
+    case "cursor-set":
+    case "cursor-step": {
+      if (state.ledCount < 1) return state;
+      const requested = action.type === "cursor-set" ? action.index : (state.cursor ?? 0) + action.delta;
+      if (!Number.isFinite(requested)) return state;
+      const cursor = Math.max(0, Math.min(state.ledCount - 1, Math.round(requested)));
+      return { ...state, cursor, hover: null, mode: "locate" };
+    }
+    case "mark-start":
+      return state.cursor === null ? state : {
+        ...state, markedStart: state.cursor, ledSel: null, mode: "locate",
+        toast: `Start marked at LED ${state.cursor}. Move to the last LED, then Mark end.`,
+      };
+    case "mark-end": {
+      if (state.cursor === null || state.markedStart === null) return state;
+      return {
+        ...state,
+        ledSel: {
+          start: Math.min(state.markedStart, state.cursor),
+          stop: Math.max(state.markedStart, state.cursor) + 1,
+          anchor: state.markedStart,
+        },
+        sel: [], mode: "locate", markedStart: null, toast: null,
+      };
+    }
     case "tool": {
       if (action.mode === "range") return { ...state, mode: "range", sel: [] };
       if (action.mode === "split") return { ...state, mode: "split", ledSel: null };
@@ -196,11 +229,14 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     case "snap":
       return { ...state, snap: !state.snap };
     case "hover":
-      return state.drag ? state : { ...state, hover: action.hover };
+      return state.drag ? state : {
+        ...state, hover: action.hover, cursor: action.hover?.idx ?? state.cursor,
+      };
     case "leave":
       return state.drag ? state : { ...state, hover: null };
     case "down": {
       const hit = action.hit;
+      if (state.mode === "locate") return { ...state, hover: hit, cursor: hit.idx };
       if (state.mode === "split") {
         const found = elementAt(hit.idx, state.els);
         if (!found || hit.b <= found.start || hit.b >= found.stop) return state;
@@ -422,7 +458,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     case "clear-led":
       return { ...state, ledSel: null };
     case "escape":
-      return { ...state, sel: [], ledSel: null, mode: "select", drag: null, draftRange: null };
+      return { ...state, sel: [], ledSel: null, markedStart: null, mode: "select", drag: null, draftRange: null };
     case "add-gap": {
       const made = fillGap(state.els, { start: action.start, stop: action.stop }, state.lightId, nextId);
       return commit(state, made.elements, { sel: [made.id], ledSel: null });
@@ -452,6 +488,9 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
           els: action.next,
           saved: action.next,
           ledCount: action.ledCount,
+          cursor: state.cursor === null || action.ledCount < 1
+            ? null : Math.min(state.cursor, action.ledCount - 1),
+          markedStart: action.lengthChanged ? null : state.markedStart,
           sel: sel.length ? sel : action.next[0] ? [action.next[0].id] : [],
           ledSel: adopt ? null : state.ledSel,
           drag: adopt ? null : state.drag,
@@ -490,8 +529,11 @@ export function useEditorState(elements: Element[], ledCount: number, lightId: s
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
+      if (event.defaultPrevented) return;
       const target = event.target;
-      if (target instanceof HTMLElement && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
+      if (target instanceof HTMLElement && (
+        ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName) || target.isContentEditable
+      )) {
         return;
       }
       const key = event.key.toLowerCase();
@@ -501,7 +543,15 @@ export function useEditorState(elements: Element[], ledCount: number, lightId: s
         return;
       }
       if (event.metaKey || event.ctrlKey) return;
-      if (key === "v") dispatch({ type: "tool", mode: "select" });
+      if (key === "l") dispatch({ type: "cursor-set", index: state.cursor ?? 0 });
+      else if (state.mode === "locate" && ["arrowleft", "arrowright", "home", "end", "[", "]"].includes(key)) {
+        event.preventDefault();
+        if (key === "[") dispatch({ type: "mark-start" });
+        else if (key === "]") dispatch({ type: "mark-end" });
+        else if (key === "home" || key === "end") dispatch({ type: "cursor-set", index: key === "home" ? 0 : state.ledCount - 1 });
+        else dispatch({ type: "cursor-step", delta: (key === "arrowleft" ? -1 : 1) * (event.shiftKey ? 10 : 1) });
+      }
+      else if (key === "v") dispatch({ type: "tool", mode: "select" });
       else if (key === "r") {
         dispatch({ type: "tool", mode: state.mode === "range" ? "select" : "range" });
       } else if (key === "c") {
@@ -531,7 +581,7 @@ export function useEditorState(elements: Element[], ledCount: number, lightId: s
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [state.mode, state.ledSel]);
+  }, [state.mode, state.ledSel, state.cursor, state.ledCount]);
 
   useEffect(() => {
     if (!state.toast) return;

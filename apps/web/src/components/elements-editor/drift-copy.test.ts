@@ -20,7 +20,7 @@ describe("explainDrift", () => {
           declared: [
             {
               id: "a",
-              label: "Element 1",
+              label: "Segment 1",
               start: 0,
               stop: 40,
               length: 40,
@@ -31,10 +31,10 @@ describe("explainDrift", () => {
           reported: [{ start: 0, stop: 67, differs: true }],
         }),
       ),
-    ).toEqual(["Element 1 is 0–40 here. The controller has 0–67."]);
+    ).toEqual(["Segment 1 is 0–40 here. The controller has 0–67."]);
   });
 
-  it("says when the controller has nothing on an Element", () => {
+  it("says when the controller has nothing on a Segment", () => {
     expect(
       explainDrift(
         display({
@@ -59,7 +59,7 @@ describe("explainDrift", () => {
         display({
           declared: [
             {
-              label: "Element 1",
+              label: "Segment 1",
               start: 0,
               stop: 10,
               length: 10,
@@ -76,7 +76,7 @@ describe("explainDrift", () => {
         }),
       ),
     ).toEqual([
-      "The controller still has 15–20 and 35–60. No Element on this page covers them.",
+      "The controller still has 15–20 and 35–60. No Segment on this page covers them.",
     ]);
   });
 });

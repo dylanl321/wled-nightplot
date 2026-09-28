@@ -6,7 +6,11 @@ import {
   overlayLocatePicture,
   restoreWriteLeavingOverlay,
   stabilizeLocateOverlayIds,
+  openPixelPreview,
+  pixelPreviewWrite,
+  restorePixelPreview,
 } from "./wled/live.ts";
+import { parseWledPayload } from "@nightplot/shared";
 
 const servers: Server[] = [];
 
@@ -33,6 +37,49 @@ async function listen(box: ReturnType<typeof createFixtureBox>): Promise<string>
 }
 
 describe("fixture info/cfg name divergence", () => {
+  it("paints a dim background and moving cursor, then restores sparse RGBW state", async () => {
+    const base = await listen(createFixtureBox({ ledCount: 10, name: "WLED" }));
+    async function post(body: unknown) {
+      expect((await fetch(`${base}/json/state`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      })).ok).toBe(true);
+    }
+    async function json(path: string) {
+      return (await fetch(`${base}${path}`)).json() as Promise<{
+        state: { seg: { id: number; start: number; stop: number; frz: boolean }[] };
+        leds: string[];
+      }>;
+    }
+    await post({ on: true, bri: 110, seg: [
+      { id: 0, start: 0, stop: 4, col: [[210, 60, 30, 40]] },
+      { id: 3, start: 6, stop: 10, col: [[30, 120, 200, 50]] },
+    ] });
+    const before = await json("/json");
+    const restore = parseWledPayload(before)?.nativeRestore;
+    expect(restore).toBeDefined();
+    const picture = pixelPreviewWrite([
+      { start: 0, stop: 2, color: "#4a3a29" }, { start: 2, stop: 3, color: "#fff4dc" },
+      { start: 3, stop: 4, color: "#4a3a29" }, { start: 6, stop: 10, color: "#2c4e49" },
+    ], 180, 10);
+    await post(openPixelPreview(picture, restore!));
+    expect((await json("/json/live")).leds).toEqual([
+      "4a3a29", "4a3a29", "fff4dc", "4a3a29", "000000",
+      "000000", "2c4e49", "2c4e49", "2c4e49", "2c4e49",
+    ]);
+    await post(pixelPreviewWrite([
+      { start: 0, stop: 4, color: "#4a3a29" }, { start: 5, stop: 6, color: "#fff4dc" },
+      { start: 6, stop: 10, color: "#2c4e49" },
+    ], 180, 10));
+    const moved = await json("/json/live");
+    expect(moved.leds[2]).toBe("4a3a29");
+    expect(moved.leds[5]).toBe("fff4dc");
+    const canvas = (await json("/json")).state.seg;
+    expect(canvas).toHaveLength(1);
+    expect(canvas[0]).toMatchObject({ id: 0, start: 0, stop: 10, frz: true });
+    await post(restorePixelPreview(restore!, 10));
+    expect((await json("/json")).state).toEqual(before.state);
+    expect((await json("/json/live")).leds[5]).toBe("000000");
+  });
   it("keeps /json/info stale after a cfg rename when info-name-lag is on", async () => {
     const box = createFixtureBox({ name: "WLED", infoNameLag: true });
     const base = await listen(box);
@@ -176,7 +223,7 @@ describe("fixture info/cfg name divergence", () => {
     expect(afterHop.leds[0]).toBe("000000");
   });
 
-  it("keeps a later Element id when a gap-cursor hop posts only the new LED", async () => {
+  it("keeps a later Segment id when a gap-cursor hop posts only the new LED", async () => {
     const box = createFixtureBox({ ledCount: 16, name: "WLED" });
     const base = await listen(box);
     const windowSpan = { start: 0, stop: 4, color: "#d4a574" };
@@ -340,7 +387,7 @@ describe("fixture info/cfg name divergence", () => {
     expect(live.leds.every((led) => led === "4f7dff")).toBe(true);
   });
 
-  it("clears leftover overlay lit when named-Element Preview includes leftover stop:0", async () => {
+  it("clears leftover overlay lit when named-Segment Preview includes leftover stop:0", async () => {
     const box = createFixtureBox({ ledCount: 10, name: "WLED" });
     const base = await listen(box);
     await fetch(`${base}/json/state`, {
@@ -475,7 +522,7 @@ describe("fixture info/cfg name divergence", () => {
       state: { seg?: { id?: number; start: number; stop: number }[] };
     };
     const live = (await (await fetch(`${base}/json/live`)).json()) as { leds: string[] };
-    expect(after.state.seg).toEqual([
+    expect(after.state.seg).toMatchObject([
       { id: 0, start: 0, stop: 3, col: [[255, 160, 0]] },
       { id: 1, start: 3, stop: 7, col: [[255, 160, 0]] },
     ]);

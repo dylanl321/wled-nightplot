@@ -338,7 +338,7 @@ export function carveNew(
   const created: Element = {
     id: nextId(),
     lightId,
-    label: `Element ${base.length + 1}`,
+    label: `Segment ${base.length + 1}`,
     start: range.start,
     stop: range.stop,
   };
@@ -354,7 +354,7 @@ export function fillGap(
   const created: Element = {
     id: nextId(),
     lightId,
-    label: `Element ${elements.length + 1}`,
+    label: `Segment ${elements.length + 1}`,
     start: range.start,
     stop: range.stop,
   };
@@ -517,6 +517,6 @@ export function issueSentence(
 ): string {
   if (code === "invert") return "Stop must be after Start (invert).";
   if (code === "over-ledCount") return `Runs past the strip end at ${ledCount} (past strip).`;
-  if (code === "overlap") return "Overlaps another Element (overlap).";
+  if (code === "overlap") return "Overlaps another Segment (overlap).";
   return "";
 }

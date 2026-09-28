@@ -644,7 +644,7 @@ describe("real WLED HTTP probe", () => {
   });
 });
 
-describe("declared Elements", () => {
+describe("declared Segments", () => {
   it("persists a valid draft and returns declared vs reported drift", async () => {
     const { app, store } = testApp();
     const enroll = await app.request("/api/lights", {
@@ -1119,7 +1119,7 @@ describe("preview + blink", () => {
     expect(box.leds[3]).toBe("#000000");
   });
 
-  it("clears leftover locate overlay when Preview names an Element", async () => {
+  it("clears leftover locate overlay when Preview names a Segment", async () => {
     const writes: import("./wled/live.ts").WledStateWrite[] = [];
     const { app, box } = testApp({
       write: async (_target, body) => {
@@ -1298,7 +1298,7 @@ describe("preview + blink", () => {
         state: { seg?: { id?: number; start: number; stop: number; col?: number[][] }[] };
       };
       const live = (await (await fetch(`${base}/json/live`)).json()) as { leds: string[] };
-      expect(after.state.seg).toEqual([
+      expect(after.state.seg).toMatchObject([
         { id: 0, start: 0, stop: 3, col: [[255, 160, 0]] },
         { id: 1, start: 3, stop: 7, col: [[255, 160, 0]] },
       ]);
@@ -1548,7 +1548,7 @@ describe("preview + blink", () => {
     expect(afterHop.liveCaption).not.toMatch(/Applied/);
   });
 
-  it("Inspect refresh does not invent first-locate leftover chrome on a named-Element Preview", async () => {
+  it("Inspect refresh does not invent first-locate leftover chrome on a named-Segment Preview", async () => {
     const infoOnly = {
       ...snapshot,
       on: true,
@@ -3082,7 +3082,7 @@ describe("strip provision", () => {
     expect(store.elementsFor(id)).toHaveLength(1);
   });
 
-  it("flags grow without inventing Elements", async () => {
+  it("flags grow without inventing Segments", async () => {
     const box = createFixtureBox({ ledCount: 60, gpio: 16 });
     const { app, store, id } = await enrollFixture(box);
     await app.request(`/api/lights/${id}/elements`, {
@@ -3117,10 +3117,10 @@ describe("strip provision", () => {
     expect(store.elementsFor(id)).toEqual([
       expect.objectContaining({ label: "Door", start: 0, stop: 60 }),
     ]);
-    expect(body.light.driftLabel).toMatch(/more LEDs than declared|not in an Element|reports/);
+    expect(body.light.driftLabel).toMatch(/more LEDs than declared|not in a Segment|reports/);
   });
 
-  it("does not rewrite Elements when snapshot length does not match", async () => {
+  it("does not rewrite Segments when snapshot length does not match", async () => {
     const box = createFixtureBox({ ledCount: 60, gpio: 16, infoCountLag: true });
     const { app, store, id } = await enrollFixture(box);
     await app.request(`/api/lights/${id}/elements`, {
@@ -3146,7 +3146,7 @@ describe("strip provision", () => {
     ]);
   });
 
-  it("does not rewrite Elements when only GPIO changes", async () => {
+  it("does not rewrite Segments when only GPIO changes", async () => {
     const box = createFixtureBox({ ledCount: 60, gpio: 16 });
     const { app, store, id } = await enrollFixture(box);
     await app.request(`/api/lights/${id}/elements`, {

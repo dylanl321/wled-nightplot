@@ -313,14 +313,14 @@ function growLengthNotes(
 ): string[] {
   if (drafts.length === 0) {
     return [
-      `Strip grew from ${previousLedCount} to ${nextLedCount} LEDs. No Elements declared.`,
+      `Strip grew from ${previousLedCount} to ${nextLedCount} LEDs. No Segments declared.`,
     ];
   }
   const notes = [
-    `Strip grew from ${previousLedCount} to ${nextLedCount} LEDs. Declared Elements were not extended.`,
+    `Strip grew from ${previousLedCount} to ${nextLedCount} LEDs. Declared Segments were not extended.`,
   ];
   for (const gap of uncovered) {
-    notes.push(`LEDs ${gap.start}–${gap.stop} are not in an Element.`);
+    notes.push(`LEDs ${gap.start}–${gap.stop} are not in a Segment.`);
   }
   return notes;
 }
@@ -339,7 +339,7 @@ function shrinkLengthNotes(input: {
     input.remaining.length === 0
   ) {
     return [
-      `Strip shrank from ${input.previousLedCount} to ${input.nextLedCount} LEDs. No Elements declared.`,
+      `Strip shrank from ${input.previousLedCount} to ${input.nextLedCount} LEDs. No Segments declared.`,
     ];
   }
   const notes: string[] = [];
@@ -359,7 +359,7 @@ function shrinkLengthNotes(input: {
     );
   }
   for (const gap of input.uncovered) {
-    notes.push(`LEDs ${gap.start}–${gap.stop} are not in an Element.`);
+    notes.push(`LEDs ${gap.start}–${gap.stop} are not in a Segment.`);
   }
   return notes;
 }

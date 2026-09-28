@@ -9,7 +9,31 @@ function door(start = 10, stop = 20): Element {
 }
 
 describe("editor reducer", () => {
-  it("undo after a drag restores the pre-drag Elements in one step", () => {
+  it("keeps the cursor after leaving and locates without changing ranges", () => {
+    let state = initialEditorState([door()], 30, "l");
+    state = editorReducer(state, { type: "cursor-set", index: 12 });
+    state = editorReducer(state, { type: "leave" });
+    state = editorReducer(state, { type: "cursor-step", delta: 100 });
+    expect(state.cursor).toBe(29);
+    expect(state.hover).toBeNull();
+    expect(state.els).toEqual([door()]);
+    expect(state.hist).toHaveLength(0);
+  });
+
+  it("marks a range in either direction and includes the final LED", () => {
+    let state = initialEditorState([], 30, "l");
+    state = editorReducer(state, { type: "cursor-set", index: 7 });
+    state = editorReducer(state, { type: "mark-start" });
+    state = editorReducer(state, { type: "cursor-set", index: 3 });
+    state = editorReducer(state, { type: "mark-end" });
+    expect(state.ledSel).toMatchObject({ start: 3, stop: 8 });
+    state = editorReducer(state, { type: "new-from-sel" });
+    expect(state.els[0]).toMatchObject({ start: 3, stop: 8, label: "Segment 1" });
+    state = editorReducer(state, { type: "undo" });
+    expect(state.els).toEqual([]);
+  });
+
+  it("undo after a drag restores the pre-drag Segments in one step", () => {
     let state = initialEditorState([door()], 100, "l");
     const down = hitFromSvg(boundaryX(12, 0) + 4, beadCenterY(0), 100);
     state = editorReducer(state, { type: "down", hit: down, shift: false });
@@ -40,7 +64,7 @@ describe("editor reducer", () => {
     input.remove();
   });
 
-  it("keeps a dirty draft when saved Elements are unchanged, and adopts a new strip length", () => {
+  it("keeps a dirty draft when saved Segments are unchanged, and adopts a new strip length", () => {
     const saved = [door(0, 10)];
     let state = initialEditorState(saved, 30, "l");
     state = editorReducer(state, { type: "nudge", delta: 1 });

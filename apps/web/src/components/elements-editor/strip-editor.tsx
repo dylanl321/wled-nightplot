@@ -1,6 +1,6 @@
 "use client";
 
-import { isLitBead, isUnknownBead, type BeadColor, type Element } from "@nightplot/shared";
+import { isLitBead, isUnknownBead, type BeadColor } from "@nightplot/shared";
 import { useRef, type PointerEvent, type ReactNode } from "react";
 import {
   beadCenterY,
@@ -454,9 +454,9 @@ function LedMenu({
   const count = range.stop - range.start;
   const newLabel = facts.hit.length
     ? facts.inside
-      ? `New Element · cut out of ${facts.inside.label}`
-      : "New Element · take these LEDs"
-    : "New Element";
+      ? `New Segment · cut out of ${facts.inside.label}`
+      : "New Segment · take these LEDs"
+    : "New Segment";
   const sub =
     facts.hit.length === 0
       ? "All free"
@@ -486,7 +486,7 @@ function LedMenu({
         ))}
         {facts.hit.length > 0 ? (
           <MenuButton onClick={() => dispatch({ type: "select-here" })}>
-            {facts.hit.length === 1 ? `Select ${facts.hit[0]!.label}` : `Select ${facts.hit.length} Elements`}
+            {facts.hit.length === 1 ? `Select ${facts.hit[0]!.label}` : `Select ${facts.hit.length} Segments`}
           </MenuButton>
         ) : null}
         <MenuButton className="text-online" onClick={onLive}>
@@ -533,6 +533,7 @@ function MenuButton({
 }
 
 function stripCursor(state: EditorState, ledCount: number): string {
+  if (state.mode === "locate") return "crosshair";
   if (state.drag) {
     if (state.drag.kind === "move") return "grabbing";
     if (state.drag.kind === "draw") return "crosshair";

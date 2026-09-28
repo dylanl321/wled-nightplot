@@ -76,17 +76,17 @@ describe("element editor ops", () => {
     expect(carve(elements, { start: 0, stop: 30 }, ids())).toEqual([el("b", 40, 70, "Mid")]);
   });
 
-  it("names what a new Element took", () => {
+  it("names what a new Segment took", () => {
     const made = carveNew([el("a", 0, 30, "Left")], { start: 10, stop: 20 }, "light-1", ids());
     expect(made.taken).toEqual(["Left"]);
     expect(made.elements.map((item) => [item.label, item.start, item.stop])).toEqual([
       ["Left", 0, 10],
       ["Left 2", 20, 30],
-      ["Element 3", 10, 20],
+      ["Segment 3", 10, 20],
     ]);
   });
 
-  it("refuses combine when an unselected Element sits in the span", () => {
+  it("refuses combine when an unselected Segment sits in the span", () => {
     const elements = [el("a", 0, 10, "A"), el("b", 10, 20, "B"), el("c", 20, 30, "C")];
     const refused = combineElements(elements, ["a", "c"]);
     expect(refused.ok).toBe(false);
@@ -130,13 +130,13 @@ describe("element editor ops", () => {
     expect(drawnRange(3, 8, gapAt(3, elements, 40))).toEqual({ start: 3, stop: 9 });
   });
 
-  it("allows an extend only when the union stays clear of other Elements", () => {
+  it("allows an extend only when the union stays clear of other Segments", () => {
     const elements = [el("a", 0, 10), el("b", 20, 30)];
     expect(extendOk(elements, elements[0]!, { start: 10, stop: 20 })).toBe(true);
     expect(extendOk(elements, elements[0]!, { start: 10, stop: 25 })).toBe(false);
   });
 
-  it("splits only on a boundary strictly inside the Element", () => {
+  it("splits only on a boundary strictly inside the Segment", () => {
     expect(splitElement([el("a", 0, 10, "Door")], "a", 4, ids())).toEqual([
       el("a", 0, 4, "Door"),
       el("n1", 4, 10, "Door 2"),
@@ -145,13 +145,13 @@ describe("element editor ops", () => {
     expect(splitElement([el("a", 0, 10)], "a", 10, ids())).toBeNull();
   });
 
-  it("keeps a stored hue and gives a new Element the next free one", () => {
+  it("keeps a stored hue and gives a new Segment the next free one", () => {
     const hues = assignHues([{ id: "a" }, { id: "b" }], { a: "#7ee0d0" });
     expect(hues.a).toBe("#7ee0d0");
     expect(hues.b).toBe("#d4a574");
   });
 
-  it("reports the free runs between Elements", () => {
+  it("reports the free runs between Segments", () => {
     expect(gaps([el("a", 0, 10), el("b", 15, 20)], 30)).toEqual([
       { start: 10, stop: 15 },
       { start: 20, stop: 30 },

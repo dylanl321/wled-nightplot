@@ -22,7 +22,7 @@ const fraunces = Fraunces({
 
 export const metadata: Metadata = {
   title: "Nightplot Configure",
-  description: "Configure spine for Lights and Elements.",
+  description: "Configure spine for Lights and Segments.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

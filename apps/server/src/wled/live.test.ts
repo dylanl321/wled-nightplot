@@ -227,7 +227,7 @@ describe("locate write shape (CONFIG-126)", () => {
     expect(write.seg).toHaveLength(2);
   });
 
-  it("named-Element / Blink Preview stays one segment — no locate overlay", () => {
+  it("named-Segment / Blink Preview stays one segment — no locate overlay", () => {
     const write = previewWrite(0, 10, "#4f7dff", 180);
     expect(write.tt).toBeUndefined();
     expect(write.seg).toEqual([{ start: 0, stop: 10, col: [[79, 125, 255]] }]);
@@ -280,7 +280,7 @@ describe("locate write shape (CONFIG-126)", () => {
     ]);
   });
 
-  it("posts only the gap cursor when hold Elements did not move", () => {
+  it("posts only the gap cursor when hold Segments did not move", () => {
     const first = previewWriteSpans(
       [
         { start: 0, stop: 4, color: peach },
@@ -390,7 +390,7 @@ describe("locate overlay gap-cursor ids (CONFIG-138)", () => {
     expect(sequential.seg?.map((seg) => seg.id)).toEqual([0, 1, 2, 3]);
   });
 
-  it("reuses Door’s overlay id when start/stop/col match — hop packing, not Element identity", () => {
+  it("reuses Door’s overlay id when start/stop/col match — hop packing, not Segment identity", () => {
     const parked = overlayLocatePicture([windowSpan, doorSpan], 180, 16);
     const sequential = overlayLocatePicture([windowSpan, doorSpan, gapCursor], 180, 16);
     const stable = stabilizeLocateOverlayIds(sequential, parked);
@@ -491,7 +491,7 @@ describe("first locate leftover controller segs (CONFIG-137)", () => {
     expect(write.body.seg?.filter((seg) => seg.stop === 0).map((seg) => seg.id)).toEqual([2, 3, 4]);
   });
 
-  it("does not treat a named-Element write as a locate overlay picture", () => {
+  it("does not treat a named-Segment write as a locate overlay picture", () => {
     const named = previewWrite(0, 10, "#4f7dff", 180);
     expect(isLocateOverlayWrite(named)).toBe(false);
     expect(isLocateOverlayWrite(previewWrite(4, 5, lit, 180, 10))).toBe(true);
@@ -509,7 +509,7 @@ describe("leaving locate overlay (CONFIG-136)", () => {
     expect(write.seg?.some((seg) => seg.stop === 0)).toBe(false);
   });
 
-  it("clears leftover overlay ids we authored when Preview names an Element", () => {
+  it("clears leftover overlay ids we authored when Preview names a Segment", () => {
     const overlay = previewWrite(4, 5, lit, 180, 10);
     const named = previewWrite(0, 10, "#4f7dff", 180);
     const write = previewWriteLeavingOverlay(named, overlay);

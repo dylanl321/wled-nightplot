@@ -25,7 +25,10 @@ export type FixtureBoxOptions = {
   refuseState?: boolean;
 };
 
-type Seg = { id?: number; start: number; stop: number; col: number[][] };
+type Seg = {
+  id?: number; start: number; stop: number; col: number[][];
+  i?: (number | string)[]; frz?: boolean; [key: string]: unknown;
+};
 type BusIns = {
   start: number;
   len: number;
@@ -174,6 +177,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       start: number;
       stop: number;
       col: number[][] | null;
+      extra: Record<string, unknown>;
     }[] = [];
     for (const raw of next.seg) {
       if (!raw || typeof raw !== "object") continue;
@@ -187,6 +191,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
         start,
         stop,
         col,
+        extra: raw as Record<string, unknown>,
       });
     }
     // WLED `deserializeSegment`: `id = elem["id"] | it` (ArduinoJson default —
@@ -210,7 +215,15 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       }
       const prev = byId.get(id);
       const col = row.col ?? prev?.col ?? state.seg[0]?.col ?? [];
-      byId.set(id, { id, start: row.start, stop: row.stop, col });
+      const merged: Seg = { ...prev, ...row.extra, id, start: row.start, stop: row.stop, col };
+      if (Array.isArray(row.extra.i)) {
+        merged.i = row.extra.i as (number | string)[];
+        merged.frz = true;
+        // WLED processes pixel writes in array order, including an intermediate
+        // clear followed by restoration of the same segment ID.
+        paintIndividual(merged);
+      } else if (row.extra.frz === false) delete merged.i;
+      byId.set(id, merged);
     });
     let segs = [...byId.values()].sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
     if (mismatch && segs.length > 0) {
@@ -221,8 +234,25 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     for (const seg of state.seg) {
       const rgb = seg.col[0];
       if (rgb) paint(pixels, seg.start, seg.stop, rgb);
+      paintIndividual(seg);
     }
     if (unknownReread) hideSegAfterWrite = true;
+  }
+
+  function paintIndividual(seg: Seg) {
+    let start = 0;
+    let stop: number | null = null;
+    let hasStart = false;
+    for (const item of seg.i ?? []) {
+      if (typeof item === "number") {
+        if (!hasStart) { start = item; hasStart = true; } else stop = item;
+      } else {
+        const value = item.slice(-6);
+        paint(pixels, seg.start + start, seg.start + (stop ?? start + 1),
+          [0, 2, 4].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16)));
+        start = (stop ?? start + 1); stop = null; hasStart = false;
+      }
+    }
   }
 
   function liveLeds(): string[] {
@@ -232,7 +262,16 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
 
   function reportedState() {
     if (unknownReread && hideSegAfterWrite) return { on: state.on, bri: state.bri };
-    return state;
+    return {
+      ...state,
+      seg: state.seg.map((segment, index) => {
+        const { i: _pixels, ...reported } = segment;
+        return {
+          id: index, frz: false, on: true, bri: 255, grp: 1, spc: 0, of: 0, rev: false, mi: false,
+          ...reported,
+        };
+      }),
+    };
   }
 
   function paintDdp(offsetBytes: number, rgb: Uint8Array) {

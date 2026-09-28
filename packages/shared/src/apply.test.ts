@@ -35,7 +35,7 @@ describe("apply refuse", () => {
     ).toMatch(/Overlaps/);
     expect(
       applyRefuseReason({ reachable: true, elementCount: 0, segmentCount: 1 }),
-    ).toMatch(/at least one Element/);
+    ).toMatch(/at least one Segment/);
     expect(
       applyRefuseReason({
         reachable: true,

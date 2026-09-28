@@ -37,11 +37,11 @@ export function explainDrift(display: RangeDisplay): string[] {
   if (uncovered.length === 1) {
     const span = uncovered[0]!;
     lines.push(
-      `The controller still has ${span.start}–${span.stop}. No Element on this page covers it.`,
+      `The controller still has ${span.start}–${span.stop}. No Segment on this page covers it.`,
     );
   } else if (uncovered.length > 1) {
     lines.push(
-      `The controller still has ${joinRanges(uncovered)}. No Element on this page covers them.`,
+      `The controller still has ${joinRanges(uncovered)}. No Segment on this page covers them.`,
     );
   }
   return lines;

@@ -100,10 +100,10 @@ export function buildDeleteChecks(input: {
   controllerWaitMs?: number;
 }): DeleteCheck[] {
   const names =
-    input.elementLabels.length > 0 ? input.elementLabels.join(" and ") : "no named Elements";
+    input.elementLabels.length > 0 ? input.elementLabels.join(" and ") : "no named Segments";
   const elements: DeleteCheck = {
     key: "elements",
-    label: "Elements",
+    label: "Segments",
     status: "ok",
     detail: `Nightplot forgets ${names}. The controller keeps its segments.`,
   };

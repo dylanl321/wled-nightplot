@@ -27,6 +27,24 @@ describe("snapshotSegmentCount", () => {
 });
 
 describe("parseWledPayload", () => {
+  it("captures sparse native IDs and RGBW colors without mutating the source", () => {
+    const seg = {
+      id: 3, start: 0, stop: 60, frz: false, on: true, bri: 120,
+      grp: 2, spc: 1, of: 3, rev: true, mi: false, fx: 9,
+      col: [[30, 40, 50, 60], [1, 2, 3, 4]],
+    };
+    const state = { on: false, bri: 128, seg: [seg], pl: -1 };
+    const native = parseWledPayload({ ...wledJson, state })?.nativeRestore;
+    expect(native).toEqual({ on: false, bri: 128, seg: [seg] });
+    expect(native?.seg[0]?.col).not.toBe(seg.col);
+    for (const unsafe of [
+      { ...state, pl: 1 },
+      { ...state, seg: [{ ...seg, frz: true }] },
+      { ...state, seg: [{ ...seg, frz: undefined }] },
+      { ...state, seg: [{ ...seg, grp: undefined }] },
+      { ...state, seg: [seg, seg] },
+    ]) expect(parseWledPayload({ ...wledJson, state: unsafe })?.nativeRestore).toBeUndefined();
+  });
   it("reads a combined /json snapshot", () => {
     const snap = parseWledPayload(wledJson);
     expect(snap).toMatchObject({

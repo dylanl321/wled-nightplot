@@ -86,7 +86,7 @@ describe("locatePayloadKey", () => {
       start: 0,
       stop: 8,
       color: "#d4a574",
-      caption: "Elements stay lit",
+      caption: "Segments stay lit",
       spans: [
         { start: 0, stop: 4, color: "#d4a574" },
         { start: 4, stop: 5, color: "#fff4dc" },
@@ -98,8 +98,8 @@ describe("locatePayloadKey", () => {
 });
 
 const holdElements = [
-  { id: "a", lightId: "light-1", label: "Element 1", start: 0, stop: 8 },
-  { id: "b", lightId: "light-1", label: "Element 2", start: 10, stop: 14 },
+  { id: "a", lightId: "light-1", label: "Segment 1", start: 0, stop: 8 },
+  { id: "b", lightId: "light-1", label: "Segment 2", start: 10, stop: 14 },
 ];
 const holdHues = { a: "#d4a574", b: "#7ee0d0" };
 
@@ -114,23 +114,41 @@ function holdArgs(hoverIndex: number | null, dragging = false) {
 }
 
 describe("holdSpans", () => {
-  it("keeps each Element as a whole colour — hover does not punch split segs", () => {
+  it("keeps other LEDs coloured with a bright cursor inside a Segment", () => {
     const parked = holdSpans(holdArgs(null));
     const overElement = holdSpans(holdArgs(4));
     expect(parked).toEqual([
       { start: 0, stop: 8, color: "#d4a574" },
       { start: 10, stop: 14, color: "#7ee0d0" },
     ]);
-    expect(overElement).toEqual(parked);
-    expect(holdMarksCursor(holdArgs(4))).toBe(false);
+    expect(overElement).toEqual([
+      { start: 0, stop: 4, color: "#d4a574" },
+      { start: 5, stop: 8, color: "#d4a574" },
+      { start: 10, stop: 14, color: "#7ee0d0" },
+      { start: 4, stop: 5, color: "#fff4dc" },
+    ]);
+    expect(holdMarksCursor(holdArgs(4))).toBe(true);
   });
 
-  it("stays identical while the cursor moves across the same Element", () => {
-    expect(holdSpans(holdArgs(1))).toEqual(holdSpans(holdArgs(7)));
-    expect(locatePayloadKey(locateHold(1), 180)).toBe(locatePayloadKey(locateHold(7), 180));
+  it("updates while the cursor moves across the same Segment", () => {
+    expect(holdSpans(holdArgs(1))).not.toEqual(holdSpans(holdArgs(7)));
+    expect(locatePayloadKey(locateHold(1), 180)).not.toBe(locatePayloadKey(locateHold(7), 180));
   });
 
-  it("marks a gap LED without splitting the Elements around it", () => {
+  it("dims only the background, including zero and full brightness", () => {
+    expect(holdSpans({ ...holdArgs(4), backgroundPercent: 35 })).toEqual([
+      { start: 0, stop: 4, color: "#4a3a29" },
+      { start: 5, stop: 8, color: "#4a3a29" },
+      { start: 10, stop: 14, color: "#2c4e49" },
+      { start: 4, stop: 5, color: "#fff4dc" },
+    ]);
+    const dark = holdSpans({ ...holdArgs(4), backgroundPercent: 0 });
+    expect(dark.slice(0, -1).every((span) => span.color === "#000000")).toBe(true);
+    expect(dark.at(-1)?.color).toBe("#fff4dc");
+    expect(holdSpans({ ...holdArgs(4), backgroundPercent: 100 })).toEqual(holdSpans(holdArgs(4)));
+  });
+
+  it("marks a gap LED without splitting the Segments around it", () => {
     expect(holdSpans(holdArgs(9))).toEqual([
       { start: 0, stop: 8, color: "#d4a574" },
       { start: 10, stop: 14, color: "#7ee0d0" },
@@ -146,12 +164,12 @@ describe("holdSpans", () => {
 });
 
 describe("locateFrame hold", () => {
-  it("does not claim the hover LED is bright when it sits on an Element", () => {
+  it("marks the cursor on a Segment as well as in gaps", () => {
     const onElement = locateHold(4);
     const inGap = locateHold(9);
-    expect(onElement.caption).toBe("Elements stay lit on Porch.");
-    expect(onElement.caption).not.toMatch(/bright one/);
-    expect(inGap.caption).toBe("LED 9 is the bright one. Elements stay lit on Porch.");
+    expect(onElement.caption).toBe("LED 4 is the bright one. Segments stay lit on Porch.");
+    expect(onElement.pixels).toBe(true);
+    expect(inGap.caption).toBe("LED 9 is the bright one. Segments stay lit on Porch.");
     expect(onElement.start).toBe(0);
     expect(onElement.stop).toBe(14);
     expect(inGap.start).toBe(0);
@@ -160,7 +178,7 @@ describe("locateFrame hold", () => {
 });
 
 describe("locateFrame cursor-only", () => {
-  it("stays a single LED span — no hold Element table", () => {
+  it("stays a single LED span — no hold Segment table", () => {
     const frame = locateFrame({
       enabled: true,
       lightName: "Porch",
@@ -208,6 +226,24 @@ describe("useLiveLocate", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("All Off cancels a pending response and sends no restoring End Preview", async () => {
+    vi.useFakeTimers();
+    const gate = deferred();
+    const paths: string[] = [];
+    const bodies: unknown[] = [];
+    stubPreview({ bodies, paths, gate: () => gate.promise });
+    const { unmount } = renderHook(() => useLiveLocate(input()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(bodies).toHaveLength(1);
+    act(() => {
+      window.dispatchEvent(new CustomEvent("nightplot:all-off", { detail: { lightIds: ["light-1"] } }));
+    });
+    await act(async () => { gate.resolve(); await Promise.resolve(); });
+    await finish(unmount);
+    expect(paths.filter((path) => path.endsWith("/preview/end"))).toEqual([]);
+    expect(bodies).toHaveLength(1);
   });
 
   it("sends immediately and every 50 ms during an uninterrupted sweep, then settles", async () => {
@@ -646,7 +682,7 @@ describe("useLiveLocate", () => {
     expect(details).toHaveLength(1);
   });
 
-  it("hold sweep across one Element posts the same spans once", async () => {
+  it("hold sweep updates the bright cursor with latest-only pixel frames", async () => {
     vi.useFakeTimers();
     const bodies: unknown[] = [];
     stubPreview({ bodies });
@@ -670,10 +706,13 @@ describe("useLiveLocate", () => {
     expect(bodies).toHaveLength(1);
     expect(bodies[0]).toEqual({
       spans: [
-        { start: 0, stop: 8, color: "#d4a574" },
+        { start: 0, stop: 1, color: "#d4a574" },
+        { start: 2, stop: 8, color: "#d4a574" },
         { start: 10, stop: 14, color: "#7ee0d0" },
+        { start: 1, stop: 2, color: "#fff4dc" },
       ],
       brightness: 180,
+      pixels: true,
     });
 
     rerender({ next: locateHold(4) });
@@ -681,20 +720,29 @@ describe("useLiveLocate", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(LOCATE_INTERVAL_MS);
     });
-    expect(bodies).toHaveLength(1);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toMatchObject({
+      pixels: true,
+      spans: [
+        { start: 0, stop: 7, color: "#d4a574" },
+        { start: 10, stop: 14, color: "#7ee0d0" },
+        { start: 7, stop: 8, color: "#fff4dc" },
+      ],
+    });
 
     rerender({ next: locateHold(9) });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(LOCATE_INTERVAL_MS);
     });
-    expect(bodies).toHaveLength(2);
-    expect(bodies[1]).toEqual({
+    expect(bodies).toHaveLength(3);
+    expect(bodies[2]).toEqual({
       spans: [
         { start: 0, stop: 8, color: "#d4a574" },
         { start: 10, stop: 14, color: "#7ee0d0" },
         { start: 9, stop: 10, color: "#fff4dc" },
       ],
       brightness: 180,
+      pixels: true,
     });
     await finish(unmount);
   });

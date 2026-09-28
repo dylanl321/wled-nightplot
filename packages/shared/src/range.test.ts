@@ -139,7 +139,7 @@ describe("validateDeclaredRanges", () => {
     ).toEqual([]);
   });
 
-  it("finds the first free span for a new Element", () => {
+  it("finds the first free span for a new Segment", () => {
     expect(firstFreeRange([{ start: 0, stop: 24 }], 60)).toEqual({
       start: 24,
       stop: 60,
@@ -195,10 +195,10 @@ describe("reconcileDeclaredRangesForLedCount", () => {
     ]);
     expect(result.uncovered).toEqual([{ start: 24, stop: 30 }]);
     expect(result.notes.join(" ")).toMatch(/Peak 40–60 was dropped/);
-    expect(result.notes.join(" ")).toMatch(/LEDs 24–30 are not in an Element/);
+    expect(result.notes.join(" ")).toMatch(/LEDs 24–30 are not in a Segment/);
   });
 
-  it("flags grow without inventing Elements", () => {
+  it("flags grow without inventing Segments", () => {
     const declared = [{ id: "d", label: "Door", start: 0, stop: 60 }];
     const result = reconcileDeclaredRangesForLedCount(declared, 60, 150);
     expect(result.kind).toBe("grow");
@@ -207,7 +207,7 @@ describe("reconcileDeclaredRangesForLedCount", () => {
     expect(result.uncovered).toEqual([{ start: 60, stop: 150 }]);
     expect(result.notes[0]).toMatch(/grew from 60 to 150/);
     expect(result.notes[0]).toMatch(/were not extended/);
-    expect(result.notes).toContain("LEDs 60–150 are not in an Element.");
+    expect(result.notes).toContain("LEDs 60–150 are not in a Segment.");
   });
 
   it("leaves same-length declarations untouched", () => {

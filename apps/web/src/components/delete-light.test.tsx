@@ -15,7 +15,7 @@ describe("DeleteLight unknown-controller copy", () => {
             checks: [
               {
                 key: "elements",
-                label: "Elements",
+                label: "Segments",
                 status: "ok",
                 detail: "Nightplot forgets Door. The controller keeps its segments.",
               },

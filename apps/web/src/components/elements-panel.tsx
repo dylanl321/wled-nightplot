@@ -19,12 +19,16 @@ import {
 } from "@nightplot/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ElementInspector } from "@/components/elements-editor/inspector";
+import { CursorControls } from "@/components/elements-editor/cursor-controls";
 import {
   assignHues,
+  beadCenterY,
+  boundaryX,
   elementAt,
   gapAt,
   issueWord,
   ordinal,
+  STRIP,
   type IssueWord,
 } from "@/components/elements-editor/ops";
 import { StripEditor } from "@/components/elements-editor/strip-editor";
@@ -73,9 +77,18 @@ export function ElementsPanel({
   elsRef.current = state.els;
   const [apply, setApply] = useState<ApplyResult | null>(null);
   const [live, setLive] = useState(false);
-  const [locateMode, setLocateMode] = useState<LocateMode>("cursor");
+  const [locateMode, setLocateMode] = useState<LocateMode>("hold");
+  const [backgroundPercent, setBackgroundPercent] = useState(35);
   const [hues, setHues] = useState<Record<string, string>>({});
   const unreachable = light.reachability === "no-answer";
+  const cursorRow = Math.floor((state.cursor ?? 0) / STRIP.per);
+  const viewState: EditorState = state.hover || state.cursor === null ? state : {
+    ...state,
+    hover: {
+      idx: state.cursor, b: state.cursor, r: cursorRow,
+      x: boundaryX(state.cursor, cursorRow) + STRIP.pitch / 2, y: beadCenterY(cursorRow),
+    },
+  };
 
   useEffect(() => {
     setHues(readHues(light.id));
@@ -95,6 +108,15 @@ export function ElementsPanel({
     if (unreachable) setLive(false);
   }, [unreachable]);
 
+  useEffect(() => {
+    function stop(event: Event) {
+      const ids = (event as CustomEvent<{ lightIds?: string[] }>).detail?.lightIds;
+      if (!ids?.length || ids.includes(light.id)) setLive(false);
+    }
+    window.addEventListener("nightplot:all-off", stop);
+    return () => window.removeEventListener("nightplot:all-off", stop);
+  }, [light.id]);
+
   const issues = useMemo(
     () => validateDeclaredRanges(state.els, light.ledCount),
     [state.els, light.ledCount],
@@ -111,7 +133,7 @@ export function ElementsPanel({
     enabled: live && !unreachable,
     lightName: light.name,
     ledCount: light.ledCount,
-    hoverIndex: state.hover?.idx ?? null,
+    hoverIndex: viewState.hover?.idx ?? null,
     dragging: state.drag !== null,
     drawing: drawingRange(state),
     ledSel: state.ledSel,
@@ -120,6 +142,7 @@ export function ElementsPanel({
     mode: locateMode,
     elements: state.els,
     hues,
+    backgroundPercent,
   });
   const locate = useLiveLocate({
     enabled: live && !unreachable,
@@ -152,14 +175,14 @@ export function ElementsPanel({
   const showDrift =
     !applyFailed && !segmentsUnknown && !unreachable && rangeDriftPresent(display);
   const bannerOwnsReason = segmentsUnknown || (unreachable && !applyFailed && !showDrift);
-  const read = describe(state);
-  const zoom = zoomFocus(state, one);
+  const read = describe(viewState);
+  const zoom = zoomFocus(viewState, one);
   const wordFor = (id: string): IssueWord | undefined =>
     issueWord(issues.find((issue) => issue.elementId === id || issue.otherId === id)?.code);
   const issuesFor = (id: string): RangeIssue[] =>
     issues.filter((issue) => issue.elementId === id || issue.otherId === id);
   const barIssue = firstIssue
-    ? `${state.els.find((element) => element.id === firstIssue.elementId)?.label ?? "Element"}: ${issueWord(firstIssue.code) ?? firstIssue.code}`
+    ? `${state.els.find((element) => element.id === firstIssue.elementId)?.label ?? "Segment"}: ${issueWord(firstIssue.code) ?? firstIssue.code}`
     : null;
 
   async function save(): Promise<boolean> {
@@ -282,6 +305,22 @@ export function ElementsPanel({
         onLive={toggleLive}
       />
 
+      <CursorControls state={state} dispatch={dispatch} live={live}
+        blocked={unreachable || Boolean(locate.error) || locate.stopping}
+        onPreview={() => setLive(true)} />
+
+      {locateMode === "hold" ? (
+        <label className="flex flex-wrap items-center gap-3 text-[13px]">
+          <span>Background brightness</span>
+          <input type="range" min={0} max={100} step={5} value={backgroundPercent}
+            aria-label="Background brightness" aria-valuetext={`${backgroundPercent}%`}
+            onChange={(event) => setBackgroundPercent(Number(event.target.value))}
+            className="min-w-36 flex-1 accent-[#d4a574]" />
+          <output className="w-10 font-mono">{backgroundPercent}%</output>
+          <span className="text-muted-foreground">Preview only · cursor stays bright</span>
+        </label>
+      ) : null}
+
       {locate.error ? (
         <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/50 px-4 py-3 text-[13px]">
           <p className="flex-1 text-destructive">{locate.error.message}</p>
@@ -322,7 +361,7 @@ export function ElementsPanel({
           label={`${light.name} strip, ${light.ledCount} LEDs, ${light.stripBead === "rgbw" ? "RGBW" : "RGB"}`}
           ledCount={light.ledCount}
           rgbw={light.stripBead === "rgbw"}
-          state={state}
+          state={viewState}
           hues={hues}
           issueWord={wordFor}
           resting={() => locate.error || locate.stopping ? "unknown" : displayBead(light)}
@@ -350,7 +389,7 @@ export function ElementsPanel({
       <div className="overflow-hidden rounded-[14px] border border-border bg-[#0e1014]">
         <div className="grid grid-cols-[18px_minmax(0,1.4fr)_120px_70px_minmax(0,1fr)] gap-3.5 border-b border-border px-[18px] py-2.5 text-[12px] text-muted-foreground">
           <span />
-          <span>Element</span>
+          <span>Segment</span>
           <span>LEDs</span>
           <span>Count</span>
           <span>Check</span>
@@ -389,7 +428,7 @@ export function ElementsPanel({
                   <span className="font-mono text-[13px] text-muted-foreground">{count || "—"}</span>
                   <span className={cn("text-[13px]", word ? "text-destructive" : "text-muted-foreground")}>
                     {selected ? (
-                      <span className="sr-only" aria-label="Element kind">
+                      <span className="sr-only" aria-label="Segment kind">
                         {word ?? "ok"}
                       </span>
                     ) : null}
@@ -405,8 +444,8 @@ export function ElementsPanel({
         <Hint keys="drag body">shift</Hint>
         <Hint keys="drag edge">resize</Hint>
         <Hint keys="drag free LEDs">select → options</Hint>
-        <Hint keys="R">pick LEDs across Elements</Hint>
-        <Hint keys="N">new Element from selection</Hint>
+        <Hint keys="R">pick LEDs across Segments</Hint>
+        <Hint keys="N">new Segment from selection</Hint>
         <Hint keys="← →">nudge 1 · ⇧ 10</Hint>
         <Hint keys="⌘Z">undo</Hint>
       </div>
@@ -480,6 +519,9 @@ function EditorToolbar({
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex rounded-[9px] border border-input bg-[#12141a] p-[3px] text-[13px]">
+        <ToolButton active={state.mode === "locate"} hint="L" onClick={() => dispatch({ type: "cursor-set", index: state.cursor ?? 0 })}>
+          Locate
+        </ToolButton>
         <ToolButton active={state.mode === "select"} hint="V" onClick={() => dispatch({ type: "tool", mode: "select" })}>
           Select
         </ToolButton>
@@ -553,7 +595,7 @@ function EditorToolbar({
                 locateMode === "hold" ? "bg-[#2f3542] text-foreground" : "text-muted-foreground",
               )}
             >
-              Elements stay lit
+              Segments stay lit
             </button>
           </div>
         ) : null}
@@ -721,7 +763,7 @@ function describe(state: EditorState): { chip: string; text: string; hot: boolea
       hot: false,
       text: inside
         ? `Click to split ${found.label} into ${found.start}–${state.hover.b} and ${state.hover.b}–${found.stop}`
-        : "Point inside an Element to cut it",
+        : "Point inside a Segment to cut it",
     };
   }
   if (state.hover) {
@@ -751,7 +793,7 @@ function describe(state: EditorState): { chip: string; text: string; hot: boolea
   return {
     chip: "—",
     hot: false,
-    text: "Hover the strip to read an LED. Drag across free LEDs to add an Element.",
+    text: "Hover the strip to read an LED. Drag across free LEDs to add a Segment.",
   };
 }
 
@@ -852,7 +894,7 @@ function ApplyFailed({
       <span className="text-[15px] font-medium text-destructive">{apply.message}</span>
       {rows.length > 0 ? (
         <div className="grid grid-cols-[minmax(0,1.2fr)_auto_auto] gap-x-3 gap-y-1 text-[13px]">
-          <span className="text-muted-foreground">Element</span>
+          <span className="text-muted-foreground">Segment</span>
           <span className="text-muted-foreground">Sent</span>
           <span className="text-muted-foreground">Read back</span>
           {rows.map((row) => (

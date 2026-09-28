@@ -21,6 +21,7 @@ import {
   type LiveSessionKind,
   type SeenByYou,
   type WledSnapshot,
+  type WledNativeRestore,
 } from "@nightplot/shared";
 import {
   firstLocateWrite,
@@ -33,12 +34,18 @@ import {
   restoreWriteLeavingOverlay,
   restoreWriteFromSnapshot,
   writeBodiesEqual,
+  pixelPreviewWrite,
+  openPixelPreview,
+  restorePixelPreview,
   type ReadLiveFn,
   type WriteStateFn,
   type WledStateWrite,
 } from "../wled/live.ts";
 
 export type LiveEngine = {
+  revision(lightId: string): number;
+  block(lightId: string): () => void;
+  settle(lightId: string): Promise<void>;
   get(lightId: string): LiveSession | undefined;
   list(): LiveSession[];
   startPreview: (args: StartArgs) => Promise<LiveActionResult>;
@@ -60,6 +67,8 @@ export type StartArgs = {
   spans?: { start: number; stop: number; color: string }[] | null;
   color?: string;
   brightness?: number;
+  pixels?: boolean;
+  revision?: number;
   /**
    * Session update only. `true` still reads `/json/live`. `false` skips.
    * Omitted: locate hops (range / spans) skip; a named Element / whole-strip
@@ -97,6 +106,17 @@ export function createLiveEngine(deps: {
 }): LiveEngine {
   const sessions = new Map<string, LiveSession>();
   const lastWrites = new Map<string, WledStateWrite>();
+  const nativeRestores = new Map<string, WledNativeRestore>();
+  const pixelSessions = new Set<string>();
+  const revisions = new Map<string, number>();
+  const blocked = new Map<string, number>();
+  const flights = new Map<string, Promise<unknown>>();
+  function serial<T>(id: string, work: () => Promise<T>): Promise<T> {
+    const run = (flights.get(id) ?? Promise.resolve()).catch(() => undefined).then(work);
+    flights.set(id, run);
+    void run.finally(() => { if (flights.get(id) === run) flights.delete(id); }).catch(() => undefined);
+    return run;
+  }
 
   function busyKind(lightId: string): LiveSessionKind | null {
     return sessions.get(lightId)?.kind ?? null;
@@ -110,8 +130,14 @@ export function createLiveEngine(deps: {
     kind: LiveSessionKind,
     args: StartArgs,
   ): Promise<LiveActionResult> {
+    if (blocked.has(args.light.id) || (args.revision !== undefined && args.revision !== (revisions.get(args.light.id) ?? 0))) {
+      return { ok: false, status: 422, error: "cancelled", message: "Preview was cancelled by All Off. Nothing was sent." };
+    }
     const reachable = args.light.reachability === "online" && args.live !== null;
-    const painted = kind === "preview" ? normalizeSpans(args.spans, args.light.ledCount) : null;
+    if (args.pixels && args.spans?.some((span) => span.start < 0 || span.stop > args.light.ledCount)) return {
+      ok: false, status: 422, error: "range-outside-strip", message: "A Preview range is outside this strip. Nothing was sent.",
+    };
+    const painted = kind === "preview" ? normalizeSpans(args.spans, args.light.ledCount, args.pixels ? 512 : 64) : null;
     const adHoc = painted ? null : adHocRange(args.range, args.light.ledCount);
     const target = adHoc
       ? {
@@ -123,7 +149,7 @@ export function createLiveEngine(deps: {
       : painted
         ? {
             elementId: null,
-            label: "Elements",
+            label: "Segments",
             start: painted[0]?.start ?? 0,
             stop: painted[painted.length - 1]?.stop ?? args.light.ledCount,
           }
@@ -166,7 +192,17 @@ export function createLiveEngine(deps: {
     const restore = updating ? openPreview.restore : (existing?.restore ?? restoreFrom(args.live!));
     const dest: HostPort = { hostname: args.light.hostname, port: args.light.port };
     const last = lastWrites.get(args.light.id);
-    const authored: WledStateWrite = painted
+    const usePixels = kind === "preview" && (args.pixels === true || pixelSessions.has(args.light.id));
+    const nativeRestore = updating ? nativeRestores.get(args.light.id) : args.live?.nativeRestore;
+    if (usePixels && (!nativeRestore || !/^WLED (?:0\.1[45]\.|16\.)/.test(args.light.firmware ?? ""))) {
+      return {
+        ok: false, status: 422, error: "pixel-preview-unavailable",
+        message: "Segments + cursor needs a complete, unfrozen controller state on supported WLED firmware. End Preview and Refresh, or use Cursor only. Nothing was sent.",
+      };
+    }
+    const authored: WledStateWrite = usePixels
+      ? pixelPreviewWrite(painted ?? [{ start: target.start, stop: target.stop, color }], brightness, args.light.ledCount)
+      : painted
       ? previewWriteSpans(painted, brightness, args.light.ledCount)
       : previewWrite(
           target.start,
@@ -175,14 +211,16 @@ export function createLiveEngine(deps: {
           brightness,
           kind === "preview" && adHoc ? args.light.ledCount : undefined,
         );
-    const picture = stabilizeLocateOverlayIds(authored, last);
+    const picture = usePixels ? authored : stabilizeLocateOverlayIds(authored, last);
     const sameWrite = last != null && writeBodiesEqual(last, picture);
     const locateHop = painted != null || adHoc != null;
     const leftoverUnknown =
       locateHop && snapshotSegmentCount({ segments: restore.segments }) === null;
     let wrote = false;
     if (!sameWrite) {
-      const body = locateHop
+      const body = usePixels
+        ? last?.seg?.some((segment) => segment.i) ? picture : openPixelPreview(picture, nativeRestore!, last)
+        : locateHop
         ? isLocateOverlayWrite(last)
           ? locateHopWrite(picture, last)
           : firstLocateWrite(
@@ -191,18 +229,32 @@ export function createLiveEngine(deps: {
               snapshotSegmentCount({ segments: restore.segments }),
             ).body
         : previewWriteLeavingOverlay(picture, last);
+      // Retain the original before sending: a lost response is not proof no
+      // pixels changed. End Preview must still have a snapshot to restore.
+      if (usePixels) {
+        nativeRestores.set(args.light.id, nativeRestore!);
+        pixelSessions.add(args.light.id);
+        if (!updating) sessions.set(args.light.id, {
+          id: randomUUID(), kind, lightId: args.light.id, target, color, brightness,
+          startedAt: new Date().toISOString(), restore, source: "controller", seenByYou: null,
+        });
+      }
       const sent = await deps.write(dest, body);
       if (!sent) {
         return {
           ok: false,
           status: 422,
           error: "write-failed",
-          message: "The controller did not take the temporary look. Nothing else changed.",
+          message: usePixels
+            ? "The temporary look was not confirmed. Preview is paused; its original snapshot is kept for End Preview."
+            : "The controller did not take the temporary look. Nothing else changed.",
         };
       }
       // Remapped overlay ids — sequential 0…n would shift later Elements
       // on the next gap-cursor hop (`locateHopWrite` keys by id).
       lastWrites.set(args.light.id, picture);
+      if (!updating && args.live?.nativeRestore) nativeRestores.set(args.light.id, args.live.nativeRestore);
+      if (usePixels) pixelSessions.add(args.light.id);
       wrote = true;
     }
     const shouldReread = shouldRereadPreview({
@@ -268,15 +320,23 @@ export function createLiveEngine(deps: {
     }
     const dest: HostPort = { hostname: light.hostname, port: light.port };
     let restored = false;
-    if (shouldRestoreOnEnd(kind)) {
+    if (shouldRestoreOnEnd(kind) && !blocked.has(lightId)) {
       restored = await deps.write(
         dest,
-        restoreWriteLeavingOverlay(session.restore, lastWrites.get(lightId)),
+        pixelSessions.has(lightId)
+          ? restorePixelPreview(nativeRestores.get(lightId)!, light.ledCount)
+          : restoreWriteLeavingOverlay(session.restore, lastWrites.get(lightId)),
       );
+      if (!restored && pixelSessions.has(lightId)) return {
+        ok: false, status: 422, error: "restore-failed",
+        message: "The previous look was not restored. The Preview snapshot is kept for another End Preview attempt.",
+      };
     }
     const live = await deps.readLive(dest, light.ledCount);
     sessions.delete(lightId);
     lastWrites.delete(lightId);
+    nativeRestores.delete(lightId);
+    pixelSessions.delete(lightId);
     return {
       ok: true,
       session: null,
@@ -288,11 +348,21 @@ export function createLiveEngine(deps: {
   }
 
   return {
+    revision: (id) => revisions.get(id) ?? 0,
+    block(id) {
+      revisions.set(id, (revisions.get(id) ?? 0) + 1);
+      blocked.set(id, (blocked.get(id) ?? 0) + 1);
+      return () => {
+        const remaining = (blocked.get(id) ?? 1) - 1;
+        if (remaining > 0) blocked.set(id, remaining); else blocked.delete(id);
+      };
+    },
+    settle: (id) => serial(id, async () => undefined),
     get: (id) => sessions.get(id),
     list: () => [...sessions.values()],
-    startPreview: (args) => start("preview", args),
-    startBlink: (args) => start("blink", args),
-    end,
+    startPreview: (args) => serial(args.light.id, () => start("preview", args)),
+    startBlink: (args) => serial(args.light.id, () => start("blink", args)),
+    end: (id, kind) => serial(id, () => end(id, kind)),
     seen(lightId, seenByYou) {
       const session = sessions.get(lightId);
       if (!session) return null;
@@ -343,6 +413,7 @@ function clampByte(n: number): number {
 function normalizeSpans(
   spans: { start: number; stop: number; color: string }[] | null | undefined,
   ledCount: number,
+  limit = 64,
 ): { start: number; stop: number; color: string }[] | null {
   if (!spans || spans.length === 0) return null;
   const clipped = spans.flatMap((span) => {
@@ -354,7 +425,7 @@ function normalizeSpans(
     return stop > start ? [{ start, stop, color }] : [];
   });
   if (clipped.length === 0) return null;
-  return clipped.sort((a, b) => a.start - b.start || a.stop - b.stop).slice(0, 64);
+  return clipped.sort((a, b) => a.start - b.start || a.stop - b.stop).slice(0, limit);
 }
 
 function adHocRange(

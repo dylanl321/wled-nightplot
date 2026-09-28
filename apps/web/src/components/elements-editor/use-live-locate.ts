@@ -21,6 +21,8 @@ export type LocateFrame = {
   caption: string;
   /** When set, Preview paints these spans and blacks every other LED. */
   spans?: LocateSpan[];
+  /** Stable WLED individual-pixel canvas; requires a restorable controller snapshot. */
+  pixels?: boolean;
 };
 
 /**
@@ -41,6 +43,7 @@ export function locateFrame(input: {
   mode: LocateMode;
   elements: Element[];
   hues: Record<string, string>;
+  backgroundPercent?: number;
 }): LocateFrame | null {
   if (!input.enabled || input.ledCount < 1) return null;
   const name = input.lightName;
@@ -86,6 +89,7 @@ function holdFrame(input: {
   dragging: boolean;
   elements: Element[];
   hues: Record<string, string>;
+  backgroundPercent?: number;
 }): LocateFrame {
   const spans = holdSpans(input);
   if (spans.length === 0) {
@@ -93,7 +97,7 @@ function holdFrame(input: {
       start: 0,
       stop: input.ledCount,
       color: LOCATE_OFF,
-      caption: "Preview on · no Elements to keep lit",
+      caption: "Preview on · no Segments to keep lit",
     };
   }
   const marked = holdMarksCursor(input);
@@ -102,9 +106,10 @@ function holdFrame(input: {
     stop: Math.max(...spans.map((span) => span.stop)),
     color: spans[0]?.color ?? LOCATE_LIT,
     spans,
+    pixels: true,
     caption: marked
-      ? `LED ${input.hoverIndex} is the bright one. Elements stay lit on ${input.lightName}.`
-      : `Elements stay lit on ${input.lightName}.`,
+      ? `LED ${input.hoverIndex} is the bright one. Segments stay lit on ${input.lightName}.`
+      : `Segments stay lit on ${input.lightName}.`,
   };
 }
 
@@ -128,14 +133,7 @@ function clippedElementRange(
   return { start, stop };
 }
 
-function holdCoversIndex(input: { ledCount: number; elements: Element[] }, index: number): boolean {
-  return input.elements.some((element) => {
-    const range = clippedElementRange(element, input.ledCount);
-    return range != null && index >= range.start && index < range.stop;
-  });
-}
-
-/** True when Hold marks the hover LED — only a gap, never a punch through an Element. */
+/** Hold marks the cursor both inside a Segment and in unused LEDs. */
 export function holdMarksCursor(input: {
   ledCount: number;
   hoverIndex: number | null;
@@ -143,13 +141,12 @@ export function holdMarksCursor(input: {
   elements: Element[];
 }): boolean {
   const index = holdHoverIndex(input);
-  return index != null && !holdCoversIndex(input, index);
+  return index != null;
 }
 
 /**
- * Elements keep their colours as whole ranges. Punching the hover LED into an
- * Element splits that range on every mousemove and is a flash source.
- * The cursor is the bright locate colour only when it sits in a gap.
+ * A logical paint frame, not controller segment geometry. Split the color
+ * spans around the bright cursor; the server paints one stable pixel canvas.
  */
 export function holdSpans(input: {
   ledCount: number;
@@ -157,6 +154,7 @@ export function holdSpans(input: {
   dragging: boolean;
   elements: Element[];
   hues: Record<string, string>;
+  backgroundPercent?: number;
 }): LocateSpan[] {
   const index = holdHoverIndex(input);
   const spans: LocateSpan[] = [];
@@ -164,12 +162,24 @@ export function holdSpans(input: {
   for (const element of ordered) {
     const range = clippedElementRange(element, input.ledCount);
     if (!range) continue;
-    spans.push({ start: range.start, stop: range.stop, color: input.hues[element.id] ?? "#d4a574" });
+    const color = dimPreviewColor(input.hues[element.id] ?? "#d4a574", input.backgroundPercent ?? 100);
+    if (index !== null && index >= range.start && index < range.stop) {
+      if (range.start < index) spans.push({ start: range.start, stop: index, color });
+      if (index + 1 < range.stop) spans.push({ start: index + 1, stop: range.stop, color });
+    } else spans.push({ start: range.start, stop: range.stop, color });
   }
-  if (index != null && !holdCoversIndex(input, index)) {
+  if (index != null) {
     spans.push({ start: index, stop: index + 1, color: LOCATE_LIT });
   }
   return spans;
+}
+
+/** Preview-only attenuation. Cursor and controller brightness are unchanged. */
+export function dimPreviewColor(color: string, percent: number): string {
+  const level = Math.max(0, Math.min(100, Number.isFinite(percent) ? percent : 100)) / 100;
+  return `#${[1, 3, 5].map((offset) =>
+    Math.round(Number.parseInt(color.slice(offset, offset + 2), 16) * level).toString(16).padStart(2, "0"),
+  ).join("")}`;
 }
 
 export function drawingRange(state: EditorState): Range | null {
@@ -189,14 +199,14 @@ export function locatePayloadKey(frame: LocateFrame, brightness: number | null):
   const painted = frame.spans
     ? frame.spans.map((span) => `${span.start}:${span.stop}:${span.color}`).join("|")
     : `${frame.start}:${frame.stop}:${frame.color}`;
-  return `${painted}@${brightness ?? ""}`;
+  return `${painted}@${brightness ?? ""}${frame.pixels ? ":pixels" : ""}`;
 }
 
 export function locatePreviewBody(frame: LocateFrame, brightness: number | null) {
   const painted = frame.spans
     ? { spans: frame.spans }
     : { start: frame.start, stop: frame.stop, color: frame.color };
-  return brightness != null ? { ...painted, brightness } : painted;
+  return { ...painted, ...(brightness != null ? { brightness } : {}), ...(frame.pixels ? { pixels: true } : {}) };
 }
 
 type LocateInput = {
@@ -230,7 +240,13 @@ export function useLiveLocate(input: LocateInput) {
       (status) => setReported({ lightId: input.lightId, status }),
     );
     sender.current = current;
+    function cancelForAllOff(event: Event) {
+      const ids = (event as CustomEvent<{ lightIds?: string[] }>).detail?.lightIds;
+      if (!ids?.length || ids.includes(input.lightId)) current.cancel();
+    }
+    window.addEventListener("nightplot:all-off", cancelForAllOff);
     return () => {
+      window.removeEventListener("nightplot:all-off", cancelForAllOff);
       sender.current = null;
       current.dispose();
     };
@@ -265,6 +281,7 @@ function createLocateSender(
   let lastAcknowledged: string | null = null;
   let lastStarted: number | null = null;
   let status = IDLE;
+  let generation = 0;
 
   function publish(next: LocateStatus) {
     status = next;
@@ -296,6 +313,7 @@ function createLocateSender(
     timer = null;
     if (flight || disposed || !enabled || !desired || mustEnd || status.error) return;
     const next = desired;
+    const attempt = generation;
     const key = locatePayloadKey(next.frame, next.brightness);
     if (key === lastAcknowledged) return;
     flight = true;
@@ -307,12 +325,14 @@ function createLocateSender(
         locatePreviewBody(next.frame, next.brightness),
         firstAcknowledged ? LOCATE_HOP_TIMEOUT_MS : LOCATE_BOUNDARY_TIMEOUT_MS,
       );
+      if (attempt !== generation) return;
       lastAcknowledged = key;
       if (!disposed && enabled && !mustEnd && !firstAcknowledged) {
         firstAcknowledged = true;
         onDetail(detail);
       }
     } catch (error) {
+      if (attempt !== generation) return;
       lastAcknowledged = null;
       publish({
         ...status,
@@ -329,18 +349,21 @@ function createLocateSender(
 
   async function end() {
     flight = true;
+    const attempt = generation;
     try {
       const detail = await requestLocate(
         `/api/lights/${lightId}/preview/end`,
         {},
         LOCATE_BOUNDARY_TIMEOUT_MS,
       );
+      if (attempt !== generation) return;
       if ((detail as LightDetail & { restored?: boolean }).restored === false) {
         throw new Error("The previous look could not be restored.");
       }
       if (!disposed) onDetail(detail);
       publish(IDLE);
     } catch (error) {
+      if (attempt !== generation) return;
       // 404 means there is no session to end (e.g. a rejected first frame).
       if (error instanceof Error && "status" in error && error.status === 404) {
         publish(IDLE);
@@ -365,6 +388,18 @@ function createLocateSender(
   }
 
   return {
+    cancel() {
+      generation++;
+      enabled = false;
+      desired = null;
+      mustEnd = false;
+      open = false;
+      lastAcknowledged = null;
+      firstAcknowledged = false;
+      lastStarted = null;
+      clearTimer();
+      publish(IDLE);
+    },
     update(input: LocateInput) {
       desired = input.frame ? { frame: input.frame, brightness: input.brightness } : null;
       const active = input.enabled && desired !== null;

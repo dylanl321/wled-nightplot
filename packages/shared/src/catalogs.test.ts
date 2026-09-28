@@ -88,7 +88,7 @@ describe("bead honesty", () => {
 });
 
 describe("lights store", () => {
-  it("starts with no enrolled Lights or Elements", () => {
+  it("starts with no enrolled Lights or Segments", () => {
     expect(emptyLightsPayload.lights).toEqual([]);
     expect(emptyLightsPayload.elements).toEqual([]);
   });

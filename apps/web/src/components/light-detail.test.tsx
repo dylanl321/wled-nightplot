@@ -23,7 +23,7 @@ import {
   requestPath,
 } from "@/test/fixtures";
 
-describe("Elements Preview recovery", () => {
+describe("Segments Preview recovery", () => {
   function initialDetail() {
     return lightDetail({
       light: lightView({
@@ -35,6 +35,34 @@ describe("Elements Preview recovery", () => {
       }),
     });
   }
+
+  it("dims the background live while preserving cursor and overall brightness", async () => {
+    const initial = initialDetail();
+    const bodies: { pixels: boolean; brightness: number; spans: { start: number; stop: number; color: string }[] }[] = [];
+    const paths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      paths.push(path);
+      if (path.endsWith("/preview")) bodies.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify(initial), { status: 200 });
+    }));
+    render(<LightDetail initial={initial} tab="elements" />);
+    const slider = screen.getByRole("slider", { name: "Background brightness" });
+    expect((slider as HTMLInputElement).value).toBe("35");
+    fireEvent.change(screen.getByRole("slider", { name: "Strip cursor" }), { target: { value: "4" } });
+    fireEvent.click(screen.getByRole("button", { name: "Show on the real strip" }));
+    await waitFor(() => expect(bodies.length).toBeGreaterThan(0));
+    expect(bodies.at(-1)).toMatchObject({ pixels: true, brightness: 180 });
+    expect(bodies.at(-1)?.spans).toContainEqual({ start: 4, stop: 5, color: "#fff4dc" });
+    fireEvent.change(slider, { target: { value: "0" } });
+    await waitFor(() => {
+      const spans = bodies.at(-1)!.spans;
+      expect(spans.filter((span) => span.start !== 4).every((span) => span.color === "#000000")).toBe(true);
+    });
+    expect(bodies.at(-1)?.spans).toContainEqual({ start: 4, stop: 5, color: "#fff4dc" });
+    expect(bodies.at(-1)?.brightness).toBe(180);
+    expect(paths.some((path) => path.includes("/apply") || path.includes("/provision"))).toBe(false);
+  });
 
   it("shows a failed Preview, clears its live claim, and offers explicit retry", async () => {
     const initial = initialDetail();
@@ -140,7 +168,7 @@ describe("LightDetail reported rails", () => {
     expect(screen.getByRole("img", { name: "Garage strip, 60 LEDs, RGB" })).toBeTruthy();
   });
 
-  it("shows the calculated strip length and each Element’s length", () => {
+  it("shows the calculated strip length and each Segment’s length", () => {
     const initial = lightDetail({
       light: lightView({
         spacingMm: 16.67,
@@ -723,7 +751,7 @@ describe("LightDetail Apply unknown colour", () => {
   });
 });
 
-describe("LightDetail Elements after length change", () => {
+describe("LightDetail Segments after length change", () => {
   it("does not claim declared ranges still match when they run past the strip", () => {
     const initial = lightDetail({
       light: lightView({
@@ -769,7 +797,7 @@ describe("LightDetail Elements after length change", () => {
   });
 });
 
-describe("LightDetail selected Element kind chip", () => {
+describe("LightDetail selected Segment kind chip", () => {
   it("says no compare when segments are unknown — not seg", () => {
     render(
       <LightDetail
@@ -847,7 +875,7 @@ describe("LightDetail selected Element kind chip", () => {
     );
 
     expect(selectedKindChip().textContent).toBe("overlap");
-    expect(screen.getByText(/Overlaps another Element \(overlap\)/)).toBeTruthy();
+    expect(screen.getByText(/Overlaps another Segment \(overlap\)/)).toBeTruthy();
     expect(screen.getByText(/overlaps Eave/)).toBeTruthy();
     dirtyLabel();
     expectSaveRefused();
@@ -1037,7 +1065,7 @@ describe("LightDetail bead legend", () => {
     expect(screen.queryByText("overlap")).toBeNull();
   });
 
-  it("hides the dashed drift key when no Element differs", () => {
+  it("hides the dashed drift key when no Segment differs", () => {
     render(
       <LightDetail
         initial={lightDetail({
@@ -1266,11 +1294,11 @@ describe("LightDetail ApplyFailed adopt", () => {
 });
 
 function selectedKindChip(): HTMLElement {
-  return screen.getByLabelText("Element kind");
+  return screen.getByLabelText("Segment kind");
 }
 
 function dirtyLabel() {
-  fireEvent.change(screen.getByLabelText("Element label"), { target: { value: "Door edited" } });
+  fireEvent.change(screen.getByLabelText("Segment label"), { target: { value: "Door edited" } });
 }
 
 function expectSaveRefused() {

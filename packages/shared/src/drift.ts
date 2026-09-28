@@ -206,7 +206,7 @@ export function buildRangeDisplay(
       notes.push({
         text: `Controller reports ${liveReported.length} range${
           liveReported.length === 1 ? "" : "s"
-        } · Nightplot has ${validDeclared.length} Elements`,
+        } · Nightplot has ${validDeclared.length} Segments`,
       });
     }
   }

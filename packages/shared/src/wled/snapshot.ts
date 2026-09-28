@@ -1,5 +1,11 @@
 import type { RangeSpan } from "../range.ts";
 
+export type WledNativeSegment = {
+  id: number; start: number; stop: number; col: number[][]; frz: boolean;
+  [key: string]: unknown;
+};
+export type WledNativeRestore = { on: boolean; bri: number; seg: WledNativeSegment[] };
+
 export type WledSnapshot = {
   name: string;
   firmware: string;
@@ -14,6 +20,8 @@ export type WledSnapshot = {
    * was not an array — unknown, not zero. `[]` is a known empty list.
    */
   segments: RangeSpan[] | null;
+  /** Restorable state for individual-pixel Preview. Never derived from an RGB bead. */
+  nativeRestore?: WledNativeRestore;
 };
 
 /** Unknown when `segments` is null. Distinct from a known empty `[]`. */
@@ -46,6 +54,7 @@ export function parseWledPayload(body: unknown): WledSnapshot | null {
     state && typeof state.bri === "number" ? clampByte(state.bri) : null;
   const segmentColor = on ? colorFromState(state) : null;
 
+  const nativeRestore = readNativeRestore(state);
   return {
     name,
     firmware: ver.startsWith("0") || ver.includes(".") ? `WLED ${ver}` : ver,
@@ -56,7 +65,39 @@ export function parseWledPayload(body: unknown): WledSnapshot | null {
     brightness,
     segmentColor,
     segments: parseSegments(state, count),
+    ...(nativeRestore ? { nativeRestore } : {}),
   };
+}
+
+function readNativeRestore(state: Record<string, unknown> | null): WledNativeRestore | null {
+  if (!state || typeof state.on !== "boolean" || !Number.isInteger(state.bri)
+    || Number(state.bri) < 0 || Number(state.bri) > 255 || !Array.isArray(state.seg) || !state.seg.length) return null;
+  // A playlist or frozen pixel buffer cannot be reconstructed from segment JSON.
+  if (typeof state.pl === "number" && state.pl >= 0) return null;
+  const segments: WledNativeSegment[] = [];
+  const ids = new Set<number>();
+  for (const raw of state.seg) {
+    if (!isRecord(raw) || !Number.isInteger(raw.id) || Number(raw.id) < 0 || ids.has(Number(raw.id))
+      || !Number.isInteger(raw.start) || !Number.isInteger(raw.stop) || Number(raw.stop) <= Number(raw.start)
+      || Number(raw.start) < 0 || typeof raw.on !== "boolean" || typeof raw.rev !== "boolean" || typeof raw.mi !== "boolean"
+      || !["bri", "grp", "spc", "of"].every((key) => Number.isInteger(raw[key]))
+      || raw.frz !== false || !Array.isArray(raw.col) || !raw.col.length
+      || !raw.col.every((color) => Array.isArray(color) && color.length >= 3 && color.length <= 4
+        && color.every((value) => Number.isInteger(value) && value >= 0 && value <= 255))) return null;
+    ids.add(Number(raw.id));
+    const segment: WledNativeSegment = {
+      id: Number(raw.id), start: Number(raw.start), stop: Number(raw.stop),
+      col: raw.col.map((color) => [...color]), frz: false,
+    };
+    for (const key of ["on", "bri", "cct", "grp", "spc", "of", "rev", "mi", "fx", "sx", "ix", "pal",
+      "c1", "c2", "c3", "o1", "o2", "o3", "sel", "set", "m12", "si", "n"]) {
+      const value = raw[key];
+      if (typeof value === "boolean" || typeof value === "string"
+        || (typeof value === "number" && Number.isFinite(value))) segment[key] = value;
+    }
+    segments.push(segment);
+  }
+  return { on: state.on, bri: Number(state.bri), seg: segments };
 }
 
 /** WLED stop is exclusive. Missing start/stop on a listed seg uses the strip defaults. */

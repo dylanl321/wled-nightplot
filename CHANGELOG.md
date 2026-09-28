@@ -7,6 +7,10 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- Renamed visible Elements to **Segments**, retaining existing data and API names. Locate now keeps a persistent cursor, offers forward/backward auto-scan at 1–10 LEDs/s with pause, keyboard stepping, direct position entry, edge/unused-range jumps, and Mark start / Mark end / Create Segment controls.
+- **Segments stay lit** now marks the cursor inside Segments as well as gaps. **Background brightness** defaults to 35% and adjusts from 0–100% independently of the cursor and overall Preview brightness. Supported WLED Preview uses one fixed full-strip pixel canvas; movement changes colors without rebuilding range geometry. A complete unfrozen state is required, and End Preview restores its native IDs, colors (including white), effects and grouping. Unconfirmed pixel writes retain the original snapshot. Preview is temporary.
+- Preview/Blink/end operations are serialized per Light. All Off drains accepted writes, invalidates stale starts, cancels scanning, and suppresses restoration. Auto-scan stops at the strip end and pauses when the tab is hidden or Preview fails. These checks cover software behavior; physical strip performance remains unverified.
+
 - Preview locate now sends immediately and follows continuous movement at up to 20 requests per second, with one request in flight and only the latest pending position. Moving no longer restarts a 220 ms settle timer. Failed, timed-out, or incomplete responses pause Preview and show **Retry Preview**; uncertain writes are not replayed automatically. Within one editor, toggle-off/unmount waits for the in-flight request before End Preview, and a rapid restart waits for that end to finish. Apply remains disabled during cleanup. This is a client-side repair; hardware timing, transport changes, and cross-tab/server cancellation remain separate work.
 
 ### Added

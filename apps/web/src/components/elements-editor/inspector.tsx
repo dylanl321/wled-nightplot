@@ -35,10 +35,10 @@ export function ElementInspector({
       ) : null}
       {state.sel.length > 1 ? (
         <div className="flex flex-col gap-3">
-          <span className="text-[15px] font-medium">{state.sel.length} Elements selected</span>
+          <span className="text-[15px] font-medium">{state.sel.length} Segments selected</span>
           <p className="text-[13px] leading-normal text-muted-foreground">
             {check.ok
-              ? `Combine makes one Element from ${check.start} to ${check.stop}${
+              ? `Combine makes one Segment from ${check.start} to ${check.stop}${
                   check.stop - check.start > check.chosen.reduce((sum, element) => sum + element.stop - element.start, 0)
                     ? ", filling the free LEDs between them"
                     : ""
@@ -61,7 +61,7 @@ export function ElementInspector({
         <div className="flex flex-col gap-2">
           <span className="text-[15px] font-medium">Nothing selected</span>
           <p className="text-[13px] leading-relaxed text-muted-foreground">
-            Click an Element to select it. Drag across LEDs to select them, then choose New Element. Use Pick LEDs (R) to select across existing Elements.
+            Click a Segment to select it. Drag across LEDs to select them, then choose New Segment. Use Pick LEDs (R) to select across existing Segments.
           </p>
         </div>
       ) : null}
@@ -82,7 +82,7 @@ export function ElementInspector({
             </button>
           ))}
           {runs.length === 0 ? (
-            <span className="text-[13px] text-muted-foreground">Every LED is in an Element.</span>
+            <span className="text-[13px] text-muted-foreground">Every LED is in a Segment.</span>
           ) : null}
         </div>
       </div>
@@ -108,13 +108,13 @@ function OneElement({
   const { lo, hi } = bounds(element, elements, ledCount);
   const word = issues[0]?.code;
   const before =
-    element.start > lo ? `${element.start - lo} free before` : "touches the Element before";
+    element.start > lo ? `${element.start - lo} free before` : "touches the Segment before";
   const after =
     hi > element.stop
       ? `${hi - element.stop} free after`
       : element.stop >= ledCount
         ? "runs to the strip end"
-        : "touches the Element after";
+        : "touches the Segment after";
   const stopBad = Boolean(word);
   const startBad = word === "invert" || word === "overlap";
   return (
@@ -123,7 +123,7 @@ function OneElement({
         <span className="size-2.5 rounded-[3px]" style={{ background: word ? "#e07070" : hue }} />
         <Input
           value={element.label}
-          aria-label="Element label"
+          aria-label="Segment label"
           onChange={(event) => dispatch({ type: "label", value: event.target.value })}
           className="h-[34px] flex-1 font-sans text-[15px] font-medium"
         />

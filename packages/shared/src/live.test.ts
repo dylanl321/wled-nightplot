@@ -30,7 +30,7 @@ describe("preview / blink refuse", () => {
 
   it("refuses Preview without a target and while Blink is running", () => {
     expect(previewRefuseReason({ reachable: true, hasTarget: false })).toMatch(
-      /Pick an Element/,
+      /Pick a Segment/,
     );
     expect(
       previewRefuseReason({ reachable: true, hasTarget: true, busyKind: "blink" }),
@@ -163,7 +163,7 @@ describe("live readback", () => {
 });
 
 describe("target + proof ladder", () => {
-  it("uses the only Element, or the whole strip", () => {
+  it("uses the only Segment, or the whole strip", () => {
     expect(resolveLiveTarget([], 60, null)).toEqual({
       elementId: null,
       label: "Whole strip",

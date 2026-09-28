@@ -6,6 +6,7 @@ import {
   type LiveRead,
   type LiveRestoreSnapshot,
   type WledSnapshot,
+  type WledNativeRestore,
 } from "@nightplot/shared";
 
 export type WledStateWrite = {
@@ -16,11 +17,59 @@ export type WledStateWrite = {
    * so HTTP hops do not fade-crawl while a segment start/stop moves.
    */
   tt?: number;
-  seg?: { id?: number; start: number; stop: number; col?: number[][] }[];
+  seg?: {
+    id?: number; start: number; stop: number; col?: number[][];
+    i?: (number | string)[];
+    frz?: boolean; on?: boolean; bri?: number; grp?: number; spc?: number; of?: number;
+    rev?: boolean; mi?: boolean;
+  }[];
 };
 
 export type PreviewSpan = { start: number; stop: number; color: string };
 export type WledSegWrite = NonNullable<WledStateWrite["seg"]>[number];
+
+/** One fixed full-strip segment. Logical color boundaries never rebuild geometry. */
+export function pixelPreviewWrite(spans: PreviewSpan[], brightness: number, ledCount: number): WledStateWrite {
+  const pixels: (number | string)[] = [0, ledCount, "000000"];
+  for (const span of locateLitPieces(spans, ledCount)) {
+    pixels.push(span.start, span.stop, span.color.slice(1));
+  }
+  return {
+    on: true, bri: brightness, tt: 0,
+    seg: [{
+      id: 0, start: 0, stop: ledCount, on: true, bri: 255,
+      grp: 1, spc: 0, of: 0, rev: false, mi: false, i: pixels,
+    }],
+  };
+}
+
+export function openPixelPreview(
+  picture: WledStateWrite, restore: WledNativeRestore, previous?: WledStateWrite,
+): WledStateWrite {
+  const ids = new Set([
+    ...restore.seg.map((segment) => segment.id),
+    ...(previous?.seg ?? []).map((segment, index) => segment.id ?? index),
+  ]);
+  return {
+    ...picture,
+    seg: [
+      ...[...ids].filter((id) => id !== 0).map((id) => ({ id, start: 0, stop: 0 })),
+      ...picture.seg!,
+    ],
+  };
+}
+
+export function restorePixelPreview(restore: WledNativeRestore, ledCount: number): WledStateWrite {
+  return {
+    on: restore.on, bri: restore.bri, tt: 0,
+    seg: [
+      // Clear the owned pixel buffer even when segment 0 was not present originally.
+      { id: 0, start: 0, stop: ledCount, i: [0, ledCount, "000000"] },
+      ...(!restore.seg.some((segment) => segment.id === 0) ? [{ id: 0, start: 0, stop: 0 }] : []),
+      ...restore.seg.map((segment) => ({ ...segment })),
+    ],
+  };
+}
 
 /** Stable compare for Preview hop short-circuit. Same body → no controller POST. */
 export function writeBodiesEqual(a: WledStateWrite, b: WledStateWrite): boolean {

@@ -204,7 +204,7 @@ export function LightDetail({
         ) : null}
         <div className="flex gap-6 border-b border-border">
           <TabButton active={tab === "elements"} onClick={() => goTab("elements")}>
-            Elements
+            Segments
           </TabButton>
           <TabButton active={tab === "settings"} onClick={() => goTab("settings")}>
             Settings

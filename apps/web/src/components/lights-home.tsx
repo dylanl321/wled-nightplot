@@ -54,7 +54,7 @@ export function LightsHome({
           <h2 className="text-2xl font-semibold tracking-[-0.01em]">No Lights yet</h2>
           <p className="max-w-prose text-[15px] leading-6 text-[#c9c3b8]">
             Nightplot finds WLED controllers on your home network. Nothing changes
-            on any strip until you add one. Elements — contiguous ranges on a
+            on any strip until you add one. Segments — contiguous ranges on a
             Light — appear after that.
           </p>
         </div>
@@ -186,7 +186,7 @@ function CardSync({ light, drifted }: { light: LightView; drifted: number }) {
   if (drifted > 0) {
     return (
       <span className="text-primary">
-        {drifted} Element{drifted === 1 ? "" : "s"} don’t match the controller · Review
+        {drifted} Segment{drifted === 1 ? "" : "s"} don’t match the controller · Review
       </span>
     );
   }

@@ -15,6 +15,15 @@ No real-strip timing or hardware completion is claimed.
 
 ## Remaining, in dependency order
 
+The user-requested follow-up now includes persistent cursor navigation,
+auto-scan, marking/creation controls, visible Segments vocabulary, and dimmable
+Segments-stay-lit Preview. Native pixel Preview captures restorable state and
+keeps one fixed canvas; per-Light live writes and All Off barriers are covered
+by software tests. See [Locate and create Segments](segment-locate.md).
+The items below remain intake context; ownership/leases, compact acknowledgements,
+COB Settings, draft persistence, broad rendering work, and physical/visual
+validation are still outstanding.
+
 1. **Controller Preview correctness.** Serialize writes per Light; add ownership,
    frame ordering, abandonment leases, and All Off cancellation barriers.
    Capture complete restorable segment state, including IDs, colors and white

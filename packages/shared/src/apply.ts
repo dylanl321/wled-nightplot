@@ -110,7 +110,7 @@ export function applyRefuseReason(input: {
     return APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE;
   }
   if (input.issueMessage) return input.issueMessage;
-  if (input.elementCount < 1) return "Declare at least one Element first.";
+  if (input.elementCount < 1) return "Declare at least one Segment first.";
   if (!knownApplyColor(input.segmentColor)) {
     return APPLY_UNKNOWN_COLOUR_REASON;
   }
@@ -320,11 +320,11 @@ export function adoptReportedRanges<T extends AppliedRange & { id: string; light
       ...(keep ?? {
         id: `adopted-${index}`,
         lightId: draft[0]?.lightId ?? "",
-        label: `Element ${index + 1}`,
+        label: `Segment ${index + 1}`,
       }),
       start: span.start,
       stop: span.stop,
-      label: keep?.label ?? `Element ${index + 1}`,
+      label: keep?.label ?? `Segment ${index + 1}`,
     } as T;
   });
 }

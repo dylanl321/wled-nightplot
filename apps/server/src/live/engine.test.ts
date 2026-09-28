@@ -57,6 +57,76 @@ function engineWithWrites(writes: WledStateWrite[], reads: number[] = []) {
 }
 
 describe("Preview restore honesty", () => {
+  it("refuses pixel Preview without a restorable state and sends nothing", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    expect(await engine.startPreview({
+      light, live: infoOnly, elements: [], pixels: true,
+      spans: [{ start: 0, stop: 10, color: "#444444" }],
+    })).toMatchObject({ ok: false, error: "pixel-preview-unavailable" });
+    expect(writes).toEqual([]);
+  });
+
+  it("keeps one pixel canvas and preserves the original restore after a failed end", async () => {
+    const writes: WledStateWrite[] = [];
+    let succeeds = true;
+    const engine = createLiveEngine({
+      write: async (_target, body) => { writes.push(body); return succeeds; },
+      readLive: async () => null, findLight: () => light,
+    });
+    const nativeRestore = { on: false, bri: 128, seg: [{
+      id: 3, start: 0, stop: 10, col: [[1, 2, 3, 40]], frz: false,
+      on: true, bri: 90, grp: 2, spc: 0, of: 1, rev: true, mi: false,
+    }] };
+    const args = { light, live: { ...infoOnly, nativeRestore }, elements: [], pixels: true };
+    expect(await engine.startPreview({ ...args, spans: [
+      { start: 0, stop: 4, color: "#444444" }, { start: 4, stop: 5, color: "#fff4dc" },
+    ] })).toMatchObject({ ok: true });
+    expect(writes[0]?.seg).toHaveLength(2);
+    expect(writes[0]?.seg?.[0]).toEqual({ id: 3, start: 0, stop: 0 });
+    expect(await engine.startPreview({ ...args, spans: [
+      { start: 0, stop: 5, color: "#444444" }, { start: 5, stop: 6, color: "#fff4dc" },
+    ] })).toMatchObject({ ok: true, updated: true });
+    expect(writes[1]?.seg).toHaveLength(1);
+    expect(writes[1]?.seg?.[0]).toMatchObject({
+      id: 0, start: 0, stop: 10, i: [0, 10, "000000", 0, 5, "444444", 5, 6, "fff4dc"],
+    });
+    succeeds = false;
+    expect(await engine.end(light.id, "complete")).toMatchObject({ ok: false, error: "restore-failed" });
+    expect(engine.get(light.id)).toBeDefined();
+    succeeds = true;
+    expect(await engine.end(light.id, "complete")).toMatchObject({ ok: true, restored: true });
+    expect(writes.at(-1)).toMatchObject({ on: false, bri: 128 });
+    expect(writes.at(-1)?.seg?.at(-1)).toEqual(nativeRestore.seg[0]);
+    expect(engine.get(light.id)).toBeUndefined();
+  });
+
+  it("drains an in-flight Preview before All Off and rejects stale starts afterward", async () => {
+    const writes: WledStateWrite[] = [];
+    let releaseWrite!: () => void;
+    let entered!: () => void;
+    const startedWrite = new Promise<void>((resolve) => { entered = resolve; });
+    const gate = new Promise<void>((resolve) => { releaseWrite = resolve; });
+    const engine = createLiveEngine({
+      write: async (_target, body) => { writes.push(body); entered(); await gate; return true; },
+      readLive: async () => null, findLight: () => light,
+    });
+    const args = { light, live: infoOnly, elements: [], revision: engine.revision(light.id) };
+    const start = engine.startPreview(args);
+    await startedWrite;
+    const unblock = engine.block(light.id);
+    let drained = false;
+    const drain = engine.settle(light.id).then(() => { drained = true; });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+    releaseWrite();
+    await start;
+    await drain;
+    expect(await engine.end(light.id, "complete")).toMatchObject({ ok: true, restored: false });
+    unblock();
+    expect(await engine.startPreview(args)).toMatchObject({ ok: false, error: "cancelled" });
+    expect(writes).toHaveLength(1);
+  });
   it("does not invent on when the session snapshot is info-only", async () => {
     const writes: WledStateWrite[] = [];
     const engine = engineWithWrites(writes);
@@ -201,7 +271,7 @@ describe("Preview restore honesty", () => {
     expect(JSON.stringify(writes[0])).not.toMatch(/ffa000/i);
   });
 
-  it("writes one segment when Preview names an Element", async () => {
+  it("writes one segment when Preview names a Segment", async () => {
     const writes: WledStateWrite[] = [];
     const engine = engineWithWrites(writes);
     const started = await engine.startPreview({
@@ -215,7 +285,7 @@ describe("Preview restore honesty", () => {
     expect(writes[0]?.seg).toEqual([{ start: 0, stop: 10, col: [[79, 125, 255]] }]);
   });
 
-  it("keeps each Element lit and blacks the gaps when Preview sends spans", async () => {
+  it("keeps each Segment lit and blacks the gaps when Preview sends spans", async () => {
     const writes: WledStateWrite[] = [];
     const engine = engineWithWrites(writes);
     const started = await engine.startPreview({
@@ -463,7 +533,7 @@ describe("Preview session update", () => {
     expect(hopped.caption).not.toMatch(/Leftover controller segments were not cleared/);
   });
 
-  it("uses the first restore segment count when locate opens after a named-Element Preview", async () => {
+  it("uses the first restore segment count when locate opens after a named-Segment Preview", async () => {
     const writes: WledStateWrite[] = [];
     const engine = engineWithWrites(writes);
     await engine.startPreview({
@@ -647,7 +717,7 @@ describe("Preview session update", () => {
     expect(writes[0]?.seg?.some((seg) => seg.stop === 0)).toBe(false);
   });
 
-  it("clears leftover overlay ids when Preview names an Element after locate", async () => {
+  it("clears leftover overlay ids when Preview names a Segment after locate", async () => {
     const writes: WledStateWrite[] = [];
     const engine = engineWithWrites(writes);
     await engine.startPreview({
@@ -685,7 +755,7 @@ describe("Preview session update", () => {
     expect(writes[0]?.seg?.some((seg) => seg.id === 0 && seg.stop === 0)).toBe(false);
   });
 
-  it("does not rewrite a later Element when a gap cursor is inserted or removed", async () => {
+  it("does not rewrite a later Segment when a gap cursor is inserted or removed", async () => {
     const holdLight: Light = { ...light, ledCount: 16 };
     const writes: WledStateWrite[] = [];
     const engine = createLiveEngine({

@@ -238,7 +238,7 @@ describe("lightDetail segmentCount honesty", () => {
     expect(detail.reported).toEqual([]);
   });
 
-  it("does not compare unknown segments as empty rails against declared Elements", () => {
+  it("does not compare unknown segments as empty rails against declared Segments", () => {
     const infoOnly = {
       ...snapshot,
       on: null,

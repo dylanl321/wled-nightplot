@@ -466,7 +466,7 @@ export function createApp(deps: AppDeps) {
             ? draft.id
             : randomUUID(),
       lightId: light.id,
-      label: draft.label.trim() || `Element ${index + 1}`,
+      label: draft.label.trim() || `Segment ${index + 1}`,
       start: draft.start,
       stop: draft.stop,
     }));
@@ -688,7 +688,11 @@ export function createApp(deps: AppDeps) {
     if (!stored) {
       return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
     }
+    const revision = live.revision(stored.id);
     const body = await readPreviewBody(c);
+    if (body.invalidPixels) return c.json({
+      error: "invalid-pixels", message: "Preview needs valid color ranges (at most 512). Nothing was sent.",
+    }, 422);
     const existing = live.get(stored.id);
     const updating = existing?.kind === "preview";
     let light = stored;
@@ -711,6 +715,8 @@ export function createApp(deps: AppDeps) {
       color: body.color,
       brightness: body.brightness,
       reread: body.reread,
+      pixels: body.pixels,
+      revision,
     });
     if (!result.ok) return c.json(result, result.status);
     if (updating) {
@@ -769,10 +775,12 @@ export function createApp(deps: AppDeps) {
     if (!stored) {
       return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
     }
+    const revision = live.revision(stored.id);
     const { light, live: snap } = await refreshOne(stored);
     const body = await readPreviewBody(c);
     const result = await live.startBlink({
       light,
+      revision,
       live: snap,
       elements: deps.store.elementsFor(light.id),
       elementId: body.elementId,
@@ -1239,46 +1247,52 @@ export function createApp(deps: AppDeps) {
     const targets = lightIds?.length
       ? enrolled.filter((light) => lightIds.includes(light.id))
       : enrolled;
-    const cancelled: AllOffCancelled[] = [];
-    for (const session of live.list()) {
-      if (lightIds?.length && !lightIds.includes(session.lightId)) continue;
-      const owner = enrolled.find((light) => light.id === session.lightId);
-      await live.end(session.lightId, "cancel-without-restore");
-      cancelled.push({
-        lightId: session.lightId,
-        kind: session.kind,
-        label: session.target.label,
-        name: owner?.name ?? session.target.label,
+    const release = targets.map((light) => live.block(light.id));
+    try {
+      await Promise.all(targets.map((light) => live.settle(light.id)));
+      const cancelled: AllOffCancelled[] = [];
+      for (const session of live.list()) {
+        if (lightIds?.length && !lightIds.includes(session.lightId)) continue;
+        const owner = enrolled.find((light) => light.id === session.lightId);
+        await live.end(session.lightId, "cancel-without-restore");
+        cancelled.push({
+          lightId: session.lightId,
+          kind: session.kind,
+          label: session.target.label,
+          name: owner?.name ?? session.target.label,
+        });
+      }
+      let honesty: LiveSource = "controller";
+      // FileLightsStore.replace is a sync read-modify-write, so overlapping Light
+      // jobs do not drop a sibling update. Do not invent success across Lights.
+      const settled = await mapLimitSettled(targets, ALL_OFF_PROBE_CONCURRENCY, (stored) =>
+        allOffOneLight(stored, (source) => {
+          honesty = foldHonestySource(honesty, source);
+        }),
+      );
+      const rows: AllOffRow[] = settled.map((result, index) => {
+        if (result.status === "fulfilled") return result.value;
+        const stored = targets[index]!;
+        const current = deps.store.findById(stored.id) ?? stored;
+        const next = markUnreachable(current);
+        deps.store.replace(next);
+        // Throw / unmeasured wait — generic refuse, not a claimed 3 s.
+        return allOffUnknownRow(next);
       });
+      const failedIds = rows
+        .filter((row) => row.status === "failed" || row.status === "unknown")
+        .map((row) => row.lightId);
+      return {
+        cancelled,
+        restored: false,
+        rows,
+        failedIds,
+        message: allOffSummary(rows, cancelled),
+        caption: manageCaption(honesty),
+      };
+    } finally {
+      release.forEach((unblock) => unblock());
     }
-    let honesty: LiveSource = "controller";
-    // FileLightsStore.replace is a sync read-modify-write, so overlapping Light
-    // jobs do not drop a sibling update. Do not invent success across Lights.
-    const settled = await mapLimitSettled(targets, ALL_OFF_PROBE_CONCURRENCY, (stored) =>
-      allOffOneLight(stored, (source) => {
-        honesty = foldHonestySource(honesty, source);
-      }),
-    );
-    const rows: AllOffRow[] = settled.map((result, index) => {
-      if (result.status === "fulfilled") return result.value;
-      const stored = targets[index]!;
-      const current = deps.store.findById(stored.id) ?? stored;
-      const next = markUnreachable(current);
-      deps.store.replace(next);
-      // Throw / unmeasured wait — generic refuse, not a claimed 3 s.
-      return allOffUnknownRow(next);
-    });
-    const failedIds = rows
-      .filter((row) => row.status === "failed" || row.status === "unknown")
-      .map((row) => row.lightId);
-    return {
-      cancelled,
-      restored: false,
-      rows,
-      failedIds,
-      message: allOffSummary(rows, cancelled),
-      caption: manageCaption(honesty),
-    };
   }
 
   async function readProvision(
@@ -1548,7 +1562,7 @@ export function createApp(deps: AppDeps) {
             ? draft.id
             : randomUUID(),
       lightId,
-      label: draft.label.trim() || `Element ${index + 1}`,
+      label: draft.label.trim() || `Segment ${index + 1}`,
       start: draft.start,
       stop: draft.stop,
     }));
@@ -1566,6 +1580,8 @@ export function createApp(deps: AppDeps) {
         color: undefined,
         brightness: undefined,
         reread: undefined as boolean | undefined,
+        pixels: undefined as boolean | undefined,
+        invalidPixels: false,
       };
     }
     const row = body as {
@@ -1576,6 +1592,7 @@ export function createApp(deps: AppDeps) {
       color?: unknown;
       brightness?: unknown;
       reread?: unknown;
+      pixels?: unknown;
     };
     const spans = Array.isArray(row.spans)
       ? row.spans.flatMap((item) => {
@@ -1608,10 +1625,13 @@ export function createApp(deps: AppDeps) {
     return {
       elementId: typeof row.elementId === "string" ? row.elementId : null,
       range,
-      spans: spans && spans.length > 0 ? spans.slice(0, 64) : null,
+      spans: spans && spans.length > 0 ? (row.pixels === true ? spans : spans.slice(0, 64)) : null,
       color: typeof row.color === "string" ? parseHexColor(row.color) ?? undefined : undefined,
       brightness: typeof row.brightness === "number" ? row.brightness : undefined,
       reread: typeof row.reread === "boolean" ? row.reread : undefined,
+      pixels: row.pixels === true,
+      invalidPixels: row.pixels === true && (!Array.isArray(row.spans) || row.spans.length === 0
+        || row.spans.length > 512 || spans?.length !== row.spans.length),
     };
   }
 

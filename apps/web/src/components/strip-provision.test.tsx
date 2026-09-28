@@ -612,7 +612,7 @@ describe("Strip provision", () => {
     expect(screen.queryByRole("listbox")).toBeNull();
   });
 
-  it("shows the Element rewrite story after a length-changing Apply", async () => {
+  it("shows the Segment rewrite story after a length-changing Apply", async () => {
     const after = payload({
       light: lightView({
         reachability: "online",
@@ -698,7 +698,7 @@ describe("Strip provision", () => {
     ).toBeTruthy();
   });
 
-  it("adopts rewritten Elements on the open Light after Strip Apply", async () => {
+  it("adopts rewritten Segments on the open Light after Strip Apply", async () => {
     const initial = payload({
       light: lightView({
         reachability: "online",
@@ -809,7 +809,7 @@ describe("Strip provision", () => {
       await screen.findByText("Door 0–60 was clipped to 0–30. It ran past the new strip (30 LEDs)."),
     ).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Elements" }));
+    fireEvent.click(screen.getByRole("button", { name: "Segments" }));
     expect((await screen.findAllByText("0–30")).length).toBeGreaterThan(0);
     expect(screen.queryByText("0–60")).toBeNull();
   });

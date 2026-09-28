@@ -65,6 +65,7 @@ export function AllOffControl({ size, lights, sessions }: AllOffControlProps) {
   );
 
   async function run(lightIds?: string[]) {
+    window.dispatchEvent(new CustomEvent("nightplot:all-off", { detail: { lightIds } }));
     setBusy(true);
     setError(null);
     const res = await postJson<AllOffResult>(

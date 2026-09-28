@@ -320,4 +320,6 @@ export {
   parseWledPayload,
   snapshotSegmentCount,
   type WledSnapshot,
+  type WledNativeRestore,
+  type WledNativeSegment,
 } from "./wled/snapshot.ts";

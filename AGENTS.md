@@ -1,12 +1,16 @@
 # Nightplot Configure
 
-Nightplot Configure is a LAN utility: discover a WLED controller, enroll it as a **Light**, describe **Elements** as ranges on the strip, Preview live, Apply, manage a few, All Off.
+Nightplot Configure is a LAN utility: discover a WLED controller, enroll it as a **Light**, describe **Segments** as ranges on the strip, Preview live, Apply, manage a few, All Off.
 
 ## Product words
 
-Use: **Lights**, **Elements**, Preview, Apply, Blink, All Off.
+Use: **Lights**, **Segments**, Preview, Apply, Blink, All Off.
 
-A Light is one enrolled controller + one strip. An Element is a contiguous inclusive–exclusive range on that strip.
+A Light is one enrolled controller + one strip. A Segment is a contiguous inclusive–exclusive range on that strip.
+
+The user renamed visible Elements to Segments on September 28, 2026. Existing
+`Element` types, `elements` payload/store keys, routes, and saved custom labels
+remain compatible; new operator-facing copy uses Segments.
 
 Use this product’s vocabulary. Do not invent alternate product nouns (control room / scenes / schedules / etc.).
 
@@ -21,7 +25,7 @@ Use this product’s vocabulary. Do not invent alternate product nouns (control 
 
 ## Architecture
 
-One code basis. Do not fork the Lights / Elements / live stack per vendor or strip type.
+One code basis. Do not fork the Lights / Segments / live stack per vendor or strip type.
 
 | Seam | First member | Home |
 | --- | --- | --- |
@@ -38,7 +42,7 @@ Layout:
 - `apps/web` — Quiet-utility shell (Next.js)
 - `apps/server` — catalogs, Discover/connect, JSON Light store, live / Apply / provision / Safe / All Off
 - `packages/shared` — types and catalogs
-- `docs/ui/` — bead-language prototype. The running shell is the v3 top bar (Lights, LED products, All Off; Elements and Settings on a Light).
+- `docs/ui/` — bead-language prototype. The running shell is the v3 top bar (Lights, LED products, All Off; Segments and Settings on a Light).
 
 The store is `data/lights.json`.
 
@@ -71,12 +75,12 @@ API: `http://127.0.0.1:43181`
 ## Learned User Preferences
 
 - Prefer Corepack to activate the root `packageManager` pnpm pin; avoid the standalone pnpm installer, which can rewrite that pin to a Corepack-incompatible version.
-- Element range-mismatch copy must be plain and operator-meaningful; opaque “reports N more LEDs than declared” deltas that thrash while editing do not communicate.
-- In the Element editor, offer a way to keep other Elements lit while scrubbing or scrolling individual nodes.
+- Segment range-mismatch copy must be plain and operator-meaningful; opaque “reports N more LEDs than declared” deltas that thrash while editing do not communicate.
+- In the Segment editor, offer a way to keep other Segments lit while scrubbing or scrolling individual nodes.
 
 ## Learned Workspace Facts
 
 - Find must send mDNS and SSDP on each non-loopback IPv4 except `169.254.0.0/16`. Joining multicast on every interface is not enough if the query still leaves through the OS default adapter.
 - mDNS Find rows are only `_wled._tcp` SRV records. Other services heard on the link are not WLED candidates and must not be probed.
 - Background Find: while Nightplot is open, scan immediately then about once a minute while the tab is visible; pause when hidden. Find Lights still forces a scan.
-- LED product geometry: `pitchMm` (discrete/diffused, centre-to-centre) or `sectionLengthMm` (COB section) yields calculated length on Lights, Light, Element, and Strip pages. Voltage, watts, IP, width, cut length, and density notes stay under Advanced and do not affect length.
+- LED product geometry: `pitchMm` (discrete/diffused, centre-to-centre) or `sectionLengthMm` (COB section) yields calculated length on Lights, Light, Segment, and Strip pages. Voltage, watts, IP, width, cut length, and density notes stay under Advanced and do not affect length.
