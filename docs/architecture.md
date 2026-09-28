@@ -8,12 +8,12 @@ This is early software. Paths below are the real tree on `main`.
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `apps/web` | `@nightplot/web` | Quiet-utility Next.js shell. Routes: `/`, `/discover`, `/lights/[id]` |
+| `apps/web` | `@nightplot/web` | Quiet-utility Next.js shell. Routes: `/`, `/discover`, `/led-products`, `/lights/[id]` |
 | `apps/server` | `@nightplot/server` | Hono API, Discover, JSON store, WLED I/O, fixture |
 | `packages/shared` | `@nightplot/shared` | Types, catalogs, LAN guard, parse, range / live / safe / provision |
 | `docs/ui/` | — | v2 prototype (visual source of truth) |
 
-Web talks to the API by rewrite: `/api/:path*` and `/health` → `NIGHTPLOT_API_URL` (default `http://127.0.0.1:43181`). Browser fetches use same-origin paths (`apps/web/src/lib/api.ts`). Add a Light (`/discover`) loads `GET /api/lights` and `GET /api/discover` independently: a Find miss keeps enrolled Lights and does not render ServerDown; a Lights miss still does. Inspect (`/lights/:id`) loads `GET /api/lights` and `GET /api/lights/:id` the same way: a detail miss keeps enrolled Lights; a Lights miss still uses ServerDown.
+Web talks to the API by rewrite: `/api/:path*` and `/health` → `NIGHTPLOT_API_URL` (default `http://127.0.0.1:43181`). Browser fetches use same-origin paths (`apps/web/src/lib/api.ts`). Add a Light (`/discover`) loads `GET /api/lights` and `GET /api/discover` independently: a Find miss keeps enrolled Lights and does not render ServerDown; a Lights miss still does. Inspect (`/lights/:id`) loads `GET /api/lights` and `GET /api/lights/:id` the same way: a detail miss keeps enrolled Lights; a Lights miss still uses ServerDown. LED products (`/led-products`) loads `GET /api/lights` and `GET /api/led-products` the same way: a catalog miss keeps enrolled Lights; a Lights miss still uses ServerDown.
 
 ## Catalog seams
 
@@ -25,7 +25,7 @@ First members. Home directories are the registration point.
 | Strip / driver | WS281x, SK6812 RGBW | `packages/shared/src/strip/` | `ws281xStrip` + `sk6812RgbwStrip` — both `wired: false`. Pixels go through WLED, not a local driver |
 | Discovery | mDNS / SSDP / address probe | `packages/shared/src/discovery/` | `implementation: "registered"`. Empty results are honest |
 
-`GET /api/catalogs` returns `catalogSnapshot()` (`packages/shared/src/catalog.ts`). `CURRENT_SLICE` is `"R6"`. Named strip presets live in `packages/shared/src/strip/presets.ts` (`stripPresets` on that payload) and seed the LED product catalog. Operator LED products (`LedProduct`) live in `packages/shared/src/strip/products.ts` and on that payload as `ledProducts`. `PATCH /api/lights/:id/led-product` attaches one to a Light (`ledProductId`). That is Nightplot bookkeeping, not a WLED write.
+`GET /api/catalogs` returns `catalogSnapshot()` (`packages/shared/src/catalog.ts`). `CURRENT_SLICE` is `"R6"`. Named strip presets live in `packages/shared/src/strip/presets.ts` (`stripPresets` on that payload) and seed the LED product catalog. Operator LED products (`LedProduct`) live in `packages/shared/src/strip/products.ts` and on that payload as `ledProducts`. `GET`/`POST`/`PATCH /api/led-products` manage the catalog (`FileLedProductsStore.update` on edit). `PATCH /api/lights/:id/led-product` attaches one to a Light (`ledProductId`). That is Nightplot bookkeeping, not a WLED write.
 
 `registered` means the slot exists. It is not proof hardware passed. `ControllerDescriptor.implementation` / `wired` / `capabilities` stay honest (`packages/shared/src/controller/types.ts`).
 
@@ -36,12 +36,12 @@ The seams above register controller, strip-driver, and discovery members. Operat
 | Layer | What it owns | Home |
 | --- | --- | --- |
 | Strip / driver | IC recipe: channels, colour order, bead | `packages/shared/src/strip/catalog.ts` (`ws281x`, `sk6812-rgbw`) |
-| LED product | Shared SKU: `driverId`, form factor, optional defaults | `packages/shared/src/strip/products.ts`, `apps/server/src/store/led-products-store.ts`, `data/led-products.json` |
-| This Light | `ledProductId`, length / GPIO / type overrides, Element ranges | `packages/shared/src/lights.ts`, `data/lights.json` |
+| LED product | Shared SKU: `driverId`, form factor, optional defaults | `packages/shared/src/strip/products.ts`, `apps/server/src/store/led-products-store.ts`, `data/led-products.json`, `/led-products` |
+| This Light | `ledProductId`, length / GPIO / type overrides, Element ranges | `packages/shared/src/lights.ts`, `data/lights.json`, Strip |
 
 Controller and discovery catalogs stay their own seams (`packages/shared/src/controller/`, `packages/shared/src/discovery/`). They do not replace the LED product catalog.
 
-Attach (`PATCH /api/lights/:id/led-product`) stores the catalog id on the Light. Strip Apply (`POST /api/lights/:id/provision`) writes that Light’s type / length / GPIO. Helpers that suggest a length — or later a segment — are Strip-assist plugins: they do not own the catalog and they do not replace attach. No assist plugin is registered on `main` today. Preview is not Apply. Helper glow is not Hardware Done.
+Attach (`PATCH /api/lights/:id/led-product`) stores the catalog id on the Light. That is not Apply. Catalog edit (`PATCH /api/led-products/:id`) mutates the shared recipe only — it does not write WLED. Strip Apply (`POST /api/lights/:id/provision`) writes that Light’s type / length / GPIO. Helpers that suggest a length — or later a segment — are Strip-assist plugins: they do not own the catalog and they do not replace attach. No assist plugin is registered today. Preview is not Apply. Helper glow is not Hardware Done.
 
 Routes and API: [README.md](../README.md#ui) / [README.md](../README.md#api).
 

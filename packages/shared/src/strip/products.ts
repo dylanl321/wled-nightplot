@@ -28,6 +28,16 @@ import type { StripBead, StripChannel } from "./types.ts";
 export const LED_FORM_FACTORS = ["discrete", "cob", "diffused"] as const;
 export type LedFormFactor = (typeof LED_FORM_FACTORS)[number];
 
+/** Shared recipe vs this Light (CONFIG-113). Attach is bookkeeping. */
+export const LED_CATALOG_SHARED_HEADING = "Shared catalog";
+export const LED_CATALOG_PER_LIGHT_HEADING = "This Light";
+export const LED_CATALOG_SHARED_COPY =
+  "LED type and IC recipe. Several Lights can attach the same row.";
+export const LED_CATALOG_PER_LIGHT_COPY =
+  "Length, GPIO, ranges, and field overrides. Apply writes only this Light’s bus.";
+export const LED_CATALOG_ATTACH_COPY =
+  "Attach is Nightplot bookkeeping — not Apply, not a WLED write, not Hardware Done.";
+
 export type LedProduct = {
   id: string;
   label: string;

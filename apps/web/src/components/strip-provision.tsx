@@ -3,6 +3,11 @@
 import {
   defaultStripPreset,
   draftLedTypeFromSettings,
+  LED_CATALOG_ATTACH_COPY,
+  LED_CATALOG_PER_LIGHT_COPY,
+  LED_CATALOG_PER_LIGHT_HEADING,
+  LED_CATALOG_SHARED_COPY,
+  LED_CATALOG_SHARED_HEADING,
   PROVISION_LED_TYPES,
   provisionDraftFromProduct,
   provisionLedTypeLabel,
@@ -13,6 +18,7 @@ import {
   type ProvisionWriteResult,
   type WledStripProvisionDraft,
 } from "@nightplot/shared";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -172,21 +178,25 @@ export function StripProvisionPanel({
       <div className="flex flex-col gap-1">
         <h2 className="text-[20px] font-semibold">Strip</h2>
         <p className="text-[13px] leading-5 text-[#c9c3b8]">
-          First-time bus: LED type, node count, and GPIO. A catalog product fills the form from
-          that SKU and its driver; fields still override. Attaching a product is Nightplot
-          bookkeeping — not Apply, not a WLED write, not Hardware Done. Apply writes /json/cfg,
-          then reads the snapshot back. Colour order on the bus is named after Apply; Strip does
-          not pick it. A length change clips or drops declared ranges that run past the new
-          strip, and flags leftover coverage. Preview is not Apply.
+          First-time bus on this Light: LED type, node count, and GPIO. A shared catalog recipe
+          fills the form from that SKU and its driver; this Light’s fields still override. Apply
+          writes /json/cfg, then reads the snapshot back. Colour order on the bus is named after
+          Apply; Strip does not pick it. A length change clips or drops declared ranges that run
+          past the new strip, and flags leftover coverage. Preview is not Apply.
         </p>
       </div>
 
       <fieldset className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
         <legend className="px-1 font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
-          LED product
+          {LED_CATALOG_SHARED_HEADING}
         </legend>
+        <p className="text-[12px] text-quiet">{LED_CATALOG_SHARED_COPY}</p>
+        <p className="text-[12px] text-quiet">{LED_CATALOG_ATTACH_COPY}</p>
         <p className="text-[12px] text-quiet">
-          Operator catalog. Form factor is metadata. A product may name WS281x or SK6812 RGBW.
+          Form factor is metadata. A product may name WS281x or SK6812 RGBW.{" "}
+          <Link href="/led-products" className="text-primary">
+            Manage LED products
+          </Link>
         </p>
         <div className="flex flex-wrap gap-2">
           <button
@@ -224,10 +234,10 @@ export function StripProvisionPanel({
         </div>
         <p className="text-[12px] text-quiet">
           {selected
-            ? selected.notes
+            ? `${selected.notes || selected.label} Attached recipe fills these fields. Change them for this Light — the shared catalog row stays as it is.`
             : products.length === 0
-              ? "No LED products in the catalog. Fields stay manual."
-              : "Fields override the catalog values. Manual fields keeps no product attached."}
+              ? "No LED products in the catalog. Fields stay manual on this Light."
+              : "This Light’s fields override the catalog. Manual fields keeps no product attached."}
         </p>
       </fieldset>
 
@@ -241,6 +251,11 @@ export function StripProvisionPanel({
           <p className="mt-2 text-[12px] text-primary">{read.caption}</p>
         </div>
       ) : (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1">
+            <h3 className="text-[15px] font-semibold">{LED_CATALOG_PER_LIGHT_HEADING}</h3>
+            <p className="text-[12px] text-quiet">{LED_CATALOG_PER_LIGHT_COPY}</p>
+          </div>
         <div className="grid gap-3 md:grid-cols-3">
           <div className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
             <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
@@ -282,7 +297,7 @@ export function StripProvisionPanel({
               }
               aria-label="Node count"
             />
-            <span className="text-[12px] text-quiet">Node count on this bus.</span>
+            <span className="text-[12px] text-quiet">Node count on this Light.</span>
           </label>
           <label className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
             <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
@@ -294,8 +309,9 @@ export function StripProvisionPanel({
               onChange={(event) => patch("gpio", Number.parseInt(event.target.value, 10) || 0)}
               aria-label="GPIO pin"
             />
-            <span className="text-[12px] text-quiet">Single data pin.</span>
+            <span className="text-[12px] text-quiet">Single data pin on this Light.</span>
           </label>
+        </div>
         </div>
       )}
 

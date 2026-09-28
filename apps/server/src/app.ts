@@ -170,6 +170,44 @@ export function createApp(deps: AppDeps) {
     return c.json({ product }, 201);
   });
 
+  app.patch("/api/led-products/:id", async (c) => {
+    const existing = products.findById(c.req.param("id"));
+    if (!existing) {
+      return c.json(
+        { error: "not_found", message: "That LED product is not in the catalog." },
+        404,
+      );
+    }
+    const body = await c.req.json().catch(() => null);
+    const raw =
+      body && typeof body === "object" && "product" in (body as object)
+        ? (body as { product?: unknown }).product
+        : body;
+    if (raw && typeof raw === "object" && raw !== null && "id" in raw) {
+      const sentId = (raw as { id?: unknown }).id;
+      if (typeof sentId === "string" && sentId.trim() && sentId.trim() !== existing.id) {
+        return c.json(
+          { error: "invalid", message: "id cannot change. Create a new catalog row." },
+          400,
+        );
+      }
+    }
+    const parsed = parseLedProductInput(raw);
+    if (!parsed.ok) {
+      const status = parsed.error === "invalid" ? 400 : 422;
+      return c.json({ error: parsed.error, message: parsed.message }, status);
+    }
+    const product = { ...parsed.product, id: existing.id };
+    const updated = products.update(product);
+    if (!updated) {
+      return c.json(
+        { error: "not_found", message: "That LED product is not in the catalog." },
+        404,
+      );
+    }
+    return c.json({ product: updated });
+  });
+
   app.get("/api/lights", async (c) => {
     const payload = await listLights();
     return c.json(payload);

@@ -169,6 +169,11 @@ export {
 export {
   inheritLedProductFields,
   isLedFormFactor,
+  LED_CATALOG_ATTACH_COPY,
+  LED_CATALOG_PER_LIGHT_COPY,
+  LED_CATALOG_PER_LIGHT_HEADING,
+  LED_CATALOG_SHARED_COPY,
+  LED_CATALOG_SHARED_HEADING,
   LED_FORM_FACTORS,
   parseLedProductAttach,
   parseLedProductInput,
