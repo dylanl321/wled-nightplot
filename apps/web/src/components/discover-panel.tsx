@@ -2,10 +2,12 @@
 
 import type { DiscoverRow, LightView } from "@nightplot/shared";
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useDiscoveryCandidates } from "@/components/discovery-watch";
 import { MiniStrip } from "@/components/mini-strip";
 import { Button } from "@/components/ui/button";
 import { postJson } from "@/lib/api";
+import { runDiscoveryScan } from "@/lib/discovery-scan";
 
 export function DiscoverPanel({
   initialCandidates,
@@ -26,6 +28,13 @@ export function DiscoverPanel({
     findError ?? null,
   );
   const addressRef = useRef<HTMLInputElement>(null);
+  const discovered = useDiscoveryCandidates();
+
+  useEffect(() => {
+    if (!discovered) return;
+    setRows(discovered);
+    setFindLoadError(null);
+  }, [discovered]);
 
   const found = useMemo(
     () => rows.filter((row) => row.status === "found"),
@@ -41,14 +50,14 @@ export function DiscoverPanel({
     setNotice(null);
     setInfo(null);
     setFindLoadError(null);
-    const res = await postJson<{ candidates: DiscoverRow[] }>("/api/discover");
+    const res = await runDiscoveryScan();
     setBusy(null);
     if (!res.ok) {
-      setNotice(res.data.message ?? "Find Lights failed.");
+      setNotice(res.message);
       return;
     }
-    setRows(res.data.candidates);
-    if (!res.data.candidates.some((row) => row.status === "found")) {
+    setRows(res.candidates);
+    if (!res.candidates.some((row) => row.status === "found")) {
       setNotice("Nothing new answered. Type an address if mDNS is hidden.");
     }
   }
@@ -132,7 +141,9 @@ export function DiscoverPanel({
       ) : null}
       <div className="flex flex-col gap-4 rounded-xl border border-[#3a4150] bg-[#12141a] p-[18px]">
         <p className="text-[15px] leading-6 text-[#c9c3b8]">
-          Find probes up to four collected hosts at a time. A dead probe stops
+          Find is already looking on this link, and it retries about once a
+          minute while Nightplot is open. Find Lights runs that scan again.
+          It probes up to four collected hosts at a time. A dead probe stops
           in 3 s and does not block the rest of the scan. Add fails closed — a
           snapshot that can’t be read saves nothing. Public addresses are
           refused before a probe. Find only offers Add when the box advertised

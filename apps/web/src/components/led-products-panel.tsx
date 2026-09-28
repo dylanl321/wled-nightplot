@@ -8,7 +8,15 @@ import {
   LED_CATALOG_SHARED_COPY,
   LED_CATALOG_SHARED_HEADING,
   LED_FORM_FACTORS,
+  LED_IP_RATINGS,
+  LED_SPACING_MM_MAX,
+  LED_VOLTAGES,
+  LED_WATTS_PER_METER_MAX,
+  LED_WIDTH_MM_MAX,
+  formatNodeLength,
+  ledProductSpacing,
   listStrips,
+  PHYSICAL_LENGTH_CAPTION,
   type LedFormFactor,
   type LedProduct,
 } from "@nightplot/shared";
@@ -26,6 +34,13 @@ type FormState = {
   driverId: string;
   defaultLength: string;
   defaultGpio: string;
+  pitchMm: string;
+  sectionLengthMm: string;
+  voltage: string;
+  wattsPerMeter: string;
+  ipRating: string;
+  widthMm: string;
+  cutLengthMm: string;
   densityNotes: string;
 };
 
@@ -37,6 +52,13 @@ const emptyForm = (): FormState => ({
   driverId: listStrips()[0]?.id ?? "ws281x",
   defaultLength: "",
   defaultGpio: "",
+  pitchMm: "",
+  sectionLengthMm: "",
+  voltage: "",
+  wattsPerMeter: "",
+  ipRating: "",
+  widthMm: "",
+  cutLengthMm: "",
   densityNotes: "",
 });
 
@@ -49,6 +71,13 @@ function formFromProduct(product: LedProduct): FormState {
     driverId: product.driverId,
     defaultLength: product.defaultLength != null ? String(product.defaultLength) : "",
     defaultGpio: product.defaultGpio != null ? String(product.defaultGpio) : "",
+    pitchMm: product.pitchMm != null ? String(product.pitchMm) : "",
+    sectionLengthMm: product.sectionLengthMm != null ? String(product.sectionLengthMm) : "",
+    voltage: product.voltage != null ? String(product.voltage) : "",
+    wattsPerMeter: product.wattsPerMeter != null ? String(product.wattsPerMeter) : "",
+    ipRating: product.ipRating ?? "",
+    widthMm: product.widthMm != null ? String(product.widthMm) : "",
+    cutLengthMm: product.cutLengthMm != null ? String(product.cutLengthMm) : "",
     densityNotes: product.densityNotes ?? "",
   };
 }
@@ -62,7 +91,11 @@ function driverLabel(driverId: string): string {
   return listStrips().find((row) => row.id === driverId)?.label ?? driverId;
 }
 
-function writeBody(form: FormState, extras: LedProduct | null, includeId: boolean) {
+function writeBody(
+  form: FormState,
+  extras: LedProduct | null,
+  includeId: boolean,
+): { ok: true; body: Record<string, unknown> } | { ok: false; message: string } {
   const body: Record<string, unknown> = {
     label: form.label.trim(),
     notes: form.notes.trim(),
@@ -70,17 +103,74 @@ function writeBody(form: FormState, extras: LedProduct | null, includeId: boolea
     driverId: form.driverId,
   };
   if (includeId) body.id = form.id.trim();
-  if (form.defaultLength.trim()) {
-    body.defaultLength = Number.parseInt(form.defaultLength, 10);
-  }
-  if (form.defaultGpio.trim()) {
-    body.defaultGpio = Number.parseInt(form.defaultGpio, 10);
-  }
+  const length = readWhole(form.defaultLength, "Suggested node count");
+  if (!length.ok) return length;
+  if (length.value != null) body.defaultLength = length.value;
+  const gpio = readWhole(form.defaultGpio, "Suggested GPIO");
+  if (!gpio.ok) return gpio;
+  if (gpio.value != null) body.defaultGpio = gpio.value;
+  const pitch = readMeasure(form.pitchMm, "Pitch", LED_SPACING_MM_MAX);
+  if (!pitch.ok) return pitch;
+  if (pitch.value != null) body.pitchMm = pitch.value;
+  const section = readMeasure(form.sectionLengthMm, "Section length", LED_SPACING_MM_MAX);
+  if (!section.ok) return section;
+  if (section.value != null) body.sectionLengthMm = section.value;
+  if (form.voltage) body.voltage = Number(form.voltage);
+  const watts = readMeasure(form.wattsPerMeter, "Watts per metre", LED_WATTS_PER_METER_MAX);
+  if (!watts.ok) return watts;
+  if (watts.value != null) body.wattsPerMeter = watts.value;
+  if (form.ipRating) body.ipRating = form.ipRating;
+  const width = readMeasure(form.widthMm, "Strip width", LED_WIDTH_MM_MAX);
+  if (!width.ok) return width;
+  if (width.value != null) body.widthMm = width.value;
+  const cut = readMeasure(form.cutLengthMm, "Cut length", LED_SPACING_MM_MAX);
+  if (!cut.ok) return cut;
+  if (cut.value != null) body.cutLengthMm = cut.value;
   if (form.densityNotes.trim()) body.densityNotes = form.densityNotes.trim();
   if (extras?.channels) body.channels = extras.channels;
   if (extras?.colorOrder) body.colorOrder = extras.colorOrder;
   if (extras?.bead) body.bead = extras.bead;
-  return body;
+  return { ok: true, body };
+}
+
+function readWhole(
+  raw: string,
+  label: string,
+): { ok: true; value?: number } | { ok: false; message: string } {
+  const trimmed = raw.trim();
+  if (!trimmed) return { ok: true };
+  const value = Number.parseInt(trimmed, 10);
+  if (!Number.isInteger(value) || String(value) !== trimmed) {
+    return { ok: false, message: `${label} must be a whole number.` };
+  }
+  return { ok: true, value };
+}
+
+function readMeasure(
+  raw: string,
+  label: string,
+  max: number,
+): { ok: true; value?: number } | { ok: false; message: string } {
+  const trimmed = raw.trim();
+  if (!trimmed) return { ok: true };
+  const value = Number(trimmed);
+  if (!Number.isFinite(value) || value <= 0 || value > max) {
+    return { ok: false, message: `${label} must be above 0 and at most ${max}.` };
+  }
+  return { ok: true, value };
+}
+
+function productSpacingLine(product: LedProduct): string | null {
+  const spacing = ledProductSpacing(product);
+  if (!spacing) return null;
+  const kind = spacing.kind === "section" ? "section" : "pitch";
+  const fromNodes =
+    product.defaultLength != null
+      ? formatNodeLength(product.defaultLength, spacing.mm)
+      : null;
+  return fromNodes
+    ? `${spacing.mm} mm ${kind} · about ${fromNodes} from ${product.defaultLength} nodes`
+    : `${spacing.mm} mm ${kind}`;
 }
 
 export function LedProductsPanel({
@@ -139,14 +229,19 @@ export function LedProductsPanel({
       return;
     }
     const extras = editingId ? (products.find((row) => row.id === editingId) ?? null) : null;
+    const written = writeBody(form, extras, !editingId);
+    if (!written.ok) {
+      setNotice(written.message);
+      return;
+    }
     setBusy("save");
     setNotice(null);
     const res = editingId
       ? await patchJson<{ product?: LedProduct }>("/api/led-products/" + editingId, {
-          product: writeBody(form, extras, false),
+          product: written.body,
         })
       : await postJson<{ product?: LedProduct }>("/api/led-products", {
-          product: writeBody(form, null, true),
+          product: written.body,
         });
     setBusy(null);
     if (!res.ok) {
@@ -335,14 +430,122 @@ export function LedProductsPanel({
           </div>
           <label className="flex flex-col gap-2">
             <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
-              Density notes
+              {form.formFactor === "cob" ? "Section length" : "Pitch"}
             </span>
             <Input
-              value={form.densityNotes}
-              onChange={(event) => patchForm("densityNotes", event.target.value)}
-              aria-label="Density notes"
+              inputMode="decimal"
+              value={form.formFactor === "cob" ? form.sectionLengthMm : form.pitchMm}
+              onChange={(event) =>
+                patchForm(
+                  form.formFactor === "cob" ? "sectionLengthMm" : "pitchMm",
+                  event.target.value,
+                )
+              }
+              aria-label={form.formFactor === "cob" ? "Section length" : "Pitch"}
             />
+            <span className="text-[12px] text-quiet">
+              {form.formFactor === "cob"
+                ? "Millimetres of one addressable section. COB has no separate nodes."
+                : "Millimetres between nodes, centre to centre."}{" "}
+              {PHYSICAL_LENGTH_CAPTION} Not written to WLED.
+            </span>
           </label>
+          <details className="rounded-md border border-border px-3 py-2">
+            <summary className="cursor-pointer font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
+              Advanced
+            </summary>
+            <div className="mt-3 flex flex-col gap-3">
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-2">
+                  <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
+                    Voltage
+                  </span>
+                  <select
+                    value={form.voltage}
+                    onChange={(event) => patchForm("voltage", event.target.value)}
+                    aria-label="Voltage"
+                    className="h-10 rounded-md border border-input bg-[#07080a] px-2.5 text-[13px] text-foreground"
+                  >
+                    <option value="">Not set</option>
+                    {LED_VOLTAGES.map((voltage) => (
+                      <option key={voltage} value={String(voltage)}>
+                        {voltage} V
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-2">
+                  <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
+                    Watts per metre
+                  </span>
+                  <Input
+                    inputMode="decimal"
+                    value={form.wattsPerMeter}
+                    onChange={(event) => patchForm("wattsPerMeter", event.target.value)}
+                    aria-label="Watts per metre"
+                  />
+                </label>
+                <label className="flex flex-col gap-2">
+                  <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
+                    IP rating
+                  </span>
+                  <select
+                    value={form.ipRating}
+                    onChange={(event) => patchForm("ipRating", event.target.value)}
+                    aria-label="IP rating"
+                    className="h-10 rounded-md border border-input bg-[#07080a] px-2.5 text-[13px] text-foreground"
+                  >
+                    <option value="">Not set</option>
+                    {LED_IP_RATINGS.map((rating) => (
+                      <option key={rating} value={rating}>
+                        {rating}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-2">
+                  <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
+                    Strip width
+                  </span>
+                  <Input
+                    inputMode="decimal"
+                    value={form.widthMm}
+                    onChange={(event) => patchForm("widthMm", event.target.value)}
+                    aria-label="Strip width"
+                  />
+                  <span className="text-[12px] text-quiet">Millimetres.</span>
+                </label>
+                <label className="flex flex-col gap-2">
+                  <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
+                    Cut length
+                  </span>
+                  <Input
+                    inputMode="decimal"
+                    value={form.cutLengthMm}
+                    onChange={(event) => patchForm("cutLengthMm", event.target.value)}
+                    aria-label="Cut length"
+                  />
+                  <span className="text-[12px] text-quiet">
+                    Shortest cut, in millimetres. Not the addressable section.
+                  </span>
+                </label>
+              </div>
+              <label className="flex flex-col gap-2">
+                <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
+                  Density notes
+                </span>
+                <Input
+                  value={form.densityNotes}
+                  onChange={(event) => patchForm("densityNotes", event.target.value)}
+                  aria-label="Density notes"
+                />
+              </label>
+              <p className="text-[12px] text-quiet">
+                Advanced facts stay on the recipe. They are not written to WLED and they do not
+                change the calculated length.
+              </p>
+            </div>
+          </details>
           <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="outline" onClick={cancelForm} disabled={busy !== null}>
               Cancel
@@ -392,7 +595,14 @@ export function LedProductsPanel({
                           ? ` · suggested ${product.defaultLength} nodes`
                           : ""}
                         {product.defaultGpio != null ? ` · GPIO ${product.defaultGpio}` : ""}
+                        {product.voltage != null ? ` · ${product.voltage} V` : ""}
+                        {product.wattsPerMeter != null ? ` · ${product.wattsPerMeter} W/m` : ""}
                       </span>
+                      {productSpacingLine(product) ? (
+                        <span className="text-[13px] leading-5 text-[#c9c3b8]">
+                          {productSpacingLine(product)}. {PHYSICAL_LENGTH_CAPTION}
+                        </span>
+                      ) : null}
                       {product.notes ? (
                         <span className="text-[12px] leading-5 text-quiet">{product.notes}</span>
                       ) : null}

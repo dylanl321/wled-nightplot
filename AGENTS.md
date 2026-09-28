@@ -71,8 +71,12 @@ API: `http://127.0.0.1:43181`
 ## Learned User Preferences
 
 - Prefer Corepack to activate the root `packageManager` pnpm pin; avoid the standalone pnpm installer, which can rewrite that pin to a Corepack-incompatible version.
+- Element range-mismatch copy must be plain and operator-meaningful; opaque “reports N more LEDs than declared” deltas that thrash while editing do not communicate.
+- In the Element editor, offer a way to keep other Elements lit while scrubbing or scrolling individual nodes.
 
 ## Learned Workspace Facts
 
 - Find must send mDNS and SSDP on each non-loopback IPv4 except `169.254.0.0/16`. Joining multicast on every interface is not enough if the query still leaves through the OS default adapter.
 - mDNS Find rows are only `_wled._tcp` SRV records. Other services heard on the link are not WLED candidates and must not be probed.
+- Background Find: while Nightplot is open, scan immediately then about once a minute while the tab is visible; pause when hidden. Find Lights still forces a scan.
+- LED product geometry: `pitchMm` (discrete/diffused, centre-to-centre) or `sectionLengthMm` (COB section) yields calculated length on Lights, Light, Element, and Strip pages. Voltage, watts, IP, width, cut length, and density notes stay under Advanced and do not affect length.

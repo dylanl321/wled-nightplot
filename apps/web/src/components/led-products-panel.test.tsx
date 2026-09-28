@@ -134,4 +134,17 @@ describe("LED products catalog", () => {
     expect((patches[0]?.body as { product: { id?: string } }).product.id).toBeUndefined();
     expect(screen.getByText("Porch WS281x revised")).toBeTruthy();
   });
+
+  it("asks for section length on COB and keeps voltage under Advanced", () => {
+    render(<LedProductsPanel initialProducts={catalog} />);
+    fireEvent.click(screen.getByRole("button", { name: "New LED product" }));
+    expect(screen.getByLabelText("Pitch")).toBeTruthy();
+    expect(screen.queryByLabelText("Section length")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "COB" }));
+    expect(screen.getByLabelText("Section length")).toBeTruthy();
+    expect(screen.queryByLabelText("Pitch")).toBeNull();
+    expect(screen.getByText("Advanced")).toBeTruthy();
+    const advanced = screen.getByText("Advanced").closest("details");
+    expect(advanced?.open).toBe(false);
+  });
 });

@@ -41,6 +41,8 @@ export function lightView(overrides: Partial<LightView> = {}): LightView {
     rgbw: false,
     stripBead: "rgb",
     stripChip: "WS281x RGB",
+    spacingMm: null,
+    spacingKind: null,
     reachability: "no-answer",
     lastSeenAt: "2026-09-26T18:00:00.000Z",
     on: null,

@@ -193,4 +193,58 @@ describe("Preview restore honesty", () => {
     expect(JSON.stringify(writes[0])).not.toContain("255,160,0");
     expect(JSON.stringify(writes[0])).not.toMatch(/ffa000/i);
   });
+
+  it("writes one segment when Preview names an Element", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    const started = await engine.startPreview({
+      light,
+      live: { ...infoOnly, on: true, brightness: 40, segmentColor: "#ffa000" },
+      elements: [{ id: "el-1", lightId: light.id, label: "Porch", start: 0, stop: 10 }],
+      elementId: "el-1",
+      color: "#4f7dff",
+    });
+    expect(started.ok).toBe(true);
+    expect(writes[0]?.seg).toEqual([{ start: 0, stop: 10, col: [[79, 125, 255]] }]);
+  });
+
+  it("keeps each Element lit and blacks the gaps when Preview sends spans", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    const started = await engine.startPreview({
+      light,
+      live: { ...infoOnly, on: true, brightness: 40, segmentColor: "#ffa000" },
+      elements: [],
+      spans: [
+        { start: 0, stop: 4, color: "#d4a574" },
+        { start: 4, stop: 5, color: "#fff4dc" },
+        { start: 5, stop: 8, color: "#d4a574" },
+      ],
+    });
+    expect(started.ok).toBe(true);
+    expect(writes[0]?.seg).toEqual([
+      { id: 0, start: 0, stop: 4, col: [[212, 165, 116]] },
+      { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+      { id: 2, start: 5, stop: 8, col: [[212, 165, 116]] },
+      { id: 3, start: 8, stop: 10, col: [[0, 0, 0]] },
+    ]);
+  });
+
+  it("blacks the rest of the strip for an ad-hoc Preview range", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    const started = await engine.startPreview({
+      light,
+      live: { ...infoOnly, on: true, brightness: 40, segmentColor: "#ffa000" },
+      elements: [],
+      range: { start: 2, stop: 4 },
+      color: "#fff4dc",
+    });
+    expect(started.ok).toBe(true);
+    expect(writes[0]?.seg).toEqual([
+      { id: 0, start: 0, stop: 2, col: [[0, 0, 0]] },
+      { id: 1, start: 2, stop: 4, col: [[255, 244, 220]] },
+      { id: 2, start: 4, stop: 10, col: [[0, 0, 0]] },
+    ]);
+  });
 });

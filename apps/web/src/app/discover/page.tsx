@@ -35,9 +35,9 @@ export default async function DiscoverPage() {
             Add a Light
           </h1>
           <p className="text-muted-foreground">
-            Looking on this link. Find probes up to four collected hosts at a
-            time; a dead probe stops in 3 s. Type host:port if find has no port
-            or the list comes back empty.
+            Looking on this link. Find starts on its own and retries about once
+            a minute while Nightplot is open. Find Lights runs it again. Type
+            host:port if find has no port or the list comes back empty.
           </p>
         </div>
         <DiscoverPanel

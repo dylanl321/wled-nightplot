@@ -1,8 +1,15 @@
 "use client";
 
-import { stripBeadCaption, type DiscoverRow, type LightView } from "@nightplot/shared";
+import {
+  formatNodeLength,
+  PHYSICAL_LENGTH_CAPTION,
+  stripBeadCaption,
+  type DiscoverRow,
+  type LightView,
+} from "@nightplot/shared";
 import Link from "next/link";
-import { useState, type MouseEvent } from "react";
+import { useMemo, useState, type MouseEvent } from "react";
+import { useDiscoveryCandidates } from "@/components/discovery-watch";
 import { StripBeads } from "@/components/strip-beads";
 import { Button } from "@/components/ui/button";
 import { postJson } from "@/lib/api";
@@ -17,6 +24,13 @@ export function LightsHome({
   lights: LightView[];
   unenrolled: DiscoverRow[];
 }) {
+  const discovered = useDiscoveryCandidates();
+  const tray = useMemo(() => {
+    if (!discovered) return unenrolled;
+    const enrolled = new Set(lights.map((light) => light.hostKey));
+    return discovered.filter((row) => row.status === "found" && !enrolled.has(row.key));
+  }, [discovered, lights, unenrolled]);
+
   if (lights.length === 0) {
     return (
       <div className="mx-auto flex w-full max-w-[720px] flex-1 flex-col gap-6 px-5 py-8 sm:px-8 sm:py-10">
@@ -55,7 +69,7 @@ export function LightsHome({
             <Link href="/led-products">LED products</Link>
           </Button>
         </div>
-        <FoundBanner rows={unenrolled} />
+        <FoundBanner rows={tray} />
       </div>
     );
   }
@@ -71,7 +85,7 @@ export function LightsHome({
       {lights.map((light) => (
         <LightCard key={light.id} light={light} />
       ))}
-      <FoundBanner rows={unenrolled} />
+      <FoundBanner rows={tray} />
     </div>
   );
 }
@@ -81,6 +95,7 @@ function LightCard({ light }: { light: LightView }) {
   const bead = displayBead(light);
   const status = cardStatus(light);
   const drifted = light.declared.filter((span) => span.differs);
+  const length = formatNodeLength(light.ledCount, light.spacingMm);
   const [blinkBusy, setBlinkBusy] = useState(false);
 
   async function blink(event: MouseEvent) {
@@ -142,8 +157,10 @@ function LightCard({ light }: { light: LightView }) {
       </div>
       <div className="pointer-events-none flex flex-wrap items-center gap-2 text-[13px]">
         <span className="text-muted-foreground">
-          {light.ledCount} LEDs · {light.stripChip} · {light.displayHost}
+          {light.ledCount} LEDs
+          {length ? ` · ${length}` : ""} · {light.stripChip} · {light.displayHost}
         </span>
+        {length ? <span className="text-quiet">{PHYSICAL_LENGTH_CAPTION}</span> : null}
         <span className="ml-auto">
           <CardSync light={light} drifted={drifted.length} />
         </span>

@@ -103,6 +103,45 @@ describe("toLightView strip honesty", () => {
     expect(view.stripBead).toBe("rgbw");
     expect(view.stripChip).toBe("SK6812 RGBW");
     expect(view.bead).toBe("#ffa000");
+    expect(view.spacingMm).toBeNull();
+    expect(view.spacingKind).toBeNull();
+  });
+
+  it("copies pitch or COB section length onto the view and ignores the other field", () => {
+    const light = lightFromSnapshot(target, snapshot, "2026-09-26T18:00:00.000Z");
+    const pitched = toLightView(light, snapshot, {
+      elementCount: 0,
+      segmentCount: 1,
+      driftLabel: null,
+      product: {
+        id: "eave",
+        label: "Eave",
+        notes: "",
+        formFactor: "discrete",
+        driverId: "ws281x",
+        pitchMm: 16.67,
+        sectionLengthMm: 40,
+      },
+    });
+    expect(pitched.spacingMm).toBe(16.67);
+    expect(pitched.spacingKind).toBe("pitch");
+
+    const cob = toLightView(light, snapshot, {
+      elementCount: 0,
+      segmentCount: 1,
+      driftLabel: null,
+      product: {
+        id: "soffit",
+        label: "Soffit",
+        notes: "",
+        formFactor: "cob",
+        driverId: "ws281x",
+        pitchMm: 16.67,
+        sectionLengthMm: 25,
+      },
+    });
+    expect(cob.spacingMm).toBe(25);
+    expect(cob.spacingKind).toBe("section");
   });
 
   it("keeps unreachable beads unknown on an RGBW product", () => {

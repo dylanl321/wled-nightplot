@@ -28,6 +28,20 @@ import type { StripBead, StripChannel } from "./types.ts";
 export const LED_FORM_FACTORS = ["discrete", "cob", "diffused"] as const;
 export type LedFormFactor = (typeof LED_FORM_FACTORS)[number];
 
+export const LED_VOLTAGES = [5, 12, 24] as const;
+export type LedVoltage = (typeof LED_VOLTAGES)[number];
+
+export const LED_IP_RATINGS = ["IP20", "IP30", "IP44", "IP65", "IP67", "IP68"] as const;
+
+/** Centre-to-centre pitch or one COB section, in millimetres. */
+export const LED_SPACING_MM_MAX = 10_000;
+export const LED_WATTS_PER_METER_MAX = 200;
+export const LED_WIDTH_MM_MAX = 200;
+
+export const PHYSICAL_LENGTH_CAPTION = "Calculated from the recipe and the node count.";
+
+export type LedSpacingKind = "pitch" | "section";
+
 /** Shared recipe vs this Light (CONFIG-113). Attach is bookkeeping. */
 export const LED_CATALOG_SHARED_HEADING = "Shared catalog";
 export const LED_CATALOG_PER_LIGHT_HEADING = "This Light";
@@ -59,6 +73,16 @@ export type LedProduct = {
   bead?: StripBead;
   defaultLength?: number;
   defaultGpio?: number;
+  /** Centre-to-centre millimetres. Used for discrete and diffused. */
+  pitchMm?: number;
+  /** Millimetres of one addressable section. Used for COB. */
+  sectionLengthMm?: number;
+  voltage?: LedVoltage;
+  wattsPerMeter?: number;
+  ipRating?: string;
+  widthMm?: number;
+  /** Shortest cut, millimetres. Not the addressable section. */
+  cutLengthMm?: number;
   densityNotes?: string;
 };
 
@@ -89,6 +113,49 @@ export function isLedFormFactor(value: unknown): value is LedFormFactor {
   return (
     typeof value === "string" && (LED_FORM_FACTORS as readonly string[]).includes(value)
   );
+}
+
+export function isLedVoltage(value: unknown): value is LedVoltage {
+  return typeof value === "number" && (LED_VOLTAGES as readonly number[]).includes(value);
+}
+
+/** Spacing that applies to this form factor. The other field is kept and unused. */
+export function ledProductSpacing(
+  product: Pick<LedProduct, "formFactor" | "pitchMm" | "sectionLengthMm">,
+): { mm: number; kind: LedSpacingKind } | null {
+  if (product.formFactor === "cob") {
+    return product.sectionLengthMm != null
+      ? { mm: product.sectionLengthMm, kind: "section" }
+      : null;
+  }
+  return product.pitchMm != null ? { mm: product.pitchMm, kind: "pitch" } : null;
+}
+
+/** Node count times spacing. Null when either side is missing or not positive. */
+export function physicalLengthMm(nodeCount: number, spacingMm: number): number | null {
+  if (!Number.isFinite(nodeCount) || nodeCount <= 0) return null;
+  if (!Number.isFinite(spacingMm) || spacingMm <= 0) return null;
+  return nodeCount * spacingMm;
+}
+
+export function formatPhysicalLength(mm: number): string | null {
+  if (!Number.isFinite(mm) || mm <= 0) return null;
+  if (mm >= 1000) {
+    const metres = Math.round((mm / 1000) * 100) / 100;
+    const text = metres.toFixed(2).replace(/\.?0+$/, "");
+    return `${text} m`;
+  }
+  return `${Math.round(mm)} mm`;
+}
+
+export function formatNodeLength(
+  nodeCount: number,
+  spacingMm: number | null | undefined,
+): string | null {
+  if (spacingMm == null) return null;
+  const mm = physicalLengthMm(nodeCount, spacingMm);
+  if (mm == null) return null;
+  return formatPhysicalLength(mm);
 }
 
 export function inheritLedProductFields(product: LedProduct): InheritedLedFields | null {
@@ -530,12 +597,44 @@ export function validateLedProduct(product: LedProduct): LedProductIssue | null 
 function parseOverrides(
   row: Record<string, unknown>,
 ):
-  | { ok: true; fields: Partial<Pick<LedProduct, "channels" | "colorOrder" | "bead" | "defaultLength" | "defaultGpio" | "densityNotes">> }
+  | {
+      ok: true;
+      fields: Partial<
+        Pick<
+          LedProduct,
+          | "channels"
+          | "colorOrder"
+          | "bead"
+          | "defaultLength"
+          | "defaultGpio"
+          | "densityNotes"
+          | "pitchMm"
+          | "sectionLengthMm"
+          | "voltage"
+          | "wattsPerMeter"
+          | "ipRating"
+          | "widthMm"
+          | "cutLengthMm"
+        >
+      >;
+    }
   | ({ ok: false } & LedProductIssue) {
   const fields: Partial<
     Pick<
       LedProduct,
-      "channels" | "colorOrder" | "bead" | "defaultLength" | "defaultGpio" | "densityNotes"
+      | "channels"
+      | "colorOrder"
+      | "bead"
+      | "defaultLength"
+      | "defaultGpio"
+      | "densityNotes"
+      | "pitchMm"
+      | "sectionLengthMm"
+      | "voltage"
+      | "wattsPerMeter"
+      | "ipRating"
+      | "widthMm"
+      | "cutLengthMm"
     >
   > = {};
 
@@ -603,7 +702,110 @@ function parseOverrides(
     if (densityNotes) fields.densityNotes = densityNotes;
   }
 
+  const physical = parsePhysical(row);
+  if (!physical.ok) return physical;
+  Object.assign(fields, physical.fields);
+
   return { ok: true, fields };
+}
+
+function parsePhysical(
+  row: Record<string, unknown>,
+):
+  | {
+      ok: true;
+      fields: Partial<
+        Pick<
+          LedProduct,
+          | "pitchMm"
+          | "sectionLengthMm"
+          | "voltage"
+          | "wattsPerMeter"
+          | "ipRating"
+          | "widthMm"
+          | "cutLengthMm"
+        >
+      >;
+    }
+  | ({ ok: false } & LedProductIssue) {
+  const fields: Partial<
+    Pick<
+      LedProduct,
+      | "pitchMm"
+      | "sectionLengthMm"
+      | "voltage"
+      | "wattsPerMeter"
+      | "ipRating"
+      | "widthMm"
+      | "cutLengthMm"
+    >
+  > = {};
+
+  const pitch = parseMm(row.pitchMm, "pitchMm", LED_SPACING_MM_MAX);
+  if (!pitch.ok) return pitch;
+  if (pitch.value != null) fields.pitchMm = pitch.value;
+
+  const section = parseMm(row.sectionLengthMm, "sectionLengthMm", LED_SPACING_MM_MAX);
+  if (!section.ok) return section;
+  if (section.value != null) fields.sectionLengthMm = section.value;
+
+  if (row.voltage !== undefined) {
+    if (!isLedVoltage(row.voltage)) {
+      return {
+        ok: false,
+        error: "bad_defaults",
+        message: "voltage must be 5, 12, or 24.",
+      };
+    }
+    fields.voltage = row.voltage;
+  }
+
+  const watts = parseMm(row.wattsPerMeter, "wattsPerMeter", LED_WATTS_PER_METER_MAX);
+  if (!watts.ok) return watts;
+  if (watts.value != null) fields.wattsPerMeter = watts.value;
+
+  if (row.ipRating !== undefined) {
+    if (typeof row.ipRating !== "string") {
+      return { ok: false, error: "bad_defaults", message: "ipRating must be a string." };
+    }
+    const ip = row.ipRating.trim().toUpperCase();
+    if (ip) {
+      if (!(LED_IP_RATINGS as readonly string[]).includes(ip)) {
+        return {
+          ok: false,
+          error: "bad_defaults",
+          message: "ipRating must be IP20, IP30, IP44, IP65, IP67, or IP68.",
+        };
+      }
+      fields.ipRating = ip;
+    }
+  }
+
+  const width = parseMm(row.widthMm, "widthMm", LED_WIDTH_MM_MAX);
+  if (!width.ok) return width;
+  if (width.value != null) fields.widthMm = width.value;
+
+  const cut = parseMm(row.cutLengthMm, "cutLengthMm", LED_SPACING_MM_MAX);
+  if (!cut.ok) return cut;
+  if (cut.value != null) fields.cutLengthMm = cut.value;
+
+  return { ok: true, fields };
+}
+
+function parseMm(
+  value: unknown,
+  name: string,
+  max: number,
+): { ok: true; value?: number } | ({ ok: false } & LedProductIssue) {
+  if (value === undefined) return { ok: true };
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0 || value > max) {
+    return {
+      ok: false,
+      error: "bad_defaults",
+      message: `${name} must be above 0 and at most ${max}.`,
+    };
+  }
+  return { ok: true, value };
 }
 
 function parseChannels(value: unknown): StripChannel[] | null {

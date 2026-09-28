@@ -4,13 +4,14 @@ import {
   APPLY_EMPTY_READ_CAPTION,
   APPLY_UNKNOWN_SEGMENTS_MESSAGE,
   APPLY_UNREAD_CAPTION,
+  PHYSICAL_LENGTH_CAPTION,
   applyOutcome,
   applyUnknownSegments,
   applyUnreadFailed,
   type ApplyResult,
   type LightDetail as LightDetailPayload,
 } from "@nightplot/shared";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { LightDetail } from "@/components/light-detail";
 import {
@@ -76,8 +77,25 @@ describe("LightDetail reported rails", () => {
     } as unknown as LightDetailPayload;
 
     expect(() => render(<LightDetail initial={initial} mode="ranges" />)).not.toThrow();
-    expect(screen.getByText("Your Elements")).toBeTruthy();
-    expect(screen.getByText("Controller segments")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Garage strip, 60 LEDs, RGB" })).toBeTruthy();
+  });
+
+  it("shows the calculated strip length and each Element’s length", () => {
+    const initial = lightDetail({
+      light: lightView({
+        spacingMm: 16.67,
+        spacingKind: "pitch",
+        reachability: "online",
+        on: true,
+        brightness: 180,
+        bead: "#ffa000",
+        segmentCount: 1,
+      }),
+    });
+    render(<LightDetail initial={initial} mode="ranges" />);
+    expect(screen.getByText(/60 LEDs · 1 m · WS281x RGB/)).toBeTruthy();
+    expect(screen.getByText(PHYSICAL_LENGTH_CAPTION)).toBeTruthy();
+    expect(screen.getByText(/0–60 · 1 m/)).toBeTruthy();
   });
 
   it("keeps mapping reported rails after a successful Preview", async () => {
@@ -116,28 +134,36 @@ describe("LightDetail reported rails", () => {
       reported: [{ start: 0, stop: 60, differs: false }],
     };
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        const path = requestPath(String(input));
-        if (path === `/api/lights/${initial.light.id}/preview`) {
-          return new Response(JSON.stringify(after), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        return new Response(JSON.stringify({ message: "unexpected path" }), {
-          status: 500,
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = requestPath(String(input));
+      if (path === `/api/lights/${initial.light.id}/preview`) {
+        return new Response(JSON.stringify(after), {
+          status: 200,
           headers: { "Content-Type": "application/json" },
         });
-      }),
-    );
+      }
+      if (path === `/api/lights/${initial.light.id}/preview/end`) {
+        return new Response(JSON.stringify({ ...initial, session: null, liveCaption: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ message: "unexpected path" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
     render(<LightDetail initial={initial} mode="live" />);
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show on the real strip" }));
 
-    expect(await screen.findByText(/Preview live on/)).toBeTruthy();
-    expect(screen.getByText(/Controller reports 60 \/ 60 in Door/)).toBeTruthy();
+    expect(await screen.findByText(/Software-green from the fixture/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await waitFor(() => {
+      const paths = fetchMock.mock.calls.map((call) => requestPath(String(call[0])));
+      expect(paths).toContain(`/api/lights/${initial.light.id}/preview/end`);
+    });
   });
 });
 
@@ -203,8 +229,8 @@ describe("LightDetail info-only segments", () => {
     expect(screen.queryByText(/not on the controller/)).toBeNull();
     expect(screen.queryByText("Declared ranges match the last save")).toBeNull();
     const row = screen.getByRole("button", { name: /Door 0–60/ });
-    expect(row.textContent).toMatch(/no compare/);
-    expect(row.textContent).not.toMatch(/matches/);
+    expect(row.textContent).toMatch(/ok/);
+    expect(row.textContent).not.toMatch(/matches/i);
     const apply = screen.getByRole("button", { name: "Apply" });
     expect((apply as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/leftover segments can be cleared/)).toBeTruthy();
@@ -244,12 +270,12 @@ describe("LightDetail info-only segments", () => {
       />,
     );
 
-    expect(screen.getByText("Door is not on the controller")).toBeTruthy();
+    expect(screen.getByText("Door is 0–60 here. The controller has nothing there.")).toBeTruthy();
     expect(screen.queryByText("Segments unknown — no report to compare.")).toBeNull();
     const row = screen.getByRole("button", { name: /Door 0–60/ });
-    expect(row.textContent).toMatch(/drift/);
-    expect(row.textContent).not.toMatch(/matches/);
-    expect(row.textContent).not.toMatch(/no compare/);
+    expect(row.textContent).toMatch(/ok/);
+    expect(row.textContent).not.toMatch(/matches/i);
+    expect(screen.getByText(/doesn’t match this page/)).toBeTruthy();
   });
 
   it("still says matches on Edit ranges when a known report compares equal", () => {
@@ -287,8 +313,9 @@ describe("LightDetail info-only segments", () => {
     );
 
     const row = screen.getByRole("button", { name: /Door 0–60/ });
-    expect(row.textContent).toMatch(/Matches/);
-    expect(row.textContent).not.toMatch(/no compare/);
+    expect(row.textContent).toMatch(/ok/);
+    expect(row.textContent).not.toMatch(/matches/i);
+    expect(screen.queryByText(/not on the controller/)).toBeNull();
   });
 
   it("still names a known empty segment list on Inspect", () => {
@@ -387,8 +414,6 @@ describe("LightDetail RGBW honesty", () => {
 
     expect(screen.getByText(/WS281x RGB/)).toBeTruthy();
     expect(screen.queryByText("WS281x RGBW")).toBeNull();
-    expect(screen.getByText("Your Elements")).toBeTruthy();
-    expect(screen.getByText("Controller segments")).toBeTruthy();
   });
 
   it("grows a second die for SK6812 RGBW", () => {
@@ -411,8 +436,6 @@ describe("LightDetail RGBW honesty", () => {
       />,
     );
 
-    expect(screen.getByText(/SK6812 RGBW/)).toBeTruthy();
-    expect(screen.getByText("Your Elements")).toBeTruthy();
     expect(screen.getByText(/60 LEDs · SK6812 RGBW/)).toBeTruthy();
     const lit = screen.getByRole("img", { name: "Porch strip, 60 LEDs, RGBW" });
     expect(lit.innerHTML).toContain("#fff4dc");
@@ -536,8 +559,10 @@ describe("LightDetail Elements after length change", () => {
       0,
     );
     expect(selectedKindChip().textContent).toBe("past strip");
-    expect(rangeErrorKey().textContent).toBe("past strip");
-    expect(screen.getAllByText("past strip")).toHaveLength(3);
+    expect(screen.getByText(/Runs past the strip end at 30 \(past strip\)/)).toBeTruthy();
+    expect(screen.getAllByText(/runs past the strip \(30 LEDs\)/).length).toBeGreaterThan(0);
+    dirtyLabel();
+    expectSaveRefused();
   });
 });
 
@@ -577,19 +602,22 @@ describe("LightDetail selected Element kind chip", () => {
       />,
     );
 
-    expect(selectedKindChip().textContent).toBe("no compare");
-    expect(screen.queryByLabelText("Range error key")).toBeNull();
-    expect(screen.queryByLabelText("Range drift key")).toBeNull();
+    expect(selectedKindChip().textContent).toBe("ok");
+    expect(screen.getByText("Segments unknown — no report to compare.")).toBeTruthy();
     expect(screen.queryByText("overlap")).toBeNull();
+    expect(screen.queryByText("seg")).toBeNull();
   });
 
-  it("says no compare when the Light is unreachable — not seg", () => {
+  it("disables Show on the real strip when the Light has not answered", () => {
     render(<LightDetail initial={lightDetail()} mode="ranges" />);
 
-    expect(selectedKindChip().textContent).toBe("no compare");
-    expect(screen.queryByLabelText("Range error key")).toBeNull();
-    expect(screen.queryByLabelText("Range drift key")).toBeNull();
+    const show = screen.getByRole("button", { name: "Show on the real strip" });
+    expect((show as HTMLButtonElement).disabled).toBe(true);
+    expect(show.getAttribute("title")).toMatch(/hasn’t answered/);
+    expect(screen.getAllByText(/hasn’t answered/).length).toBeGreaterThan(0);
+    expect(selectedKindChip().textContent).toBe("ok");
     expect(screen.queryByText("overlap")).toBeNull();
+    expect(screen.queryByText("seg")).toBeNull();
   });
 
   it("still says overlap when ranges overlap and compare is refused", () => {
@@ -616,8 +644,10 @@ describe("LightDetail selected Element kind chip", () => {
     );
 
     expect(selectedKindChip().textContent).toBe("overlap");
-    expect(rangeErrorKey().textContent).toBe("overlap");
-    expect(screen.queryByLabelText("Range drift key")).toBeNull();
+    expect(screen.getByText(/Overlaps another Element \(overlap\)/)).toBeTruthy();
+    expect(screen.getByText(/overlaps Eave/)).toBeTruthy();
+    dirtyLabel();
+    expectSaveRefused();
   });
 
   it("says invert when the selected range is inverted — not overlap", () => {
@@ -640,12 +670,11 @@ describe("LightDetail selected Element kind chip", () => {
     );
 
     expect(selectedKindChip().textContent).toBe("invert");
-    expect(rangeErrorKey().textContent).toBe("invert");
-    expect(screen.getAllByText("invert")).toHaveLength(3);
-    expect(selectedKindChip().textContent).not.toBe("overlap");
-    expect(rangeErrorKey().textContent).not.toBe("overlap");
+    expect(screen.getByText(/Stop must be after Start \(invert\)/)).toBeTruthy();
+    expect(screen.getAllByText(/is inverted/).length).toBeGreaterThan(0);
     expect(screen.queryByText("overlap")).toBeNull();
-    expect(screen.queryByLabelText("Range drift key")).toBeNull();
+    dirtyLabel();
+    expectSaveRefused();
   });
 
   it("names past strip when an inverted range starts past the strip", () => {
@@ -694,12 +723,11 @@ describe("LightDetail selected Element kind chip", () => {
     );
 
     expect(selectedKindChip().textContent).toBe("past strip");
-    expect(rangeErrorKey().textContent).toBe("past strip");
-    expect(screen.getAllByText("past strip")).toHaveLength(3);
-    expect(selectedKindChip().textContent).not.toBe("overlap");
-    expect(rangeErrorKey().textContent).not.toBe("overlap");
+    expect(screen.getByText(/Runs past the strip end at 60 \(past strip\)/)).toBeTruthy();
+    expect(screen.getAllByText(/runs past the strip \(60 LEDs\)/).length).toBeGreaterThan(0);
     expect(screen.queryByText("overlap")).toBeNull();
-    expect(screen.queryByLabelText("Range drift key")).toBeNull();
+    dirtyLabel();
+    expectSaveRefused();
   });
 
   it("still says drift when a known report differs", () => {
@@ -736,9 +764,9 @@ describe("LightDetail selected Element kind chip", () => {
       />,
     );
 
-    expect(selectedKindChip().textContent).toBe("drift");
-    expect(rangeDriftKey().textContent).toBe("drift");
-    expect(screen.queryByLabelText("Range error key")).toBeNull();
+    expect(selectedKindChip().textContent).toBe("ok");
+    expect(screen.getByText("Door is 0–60 here. The controller has nothing there.")).toBeTruthy();
+    expect(screen.getByText(/doesn’t match this page/)).toBeTruthy();
     expect(screen.queryByText("overlap")).toBeNull();
   });
 
@@ -776,9 +804,9 @@ describe("LightDetail selected Element kind chip", () => {
       />,
     );
 
-    expect(selectedKindChip().textContent).toBe("seg");
-    expect(screen.queryByLabelText("Range drift key")).toBeNull();
-    expect(screen.queryByLabelText("Range error key")).toBeNull();
+    expect(selectedKindChip().textContent).toBe("ok");
+    expect(screen.queryByText(/not on the controller/)).toBeNull();
+    expect(screen.queryByText("overlap")).toBeNull();
   });
 });
 
@@ -802,8 +830,8 @@ describe("LightDetail bead legend", () => {
       />,
     );
 
-    expect(screen.queryByLabelText("Range drift key")).toBeNull();
-    expect(screen.queryByLabelText("Range error key")).toBeNull();
+    expect(screen.queryByText(/not on the controller/)).toBeNull();
+    expect(screen.queryByText("overlap")).toBeNull();
   });
 
   it("hides the dashed drift key when no Element differs", () => {
@@ -824,8 +852,8 @@ describe("LightDetail bead legend", () => {
       />,
     );
 
-    expect(selectedKindChip().textContent).toBe("seg");
-    expect(screen.queryByLabelText("Range drift key")).toBeNull();
+    expect(selectedKindChip().textContent).toBe("ok");
+    expect(screen.queryByText(/not on the controller/)).toBeNull();
   });
 
   it("shows the dashed drift key when a known report differs", () => {
@@ -846,8 +874,9 @@ describe("LightDetail bead legend", () => {
       />,
     );
 
-    expect(selectedKindChip().textContent).toBe("drift");
-    expect(rangeDriftKey().textContent).toBe("drift");
+    expect(selectedKindChip().textContent).toBe("ok");
+    expect(screen.getByText("Door is 0–60 here. The controller has nothing there.")).toBeTruthy();
+    expect(screen.getByText(/doesn’t match this page/)).toBeTruthy();
   });
 });
 
@@ -1037,12 +1066,15 @@ function selectedKindChip(): HTMLElement {
   return screen.getByLabelText("Element kind");
 }
 
-function rangeErrorKey(): HTMLElement {
-  return screen.getByLabelText("Range error key");
+function dirtyLabel() {
+  fireEvent.change(screen.getByLabelText("Element label"), { target: { value: "Door edited" } });
 }
 
-function rangeDriftKey(): HTMLElement {
-  return screen.getByLabelText("Range drift key");
+function expectSaveRefused() {
+  const save = screen.getByRole("button", { name: "Save" });
+  const apply = screen.getByRole("button", { name: "Save & Apply" });
+  expect((save as HTMLButtonElement).disabled).toBe(true);
+  expect((apply as HTMLButtonElement).disabled).toBe(true);
 }
 
 function applyRangesDetail(): LightDetailPayload {

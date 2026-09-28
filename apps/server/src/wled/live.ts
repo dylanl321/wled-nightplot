@@ -175,17 +175,66 @@ export function applyRangesWrite(
   return { ok: true, body: { seg } };
 }
 
+/**
+ * Paint several spans and black every LED they do not cover, so the
+ * controller matches the screen. Adjacent spans of the same colour merge.
+ * An earlier span keeps LEDs that a later span also claims.
+ */
+export function previewWriteSpans(
+  spans: { start: number; stop: number; color: string }[],
+  brightness: number,
+  ledCount: number,
+): WledStateWrite {
+  const ordered = [...spans]
+    .filter((span) => span.stop > span.start)
+    .sort((a, b) => a.start - b.start || a.stop - b.stop);
+  const pieces: { start: number; stop: number; color: string }[] = [];
+  let cursor = 0;
+  for (const span of ordered) {
+    const start = Math.max(span.start, cursor);
+    const stop = Math.min(span.stop, ledCount);
+    if (start > cursor) pieces.push({ start: cursor, stop: start, color: "#000000" });
+    if (stop > start) pieces.push({ start, stop, color: span.color });
+    cursor = Math.max(cursor, stop);
+  }
+  if (cursor < ledCount) pieces.push({ start: cursor, stop: ledCount, color: "#000000" });
+  const merged: { start: number; stop: number; color: string }[] = [];
+  for (const piece of pieces) {
+    const prev = merged[merged.length - 1];
+    if (prev && prev.color === piece.color && prev.stop === piece.start) prev.stop = piece.stop;
+    else merged.push({ ...piece });
+  }
+  return {
+    on: true,
+    bri: brightness,
+    seg: merged.map((piece, id) => ({
+      id,
+      start: piece.start,
+      stop: piece.stop,
+      col: [hexToTriple(piece.color)],
+    })),
+  };
+}
+
 export function previewWrite(
   start: number,
   stop: number,
   color: string,
   brightness: number,
+  ledCount?: number,
 ): WledStateWrite {
-  return {
-    on: true,
-    bri: brightness,
-    seg: [{ start, stop, col: [hexToTriple(color)] }],
-  };
+  const lit = hexToTriple(color);
+  const off: [number, number, number] = [0, 0, 0];
+  const seg: NonNullable<WledStateWrite["seg"]> = [];
+  const blackRest = ledCount != null && ledCount > 0 && (start > 0 || stop < ledCount);
+  if (blackRest && ledCount != null) {
+    if (start > 0) seg.push({ id: seg.length, start: 0, stop: start, col: [off] });
+    if (stop > start) seg.push({ id: seg.length, start, stop, col: [lit] });
+    if (stop < ledCount) seg.push({ id: seg.length, start: stop, stop: ledCount, col: [off] });
+  } else {
+    seg.push({ start, stop, col: [lit] });
+  }
+  return { on: true, bri: brightness, seg };
 }
 
 function hexToTriple(hex: string): [number, number, number] {

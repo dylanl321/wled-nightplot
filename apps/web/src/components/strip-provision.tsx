@@ -3,6 +3,8 @@
 import {
   defaultStripPreset,
   draftLedTypeFromSettings,
+  formatNodeLength,
+  ledProductSpacing,
   LED_CATALOG_ATTACH_COPY,
   LED_CATALOG_PER_LIGHT_COPY,
   LED_CATALOG_PER_LIGHT_HEADING,
@@ -11,6 +13,7 @@ import {
   PROVISION_LED_TYPES,
   provisionDraftFromProduct,
   provisionLedTypeLabel,
+  PHYSICAL_LENGTH_CAPTION,
   stripColorOrderCopy,
   type LedProduct,
   type LightDetail,
@@ -180,6 +183,10 @@ export function StripProvisionPanel({
     draft.ledType !== draftLedTypeFromSettings(read.settings.ledType) ||
     draft.length !== (read.settings.length ?? fallback.length) ||
     draft.gpio !== (read.settings.gpio ?? fallback.gpio);
+  const lengthLabel = formatNodeLength(
+    draft.length,
+    selected ? ledProductSpacing(selected)?.mm : null,
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -308,6 +315,11 @@ export function StripProvisionPanel({
               aria-label="Node count"
             />
             <span className="text-[12px] text-quiet">Node count on this Light.</span>
+            {lengthLabel ? (
+              <span className="text-[12px] text-quiet">
+                {lengthLabel}. {PHYSICAL_LENGTH_CAPTION}
+              </span>
+            ) : null}
           </label>
           <label className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
             <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">

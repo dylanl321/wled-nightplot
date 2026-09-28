@@ -2,6 +2,7 @@ import type { LightView } from "@nightplot/shared";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { AllOffControl, type LiveHint } from "@/components/all-off-control";
+import { DiscoveryProvider } from "@/components/discovery-watch";
 import { cn } from "@/lib/utils";
 
 type AppShellProps = {
@@ -22,6 +23,7 @@ export function AppShell({
   const lightsActive = nav === "lights" || nav === "light" || nav === "discover";
 
   return (
+    <DiscoveryProvider>
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
       <header className="hidden h-14 items-center gap-7 border-b border-border bg-rail px-6 lg:flex">
         <Brand markClassName="h-3 w-11" />
@@ -48,6 +50,7 @@ export function AppShell({
         <AllOffControl size="thumb" lights={lights} sessions={sessions} />
       </div>
     </div>
+    </DiscoveryProvider>
   );
 }
 

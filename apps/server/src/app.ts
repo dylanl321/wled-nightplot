@@ -695,6 +695,8 @@ export function createApp(deps: AppDeps) {
       live: snap,
       elements: deps.store.elementsFor(light.id),
       elementId: body.elementId,
+      range: body.range,
+      spans: body.spans,
       color: body.color,
       brightness: body.brightness,
     });
@@ -1534,11 +1536,54 @@ export function createApp(deps: AppDeps) {
   async function readPreviewBody(c: { req: { json: () => Promise<unknown> } }) {
     const body = await c.req.json().catch(() => ({}));
     if (!body || typeof body !== "object") {
-      return { elementId: null as string | null, color: undefined, brightness: undefined };
+      return {
+        elementId: null as string | null,
+        range: null,
+        spans: null,
+        color: undefined,
+        brightness: undefined,
+      };
     }
-    const row = body as { elementId?: unknown; color?: unknown; brightness?: unknown };
+    const row = body as {
+      elementId?: unknown;
+      start?: unknown;
+      stop?: unknown;
+      spans?: unknown;
+      color?: unknown;
+      brightness?: unknown;
+    };
+    const spans = Array.isArray(row.spans)
+      ? row.spans.flatMap((item) => {
+          if (!item || typeof item !== "object") return [];
+          const span = item as { start?: unknown; stop?: unknown; color?: unknown };
+          if (
+            typeof span.start !== "number" ||
+            typeof span.stop !== "number" ||
+            !Number.isInteger(span.start) ||
+            !Number.isInteger(span.stop) ||
+            span.start < 0 ||
+            span.stop <= span.start ||
+            typeof span.color !== "string"
+          ) {
+            return [];
+          }
+          const color = parseHexColor(span.color);
+          return color ? [{ start: span.start, stop: span.stop, color }] : [];
+        })
+      : null;
+    const range =
+      typeof row.start === "number" &&
+      typeof row.stop === "number" &&
+      Number.isInteger(row.start) &&
+      Number.isInteger(row.stop) &&
+      row.start >= 0 &&
+      row.stop > row.start
+        ? { start: row.start, stop: row.stop }
+        : null;
     return {
       elementId: typeof row.elementId === "string" ? row.elementId : null,
+      range,
+      spans: spans && spans.length > 0 ? spans.slice(0, 64) : null,
       color: typeof row.color === "string" ? parseHexColor(row.color) ?? undefined : undefined,
       brightness: typeof row.brightness === "number" ? row.brightness : undefined,
     };

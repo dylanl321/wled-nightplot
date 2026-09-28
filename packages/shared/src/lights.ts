@@ -73,6 +73,14 @@ export type LightView = Light & {
   stripBead: StripBead;
   /** Driver chip caption (e.g. SK6812 RGBW). Not a hardcoded WS281x RGBW label. */
   stripChip: string;
+  /**
+   * Millimetres per node from the attached product.
+   * Pitch for discrete and diffused; section length for COB.
+   * Null when that recipe has no spacing — pages then show node count only.
+   */
+  spacingMm: number | null;
+  /** Which catalog field `spacingMm` came from. */
+  spacingKind: "pitch" | "section" | null;
   displayHost: string;
   elementCount: number;
   /** Null when `state.seg` is unknown. 0 is a known empty list. */

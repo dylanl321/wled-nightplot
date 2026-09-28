@@ -74,6 +74,28 @@ describe("LightsHome cached beads", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("shows a calculated length beside the LED count when the recipe has a pitch", () => {
+    const fetch = fetchSpy();
+    render(
+      <LightsHome
+        unenrolled={[]}
+        lights={[
+          lightView({
+            spacingMm: 16.67,
+            spacingKind: "pitch",
+            reachability: "online",
+            on: true,
+            bead: "#7ee0d0",
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(/60 LEDs · 1 m · WS281x RGB · 192\.168\.1\.40/)).toBeTruthy();
+    expect(screen.getByText("Calculated from the recipe and the node count.")).toBeTruthy();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("does not say Online · off when on is missing — unknown-grey, not null-as-off", () => {
     const fetch = fetchSpy();
 

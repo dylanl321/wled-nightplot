@@ -4,6 +4,7 @@ import {
   buildRangeDisplay,
   displayHost,
   knownStripKind,
+  ledProductSpacing,
   normalizeHostKey,
   resolveLightName,
   snapshotSegmentCount,
@@ -85,12 +86,15 @@ export function toLightView(
     stripKind: light.stripKind,
     product: extras.product,
   });
+  const spacing = extras.product ? ledProductSpacing(extras.product) : null;
   return {
     ...light,
     displayHost: displayHost({ hostname: light.hostname, port: light.port }),
     bead: beadFor(light, live),
     stripBead: honesty.bead,
     stripChip: honesty.chipLabel,
+    spacingMm: spacing?.mm ?? null,
+    spacingKind: spacing?.kind ?? null,
     elementCount: extras.elementCount,
     segmentCount: extras.segmentCount,
     driftLabel: extras.driftLabel,

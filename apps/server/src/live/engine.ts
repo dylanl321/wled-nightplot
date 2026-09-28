@@ -22,6 +22,7 @@ import {
 } from "@nightplot/shared";
 import {
   previewWrite,
+  previewWriteSpans,
   restoreWrite,
   restoreWriteFromSnapshot,
   type ReadLiveFn,
@@ -44,6 +45,10 @@ export type StartArgs = {
   live: WledSnapshot | null;
   elements: Element[];
   elementId?: string | null;
+  /** Ad-hoc locate range. When set, Preview paints this span and blacks the rest. */
+  range?: { start: number; stop: number } | null;
+  /** Several coloured spans. When set, Preview paints these and blacks the rest. */
+  spans?: { start: number; stop: number; color: string }[] | null;
   color?: string;
   brightness?: number;
 };
@@ -79,7 +84,23 @@ export function createLiveEngine(deps: {
     args: StartArgs,
   ): Promise<LiveActionResult> {
     const reachable = args.light.reachability === "online" && args.live !== null;
-    const target = resolveLiveTarget(args.elements, args.light.ledCount, args.elementId);
+    const painted = kind === "preview" ? normalizeSpans(args.spans, args.light.ledCount) : null;
+    const adHoc = painted ? null : adHocRange(args.range, args.light.ledCount);
+    const target = adHoc
+      ? {
+          elementId: null,
+          label: `${adHoc.start}–${adHoc.stop}`,
+          start: adHoc.start,
+          stop: adHoc.stop,
+        }
+      : painted
+        ? {
+            elementId: null,
+            label: "Elements",
+            start: painted[0]?.start ?? 0,
+            stop: painted[painted.length - 1]?.stop ?? args.light.ledCount,
+          }
+        : resolveLiveTarget(args.elements, args.light.ledCount, args.elementId);
     const color =
       kind === "blink"
         ? BLINK_COLOR
@@ -113,7 +134,18 @@ export function createLiveEngine(deps: {
     const existing = sessions.get(args.light.id);
     const restore = existing?.restore ?? restoreFrom(args.live);
     const dest: HostPort = { hostname: args.light.hostname, port: args.light.port };
-    const sent = await deps.write(dest, previewWrite(target.start, target.stop, color, brightness));
+    const sent = await deps.write(
+      dest,
+      painted
+        ? previewWriteSpans(painted, brightness, args.light.ledCount)
+        : previewWrite(
+            target.start,
+            target.stop,
+            color,
+            brightness,
+            kind === "preview" && adHoc ? args.light.ledCount : undefined,
+          ),
+    );
     if (!sent) {
       return {
         ok: false,
@@ -227,4 +259,33 @@ function restoreFrom(snapshot: WledSnapshot): LiveRestoreSnapshot {
 
 function clampByte(n: number): number {
   return Math.max(0, Math.min(255, Math.round(n)));
+}
+
+function normalizeSpans(
+  spans: { start: number; stop: number; color: string }[] | null | undefined,
+  ledCount: number,
+): { start: number; stop: number; color: string }[] | null {
+  if (!spans || spans.length === 0) return null;
+  const clipped = spans.flatMap((span) => {
+    if (!Number.isInteger(span.start) || !Number.isInteger(span.stop)) return [];
+    const color = parseHexColor(span.color);
+    if (!color) return [];
+    const start = Math.max(0, Math.min(ledCount, span.start));
+    const stop = Math.max(0, Math.min(ledCount, span.stop));
+    return stop > start ? [{ start, stop, color }] : [];
+  });
+  if (clipped.length === 0) return null;
+  return clipped.sort((a, b) => a.start - b.start || a.stop - b.stop).slice(0, 64);
+}
+
+function adHocRange(
+  range: { start: number; stop: number } | null | undefined,
+  ledCount: number,
+): { start: number; stop: number } | null {
+  if (!range) return null;
+  if (!Number.isInteger(range.start) || !Number.isInteger(range.stop)) return null;
+  const start = Math.max(0, Math.min(ledCount, range.start));
+  const stop = Math.max(0, Math.min(ledCount, range.stop));
+  if (stop <= start) return null;
+  return { start, stop };
 }

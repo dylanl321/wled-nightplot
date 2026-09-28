@@ -2,114 +2,238 @@
 
 import {
   APPLY_UNKNOWN_SEGMENTS_MESSAGE,
-  PREVIEW_SWATCHES,
+  PHYSICAL_LENGTH_CAPTION,
   adoptControllerRangesReason,
+  adoptReportedRanges,
+  adoptableControllerRanges,
+  applyRefuseReason,
+  buildRangeDisplay,
+  formatNodeLength,
   previewRefuseReason,
-  proofLadder,
+  reportedRangeRails,
+  validateDeclaredRanges,
   type ApplyResult,
   type Element,
   type LightDetail as LightDetailPayload,
-  type RangeDisplay,
+  type RangeIssue,
 } from "@nightplot/shared";
-import { useState } from "react";
-import { StripBeads, type StripSpan } from "@/components/strip-beads";
-import { liveBeadColor } from "@/components/test-live";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ElementInspector } from "@/components/elements-editor/inspector";
+import {
+  assignHues,
+  elementAt,
+  gapAt,
+  issueWord,
+  ordinal,
+  type IssueWord,
+} from "@/components/elements-editor/ops";
+import { StripEditor } from "@/components/elements-editor/strip-editor";
+import {
+  useEditorState,
+  type EditorAction,
+  type EditorState,
+} from "@/components/elements-editor/use-editor-state";
+import { explainDrift } from "@/components/elements-editor/drift-copy";
+import {
+  drawingRange,
+  locateFrame,
+  useLiveLocate,
+  type LocateMode,
+} from "@/components/elements-editor/use-live-locate";
+import { StripZoom } from "@/components/elements-editor/zoom";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { postJson } from "@/lib/api";
-import { inspectPowerHow } from "@/lib/power-status";
+import { patchJson, postJson } from "@/lib/api";
+import { displayBead, inspectPowerHow } from "@/lib/power-status";
 import { cn } from "@/lib/utils";
 
-const SWATCH_NAMES: Record<string, string> = {
-  "#ffc978": "warm",
-  "#ff4a3d": "red",
-  "#3dff7a": "green",
-  "#4f7dff": "blue",
-  "#f4f1ea": "white",
-};
+type Busy = "save" | "refresh" | "apply" | "readdress" | "blink" | null;
 
 export function ElementsPanel({
   detail,
-  draft,
-  display,
-  declared,
-  issues,
-  selectedId,
-  selected,
-  comparable,
-  dirty,
-  apply,
-  applyReason,
-  canApply,
-  canSave,
   busy,
   notice,
-  rangeErrorKey,
-  rangeDriftKey,
-  changed,
-  onSelect,
-  onPatch,
-  onAdd,
-  onRemove,
-  onSave,
-  onRevert,
-  onApply,
-  onAdopt,
+  onBusy,
+  onNotice,
   onDetail,
   onSettings,
+  onRefresh,
 }: {
   detail: LightDetailPayload;
-  draft: Element[];
-  display: RangeDisplay;
-  declared: StripSpan[];
-  issues: { code: "invert" | "overlap" | "over-ledCount"; message: string; elementId?: string; otherId?: string; start: number; stop: number }[];
-  selectedId: string | null;
-  selected: Element | null;
-  comparable: boolean;
-  dirty: boolean;
-  apply: ApplyResult | null;
-  applyReason: string | null;
-  canApply: boolean;
-  canSave: boolean;
-  busy: "save" | "refresh" | "apply" | "readdress" | "blink" | null;
+  busy: Busy;
   notice: string | null;
-  rangeErrorKey: "invert" | "overlap" | "past strip" | undefined;
-  rangeDriftKey: boolean;
-  changed: number;
-  onSelect: (id: string) => void;
-  onPatch: (patch: Partial<Element>) => void;
-  onAdd: () => void;
-  onRemove: () => void;
-  onSave: () => void;
-  onRevert: () => void;
-  onApply: () => void;
-  onAdopt: () => void;
+  onBusy: (busy: Busy) => void;
+  onNotice: (notice: string | null) => void;
   onDetail: (next: LightDetailPayload) => void;
   onSettings: () => void;
+  onRefresh: () => void;
 }) {
   const light = detail.light;
+  const { state, dispatch, dirtyCount } = useEditorState(detail.elements, light.ledCount, light.id);
+  const elsRef = useRef(state.els);
+  elsRef.current = state.els;
+  const [apply, setApply] = useState<ApplyResult | null>(null);
+  const [live, setLive] = useState(false);
+  const [locateMode, setLocateMode] = useState<LocateMode>("cursor");
+  const [hues, setHues] = useState<Record<string, string>>({});
   const unreachable = light.reachability === "no-answer";
-  const bead = displayBeadLocal(light);
-  const previewing = detail.session?.kind === "preview";
-  const pitch = light.ledCount <= 80 ? 13.4 : 9.4;
-  const applyFailed = Boolean(apply && apply.status !== "matched");
+
+  useEffect(() => {
+    setHues(readHues(light.id));
+  }, [light.id]);
+
+  useEffect(() => {
+    const next = assignHues(state.els, hues);
+    const same =
+      Object.keys(next).length === Object.keys(hues).length &&
+      Object.entries(next).every(([id, hue]) => hues[id] === hue);
+    if (same) return;
+    setHues(next);
+    writeHues(light.id, next);
+  }, [state.els, hues, light.id]);
+
+  useEffect(() => {
+    if (unreachable) setLive(false);
+  }, [unreachable]);
+
+  const issues = useMemo(
+    () => validateDeclaredRanges(state.els, light.ledCount),
+    [state.els, light.ledCount],
+  );
+  const display = useMemo(() => {
+    const segmentsKnown = light.segmentCount !== null;
+    const reported = unreachable || !segmentsKnown ? null : reportedRangeRails(detail.reported);
+    return buildRangeDisplay(state.els, reported, issues, { reachable: !unreachable });
+  }, [detail.reported, issues, light.segmentCount, state.els, unreachable]);
+
+  const one =
+    state.sel.length === 1 ? (state.els.find((element) => element.id === state.sel[0]) ?? null) : null;
+  const frame = locateFrame({
+    enabled: live && !unreachable,
+    lightName: light.name,
+    ledCount: light.ledCount,
+    hoverIndex: state.hover?.idx ?? null,
+    dragging: state.drag !== null,
+    drawing: drawingRange(state),
+    ledSel: state.ledSel,
+    element: one,
+    hue: one ? (hues[one.id] ?? null) : null,
+    mode: locateMode,
+    elements: state.els,
+    hues,
+  });
+  useLiveLocate({
+    enabled: live && !unreachable,
+    lightId: light.id,
+    ledCount: light.ledCount,
+    frame,
+    brightness: light.brightness,
+    onDetail,
+  });
+
+  const firstIssue = issues[0] ?? null;
+  const applyReason = applyRefuseReason({
+    reachable: !unreachable,
+    issueMessage: firstIssue?.message ?? null,
+    elementCount: state.els.length,
+    busyKind: detail.session?.kind ?? null,
+    segmentCount: light.segmentCount,
+    segmentColor: typeof light.bead === "string" ? light.bead : null,
+  });
+  const canSave = dirtyCount > 0 && issues.length === 0 && busy === null;
+  const canApply = applyReason === null && busy === null;
+  const liveReason = unreachable
+    ? previewRefuseReason({ reachable: false, hasTarget: true })
+    : null;
+
+  const applyFailed = Boolean(apply && !apply.matched);
   const segmentsUnknown = light.segmentCount === null;
-  const drifted = display.declared.filter((rail) => rail.differs);
-  const showDrift = !applyFailed && !segmentsUnknown && !unreachable && comparable && rangeDriftKey;
+  const driftLines = explainDrift(display);
+  const showDrift =
+    !applyFailed && !segmentsUnknown && !unreachable && rangeDriftPresent(display);
   const bannerOwnsReason = segmentsUnknown || (unreachable && !applyFailed && !showDrift);
+  const read = describe(state);
+  const zoom = zoomFocus(state, one);
+  const wordFor = (id: string): IssueWord | undefined =>
+    issueWord(issues.find((issue) => issue.elementId === id || issue.otherId === id)?.code);
+  const issuesFor = (id: string): RangeIssue[] =>
+    issues.filter((issue) => issue.elementId === id || issue.otherId === id);
+  const barIssue = firstIssue
+    ? `${state.els.find((element) => element.id === firstIssue.elementId)?.label ?? "Element"}: ${issueWord(firstIssue.code) ?? firstIssue.code}`
+    : null;
+
+  async function save(): Promise<boolean> {
+    if (!canSave) return false;
+    onBusy("save");
+    onNotice(null);
+    const res = await patchJson<LightDetailPayload>(`/api/lights/${light.id}/elements`, {
+      elements: payload(elsRef.current),
+    });
+    onBusy(null);
+    if (!res.ok) {
+      onNotice(res.data.message ?? "Draft was not saved.");
+      return false;
+    }
+    onDetail(res.data);
+    onRefresh();
+    return true;
+  }
+
+  async function applyRanges() {
+    if (applyReason) {
+      onNotice(applyReason);
+      return;
+    }
+    if (dirtyCount > 0) {
+      const saved = await save();
+      if (!saved) return;
+    }
+    onBusy("apply");
+    onNotice(null);
+    const res = await postJson<LightDetailPayload>(`/api/lights/${light.id}/apply`, {
+      elements: payload(elsRef.current),
+    });
+    onBusy(null);
+    const body = res.data as LightDetailPayload & { apply?: ApplyResult; message?: string };
+    if (body.apply) setApply(body.apply);
+    if (res.ok && body.apply?.matched) {
+      onDetail(body);
+      onRefresh();
+      return;
+    }
+    if (res.status === 409 && body.light) {
+      onDetail(body);
+      return;
+    }
+    onNotice(body.message ?? body.apply?.message ?? "Apply did not succeed.");
+  }
+
+  function adopt() {
+    const rails = apply ? adoptableControllerRanges(apply) : [];
+    if (rails.length === 0) return;
+    dispatch({ type: "replace", elements: adoptReportedRanges(state.els, rails) });
+    setApply(null);
+    onNotice(null);
+    onDetail({
+      ...detail,
+      elements: detail.elements,
+      reported: rails.map((rail) => ({ start: rail.start, stop: rail.stop, differs: false })),
+      light: { ...detail.light, segmentCount: rails.length },
+    });
+  }
+
+  function toggleLive() {
+    if (unreachable) return;
+    setLive((current) => !current);
+  }
 
   return (
     <div className="flex flex-col gap-4">
       {applyFailed && apply ? (
-        <ApplyFailed apply={apply} onAdopt={onAdopt} onRetry={onApply} />
+        <ApplyFailed apply={apply} onAdopt={adopt} onRetry={() => void applyRanges()} />
       ) : segmentsUnknown ? (
         <div className="rounded-xl border border-border bg-[#12141a] px-4 py-3.5">
-          <p className="text-[15px] font-medium">
-            {display.notes[0]?.text ?? "Segments unknown"}
-          </p>
-          {applyReason ? (
-            <p className="mt-1 text-[13px] text-destructive">{applyReason}</p>
-          ) : null}
+          <p className="text-[15px] font-medium">{display.notes[0]?.text ?? "Segments unknown"}</p>
+          {applyReason ? <p className="mt-1 text-[13px] text-destructive">{applyReason}</p> : null}
         </div>
       ) : unreachable ? (
         <div className="rounded-xl border border-[#5a2f33] bg-[#1a1113] px-4 py-3.5">
@@ -121,448 +245,570 @@ export function ElementsPanel({
       ) : showDrift ? (
         <div className="flex flex-col gap-3 rounded-xl border border-primary/70 bg-[#15130f] px-4 py-3.5 sm:flex-row sm:items-center">
           <div className="flex flex-col gap-1">
-            {drifted.length > 0 ? (
-              <>
-                <p className="text-[15px] font-medium text-primary">
-                  {drifted.length} Element{drifted.length === 1 ? "" : "s"} don’t match the controller
+            <p className="text-[15px] font-medium text-primary">The controller doesn’t match this page</p>
+            {(driftLines.length > 0 ? driftLines : display.notes.map((note) => note.text)).map(
+              (line, index) => (
+                <p key={`${index}-${line}`} className="text-[13px] text-[#c9c3b8]">
+                  {line}
                 </p>
-                <p className="text-[13px] text-[#c9c3b8]">
-                  {drifted.map((rail) => rail.label).join(", ")}. The dashed brackets show where.
-                </p>
-                {display.notes[0]?.text ? (
-                  <p className="text-[13px] text-[#c9c3b8]">{display.notes[0].text}</p>
-                ) : null}
-              </>
-            ) : (
-              <p className="text-[15px] font-medium text-primary">
-                {display.notes[0]?.text ?? "Declared ranges don’t match the controller"}
-              </p>
+              ),
             )}
           </div>
           <div className="flex gap-2 sm:ml-auto">
             <Button
               variant="outline"
               className="h-9 text-[13px]"
-              onClick={onAdopt}
+              onClick={adopt}
               disabled={display.reported.length === 0 || busy !== null}
             >
               Use controller’s
             </Button>
-            <Button className="h-9 text-[13px]" onClick={onApply} disabled={!canApply} title={applyReason ?? undefined}>
+            <Button className="h-9 text-[13px]" onClick={() => void applyRanges()} disabled={!canApply} title={applyReason ?? undefined}>
               {busy === "apply" ? "Applying…" : "Apply mine"}
             </Button>
           </div>
         </div>
       ) : null}
 
-      <div className="rounded-[14px] border border-border bg-[#07080a] px-5 pt-4 pb-3">
-        <div className="overflow-x-auto">
-          <StripBeads
-            id={`light-${light.id}`}
-            count={Math.max(light.ledCount, 1)}
-            perRow={100}
-            pitch={pitch}
-            gutter={30}
-            top={34}
-            bottom={28}
-            fontSize={12}
-            color={(index) => (previewing ? liveBeadColor(index, detail, bead) : bead)}
-            brightness={
-              unreachable
-                ? 1
-                : previewing
-                  ? Math.max(0.35, (detail.session?.brightness ?? 180) / 255)
-                  : 0.85
-            }
-            rgbw={light.stripBead === "rgbw"}
-            declared={declared}
-            reported={previewing ? [] : display.reported}
-            regions={
-              previewing && selected
-                ? [{ kind: "sel", start: selected.start, stop: selected.stop }]
-                : display.regions
-            }
-            ariaLabel={`${light.name} strip, ${light.ledCount} LEDs, ${light.stripBead === "rgbw" ? "RGBW" : "RGB"}`}
-          />
-        </div>
-        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-2.5 text-[12px] text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-[5px] w-4 border-x border-t border-[#9a9488]" />
-            Your Elements
+      <EditorToolbar
+        state={state}
+        dispatch={dispatch}
+        live={live && !unreachable}
+        liveDisabled={unreachable}
+        liveReason={liveReason}
+        locateMode={locateMode}
+        onLocateMode={setLocateMode}
+        onLive={toggleLive}
+      />
+
+      <div className="flex flex-col gap-3 rounded-[14px] border border-border bg-card px-5 pt-3.5 pb-3">
+        <div className="flex min-h-7 items-center gap-3">
+          <span
+            className={cn(
+              "inline-flex h-7 min-w-[74px] items-center justify-center rounded-md px-2.5 font-mono text-[14px] font-medium",
+              read.hot ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground",
+            )}
+          >
+            {read.chip}
           </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-[5px] w-4 border-x border-b border-[#6b7384]" />
-            Controller segments
-          </span>
-          {rangeDriftKey ? (
-            <>
-              <span className="sr-only" aria-label="Range drift key">
-                drift
-              </span>
-              <span className="inline-flex items-center gap-1.5 text-primary">
-                <span className="h-[5px] w-4 border-x border-t border-dashed border-primary" />
-                Doesn’t match
-              </span>
-            </>
-          ) : null}
-          {rangeErrorKey ? (
-            <span className="inline-flex items-center gap-1.5 text-destructive" aria-label="Range error key">
-              <span className="h-[5px] w-4 border border-destructive bg-[rgba(224,112,112,0.2)]" />
-              {rangeErrorKey}
-            </span>
-          ) : null}
-          <span className="ml-auto font-mono">
-            {light.ledCount} LEDs · {light.stripChip}
+          <span className="text-[14px] text-[#c9c3b8]">{read.text}</span>
+          <span className={cn("ml-auto text-[12px]", live && !unreachable ? "text-online" : "text-muted-foreground")}>
+            {live && !unreachable
+              ? (frame?.caption ?? "Preview on · pick something to light")
+              : "Off · the strip keeps its look"}
+            {live && detail.session?.kind === "preview" && detail.liveCaption ? (
+              <span className="mt-0.5 block">{detail.liveCaption}</span>
+            ) : null}
           </span>
         </div>
+        <StripEditor
+          svgId={`light-${light.id}`}
+          label={`${light.name} strip, ${light.ledCount} LEDs, ${light.stripBead === "rgbw" ? "RGBW" : "RGB"}`}
+          ledCount={light.ledCount}
+          rgbw={light.stripBead === "rgbw"}
+          state={state}
+          hues={hues}
+          issueWord={wordFor}
+          resting={() => displayBead(light)}
+          live={live && !unreachable}
+          frame={frame}
+          liveLabel={live ? "Stop lighting" : "Light on strip"}
+          onLive={toggleLive}
+          dispatch={dispatch}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <StripZoom
+          ledCount={Math.max(light.ledCount, 1)}
+          elements={state.els}
+          hues={hues}
+          issueWord={wordFor}
+          focus={zoom.focus}
+          edge={zoom.edge}
+          caption={zoom.caption}
+        />
+        <ElementInspector state={state} hues={hues} issuesFor={issuesFor} dispatch={dispatch} />
       </div>
 
       <div className="overflow-hidden rounded-[14px] border border-border bg-[#0e1014]">
-        <div className="grid grid-cols-[80px_minmax(0,1.3fr)_120px_70px_minmax(0,1.3fr)_110px] gap-3.5 border-b border-border px-[18px] py-2.5 text-[12px] text-muted-foreground">
-          <span>Where</span>
+        <div className="grid grid-cols-[18px_minmax(0,1.4fr)_120px_70px_minmax(0,1fr)] gap-3.5 border-b border-border px-[18px] py-2.5 text-[12px] text-muted-foreground">
+          <span />
           <span>Element</span>
           <span>LEDs</span>
           <span>Count</span>
-          <span>Controller</span>
-          <span />
+          <span>Check</span>
         </div>
-        {draft.length === 0 ? (
+        {state.els.length === 0 ? (
           <p className="px-[18px] py-3 text-[13px] text-muted-foreground">Nothing declared yet.</p>
         ) : (
-          draft.map((element) => (
-            <ElementRow
-              key={element.id}
-              element={element}
-              detail={detail}
-              display={display}
-              issues={issues}
-              comparable={comparable}
-              selected={selected?.id === element.id}
-              ledCount={Math.max(light.ledCount, 1)}
-              onSelect={() => onSelect(element.id)}
-              onPatch={onPatch}
-              onRemove={onRemove}
-              onDetail={onDetail}
-            />
-          ))
+          [...state.els]
+            .sort((a, b) => a.start - b.start)
+            .map((element) => {
+              const word = wordFor(element.id);
+              const count = element.stop > element.start ? element.stop - element.start : 0;
+              const length = formatNodeLength(count, light.spacingMm);
+              const selected = state.sel.includes(element.id);
+              const hue = word ? "#e07070" : (hues[element.id] ?? "#d4a574");
+              return (
+                <button
+                  key={element.id}
+                  type="button"
+                  onClick={(event) => dispatch({ type: "select-row", id: element.id, shift: event.shiftKey })}
+                  className="grid w-full grid-cols-[18px_minmax(0,1.4fr)_120px_70px_minmax(0,1fr)] items-center gap-3.5 border-b border-border px-[18px] py-3 text-left"
+                  style={{
+                    background: selected ? "#12141a" : "transparent",
+                    boxShadow: selected ? `inset 2px 0 0 ${hue}` : "none",
+                  }}
+                >
+                  <span className="size-2.5 rounded-[3px]" style={{ background: hue }} />
+                  <span className="text-[15px] font-medium">{element.label}</span>
+                  <span
+                    className={cn("font-mono text-[13px]", word ? "text-destructive" : "text-[#c9c3b8]")}
+                    title={length ? PHYSICAL_LENGTH_CAPTION : undefined}
+                  >
+                    {element.start}–{element.stop}
+                    {length ? ` · ${length}` : ""}
+                  </span>
+                  <span className="font-mono text-[13px] text-muted-foreground">{count || "—"}</span>
+                  <span className={cn("text-[13px]", word ? "text-destructive" : "text-muted-foreground")}>
+                    {selected ? (
+                      <span className="sr-only" aria-label="Element kind">
+                        {word ?? "ok"}
+                      </span>
+                    ) : null}
+                    {word ?? "ok"}
+                  </span>
+                </button>
+              );
+            })
         )}
-        <button
-          type="button"
-          onClick={onAdd}
-          className="w-full px-[18px] py-3 text-left text-[13px] text-muted-foreground hover:bg-secondary/60"
-        >
-          + Add Element
-        </button>
-        {notice ? <p className="px-[18px] pb-3 text-[13px] text-destructive">{notice}</p> : null}
       </div>
 
-      {dirty ? (
-        <div className="sticky bottom-4 flex flex-col gap-2 rounded-xl border border-input bg-[#12141a] px-3.5 py-3 shadow-[0_-12px_40px_rgba(0,0,0,0.5)]">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-primary">
-              {dirty
-                ? `${changed} unsaved change${changed === 1 ? "" : "s"}`
-                : "Declared ranges"}
-            </span>
-            <div className="ml-auto flex flex-wrap items-center gap-2">
-              <Button variant="ghost" onClick={onRevert} disabled={!dirty || busy !== null}>
-                Revert
-              </Button>
-              <Button variant="outline" onClick={onSave} disabled={!canSave}>
-                {busy === "save" ? "Saving…" : "Save"}
-              </Button>
-              <Button
-                aria-label="Apply"
-                onClick={onApply}
-                disabled={!canApply}
-                title={applyReason ?? undefined}
-              >
-                {busy === "apply" ? "Applying…" : dirty ? "Save & Apply" : "Apply"}
-              </Button>
-            </div>
-          </div>
-          {!bannerOwnsReason && applyReason ? (
-            <p className="text-[13px] text-destructive">{applyReason}</p>
-          ) : null}
+      <div className="flex flex-wrap gap-x-5 gap-y-2 text-[12px] text-muted-foreground">
+        <Hint keys="drag body">shift</Hint>
+        <Hint keys="drag edge">resize</Hint>
+        <Hint keys="drag free LEDs">select → options</Hint>
+        <Hint keys="R">pick LEDs across Elements</Hint>
+        <Hint keys="N">new Element from selection</Hint>
+        <Hint keys="← →">nudge 1 · ⇧ 10</Hint>
+        <Hint keys="⌘Z">undo</Hint>
+      </div>
+
+      {notice ? <p className="text-[13px] text-destructive">{notice}</p> : null}
+      {!bannerOwnsReason && applyReason ? (
+        <p className="text-[13px] text-destructive">{applyReason}</p>
+      ) : null}
+
+      {dirtyCount > 0 ? (
+        <div className="fixed bottom-5 left-1/2 z-20 flex w-[min(1020px,calc(100%-48px))] -translate-x-1/2 items-center gap-2.5 rounded-xl border border-input bg-[#12141a] px-3.5 py-3 shadow-[0_-12px_40px_rgba(0,0,0,0.5)]">
+          <span className="text-[14px] text-primary">
+            {dirtyCount} unsaved change{dirtyCount === 1 ? "" : "s"}
+          </span>
+          {barIssue ? <span className="text-[13px] text-destructive">{barIssue}</span> : null}
+          <button
+            type="button"
+            onClick={() => dispatch({ type: "revert" })}
+            className="ml-auto text-[13px] text-muted-foreground"
+          >
+            Revert
+          </button>
+          <Button variant="outline" className="h-[34px] px-3 text-[13px]" onClick={() => void save()} disabled={!canSave}>
+            {busy === "save" ? "Saving…" : "Save"}
+          </Button>
+          <Button
+            className="h-[34px] px-3 text-[13px]"
+            onClick={() => void applyRanges()}
+            disabled={!canApply}
+            title={applyReason ?? undefined}
+          >
+            {busy === "apply" ? "Applying…" : "Save & Apply"}
+          </Button>
         </div>
       ) : (
-        <Button
-          className="sr-only"
-          aria-label="Apply"
-          onClick={onApply}
-          disabled={!canApply}
-          title={applyReason ?? undefined}
-        >
+        <Button className="sr-only" aria-label="Apply" onClick={() => void applyRanges()} disabled={!canApply} title={applyReason ?? undefined}>
           Apply
         </Button>
       )}
-      {!dirty && !bannerOwnsReason && applyReason ? (
-        <p className="text-[13px] text-destructive">{applyReason}</p>
+
+      {state.toast ? (
+        <div className="fixed top-[72px] left-1/2 z-20 -translate-x-1/2 rounded-lg border border-[#3a4150] bg-[#12141a] px-3.5 py-2 text-[13px] shadow-[0_12px_30px_rgba(0,0,0,0.5)]">
+          {state.toast}
+        </div>
       ) : null}
     </div>
   );
 }
 
-function ElementRow({
-  element,
-  detail,
-  display,
-  issues,
-  comparable,
-  selected,
-  ledCount,
-  onSelect,
-  onPatch,
-  onRemove,
-  onDetail,
+function EditorToolbar({
+  state,
+  dispatch,
+  live,
+  liveDisabled,
+  liveReason,
+  locateMode,
+  onLocateMode,
+  onLive,
 }: {
-  element: Element;
-  detail: LightDetailPayload;
-  display: RangeDisplay;
-  issues: { code: "invert" | "overlap" | "over-ledCount"; message: string; elementId?: string; otherId?: string; start: number; stop: number }[];
-  comparable: boolean;
-  selected: boolean;
-  ledCount: number;
-  onSelect: () => void;
-  onPatch: (patch: Partial<Element>) => void;
-  onRemove: () => void;
-  onDetail: (next: LightDetailPayload) => void;
+  state: EditorState;
+  dispatch: (action: EditorAction) => void;
+  live: boolean;
+  liveDisabled: boolean;
+  liveReason: string | null;
+  locateMode: LocateMode;
+  onLocateMode: (mode: LocateMode) => void;
+  onLive: () => void;
 }) {
-  const rail = display.declared.find((item) => item.id === element.id);
-  const rowIssues = issues.filter(
-    (issue) => issue.elementId === element.id || issue.otherId === element.id,
-  );
-  const kind = selectedKind(rowIssues[0]?.code, rail?.differs === true, comparable);
-  const errorWord = rangeErrorLabel(rowIssues[0]?.code);
-  const reported = display.reported.find(
-    (item) => item.start < element.stop && item.stop > element.start,
-  );
-  const controller =
-    errorWord ??
-    (kind === "no compare"
-      ? "no compare"
-      : kind === "drift"
-        ? reported
-          ? `Reports ${reported.start}–${reported.stop}`
-          : "drift"
-        : "Matches");
-  const count = element.stop > element.start ? element.stop - element.start : 0;
-  const width = Math.max(0, Math.min(100, (count / ledCount) * 100));
-  const left = Math.max(0, Math.min(100, (element.start / ledCount) * 100));
-  const session = detail.session;
-  const previewHere =
-    session?.kind === "preview" &&
-    (session.target.elementId === element.id || session.target.elementId === null);
-  const [color, setColor] = useState<string>(PREVIEW_SWATCHES[3]);
-  const [brightness, setBrightness] = useState(detail.light.brightness ?? 180);
-  const [previewBusy, setPreviewBusy] = useState(false);
-  const [previewNotice, setPreviewNotice] = useState<string | null>(null);
-
-  async function preview() {
-    if (previewHere && session?.kind === "preview") {
-      setPreviewBusy(true);
-      const res = await postJson<LightDetailPayload>(`/api/lights/${detail.light.id}/preview/end`, {});
-      setPreviewBusy(false);
-      if (!res.ok) {
-        setPreviewNotice(res.data.message ?? "Could not restore.");
-        return;
-      }
-      onDetail(res.data);
-      return;
-    }
-    const reason = previewRefuseReason({
-      reachable: detail.light.reachability !== "no-answer",
-      hasTarget: element.stop > element.start,
-      busyKind: session?.kind ?? null,
-    });
-    if (reason) {
-      setPreviewNotice(reason);
-      return;
-    }
-    setPreviewBusy(true);
-    setPreviewNotice(null);
-    const res = await postJson<LightDetailPayload>(`/api/lights/${detail.light.id}/preview`, {
-      elementId: element.id,
-      color,
-      brightness,
-    });
-    setPreviewBusy(false);
-    if (!res.ok) {
-      setPreviewNotice(res.data.message ?? "Nothing was sent.");
-      return;
-    }
-    onDetail(res.data);
-  }
-
-  async function see(seen: "yes" | "no") {
-    const res = await postJson<LightDetailPayload>(`/api/lights/${detail.light.id}/preview/seen`, {
-      seen,
-    });
-    if (!res.ok) {
-      setPreviewNotice(res.data.message ?? "Could not record that.");
-      return;
-    }
-    onDetail(res.data);
-  }
-
-  const rungs =
-    previewHere && session
-      ? proofLadder({
-          sentAt: session.startedAt,
-          reported: detail.liveMatch ?? null,
-          seenByYou: session.seenByYou,
-          label: session.target.label,
-        })
-      : [];
-
+  const one = state.sel.length === 1 ? state.els.find((element) => element.id === state.sel[0]) : null;
+  const mergeOk = state.sel.length > 1 && mergeReady(state);
   return (
-    <div
-      className={cn(
-        "border-b border-border",
-        selected && "bg-[#12141a] shadow-[inset_2px_0_0_#d4a574]",
-      )}
-    >
-      <div className="flex items-center gap-3.5 px-[18px] py-[13px]">
-        <button
-          type="button"
-          onClick={onSelect}
-          className="grid min-w-0 flex-1 grid-cols-[80px_minmax(0,1.3fr)_120px_70px_minmax(0,1.3fr)] items-center gap-3.5 text-left"
-        >
-          <span className="relative h-1.5 rounded-[3px] bg-border">
-            <span
-              className="absolute inset-y-0 rounded-[3px]"
-              style={{
-                left: `${left}%`,
-                width: `${width}%`,
-                background: selected ? "#d4a574" : "#6b7384",
-              }}
-            />
-          </span>
-          <span className="text-[15px] font-medium">{element.label}</span>
-          <span className="font-mono text-[13px] text-[#c9c3b8]">
-            {element.start}–{element.stop}
-          </span>
-          <span className="font-mono text-muted-foreground">{count}</span>
-          <span
-            className={cn(
-              "text-[13px]",
-              (kind === "drift" || kind === "no compare") && "text-primary",
-              errorWord && "text-destructive",
-              kind === "seg" && "text-muted-foreground",
-            )}
-          >
-            {selected ? (
-              <span className="sr-only" aria-label="Element kind">
-                {kind}
-              </span>
-            ) : null}
-            <span>{controller}</span>
-          </span>
-        </button>
-        <Button
-          type="button"
-          variant="outline"
-          className={cn(
-            "h-[30px] px-3 text-[13px]",
-            previewHere && "border-online text-online",
-          )}
-          disabled={previewBusy}
-          onClick={() => {
-            onSelect();
-            void preview();
-          }}
-        >
-          {previewHere ? "End Preview" : "Preview"}
-        </Button>
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex rounded-[9px] border border-input bg-[#12141a] p-[3px] text-[13px]">
+        <ToolButton active={state.mode === "select"} hint="V" onClick={() => dispatch({ type: "tool", mode: "select" })}>
+          Select
+        </ToolButton>
+        <ToolButton active={state.mode === "range"} hint="R" onClick={() => dispatch({ type: "tool", mode: "range" })}>
+          Pick LEDs
+        </ToolButton>
+        <ToolButton active={state.mode === "split"} hint="C" onClick={() => dispatch({ type: "tool", mode: "split" })}>
+          Cut
+        </ToolButton>
       </div>
-      {selected ? (
-        <div className="flex flex-col gap-3 pr-[18px] pb-4 pl-[112px] pt-1">
-          <div className="flex flex-wrap items-end gap-3">
-            <Input
-              value={element.label}
-              onChange={(event) => onPatch({ label: event.target.value })}
-              aria-label="Element label"
-              className="max-w-[220px] font-sans"
-            />
-            <Input
-              inputMode="numeric"
-              value={Number.isFinite(element.start) ? String(element.start) : ""}
-              onChange={(event) => onPatch({ start: parseIndex(event.target.value, element.start) })}
-              aria-label="Start, first LED, inclusive"
-              className="w-24"
-            />
-            <Input
-              inputMode="numeric"
-              value={Number.isFinite(element.stop) ? String(element.stop) : ""}
-              onChange={(event) => onPatch({ stop: parseIndex(event.target.value, element.stop) })}
-              aria-label="Stop, after last LED, exclusive"
-              className={cn("w-24", rowIssues.length && "border-destructive text-destructive")}
-            />
-            <button type="button" onClick={onRemove} className="text-[13px] text-muted-foreground">
-              Remove
+      <span className="mx-1 h-6 w-px bg-input" />
+      <ActionButton hint="D" disabled={!one} onClick={() => dispatch({ type: "duplicate" })}>
+        Duplicate
+      </ActionButton>
+      <ActionButton
+        hint="S"
+        disabled={!one || one.stop - one.start < 2}
+        onClick={() => dispatch({ type: "split-half" })}
+      >
+        Split in half
+      </ActionButton>
+      <ActionButton hint="M" disabled={!mergeOk} onClick={() => dispatch({ type: "merge" })}>
+        Combine
+      </ActionButton>
+      <ActionButton
+        hint="⌫"
+        disabled={state.sel.length === 0 && !state.ledSel}
+        className="text-destructive"
+        onClick={() => dispatch({ type: state.ledSel ? "remove-from" : "delete" })}
+      >
+        Delete
+      </ActionButton>
+      <span className="mx-1 h-6 w-px bg-input" />
+      <button
+        type="button"
+        disabled={state.hist.length === 0}
+        onClick={() => dispatch({ type: "undo" })}
+        className="h-[34px] px-2.5 text-[13px] text-[#c9c3b8] disabled:opacity-40"
+      >
+        Undo
+      </button>
+      <button
+        type="button"
+        disabled={state.fut.length === 0}
+        onClick={() => dispatch({ type: "redo" })}
+        className="h-[34px] px-2.5 text-[13px] text-[#c9c3b8] disabled:opacity-40"
+      >
+        Redo
+      </button>
+      <div className="ml-auto flex items-center gap-4 text-[13px] text-[#c9c3b8]">
+        <Switch on={state.snap} label="Snap to 5" tone="primary" onClick={() => dispatch({ type: "snap" })} />
+        {!liveDisabled ? (
+          <div className="flex rounded-md border border-input p-0.5 text-[12px]" role="group" aria-label="What Show lights">
+            <button
+              type="button"
+              aria-pressed={locateMode === "cursor"}
+              onClick={() => onLocateMode("cursor")}
+              className={cn(
+                "rounded px-2 py-1",
+                locateMode === "cursor" ? "bg-[#2f3542] text-foreground" : "text-muted-foreground",
+              )}
+            >
+              Cursor only
+            </button>
+            <button
+              type="button"
+              aria-pressed={locateMode === "hold"}
+              onClick={() => onLocateMode("hold")}
+              className={cn(
+                "rounded px-2 py-1",
+                locateMode === "hold" ? "bg-[#2f3542] text-foreground" : "text-muted-foreground",
+              )}
+            >
+              Elements stay lit
             </button>
           </div>
-          {rowIssues.map((issue) => (
-            <p key={`${issue.code}-${issue.start}-${issue.stop}`} className="text-[13px] text-destructive">
-              {issue.message}
-            </p>
-          ))}
-          <div className="flex flex-wrap items-center gap-6">
-            <div className="flex items-center gap-2">
-              {PREVIEW_SWATCHES.map((swatch) => (
-                <button
-                  key={swatch}
-                  type="button"
-                  aria-label={SWATCH_NAMES[swatch] ?? swatch}
-                  onClick={() => setColor(swatch)}
-                  className="size-[22px] rounded-full"
-                  style={{
-                    background: swatch,
-                    boxShadow:
-                      color === swatch ? "0 0 0 2px #0c0d10, 0 0 0 4px #ece7dc" : undefined,
-                  }}
-                />
-              ))}
-            </div>
-            <label className="flex items-center gap-2 text-[13px]">
-              Brightness
-              <input
-                type="range"
-                min={1}
-                max={255}
-                value={brightness}
-                onChange={(event) => setBrightness(Number(event.target.value))}
-                className="h-1 w-[140px] accent-primary"
-                aria-label="Preview brightness"
-              />
-              <span className="font-mono">{Math.round((brightness / 255) * 100)}%</span>
-            </label>
-            {previewHere ? (
-              <div className="ml-auto flex items-center gap-2 text-[13px]">
-                <span>Lit the right LEDs?</span>
-                <Button variant="outline" className="h-[30px] px-3 text-[13px]" onClick={() => void see("yes")}>
-                  Yes
-                </Button>
-                <Button variant="outline" className="h-[30px] px-3 text-[13px]" onClick={() => void see("no")}>
-                  No
-                </Button>
-              </div>
-            ) : null}
-          </div>
-          <p className="text-[12px] text-muted-foreground">
-            Temporary. Ending the Preview restores the previous look. Nothing is saved to the controller.
-          </p>
-          {previewHere ? <p>Preview live on {session?.target.label}</p> : null}
-          {rungs.map((rung) => (
-            <p key={rung.key} className="text-[13px] text-muted-foreground">
-              {rung.label}
-            </p>
-          ))}
-          {previewNotice ? <p className="text-[13px] text-destructive">{previewNotice}</p> : null}
-        </div>
-      ) : null}
+        ) : null}
+        <Switch
+          on={live}
+          label="Show on the real strip"
+          tone="online"
+          disabled={liveDisabled}
+          title={liveReason ?? undefined}
+          onClick={onLive}
+        />
+      </div>
+      {liveReason ? <p className="basis-full text-[12px] text-destructive">{liveReason}</p> : null}
     </div>
   );
+}
+
+function mergeReady(state: EditorState): boolean {
+  if (state.sel.length < 2) return false;
+  const chosen = state.els.filter((element) => state.sel.includes(element.id));
+  if (chosen.length < 2) return false;
+  const start = Math.min(...chosen.map((element) => element.start));
+  const stop = Math.max(...chosen.map((element) => element.stop));
+  return !state.els.some(
+    (element) => !state.sel.includes(element.id) && element.start < stop && element.stop > start,
+  );
+}
+
+function ToolButton({
+  active,
+  hint,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  hint: string;
+  onClick: () => void;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-2 rounded-md px-3 py-1.5 font-medium",
+        active ? "bg-[#2f3542] text-foreground" : "text-muted-foreground",
+      )}
+    >
+      {children}
+      <span className="font-mono text-[11px] font-normal text-muted-foreground">{hint}</span>
+    </button>
+  );
+}
+
+function ActionButton({
+  hint,
+  disabled,
+  className,
+  onClick,
+  children,
+}: {
+  hint: string;
+  disabled?: boolean;
+  className?: string;
+  onClick: () => void;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-[34px] items-center gap-2 rounded-lg border border-input px-3 text-[13px] font-semibold disabled:opacity-40",
+        className,
+      )}
+    >
+      {children}
+      <span className="font-mono text-[11px] font-normal text-muted-foreground">{hint}</span>
+    </button>
+  );
+}
+
+function Switch({
+  on,
+  label,
+  tone,
+  disabled,
+  title,
+  onClick,
+}: {
+  on: boolean;
+  label: string;
+  tone: "primary" | "online";
+  disabled?: boolean;
+  title?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      disabled={disabled}
+      title={title}
+      onClick={onClick}
+      className="inline-flex items-center gap-2 disabled:opacity-40"
+    >
+      <span
+        className={cn(
+          "relative h-[18px] w-[30px] rounded-full",
+          on ? (tone === "online" ? "bg-online" : "bg-primary") : "bg-input",
+        )}
+      >
+        <span
+          className="absolute top-[3px] size-3 rounded-full"
+          style={{ left: on ? 15 : 3, background: on ? "#0c0d10" : "#9a9488" }}
+        />
+      </span>
+      {label}
+    </button>
+  );
+}
+
+function Hint({ keys, children }: { keys: string; children: string }) {
+  return (
+    <span>
+      <span className="font-mono text-[#c9c3b8]">{keys}</span> {children}
+    </span>
+  );
+}
+
+function describe(state: EditorState): { chip: string; text: string; hot: boolean } {
+  const drag = state.drag;
+  const dragEl = drag && "id" in drag ? state.els.find((element) => element.id === drag.id) : null;
+  if (drag && dragEl && drag.kind !== "draw") {
+    const length = dragEl.stop - dragEl.start;
+    if (drag.kind === "move") {
+      const delta = dragEl.start - drag.orig.start;
+      return {
+        chip: `${delta >= 0 ? "+" : ""}${delta}`,
+        hot: true,
+        text: `Shifting ${dragEl.label} · ${dragEl.start}–${dragEl.stop} · ${length} LEDs`,
+      };
+    }
+    const delta = length - (drag.orig.stop - drag.orig.start);
+    return {
+      chip: String(drag.kind === "start" ? dragEl.start : dragEl.stop),
+      hot: true,
+      text: `Resizing ${dragEl.label} · ${dragEl.start}–${dragEl.stop} · ${length} LEDs (${delta >= 0 ? "+" : ""}${delta})`,
+    };
+  }
+  if (drag?.kind === "draw" && state.draftRange) {
+    const count = state.draftRange.stop - state.draftRange.start;
+    return {
+      chip: `${count} LED${count === 1 ? "" : "s"}`,
+      hot: true,
+      text: `Selecting ${state.draftRange.start}–${state.draftRange.stop} · let go for options`,
+    };
+  }
+  if (state.hover && state.mode === "split") {
+    const found = elementAt(state.hover.idx, state.els);
+    const inside = found && state.hover.b > found.start && state.hover.b < found.stop;
+    return {
+      chip: `cut ${state.hover.b}`,
+      hot: false,
+      text: inside
+        ? `Click to split ${found.label} into ${found.start}–${state.hover.b} and ${state.hover.b}–${found.stop}`
+        : "Point inside an Element to cut it",
+    };
+  }
+  if (state.hover) {
+    const found = elementAt(state.hover.idx, state.els);
+    if (found) {
+      return {
+        chip: `LED ${state.hover.idx}`,
+        hot: false,
+        text: `${found.label} · ${ordinal(state.hover.idx - found.start + 1)} of ${found.stop - found.start} · row ${state.hover.r + 1}, position ${(state.hover.idx % 100) + 1}`,
+      };
+    }
+    const gap = gapAt(state.hover.idx, state.els, state.ledCount);
+    return {
+      chip: `LED ${state.hover.idx}`,
+      hot: false,
+      text: `Free · run ${gap.lo}–${gap.hi} (${gap.hi - gap.lo} LEDs)${state.ledSel ? ` · shift-click to extend to ${state.hover.idx}` : " · drag to select LEDs"}`,
+    };
+  }
+  if (state.ledSel) {
+    const count = state.ledSel.stop - state.ledSel.start;
+    return {
+      chip: `${count} LED${count === 1 ? "" : "s"}`,
+      hot: true,
+      text: `${state.ledSel.start}–${state.ledSel.stop} selected · shift-click to extend · Esc to clear`,
+    };
+  }
+  return {
+    chip: "—",
+    hot: false,
+    text: "Hover the strip to read an LED. Drag across free LEDs to add an Element.",
+  };
+}
+
+function zoomFocus(
+  state: EditorState,
+  one: Element | null,
+): { focus: number; edge: boolean; caption: string } {
+  const drag = state.drag;
+  const dragEl = drag && drag.kind !== "draw" ? state.els.find((element) => element.id === drag.id) : null;
+  if (state.drag && dragEl && (state.drag.kind === "start" || state.drag.kind === "end")) {
+    const focus = state.drag.kind === "start" ? dragEl.start : dragEl.stop;
+    return { focus, edge: true, caption: `${state.drag.kind === "start" ? "start" : "stop"} edge at ${focus}` };
+  }
+  if (state.hover) {
+    const focus = state.mode === "split" ? state.hover.b : state.hover.idx;
+    return {
+      focus,
+      edge: state.mode === "split",
+      caption: state.mode === "split" ? `cut at ${focus}` : `around LED ${focus}`,
+    };
+  }
+  if (state.ledSel) {
+    return { focus: state.ledSel.start, edge: true, caption: `selection start at ${state.ledSel.start}` };
+  }
+  if (one) return { focus: one.start, edge: true, caption: `${one.label} start edge at ${one.start}` };
+  return { focus: 0, edge: false, caption: "around LED 0" };
+}
+
+function payload(elements: Element[]) {
+  return elements.map((element) => ({
+    id: element.id,
+    label: element.label,
+    start: element.start,
+    stop: element.stop,
+  }));
+}
+
+function rangeDriftPresent(display: {
+  declared: { differs: boolean }[];
+  reported: { differs: boolean }[];
+  regions: { kind: string }[];
+}): boolean {
+  return (
+    display.declared.some((rail) => rail.differs) ||
+    display.reported.some((rail) => rail.differs) ||
+    display.regions.some((region) => region.kind === "drift")
+  );
+}
+
+function hueKey(lightId: string): string {
+  return `nightplot:element-hues:${lightId}`;
+}
+
+function readHues(lightId: string): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(hueKey(lightId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function writeHues(lightId: string, hues: Record<string, string>) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(hueKey(lightId), JSON.stringify(hues));
+  } catch {
+    /* display-only */
+  }
 }
 
 function ApplyFailed({
@@ -575,8 +821,7 @@ function ApplyFailed({
   onRetry: () => void;
 }) {
   const adoptReason = adoptControllerRangesReason(apply);
-  const unknownReread =
-    apply.read === null || apply.message === APPLY_UNKNOWN_SEGMENTS_MESSAGE;
+  const unknownReread = apply.read === null || apply.message === APPLY_UNKNOWN_SEGMENTS_MESSAGE;
   const rows =
     apply.rows.length > 0
       ? apply.rows
@@ -601,11 +846,7 @@ function ApplyFailed({
                 {row.sent.start}–{row.sent.stop}
               </span>
               <span className={cn("font-mono", row.matched ? undefined : "text-destructive")}>
-                {row.read
-                  ? `${row.read.start}–${row.read.stop}`
-                  : unknownReread
-                    ? "unknown"
-                    : "nothing"}
+                {row.read ? `${row.read.start}–${row.read.stop}` : unknownReread ? "unknown" : "nothing"}
               </span>
             </div>
           ))}
@@ -632,31 +873,4 @@ function ApplyFailed({
       {adoptReason ? <p className="text-[12px] text-muted-foreground">{adoptReason}</p> : null}
     </div>
   );
-}
-
-function displayBeadLocal(light: LightDetailPayload["light"]) {
-  if (light.reachability === "no-answer" || light.on == null) return "unknown" as const;
-  return light.bead;
-}
-
-function rangeErrorLabel(
-  code: "invert" | "overlap" | "over-ledCount" | undefined,
-): "invert" | "overlap" | "past strip" | undefined {
-  if (code === "over-ledCount") return "past strip";
-  if (code) return code;
-  return undefined;
-}
-
-function selectedKind(
-  code: "invert" | "overlap" | "over-ledCount" | undefined,
-  differs: boolean,
-  comparable: boolean,
-): "overlap" | "invert" | "past strip" | "drift" | "no compare" | "seg" {
-  return rangeErrorLabel(code) ?? (differs ? "drift" : comparable ? "seg" : "no compare");
-}
-
-function parseIndex(raw: string, fallback: number): number {
-  if (raw.trim() === "") return fallback;
-  const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) ? n : fallback;
 }

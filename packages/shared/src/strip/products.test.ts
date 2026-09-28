@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { getStrip } from "./catalog.ts";
 import { defaultStripPreset, STRIP_PRESETS } from "./presets.ts";
 import {
+  formatNodeLength,
+  formatPhysicalLength,
   inheritLedProductFields,
   LED_CATALOG_ATTACH_COPY,
   LED_CATALOG_DELETE_CAPTION,
@@ -17,6 +19,7 @@ import {
   catalogDeleteRefuseReason,
   countLedProductAttaches,
   decideLedProductDelete,
+  ledProductSpacing,
   parseLedProductAttach,
   parseLedProductInput,
   provisionApplyBodyFromProduct,
@@ -362,5 +365,53 @@ describe("LED product attach + draft fill", () => {
       ok: false,
       error: "not_found",
     });
+  });
+
+  it("uses pitch for discrete and section length for COB, and ignores the other field", () => {
+    const discrete = parseLedProductInput({
+      label: "Eave 60",
+      formFactor: "discrete",
+      driverId: "ws281x",
+      pitchMm: 16.67,
+      sectionLengthMm: 50,
+      voltage: 5,
+      wattsPerMeter: 18,
+      ipRating: "ip65",
+      widthMm: 10,
+      cutLengthMm: 16.67,
+    });
+    expect(discrete.ok).toBe(true);
+    if (!discrete.ok) return;
+    expect(discrete.product.ipRating).toBe("IP65");
+    expect(discrete.product.voltage).toBe(5);
+    expect(formatNodeLength(60, discrete.product.pitchMm)).toBe("1 m");
+    expect(formatPhysicalLength(500)).toBe("500 mm");
+
+    const cob = parseLedProductInput({
+      label: "Soffit COB",
+      formFactor: "cob",
+      driverId: "ws281x",
+      pitchMm: 16.67,
+      sectionLengthMm: 25,
+    });
+    expect(cob.ok).toBe(true);
+    if (!cob.ok) return;
+    expect(ledProductSpacing(discrete.product)).toEqual({ mm: 16.67, kind: "pitch" });
+    expect(ledProductSpacing(cob.product)).toEqual({ mm: 25, kind: "section" });
+    expect(formatNodeLength(40, ledProductSpacing(cob.product)?.mm)).toBe("1 m");
+    expect(formatNodeLength(0, 25)).toBeNull();
+
+    expect(parseLedProductInput({
+      label: "Bad pitch",
+      formFactor: "discrete",
+      driverId: "ws281x",
+      pitchMm: 0,
+    })).toMatchObject({ ok: false, error: "bad_defaults" });
+    expect(parseLedProductInput({
+      label: "Bad volts",
+      formFactor: "discrete",
+      driverId: "ws281x",
+      voltage: 3,
+    })).toMatchObject({ ok: false, error: "bad_defaults" });
   });
 });
