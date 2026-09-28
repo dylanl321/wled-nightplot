@@ -7,6 +7,7 @@
  * defaults.
  */
 
+import { softwareHonestyCaption, type LiveSource } from "./live.ts";
 import type { RangeLengthStory } from "./range.ts";
 
 export const PROVISION_LED_TYPES = ["ws281x", "sk6812-rgbw"] as const;
@@ -235,11 +236,8 @@ export function stripColorOrderCopy(input: {
   return `Colour order on this bus: ${live}. This is not ${catalog}.`;
 }
 
-export function provisionCaption(source: "fixture" | "controller"): string {
-  if (source === "fixture") {
-    return "Software-green from the fixture. Not Hardware Done.";
-  }
-  return "Read from /json/cfg. Not Hardware Done.";
+export function provisionCaption(source: LiveSource): string {
+  return softwareHonestyCaption(source) ?? "Read from /json/cfg. Not Hardware Done.";
 }
 
 /** `WLED 0.15.4` / `0.15.4+foo` → `0.15.4` (Nightplot `baseFirmwareVersion`). */
@@ -320,7 +318,7 @@ export function busNativeType(bus: Record<string, unknown>): number | null {
 export function parseWledProvision(
   body: unknown,
   firmware: string | null = null,
-  source: "fixture" | "controller" = "controller",
+  source: LiveSource = "controller",
 ): ProvisionRead {
   const caption = provisionCaption(source);
   const mapping = resolveAnyProvisionMapping(firmware);

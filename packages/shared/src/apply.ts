@@ -1,4 +1,9 @@
-import { parseHexColor, type LiveSessionKind } from "./live.ts";
+import {
+  parseHexColor,
+  softwareHonestyCaption,
+  type LiveSessionKind,
+  type LiveSource,
+} from "./live.ts";
 import type { RangeSpan } from "./range.ts";
 
 export type AppliedRange = {
@@ -167,7 +172,7 @@ export function applyRows(sent: AppliedRange[], read: RangeSpan[]): ApplyRow[] {
 export function applyUnreadFailed(
   sent: AppliedRange[],
   message: string,
-  source: "fixture" | "controller",
+  source: LiveSource,
 ): ApplyResult {
   return {
     status: "failed",
@@ -186,7 +191,7 @@ export function applyUnreadFailed(
  */
 export function applyUnknownSegments(
   sent: AppliedRange[],
-  source: "fixture" | "controller",
+  source: LiveSource,
 ): ApplyResult {
   return applyUnreadFailed(sent, APPLY_UNKNOWN_SEGMENTS_MESSAGE, source);
 }
@@ -199,7 +204,7 @@ export function applyUnknownSegments(
 export function applyOutcome(
   sent: AppliedRange[],
   read: RangeSpan[] | null,
-  source: "fixture" | "controller",
+  source: LiveSource,
 ): ApplyResult {
   if (read === null) {
     return applyUnknownSegments(sent, source);
@@ -235,12 +240,11 @@ export function adoptControllerRangesReason(apply: ApplyResult): string | null {
 
 /** Caption from the reread. Unread (`null`) does not claim a report. Known empty does not say “these ranges” or “them”. */
 export function applyCaption(
-  source: "fixture" | "controller",
+  source: LiveSource,
   read: RangeSpan[] | null,
 ): string {
-  if (source === "fixture") {
-    return "Software-green from the fixture. Not Hardware Done.";
-  }
+  const software = softwareHonestyCaption(source);
+  if (software) return software;
   if (read == null) {
     return APPLY_UNREAD_CAPTION;
   }

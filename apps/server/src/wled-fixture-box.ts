@@ -1,6 +1,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { WLED_SK6812_RGBW_NATIVE_TYPE, WLED_WS281X_NATIVE_TYPE } from "@nightplot/shared";
 
+export type FixtureBoxKind = "fixture" | "sim";
+
 export type FixtureBoxOptions = {
   name?: string;
   ver?: string;
@@ -15,6 +17,12 @@ export type FixtureBoxOptions = {
   busMismatch?: boolean;
   infoCountLag?: boolean;
   infoNameLag?: boolean;
+  /** In-process fixture vs external-process sim. Default `fixture`. */
+  kind?: FixtureBoxKind;
+  /** Omit `state.seg` on GET so Apply reread stays unknown. */
+  unknownReread?: boolean;
+  /** POST /json/state returns not-ok (All Off / live write fail). */
+  refuseState?: boolean;
 };
 
 type Seg = { start: number; stop: number; col: number[][] };
@@ -80,10 +88,13 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     seg: [{ start: 0, stop: ledCount, col: [[255, 160, 0]] }],
   };
   const pixels = Array.from({ length: ledCount }, () => "#ffa000");
+  const kind: FixtureBoxKind = options.kind === "sim" ? "sim" : "fixture";
   let mismatch = options.mismatch ?? false;
   let busMismatch = options.busMismatch ?? false;
   let infoCountLag = options.infoCountLag ?? false;
   let infoNameLag = options.infoNameLag ?? false;
+  let unknownReread = options.unknownReread ?? false;
+  let refuseState = options.refuseState ?? false;
 
   function resizeStrip(nextCount: number) {
     const count = Math.max(1, Math.min(2048, Math.round(nextCount)));
@@ -185,6 +196,22 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     return pixels.slice();
   }
 
+  function reportedState() {
+    if (unknownReread) return { on: state.on, bri: state.bri };
+    return state;
+  }
+
+  function paintDdp(offsetBytes: number, rgb: Uint8Array) {
+    const start = Math.max(0, Math.floor(offsetBytes / 3));
+    for (let i = 0; i + 2 < rgb.length; i += 3) {
+      const index = start + i / 3;
+      if (index >= pixels.length) break;
+      pixels[index] = `#${[rgb[i], rgb[i + 1], rgb[i + 2]]
+        .map((n) => Math.max(0, Math.min(255, n ?? 0)).toString(16).padStart(2, "0"))
+        .join("")}`;
+    }
+  }
+
   function setInfoNameLag(on: boolean) {
     infoNameLag = on;
     if (!infoNameLag) info.name = cfg.id.name;
@@ -195,18 +222,18 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     res.setHeader("Content-Type", "application/json");
 
     if (url === "/json") {
-      res.end(JSON.stringify({ info, state }));
+      res.end(JSON.stringify({ info, state: reportedState(), nightplot: kind }));
       return;
     }
     if (url === "/json/info") {
-      res.end(JSON.stringify(info));
+      res.end(JSON.stringify({ ...info, nightplot: kind }));
       return;
     }
     if (url === "/json/live") {
       res.end(
         JSON.stringify({
           leds: liveLeds().map((hex) => hex.slice(1)),
-          nightplot: "fixture",
+          nightplot: kind,
         }),
       );
       return;
@@ -215,11 +242,33 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       if (req.method === "POST" || req.method === "PUT") {
         readJson(req, (body) => {
           if (typeof body.on === "boolean") mismatch = body.on;
-          res.end(JSON.stringify({ mismatch, nightplot: "fixture" }));
+          res.end(JSON.stringify({ mismatch, nightplot: kind }));
         });
         return;
       }
-      res.end(JSON.stringify({ mismatch, nightplot: "fixture" }));
+      res.end(JSON.stringify({ mismatch, nightplot: kind }));
+      return;
+    }
+    if (url === "/nightplot/unknown-reread") {
+      if (req.method === "POST" || req.method === "PUT") {
+        readJson(req, (body) => {
+          if (typeof body.on === "boolean") unknownReread = body.on;
+          res.end(JSON.stringify({ unknownReread, nightplot: kind }));
+        });
+        return;
+      }
+      res.end(JSON.stringify({ unknownReread, nightplot: kind }));
+      return;
+    }
+    if (url === "/nightplot/refuse-state") {
+      if (req.method === "POST" || req.method === "PUT") {
+        readJson(req, (body) => {
+          if (typeof body.on === "boolean") refuseState = body.on;
+          res.end(JSON.stringify({ refuseState, nightplot: kind }));
+        });
+        return;
+      }
+      res.end(JSON.stringify({ refuseState, nightplot: kind }));
       return;
     }
     if (url === "/nightplot/info-name-lag") {
@@ -231,7 +280,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
               infoNameLag,
               infoName: info.name,
               cfgName: cfg.id.name,
-              nightplot: "fixture",
+              nightplot: kind,
             }),
           );
         });
@@ -242,7 +291,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
           infoNameLag,
           infoName: info.name,
           cfgName: cfg.id.name,
-          nightplot: "fixture",
+          nightplot: kind,
         }),
       );
       return;
@@ -256,22 +305,27 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       if (req.method === "POST" || req.method === "PUT") {
         readJson(req, (body) => {
           applyCfg(body);
-          res.end(JSON.stringify({ success: true, nightplot: "fixture" }));
+          res.end(JSON.stringify({ success: true, nightplot: kind }));
         });
         return;
       }
-      res.end(JSON.stringify(cfg));
+      res.end(JSON.stringify({ ...cfg, nightplot: kind }));
       return;
     }
     if (url === "/json/state") {
       if (req.method === "POST" || req.method === "PUT") {
+        if (refuseState) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: "refused", nightplot: kind }));
+          return;
+        }
         readJson(req, (body) => {
           applyState(body);
-          res.end(JSON.stringify({ success: true, state }));
+          res.end(JSON.stringify({ success: true, state: reportedState(), nightplot: kind }));
         });
         return;
       }
-      res.end(JSON.stringify(state));
+      res.end(JSON.stringify(reportedState()));
       return;
     }
     res.statusCode = 404;
@@ -290,7 +344,23 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     get ledCount() {
       return ledCount;
     },
+    get kind() {
+      return kind;
+    },
+    get unknownReread() {
+      return unknownReread;
+    },
+    get refuseState() {
+      return refuseState;
+    },
     applyCfg,
+    paintDdp,
+    setUnknownReread(on: boolean) {
+      unknownReread = on;
+    },
+    setRefuseState(on: boolean) {
+      refuseState = on;
+    },
     setInfoNameLag,
     setBusMismatch(on: boolean) {
       busMismatch = on;

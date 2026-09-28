@@ -1,3 +1,5 @@
+import { softwareHonestyCaption, type LiveSource } from "./live.ts";
+
 export const SAFE_FIELDS = [
   "displayName",
   "turnOnAtBoot",
@@ -51,17 +53,14 @@ const emptySettings = (): WledSafeSettings => ({
   currentLimitMa: null,
 });
 
-export function safeCaption(source: "fixture" | "controller"): string {
-  if (source === "fixture") {
-    return "Software-green from the fixture. Not Hardware Done.";
-  }
-  return "Read from /json/cfg. Not Hardware Done.";
+export function safeCaption(source: LiveSource): string {
+  return softwareHonestyCaption(source) ?? "Read from /json/cfg. Not Hardware Done.";
 }
 
 export function parseWledCfg(
   body: unknown,
   firmware: string | null = null,
-  source: "fixture" | "controller" = "controller",
+  source: LiveSource = "controller",
 ): SafeRead {
   const caption = safeCaption(source);
   if (!body || typeof body !== "object" || Array.isArray(body)) {

@@ -12,8 +12,42 @@ export const BLINK_PULSE_MS = 3000;
 export const BLINK_COLOR = "#f4f1ea";
 
 export type LiveSessionKind = "preview" | "blink";
-export type LiveSource = "fixture" | "controller";
+export type LiveSource = "fixture" | "sim" | "controller";
 export type SeenByYou = "yes" | "no" | null;
+
+/** Quiet caption for a sim enroll. Not Hardware Done. */
+export const SOFTWARE_PATH_ONLY_CAPTION = "Software path only. Not Hardware Done.";
+
+/** Quiet caption for the in-process fixture. Not Hardware Done. */
+export const FIXTURE_SOFTWARE_GREEN_CAPTION =
+  "Software-green from the fixture. Not Hardware Done.";
+
+export function parseNightplotTag(tag: unknown): LiveSource {
+  if (tag === "fixture") return "fixture";
+  if (tag === "sim") return "sim";
+  return "controller";
+}
+
+export function honestySource(source?: LiveSource | null): LiveSource {
+  return source === "fixture" || source === "sim" ? source : "controller";
+}
+
+/** Prefer sim over fixture when All Off / manage saw more than one kind. */
+export function foldHonestySource(
+  current: LiveSource,
+  incoming?: LiveSource | null,
+): LiveSource {
+  if (incoming === "sim") return "sim";
+  if (incoming === "fixture" && current !== "sim") return "fixture";
+  return current;
+}
+
+/** Fixture / sim Quiet captions. Null means use the controller wording. */
+export function softwareHonestyCaption(source: LiveSource): string | null {
+  if (source === "fixture") return FIXTURE_SOFTWARE_GREEN_CAPTION;
+  if (source === "sim") return SOFTWARE_PATH_ONLY_CAPTION;
+  return null;
+}
 export type LiveEndKind = "complete" | "error" | "cancel-without-restore";
 
 export type LiveTarget = {
@@ -194,7 +228,7 @@ export function parseLiveLeds(body: unknown, ledCount: number): LiveRead | null 
   const root = body as Record<string, unknown>;
   const raw = root.leds;
   if (!Array.isArray(raw) || ledCount < 1) return null;
-  const source: LiveSource = root.nightplot === "fixture" ? "fixture" : "controller";
+  const source = parseNightplotTag(root.nightplot);
 
   if (raw.every((item) => typeof item === "string")) {
     return {
@@ -254,10 +288,10 @@ export function beadsFromLive(
 }
 
 export function fixtureCaption(source: LiveSource): string {
-  if (source === "fixture") {
-    return "Software-green from the fixture. Not Hardware Done.";
-  }
-  return "The controller reported this. A person still has to confirm — not Hardware Done.";
+  return (
+    softwareHonestyCaption(source) ??
+    "The controller reported this. A person still has to confirm — not Hardware Done."
+  );
 }
 
 export function proofLadder(input: {

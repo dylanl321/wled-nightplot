@@ -103,6 +103,31 @@ describe("fixture info/cfg name divergence", () => {
     expect(box.ledCount).toBe(120);
   });
 
+  it("tags sim /json/live as software path, not fixture", async () => {
+    const box = createFixtureBox({ kind: "sim", name: "WLED-sim" });
+    const base = await listen(box);
+    const live = (await (await fetch(`${base}/json/live`)).json()) as { nightplot: string };
+    const info = (await (await fetch(`${base}/json/info`)).json()) as { nightplot: string };
+    expect(live.nightplot).toBe("sim");
+    expect(info.nightplot).toBe("sim");
+    expect(box.kind).toBe("sim");
+  });
+
+  it("omits state.seg when unknown-reread is on", async () => {
+    const box = createFixtureBox({ kind: "sim" });
+    const base = await listen(box);
+    await fetch(`${base}/nightplot/unknown-reread`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ on: true }),
+    });
+    const json = (await (await fetch(`${base}/json`)).json()) as {
+      state: { seg?: unknown; on: boolean };
+    };
+    expect(json.state.on).toBe(true);
+    expect(json.state.seg).toBeUndefined();
+  });
+
   it("leaves the bus stale when busMismatch is on", async () => {
     const box = createFixtureBox({ ledCount: 60, busMismatch: true });
     box.applyCfg({

@@ -17,6 +17,7 @@ Use this product’s vocabulary. Do not invent alternate product nouns (control 
 - All Off cancels without restoring.
 - Delete is a check that runs, not an “I understand” override on unknown.
 - A registered catalog member is a slot in the table. It is not proof hardware passed. A stub endpoint must say it sent nothing.
+- A sim enroll is software path only. Fixture software-green is not strip lit. Neither is Hardware Done.
 
 ## Architecture
 

@@ -2,7 +2,7 @@
 
 Nightplot Configure is a LAN utility for home LED strips on WLED. Find a controller, enroll it as a **Light**, describe **Elements** as ranges on the strip, **Preview** colour on the beads, then **Apply**. **Blink** identifies a box. **All Off** lives on the rack.
 
-It is early software. There is no authentication and no TLS. A fixture report is a development stub, not proof that a real strip passed.
+It is early software. There is no authentication and no TLS. A fixture report is a development stub, not proof that a real strip passed. A headless sim/e2e enroll is **software path only** — still not Hardware Done. Metal benches stay human.
 
 ## Words
 
@@ -48,7 +48,7 @@ Paths and types: [architecture.md](architecture.md#shared-catalog-vs-this-light)
 
 | Doc | What |
 | --- | --- |
-| [install.md](install.md) | pnpm, ports, fixture |
+| [install.md](install.md) | pnpm, ports, fixture, sim / e2e |
 | [deploy.md](deploy.md) | Docker / compose / GHCR on a LAN |
 | [architecture.md](architecture.md) | Tree, seams, shared catalog vs this Light |
 | [ui/README.md](ui/README.md) | v2 prototype |

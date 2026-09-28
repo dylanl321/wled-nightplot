@@ -67,6 +67,10 @@ describe("live readback", () => {
       total: 26,
     });
     expect(fixtureCaption("fixture")).toMatch(/Not Hardware Done/);
+    const sim = parseLiveLeds({ leds, nightplot: "sim" }, 60);
+    expect(sim?.source).toBe("sim");
+    expect(fixtureCaption("sim")).toMatch(/software path only/i);
+    expect(fixtureCaption("sim")).toMatch(/Not Hardware Done/);
   });
 
   it("keeps unreachable beads unknown — never a last colour", () => {

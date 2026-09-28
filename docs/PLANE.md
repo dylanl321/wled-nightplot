@@ -80,6 +80,7 @@ Repo / ops (not the next R-slice; do not fold into an R-ticket):
 | --- | --- |
 | CONFIG-20 | North Star / MVP sanity check vs shipped Configure |
 | CONFIG-26 | Real-strip Hardware Done — validate configure spine on live WLED |
+| CONFIG-91 | spike: headless WLED sim e2e lane (≠ Hardware Done) |
 | CONFIG-34 | docs/PLANE.md catch-up — series table + Publishing name |
 | CONFIG-42 | Yard deploy — human review checklist (single list) |
 | CONFIG-44 | Production docs + governance scaffold (README hub, CONTRIBUTING, CONSTITUTION, SECURITY, LICENSE, docs/*) |
@@ -144,6 +145,7 @@ Repo / ops (not the next R-slice; do not fold into an R-ticket):
 | CONFIG-52 | `4ef696a0-77d4-4442-8018-2b5f8d71d68d` |
 | CONFIG-53 | `e86daa83-0f56-4ca2-b9e5-4ee932ba9283` |
 | CONFIG-113 | `5aa6f8a8-cee2-4dd4-b916-bfc8c233c094` |
+| CONFIG-91 | `ffa2a3f4-bfb6-48c6-b6cc-c6fcd9aee9e0` |
 | CONFIG-115 | `e6d348a0-e60d-4b05-ae30-9cf3e81a13fc` |
 
 ## States

@@ -80,6 +80,8 @@ pnpm dev:demo
 
 or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light for Inspect, then **Strip** to pick a catalog LED product or set WS281x / SK6812 RGBW / node count / GPIO and **Apply** (writes `/json/cfg`, then re-reads the snapshot), **Edit ranges** to declare Elements, **Test live** to Preview or Blink, or **Safe settings** for the small `/json/cfg` set. **All Off** is on the rail / thumb bar. **Remove this Light** on Inspect runs three checks and refuses until they complete. The fixture is a software stub for development, not a verified real strip.
 
+`pnpm sim` is a separate **external process** (`127.0.0.1:48211`, DDP UDP `4048`) for the enroll → provision → Apply → live/DDP lane. Type `127.0.0.1:48211` on Add a Light. Quiet caption is **software path only**. That is not Hardware Done. Three Done layers stay distinct: fixture → sim/e2e → metal (human benches). `pnpm test` spawns the sim.
+
 By default the fixture updates `/json/info` and `/json/cfg` together. Real metal often keeps the old `/json/info` name until reboot. To simulate that lag: `NIGHTPLOT_FIXTURE_INFO_NAME_LAG=1 pnpm fixture`, or `POST http://127.0.0.1:48210/nightplot/info-name-lag` with `{ "on": true }`. Safe settings rename still updates the rack title from cfg. `{ "on": false }` copies cfg → info. `NIGHTPLOT_FIXTURE_NATIVE_TYPE=30` starts the fixture bus as SK6812 RGBW; default is 22 (WS281x RGB). Enroll keeps the default driver until Inspect or Strip reads cfg. A fixture readback is still a development stub.
 
 **Ports.** Find uses a real advertised port: SSDP `LOCATION`, mDNS SRV. It does not assume `:80`. A host with no port from find is listed as needs host:port — it is not Add-able. Typed address is the escape hatch (a typed host with no port still means `:80`). Listed hosts use `displayHost` and hide default `:80` (a not-WLED reject on port 80 is `192.168.1.80`, not `192.168.1.80:80`). The fixture is **not** on 80; type `127.0.0.1:48210` or use the demo target list.
@@ -91,7 +93,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | Doc | What |
 | --- | --- |
 | [docs/overview.md](docs/overview.md) | What Configure is, enroll-then-assign, and how the flow works |
-| [docs/install.md](docs/install.md) | Install, env, fixture, proto |
+| [docs/install.md](docs/install.md) | Install, env, fixture, sim / e2e, proto |
 | [docs/deploy.md](docs/deploy.md) | Docker / compose / GHCR on a LAN |
 | [docs/architecture.md](docs/architecture.md) | Real paths and symbols |
 | [docs/ui/README.md](docs/ui/README.md) | v2 prototype (visual source of truth) |

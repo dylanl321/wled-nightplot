@@ -244,6 +244,9 @@ describe("apply match", () => {
     expect(applyCaption("fixture", [{ start: 0, stop: 24 }])).toMatch(
       /Software-green from the fixture/,
     );
+    expect(applyCaption("sim", [{ start: 0, stop: 24 }])).toMatch(/software path only/i);
+    expect(applyCaption("sim", null)).toMatch(/Not Hardware Done/);
+    expect(applyCaption("sim", [])).not.toMatch(/controller reported/);
   });
 
   it("offers adopt only when the reread named ranges", () => {

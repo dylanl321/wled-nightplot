@@ -11,7 +11,8 @@
     "test": "pnpm -r --if-present test",
     "lint": "pnpm --filter @nightplot/web lint",
     "proto": "pnpm dlx serve docs/ui -p 43182",
-    "fixture": "pnpm --filter @nightplot/server fixture"
+    "fixture": "pnpm --filter @nightplot/server fixture",
+    "sim": "pnpm --filter @nightplot/server sim"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
