@@ -55,68 +55,49 @@ function memoryBox() {
     if (typeof body.on === "boolean") on = body.on;
     if (typeof body.bri === "number") bri = body.bri;
     if (body.seg) {
-      const leftover = body.seg.filter((seg) => typeof seg.id === "number" && seg.stop <= seg.start);
-      const paints = body.seg.filter((seg) => !(typeof seg.id === "number" && seg.stop <= seg.start));
-      for (const seg of leftover) {
-        const found = segs.find((row) => row.id === seg.id);
-        if (found) {
-          for (let i = found.start; i < found.stop && i < leds.length; i += 1) {
-            leds[i] = "#000000";
-          }
-        }
-        segs = segs.filter((row) => row.id !== seg.id);
-      }
-      const named = paints.length > 0 && paints.every((seg) => typeof seg.id === "number");
-      if (named) {
-        const byId = new Map<number, { id: number; start: number; stop: number; col?: number[][] }>();
-        for (const seg of segs) {
-          byId.set(seg.id, seg);
-        }
-        for (const seg of paints) {
-          const id = seg.id!;
-          if (seg.stop <= seg.start) {
+      // WLED `deserializeSegment`: `id = elem["id"] | it` (ArduinoJson default —
+      // named id, else array index). Rows apply in that order. Same as fixture
+      // `applyState` after CONFIG-143. Leftover pre-pass before unnamed apply
+      // hid a later leftover `id: 1` `stop: 0` deleting a just-inferred second
+      // range (CONFIG-148). Unmentioned leftover overlay ids stay. App-test
+      // stand-in — not metal.
+      const byId = new Map<number, { id: number; start: number; stop: number; col?: number[][] }>();
+      segs.forEach((seg, index) => {
+        byId.set(seg.id ?? index, { ...seg, id: seg.id ?? index });
+      });
+      body.seg.forEach((row, it) => {
+        const id = typeof row.id === "number" ? row.id : it;
+        if (row.stop <= row.start) {
+          const found = byId.get(id);
+          if (found) {
+            for (let i = found.start; i < found.stop && i < leds.length; i += 1) {
+              leds[i] = "#000000";
+            }
             byId.delete(id);
-            continue;
           }
-          const prev = byId.get(id);
-          byId.set(id, { id, start: seg.start, stop: seg.stop, col: seg.col ?? prev?.col });
+          return;
         }
-        const ordered = [...byId.values()].sort((a, b) => a.id - b.id);
-        segs = ordered;
-        for (const seg of ordered) {
-          const rgb = seg.col?.[0];
-          if (!rgb) continue;
-          const hex = `#${rgb
-            .slice(0, 3)
-            .map((n) => n.toString(16).padStart(2, "0"))
-            .join("")}`;
-          color = hex;
-          for (let i = seg.start; i < seg.stop && i < leds.length; i += 1) {
-            leds[i] = hex;
-          }
+        const prev = byId.get(id);
+        byId.set(id, {
+          id,
+          start: row.start,
+          stop: row.stop,
+          col: row.col ?? prev?.col ?? segs[0]?.col,
+        });
+      });
+      const ordered = [...byId.values()].sort((a, b) => a.id - b.id);
+      if (ordered.length) segs = ordered;
+      for (const seg of segs) {
+        const rgb = seg.col?.[0];
+        if (!rgb) continue;
+        const hex = `#${rgb
+          .slice(0, 3)
+          .map((n) => n.toString(16).padStart(2, "0"))
+          .join("")}`;
+        color = hex;
+        for (let i = seg.start; i < seg.stop && i < leds.length; i += 1) {
+          leds[i] = hex;
         }
-      } else {
-        const next: { id: number; start: number; stop: number; col?: number[][] }[] = [];
-        for (const [index, seg] of paints.entries()) {
-          if (seg.stop <= seg.start) continue;
-          next.push({
-            id: typeof seg.id === "number" ? seg.id : index,
-            start: seg.start,
-            stop: seg.stop,
-            col: seg.col,
-          });
-          const rgb = seg.col?.[0];
-          if (!rgb) continue;
-          const hex = `#${rgb
-            .slice(0, 3)
-            .map((n) => n.toString(16).padStart(2, "0"))
-            .join("")}`;
-          color = hex;
-          for (let i = seg.start; i < seg.stop && i < leds.length; i += 1) {
-            leds[i] = hex;
-          }
-        }
-        if (next.length) segs = next;
       }
     }
     return true;
@@ -130,7 +111,9 @@ function memoryBox() {
     readLive,
     probe: (async () => ({ kind: "found" as const, snapshot: snap() })) satisfies ProbeFn,
     leds,
-    segs,
+    get segs() {
+      return segs;
+    },
     setName(next: string) {
       name = next;
     },
@@ -1330,6 +1313,110 @@ describe("preview + blink", () => {
       ]);
       expect(live.leds[4]).not.toBe("fff4dc");
       expect(live.leds[7]).not.toBe("ffa000");
+    });
+  });
+
+  describe("End Preview multi-range restore on memoryBox (CONFIG-148)", () => {
+    it("drops the second unnamed range when leftover overlay id:1 stop:0 follows", async () => {
+      const box = memoryBox();
+      await box.write(
+        { hostname: "192.168.1.72", port: 80 },
+        {
+          on: true,
+          bri: 180,
+          tt: 0,
+          seg: [
+            { id: 0, start: 0, stop: 60, col: [[0, 0, 0]] },
+            { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+          ],
+        },
+      );
+      await box.write(
+        { hostname: "192.168.1.72", port: 80 },
+        {
+          on: true,
+          bri: 40,
+          seg: [
+            { start: 0, stop: 3, col: [[255, 160, 0]] },
+            { start: 3, stop: 7, col: [[255, 160, 0]] },
+            { id: 1, start: 0, stop: 0 },
+          ],
+        },
+      );
+      expect(box.segs.find((seg) => (seg.id ?? 0) === 0)).toMatchObject({
+        start: 0,
+        stop: 3,
+      });
+      expect(box.segs.some((seg) => seg.start === 3 && seg.stop === 7)).toBe(false);
+      expect(box.segs.some((seg) => seg.id === 1 && seg.stop > seg.start)).toBe(false);
+      expect(box.leds[0]).toBe("#ffa000");
+      expect(box.leds[2]).toBe("#ffa000");
+      expect(box.leds[3]).not.toBe("#ffa000");
+      expect(box.leds[4]).not.toBe("#fff4dc");
+    });
+
+    it("keeps both restore ranges after locate leftover id:1", async () => {
+      const writes: import("./wled/live.ts").WledStateWrite[] = [];
+      const { app, box } = testApp({
+        write: async (target, body) => {
+          writes.push(body);
+          return box.write(target, body);
+        },
+      });
+      await box.write(
+        { hostname: "192.168.1.72", port: 80 },
+        {
+          on: true,
+          bri: 40,
+          seg: [
+            { id: 0, start: 0, stop: 3, col: [[255, 160, 0]] },
+            { id: 1, start: 3, stop: 7, col: [[255, 160, 0]] },
+          ],
+        },
+      );
+      const id = await enroll(app);
+      writes.length = 0;
+
+      const locate = await app.request(`/api/lights/${id}/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ start: 4, stop: 5, color: "#fff4dc", brightness: 180 }),
+      });
+      expect(locate.status).toBe(200);
+      expect(writes[0]?.seg).toEqual([
+        { id: 0, start: 0, stop: 60, col: [[0, 0, 0]] },
+        { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+      ]);
+      writes.length = 0;
+
+      const ended = await app.request(`/api/lights/${id}/preview/end`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(ended.status).toBe(200);
+      expect(((await ended.json()) as { restored: boolean }).restored).toBe(true);
+      expect(writes).toHaveLength(1);
+      expect(writes[0]?.seg).toEqual([
+        { id: 1, start: 0, stop: 0 },
+        { id: 0, start: 0, stop: 3, col: [[255, 160, 0]] },
+        { id: 1, start: 3, stop: 7, col: [[255, 160, 0]] },
+      ]);
+      expect(box.segs).toEqual([
+        { id: 0, start: 0, stop: 3, col: [[255, 160, 0]] },
+        { id: 1, start: 3, stop: 7, col: [[255, 160, 0]] },
+      ]);
+      expect(box.leds.slice(0, 7)).toEqual([
+        "#ffa000",
+        "#ffa000",
+        "#ffa000",
+        "#ffa000",
+        "#ffa000",
+        "#ffa000",
+        "#ffa000",
+      ]);
+      expect(box.leds[4]).not.toBe("#fff4dc");
+      expect(box.leds[7]).not.toBe("#ffa000");
     });
   });
 

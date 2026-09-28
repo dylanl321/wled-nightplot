@@ -2,7 +2,7 @@
 
 Nightplot Configure is a LAN utility for home LED strips on WLED. Find a controller, enroll it as a **Light**, describe **Elements** as ranges on the strip, **Preview** colour on the beads, then **Apply**. **Blink** identifies a box. **All Off** lives on the rack.
 
-It is early software. There is no authentication and no TLS. A fixture report is a development stub, not proof that a real strip passed. The fixture still applies unnamed leftover-last writes in array order (`id | it`) the way WLED does — a later leftover `id: 1` `stop: 0` can drop a just-inferred second range. End Preview restore after locate names restore range ids and posts leftover `stop: 0` first, so that collision is not the production write. Leftover pixels stay until leftover `stop: 0`. That is still a fixture stand-in, not metal. A headless sim/e2e enroll is **software path only** — still not Hardware Done. Metal benches stay human.
+It is early software. There is no authentication and no TLS. A fixture report is a development stub, not proof that a real strip passed. The fixture still applies unnamed leftover-last writes in array order (`id | it`) the way WLED does — a later leftover `id: 1` `stop: 0` can drop a just-inferred second range. App-test `memoryBox` applies that same order so the collision is visible in server app tests — leftover pre-pass before unnamed apply was the test-double gap. End Preview restore after locate names restore range ids and posts leftover `stop: 0` first, so that collision is not the production write. Leftover pixels stay until leftover `stop: 0`. That is still a fixture stand-in, not metal. A headless sim/e2e enroll is **software path only** — still not Hardware Done. Metal benches stay human.
 
 ## Words
 
