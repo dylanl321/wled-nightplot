@@ -133,13 +133,8 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | GET | `/api/lights/:id/delete-checks` | Elements / live sessions / controller state. Unknown is not safe. |
 | DELETE | `/api/lights/:id` | 422 until every check is `ok`. Does not write the controller. |
 | GET | `/api/lights/:id/safe` | Fingerprinted Safe settings from `/json/cfg`. Empty fingerprint → refuse. |
-<<<<<<< HEAD
 | POST | `/api/lights/:id/safe` | `{ settings }` — write only understood fields, then reread. 422 if unsupported — refuse includes `safeWrite` (Safe settings failure panel, notice hidden). A matched display-name write patches the enrolled title from cfg even when `/json/info` still lags. |
-| PATCH | `/api/lights/:id/led-product` | `{ ledProductId }` — attach a shared catalog product or `null` for manual fields. Persists on the Light. Does not write WLED. Does not replace Strip Apply. |
-=======
-| POST | `/api/lights/:id/safe` | `{ settings }` — write only understood fields, then reread. 422 if unsupported — refuse includes `safeWrite` (write-failure UI, not notice-only). A matched display-name write patches the enrolled title from cfg even when `/json/info` still lags. |
 | PATCH | `/api/lights/:id/led-product` | `{ ledProductId }` — attach a shared catalog product or `null` for manual fields. Persists on the Light. Nightplot bookkeeping — not Apply, not a WLED write. |
->>>>>>> 227ff40 (CONFIG-115: shared catalog vs this Light honesty paragraph)
 | GET | `/api/lights/:id/provision` | First-time strip bus from `/json/cfg` (`hw.led.ins[0]`). Empty / multi-bus / unsupported firmware → refuse. |
 | POST | `/api/lights/:id/provision` | `{ provision: { ledType, length, gpio } }` — `ws281x` or `sk6812-rgbw`. Writes reviewed cfg bus fields, then rereads cfg and snapshot. 200 only on match. 409 keeps the failure. 422 if unsupported — refuse includes `provisionWrite` (Strip failure panel, not notice-only). Unknown types are not written. A successful length change reconciles declared Elements (clip / drop / flag leftover coverage) and returns `provisionWrite.ranges`. |
 
