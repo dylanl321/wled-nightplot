@@ -155,15 +155,15 @@ function queryMdns(browser: MdnsBrowser, socket: Socket, address: string): Promi
   });
 }
 
-type MdnsBrowser = {
-  on: (event: "response", fn: (res: { answers?: MdnsRecordInput[]; additionals?: MdnsRecordInput[] }) => void) => void;
-  on: (event: "error" | "ready", fn: () => void) => void;
-  query: (
+interface MdnsBrowser {
+  on(event: "response", fn: (res: { answers?: MdnsRecordInput[]; additionals?: MdnsRecordInput[] }) => void): void;
+  on(event: "error" | "ready", fn: () => void): void;
+  query(
     q: { questions: { name: string; type: string }[] },
     cb?: () => void,
-  ) => void;
-  destroy: () => void;
-};
+  ): void;
+  destroy(): void;
+}
 
 async function collectSsdp(ms: number, addresses: string[]): Promise<Collected[]> {
   if (addresses.length === 0) return [];

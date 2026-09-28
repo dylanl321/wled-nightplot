@@ -4,16 +4,15 @@ import { discoverySendAddresses, forEachAdapter, lanIPv4s } from "./interfaces.t
 
 function iface(
   address: string,
-  extra?: Partial<NetworkInterfaceInfo>,
+  extra?: { netmask?: string; internal?: boolean },
 ): NetworkInterfaceInfo {
   return {
     address,
-    netmask: "255.255.255.0",
+    netmask: extra?.netmask ?? "255.255.255.0",
     family: "IPv4",
     mac: "00:00:00:00:00:00",
-    internal: false,
+    internal: extra?.internal ?? false,
     cidr: null,
-    ...extra,
   };
 }
 
