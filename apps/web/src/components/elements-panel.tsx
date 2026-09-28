@@ -127,6 +127,7 @@ export function ElementsPanel({
     ledCount: light.ledCount,
     frame,
     brightness: light.brightness,
+    moving: state.hover != null || state.drag != null,
     onDetail,
   });
 
