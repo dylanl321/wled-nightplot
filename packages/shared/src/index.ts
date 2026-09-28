@@ -68,6 +68,7 @@ export {
   SOFTWARE_PATH_ONLY_CAPTION,
   fixtureCaption,
   firstLocateUnknownCaption,
+  decorateLiveCaption,
   previewHopCaption,
   previewLocateCaption,
   foldHonestySource,

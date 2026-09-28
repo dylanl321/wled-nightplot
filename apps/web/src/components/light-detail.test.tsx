@@ -612,6 +612,7 @@ describe("LightDetail Apply unknown colour", () => {
         },
         source: "fixture",
         seenByYou: null,
+        leftoverClears: "unknown",
       },
       liveCaption: `Software-green from the fixture. Not Hardware Done. ${FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION}`,
     };
@@ -620,6 +621,12 @@ describe("LightDetail Apply unknown colour", () => {
       vi.fn(async (input: RequestInfo | URL) => {
         const path = requestPath(String(input));
         if (path === `/api/lights/${initial.light.id}/preview`) {
+          return new Response(JSON.stringify(after), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (path === `/api/lights/${initial.light.id}`) {
           return new Response(JSON.stringify(after), {
             status: 200,
             headers: { "Content-Type": "application/json" },
@@ -647,6 +654,13 @@ describe("LightDetail Apply unknown colour", () => {
     expect(screen.queryByText(/Applied/)).toBeNull();
     expect(screen.queryByText(/controller reported this/)).toBeNull();
     expect((screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(await screen.findByText(FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION, { exact: false })).toBeTruthy();
+    expect(screen.getByText(/Leftover controller segments were not cleared/)).toBeTruthy();
+    expect(screen.getByText(/Not treating leftover lights as this locate/)).toBeTruthy();
+    expect(screen.queryByText(/Applied/)).toBeNull();
+    expect(screen.queryByText(/^Software-green from the fixture\. Not Hardware Done\.$/)).toBeNull();
   });
 });
 

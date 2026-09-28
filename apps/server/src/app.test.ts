@@ -1312,12 +1312,93 @@ describe("preview + blink", () => {
       { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
     ]);
     expect(writes[0]?.seg?.some((seg) => seg.stop === 0)).toBe(false);
-    const live = (await locate.json()) as { liveCaption: string; session: { kind: string } };
+    const live = (await locate.json()) as {
+      liveCaption: string;
+      session: { kind: string; leftoverClears?: "unknown" };
+    };
     expect(live.session.kind).toBe("preview");
     expect(live.liveCaption).toContain(FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION);
     expect(live.liveCaption).toMatch(/Software-green from the fixture/);
     expect(live.liveCaption).not.toMatch(/controller reported/);
     expect(live.liveCaption).not.toMatch(/Applied/);
+    expect(live.session.leftoverClears).toBe("unknown");
+
+    const inspect = (await (
+      await app.request(`/api/lights/${id}`)
+    ).json()) as {
+      liveCaption: string;
+      session: { kind: string; leftoverClears?: "unknown" };
+    };
+    expect(inspect.session.kind).toBe("preview");
+    expect(inspect.session.leftoverClears).toBe("unknown");
+    expect(inspect.liveCaption).toBe(live.liveCaption);
+    expect(inspect.liveCaption).toContain(FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION);
+    expect(inspect.liveCaption).toMatch(/Software-green from the fixture/);
+    expect(inspect.liveCaption).not.toBe("Software-green from the fixture. Not Hardware Done.");
+    expect(inspect.liveCaption).not.toMatch(/controller reported/);
+    expect(inspect.liveCaption).not.toMatch(/Applied/);
+
+    const hop = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start: 5, stop: 6, color: "#fff4dc", brightness: 180 }),
+    });
+    expect(hop.status).toBe(200);
+    const hopped = (await hop.json()) as { liveCaption: string };
+    expect(hopped.liveCaption).toContain(FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION);
+
+    const afterHop = (await (
+      await app.request(`/api/lights/${id}/live`)
+    ).json()) as { liveCaption: string; session: { leftoverClears?: "unknown" } };
+    expect(afterHop.session.leftoverClears).toBe("unknown");
+    expect(afterHop.liveCaption).toContain(FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION);
+    expect(afterHop.liveCaption).not.toMatch(/controller reported/);
+    expect(afterHop.liveCaption).not.toMatch(/Applied/);
+  });
+
+  it("Inspect refresh does not invent first-locate leftover chrome on a named-Element Preview", async () => {
+    const infoOnly = {
+      ...snapshot,
+      on: true,
+      brightness: 40,
+      segmentColor: "#ffa000",
+      segments: null,
+    };
+    const { app } = testApp({
+      probe: async () => ({ kind: "found" as const, snapshot: infoOnly }),
+    });
+    const id = await enroll(app);
+    const detail = (await (
+      await app.request(`/api/lights/${id}`)
+    ).json()) as { elements: { id: string; label: string }[] };
+    const right = detail.elements.find((element) => element.label === "Right run");
+
+    const preview = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elementId: right?.id,
+        color: "#4f7dff",
+        brightness: 180,
+      }),
+    });
+    expect(preview.status).toBe(200);
+    const live = (await preview.json()) as {
+      liveCaption: string;
+      session: { leftoverClears?: "unknown" };
+    };
+    expect(live.session.leftoverClears).toBeUndefined();
+    expect(live.liveCaption).not.toContain(FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION);
+
+    const inspect = (await (
+      await app.request(`/api/lights/${id}`)
+    ).json()) as {
+      liveCaption: string;
+      session: { leftoverClears?: "unknown" };
+    };
+    expect(inspect.session.leftoverClears).toBeUndefined();
+    expect(inspect.liveCaption).not.toContain(FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION);
+    expect(inspect.liveCaption).toMatch(/Software-green from the fixture/);
   });
 
   it("blinks then restores, and refuses both when offline", async () => {

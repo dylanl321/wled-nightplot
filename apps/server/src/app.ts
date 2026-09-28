@@ -26,7 +26,7 @@ import {
   deleteRefuseReason,
   decideProbeAddress,
   displayHost,
-  fixtureCaption,
+  decorateLiveCaption,
   foldHonestySource,
   honestySource,
   manageCaption,
@@ -1463,11 +1463,7 @@ export function createApp(deps: AppDeps) {
         controllerWaitMs,
       }),
       liveLeds: liveRead?.leds ?? null,
-      liveCaption: liveRead
-        ? fixtureCaption(liveRead.source)
-        : current
-          ? fixtureCaption(current.source)
-          : null,
+      liveCaption: decorateLiveCaption({ live: liveRead, session: current }),
     };
   }
 

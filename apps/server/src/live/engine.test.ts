@@ -521,6 +521,8 @@ describe("Preview session update", () => {
     ]);
     expect(writes[0]?.seg?.some((seg) => seg.stop === 0)).toBe(false);
     expect(started.leftoverClears).toBe("unknown");
+    expect(started.session?.leftoverClears).toBe("unknown");
+    expect(engine.get(light.id)?.leftoverClears).toBe("unknown");
     expect(started.caption).toContain(FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION);
     expect(started.caption).toMatch(/Software-green from the fixture/);
     expect(started.caption).not.toMatch(/controller reported/);
@@ -540,6 +542,8 @@ describe("Preview session update", () => {
     expect(writes[0]?.seg).toEqual([{ id: 1, start: 5, stop: 6, col: [[255, 244, 220]] }]);
     expect(writes[0]?.seg?.some((seg) => seg.stop === 0)).toBe(false);
     expect(hopped.leftoverClears).toBe("unknown");
+    expect(hopped.session?.leftoverClears).toBe("unknown");
+    expect(engine.get(light.id)?.leftoverClears).toBe("unknown");
     expect(hopped.caption).toContain(FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION);
     expect(hopped.caption).not.toMatch(/controller reported/);
     expect(hopped.caption).not.toMatch(/Applied/);
