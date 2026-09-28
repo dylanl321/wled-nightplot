@@ -24,6 +24,7 @@ import {
 import {
   locateHopWrite,
   previewWrite,
+  previewWriteLeavingOverlay,
   previewWriteSpans,
   restoreWrite,
   restoreWriteFromSnapshot,
@@ -169,7 +170,9 @@ export function createLiveEngine(deps: {
     let wrote = false;
     if (!sameWrite) {
       const locateHop = painted != null || adHoc != null;
-      const body = locateHop ? locateHopWrite(picture, last) : picture;
+      const body = locateHop
+        ? locateHopWrite(picture, last)
+        : previewWriteLeavingOverlay(picture, last);
       const sent = await deps.write(dest, body);
       if (!sent) {
         return {

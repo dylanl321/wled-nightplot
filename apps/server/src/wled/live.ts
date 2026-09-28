@@ -317,6 +317,32 @@ export function previewWrite(
   return { on: true, bri: brightness, seg: [{ start, stop, col: [hexToTriple(color)] }] };
 }
 
+/**
+ * Named-Element / Blink Preview posts one un-id’d segment. WLED keeps leftover
+ * overlay ids (underlay 0 + lit 1…) unless they are cleared. Append `stop: 0`
+ * only for leftover ids we authored on the last overlay picture — never invent
+ * a first-locate leftover count (CONFIG-137). Id 0 stays the un-id’d Preview
+ * slot. Preview is not Apply.
+ */
+export function previewWriteLeavingOverlay(
+  desired: WledStateWrite,
+  previous: WledStateWrite | undefined,
+): WledStateWrite {
+  const nextSegs = desired.seg;
+  const prevSegs = previous?.seg;
+  if (!nextSegs?.length || !prevSegs?.length) return desired;
+  if (nextSegs.some((seg) => seg.id != null)) return desired;
+  if (!prevSegs.every((seg) => seg.id != null)) return desired;
+  const leftovers: WledSegWrite[] = [];
+  for (const seg of prevSegs) {
+    if (seg.id != null && seg.id > 0 && seg.stop > seg.start) {
+      leftovers.push({ id: seg.id, start: 0, stop: 0 });
+    }
+  }
+  if (leftovers.length === 0) return desired;
+  return { ...desired, seg: [...nextSegs, ...leftovers] };
+}
+
 function hexToTriple(hex: string): [number, number, number] {
   const raw = hex.replace(/^#/, "");
   return [

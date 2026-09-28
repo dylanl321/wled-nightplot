@@ -46,13 +46,24 @@ function memoryBox() {
     if (typeof body.on === "boolean") on = body.on;
     if (typeof body.bri === "number") bri = body.bri;
     if (body.seg) {
-      const named = body.seg.length > 0 && body.seg.every((seg) => typeof seg.id === "number");
+      const leftover = body.seg.filter((seg) => typeof seg.id === "number" && seg.stop <= seg.start);
+      const paints = body.seg.filter((seg) => !(typeof seg.id === "number" && seg.stop <= seg.start));
+      for (const seg of leftover) {
+        const found = segs.find((row) => row.id === seg.id);
+        if (found) {
+          for (let i = found.start; i < found.stop && i < leds.length; i += 1) {
+            leds[i] = "#000000";
+          }
+        }
+        segs = segs.filter((row) => row.id !== seg.id);
+      }
+      const named = paints.length > 0 && paints.every((seg) => typeof seg.id === "number");
       if (named) {
         const byId = new Map<number, { id: number; start: number; stop: number; col?: number[][] }>();
         for (const seg of segs) {
           byId.set(seg.id, seg);
         }
-        for (const seg of body.seg) {
+        for (const seg of paints) {
           const id = seg.id!;
           if (seg.stop <= seg.start) {
             byId.delete(id);
@@ -77,7 +88,7 @@ function memoryBox() {
         }
       } else {
         const next: { id: number; start: number; stop: number; col?: number[][] }[] = [];
-        for (const [index, seg] of body.seg.entries()) {
+        for (const [index, seg] of paints.entries()) {
           if (seg.stop <= seg.start) continue;
           next.push({
             id: typeof seg.id === "number" ? seg.id : index,
@@ -1114,6 +1125,57 @@ describe("preview + blink", () => {
     expect(box.leds[5]).toBe("#4f7dff");
     expect(box.leds[2]).toBe("#000000");
     expect(box.leds[3]).toBe("#000000");
+  });
+
+  it("clears leftover locate overlay when Preview names an Element", async () => {
+    const writes: import("./wled/live.ts").WledStateWrite[] = [];
+    const { app, box } = testApp({
+      write: async (_target, body) => {
+        writes.push(body);
+        return box.write(_target, body);
+      },
+    });
+    const id = await enroll(app);
+    const detail = (await (
+      await app.request(`/api/lights/${id}`)
+    ).json()) as { elements: { id: string; label: string }[] };
+    const right = detail.elements.find((element) => element.label === "Right run");
+
+    const locate = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start: 4, stop: 5, color: "#fff4dc", brightness: 180 }),
+    });
+    expect(locate.status).toBe(200);
+    expect(box.leds[4]).toBe("#fff4dc");
+    expect(writes[0]?.seg).toEqual([
+      { id: 0, start: 0, stop: 60, col: [[0, 0, 0]] },
+      { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+    ]);
+    writes.length = 0;
+
+    const named = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elementId: right?.id,
+        color: "#4f7dff",
+        brightness: 180,
+      }),
+    });
+    expect(named.status).toBe(200);
+    const live = (await named.json()) as { liveLeds: string[]; liveCaption: string };
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.seg).toEqual([
+      { start: 24, stop: 50, col: [[79, 125, 255]] },
+      { id: 1, start: 0, stop: 0 },
+    ]);
+    expect(writes[0]?.seg?.[0]).not.toHaveProperty("id");
+    expect(live.liveLeds.slice(24, 50).every((led) => led === "#4f7dff")).toBe(true);
+    expect(box.leds[4]).toBe("#000000");
+    expect(box.leds[4]).not.toBe("#fff4dc");
+    expect(live.liveLeds[4]).toBe("#000000");
+    expect(live.liveCaption).toMatch(/Not Hardware Done/);
   });
 
   it("blinks then restores, and refuses both when offline", async () => {

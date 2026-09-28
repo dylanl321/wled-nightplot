@@ -408,4 +408,42 @@ describe("Preview session update", () => {
     expect(writes[0]).not.toHaveProperty("on");
     expect(writes[0]).not.toHaveProperty("bri");
   });
+
+  it("clears leftover overlay ids when Preview names an Element after locate", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    await engine.startPreview({
+      light,
+      live: { ...infoOnly, on: true, brightness: 40 },
+      elements: [],
+      range: { start: 4, stop: 5 },
+      color: "#fff4dc",
+      brightness: 180,
+    });
+    expect(writes[0]?.seg).toEqual([
+      { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+      { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+    ]);
+    writes.length = 0;
+
+    const named = await engine.startPreview({
+      light,
+      live: infoOnly,
+      elements: [{ id: "el-1", lightId: light.id, label: "Porch", start: 0, stop: 10 }],
+      elementId: "el-1",
+      color: "#4f7dff",
+      brightness: 180,
+    });
+    expect(named.ok).toBe(true);
+    if (!named.ok) return;
+    expect(named.updated).toBe(true);
+    expect(named.wrote).toBe(true);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.seg).toEqual([
+      { start: 0, stop: 10, col: [[79, 125, 255]] },
+      { id: 1, start: 0, stop: 0 },
+    ]);
+    expect(writes[0]?.seg?.[0]).not.toHaveProperty("id");
+    expect(writes[0]?.seg?.some((seg) => seg.id === 0 && seg.stop === 0)).toBe(false);
+  });
 });
