@@ -154,7 +154,10 @@ export function restoreWrite(
  * picture (`id > 0` and still lit). Id 0 stays the un-id’d restore slot
  * when restore names ranges. Unknown / empty restore still omits restore
  * ranges; leftover overlay ids are still cleared so they do not stay the
- * last overlay colour. Does not invent a leftover count. Preview is not Apply.
+ * last overlay colour. Does not invent a leftover count. A multi-range
+ * unnamed restore plus leftover `id: 1` `stop: 0` in the same array is
+ * the write WLED (`id | it`) and the fixture apply in order — the leftover
+ * can drop the second range. Preview is not Apply.
  */
 export function restoreWriteLeavingOverlay(
   restore: Pick<LiveRestoreSnapshot, "on" | "brightness" | "color" | "segments">,

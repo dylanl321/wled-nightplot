@@ -55,7 +55,7 @@ pnpm fixture
 
 serves WLED-shaped `/json` at `127.0.0.1:48210` (`apps/server/src/wled-fixture.ts`). Then `pnpm dev:demo` (sets `NIGHTPLOT_DISCOVERY_TARGETS=127.0.0.1:48210`) or type that address on Add a Light.
 
-The fixture is a software stub for development. A green readback there is not proof that a real strip passed. An unnamed Preview write keeps leftover overlay ids the way WLED does; leftover pixels stay until leftover `stop: 0`. That is still a fixture stand-in, not metal. `NIGHTPLOT_FIXTURE_NATIVE_TYPE=30` starts the bus as SK6812 RGBW (`TYPE_SK6812_RGBW`). Default is 22 (WS281x RGB). `NIGHTPLOT_FIXTURE_NATIVE_ORDER=1` starts a non-GRBW bus (`COL_ORDER_RGB` / RGBW on SK6812). Converting a bus to SK6812 RGBW writes GRBW (`order` 0); a same-type length or GPIO Apply keeps the colour order already on the box, and Strip names that order (including when it is not GRBW).
+The fixture is a software stub for development. A green readback there is not proof that a real strip passed. An unnamed Preview write keeps leftover overlay ids the way WLED does; leftover `stop: 0` applies in array order (`id | it`), so a later leftover `id: 1` can drop a just-inferred second range. Leftover pixels stay until leftover `stop: 0`. That is still a fixture stand-in, not metal. `NIGHTPLOT_FIXTURE_NATIVE_TYPE=30` starts the bus as SK6812 RGBW (`TYPE_SK6812_RGBW`). Default is 22 (WS281x RGB). `NIGHTPLOT_FIXTURE_NATIVE_ORDER=1` starts a non-GRBW bus (`COL_ORDER_RGB` / RGBW on SK6812). Converting a bus to SK6812 RGBW writes GRBW (`order` 0); a same-type length or GPIO Apply keeps the colour order already on the box, and Strip names that order (including when it is not GRBW).
 
 ## Sim / e2e (not Hardware Done)
 
