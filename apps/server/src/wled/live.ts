@@ -11,8 +11,16 @@ import {
 export type WledStateWrite = {
   on?: boolean;
   bri?: number;
+  /**
+   * Temporary transition in 100ms units (WLED `tt`). Locate frames send `0`
+   * so HTTP hops do not fade-crawl while a segment start/stop moves.
+   */
+  tt?: number;
   seg?: { id?: number; start: number; stop: number; col?: number[][] }[];
 };
+
+export type PreviewSpan = { start: number; stop: number; color: string };
+export type WledSegWrite = NonNullable<WledStateWrite["seg"]>[number];
 
 /** Stable compare for Preview hop short-circuit. Same body → no controller POST. */
 export function writeBodiesEqual(a: WledStateWrite, b: WledStateWrite): boolean {
@@ -181,44 +189,118 @@ export function applyRangesWrite(
 }
 
 /**
- * Paint several spans and black every LED they do not cover, so the
- * controller matches the screen. Adjacent spans of the same colour merge.
+ * Lit pieces for a locate picture. Adjacent same-colour spans merge.
  * An earlier span keeps LEDs that a later span also claims.
+ * Black gaps are not pieces — the overlay background covers them.
  */
-export function previewWriteSpans(
-  spans: { start: number; stop: number; color: string }[],
-  brightness: number,
-  ledCount: number,
-): WledStateWrite {
+export function locateLitPieces(spans: PreviewSpan[], ledCount: number): PreviewSpan[] {
   const ordered = [...spans]
     .filter((span) => span.stop > span.start)
     .sort((a, b) => a.start - b.start || a.stop - b.stop);
-  const pieces: { start: number; stop: number; color: string }[] = [];
+  const pieces: PreviewSpan[] = [];
   let cursor = 0;
   for (const span of ordered) {
     const start = Math.max(span.start, cursor);
     const stop = Math.min(span.stop, ledCount);
-    if (start > cursor) pieces.push({ start: cursor, stop: start, color: "#000000" });
-    if (stop > start) pieces.push({ start, stop, color: span.color });
+    if (stop > start && !isBlackTriple(hexToTriple(span.color))) {
+      pieces.push({ start, stop, color: span.color });
+    }
     cursor = Math.max(cursor, stop);
   }
-  if (cursor < ledCount) pieces.push({ start: cursor, stop: ledCount, color: "#000000" });
-  const merged: { start: number; stop: number; color: string }[] = [];
+  const merged: PreviewSpan[] = [];
   for (const piece of pieces) {
     const prev = merged[merged.length - 1];
     if (prev && prev.color === piece.color && prev.stop === piece.start) prev.stop = piece.stop;
     else merged.push({ ...piece });
   }
-  return {
-    on: true,
-    bri: brightness,
-    seg: merged.map((piece, id) => ({
-      id,
+  return merged;
+}
+
+/**
+ * Full locate picture over HTTP `/json/state` (not UDP, not websocket).
+ * Segment 0 is the whole-strip black underlay when anything is unlit.
+ * Lit pieces are 1… — no black-gap tiles, so a cursor hop does not
+ * rewrite a three-piece black|lit|black table. Adjacent same-colour
+ * merge stays. Ids are 0…n for that picture; we do not invent extras.
+ */
+export function overlayLocatePicture(
+  spans: PreviewSpan[],
+  brightness: number,
+  ledCount: number,
+): WledStateWrite {
+  const lit = locateLitPieces(spans, ledCount);
+  const seg: WledSegWrite[] = [];
+  const coversAll =
+    lit.length === 1 && lit[0] != null && lit[0].start === 0 && lit[0].stop === ledCount;
+  if (ledCount > 0 && !coversAll) {
+    seg.push({ id: 0, start: 0, stop: ledCount, col: [[0, 0, 0]] });
+  }
+  for (const piece of lit) {
+    seg.push({
+      id: seg.length,
       start: piece.start,
       stop: piece.stop,
       col: [hexToTriple(piece.color)],
-    })),
-  };
+    });
+  }
+  if (seg.length === 0 && ledCount > 0) {
+    seg.push({ id: 0, start: 0, stop: ledCount, col: [[0, 0, 0]] });
+  }
+  return { on: true, bri: brightness, tt: 0, seg };
+}
+
+/**
+ * When only the cursor (or other lit) segments moved, POST those ids.
+ * Leave the id-0 underlay unmentioned so WLED does not rebuild it.
+ * Leftover ids from a shorter picture get `stop: 0`. HTTP is the
+ * ceiling here — a still-flashing metal strip is a needs-split sibling,
+ * not UDP in this slice.
+ */
+export function locateHopWrite(
+  desired: WledStateWrite,
+  previous: WledStateWrite | undefined,
+): WledStateWrite {
+  const nextSegs = desired.seg;
+  const prevSegs = previous?.seg;
+  if (!nextSegs || !prevSegs) return desired;
+  if (!nextSegs.every((seg) => seg.id != null) || !prevSegs.every((seg) => seg.id != null)) {
+    return desired;
+  }
+  const prevById = new Map(prevSegs.map((seg) => [seg.id, seg]));
+  const nextIds = new Set(nextSegs.map((seg) => seg.id));
+  const changed: WledSegWrite[] = [];
+  for (const seg of nextSegs) {
+    const prev = prevById.get(seg.id);
+    if (!prev || !segsEqual(prev, seg)) changed.push(seg);
+  }
+  const leftovers: WledSegWrite[] = [];
+  for (const prev of prevSegs) {
+    if (prev.id != null && !nextIds.has(prev.id) && prev.stop > prev.start) {
+      leftovers.push({ id: prev.id, start: 0, stop: 0 });
+    }
+  }
+  const hopSegs = [...changed, ...leftovers];
+  const underlayTouched = changed.some((seg) => seg.id === 0);
+  if (underlayTouched) {
+    return leftovers.length === 0 ? desired : { ...desired, seg: [...nextSegs, ...leftovers] };
+  }
+  if (hopSegs.length === 0) return desired;
+  const hop: WledStateWrite = { tt: desired.tt ?? 0, seg: hopSegs };
+  if (desired.on !== previous.on) hop.on = desired.on;
+  if (desired.bri !== previous.bri) hop.bri = desired.bri;
+  return hop;
+}
+
+/**
+ * Paint several spans. Locate uses the overlay picture (underlay + lit
+ * pieces). Adjacent same-colour merge stays. Preview is not Apply.
+ */
+export function previewWriteSpans(
+  spans: PreviewSpan[],
+  brightness: number,
+  ledCount: number,
+): WledStateWrite {
+  return overlayLocatePicture(spans, brightness, ledCount);
 }
 
 export function previewWrite(
@@ -228,18 +310,11 @@ export function previewWrite(
   brightness: number,
   ledCount?: number,
 ): WledStateWrite {
-  const lit = hexToTriple(color);
-  const off: [number, number, number] = [0, 0, 0];
-  const seg: NonNullable<WledStateWrite["seg"]> = [];
-  const blackRest = ledCount != null && ledCount > 0 && (start > 0 || stop < ledCount);
-  if (blackRest && ledCount != null) {
-    if (start > 0) seg.push({ id: seg.length, start: 0, stop: start, col: [off] });
-    if (stop > start) seg.push({ id: seg.length, start, stop, col: [lit] });
-    if (stop < ledCount) seg.push({ id: seg.length, start: stop, stop: ledCount, col: [off] });
-  } else {
-    seg.push({ start, stop, col: [lit] });
+  const locateRest = ledCount != null && ledCount > 0 && (start > 0 || stop < ledCount);
+  if (locateRest && ledCount != null) {
+    return overlayLocatePicture([{ start, stop, color }], brightness, ledCount);
   }
-  return { on: true, bri: brightness, seg };
+  return { on: true, bri: brightness, seg: [{ start, stop, col: [hexToTriple(color)] }] };
 }
 
 function hexToTriple(hex: string): [number, number, number] {
@@ -249,6 +324,19 @@ function hexToTriple(hex: string): [number, number, number] {
     Number.parseInt(raw.slice(2, 4), 16) || 0,
     Number.parseInt(raw.slice(4, 6), 16) || 0,
   ];
+}
+
+function isBlackTriple(rgb: [number, number, number]): boolean {
+  return rgb[0] === 0 && rgb[1] === 0 && rgb[2] === 0;
+}
+
+function segsEqual(a: WledSegWrite, b: WledSegWrite): boolean {
+  return (
+    a.id === b.id &&
+    a.start === b.start &&
+    a.stop === b.stop &&
+    JSON.stringify(a.col ?? null) === JSON.stringify(b.col ?? null)
+  );
 }
 
 function hostForUrl(hostname: string): string {

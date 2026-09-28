@@ -25,7 +25,7 @@ export type FixtureBoxOptions = {
   refuseState?: boolean;
 };
 
-type Seg = { start: number; stop: number; col: number[][] };
+type Seg = { id?: number; start: number; stop: number; col: number[][] };
 type BusIns = {
   start: number;
   len: number;
@@ -169,27 +169,71 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     if (typeof next.on === "boolean") state.on = next.on;
     if (typeof next.bri === "number") state.bri = Math.max(0, Math.min(255, Math.round(next.bri)));
     if (!Array.isArray(next.seg)) return;
-    const segs: Seg[] = [];
+    const incoming: {
+      id: number | null;
+      start: number;
+      stop: number;
+      col: number[][] | null;
+    }[] = [];
     for (const raw of next.seg) {
       if (!raw || typeof raw !== "object") continue;
-      const row = raw as { start?: unknown; stop?: unknown; col?: unknown };
+      const row = raw as { id?: unknown; start?: unknown; stop?: unknown; col?: unknown };
       const start = typeof row.start === "number" ? row.start : 0;
       const stop = typeof row.stop === "number" ? row.stop : ledCount;
-      if (!Number.isFinite(start) || !Number.isFinite(stop) || stop <= start) continue;
-      const col = Array.isArray(row.col) && Array.isArray(row.col[0]) ? row.col : null;
-      if (!col) {
-        segs.push({ start, stop, col: state.seg[0]?.col ?? [] });
-        continue;
+      if (!Number.isFinite(start) || !Number.isFinite(stop)) continue;
+      const col = Array.isArray(row.col) && Array.isArray(row.col[0]) ? (row.col as number[][]) : null;
+      incoming.push({
+        id: typeof row.id === "number" ? row.id : null,
+        start,
+        stop,
+        col,
+      });
+    }
+    const named = incoming.length > 0 && incoming.every((row) => row.id != null);
+    if (named) {
+      const byId = new Map<number, Seg>();
+      state.seg.forEach((seg, index) => {
+        byId.set(seg.id ?? index, { ...seg, id: seg.id ?? index });
+      });
+      for (const row of incoming) {
+        const id = row.id!;
+        if (row.stop <= row.start) {
+          byId.delete(id);
+          continue;
+        }
+        const prev = byId.get(id);
+        const col = row.col ?? prev?.col ?? state.seg[0]?.col ?? [];
+        byId.set(id, { id, start: row.start, stop: row.stop, col });
       }
-      const rgb = (col[0] as number[]).map(Number);
-      segs.push({ start, stop, col: [rgb] });
-      paint(pixels, start, stop, rgb);
+      let segs = [...byId.values()].sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+      if (mismatch && segs.length > 0) {
+        const last = segs[segs.length - 1]!;
+        last.stop = Math.max(last.start + 1, last.stop - 10);
+      }
+      state.seg = segs;
+      for (const seg of state.seg) {
+        const rgb = seg.col[0];
+        if (rgb) paint(pixels, seg.start, seg.stop, rgb);
+      }
+    } else {
+      const segs: Seg[] = [];
+      for (const row of incoming) {
+        if (row.stop <= row.start) continue;
+        const col = row.col;
+        if (!col) {
+          segs.push({ start: row.start, stop: row.stop, col: state.seg[0]?.col ?? [] });
+          continue;
+        }
+        const rgb = col[0]!.map(Number);
+        segs.push({ start: row.start, stop: row.stop, col: [rgb] });
+        paint(pixels, row.start, row.stop, rgb);
+      }
+      if (mismatch && segs.length > 0) {
+        const last = segs[segs.length - 1]!;
+        last.stop = Math.max(last.start + 1, last.stop - 10);
+      }
+      if (segs.length) state.seg = segs;
     }
-    if (mismatch && segs.length > 0) {
-      const last = segs[segs.length - 1]!;
-      last.stop = Math.max(last.start + 1, last.stop - 10);
-    }
-    if (segs.length) state.seg = segs;
     if (unknownReread) hideSegAfterWrite = true;
   }
 
