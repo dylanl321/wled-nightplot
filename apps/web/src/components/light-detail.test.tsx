@@ -4,6 +4,7 @@ import {
   APPLY_EMPTY_READ_CAPTION,
   APPLY_UNKNOWN_SEGMENTS_MESSAGE,
   APPLY_UNREAD_CAPTION,
+  FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION,
   PHYSICAL_LENGTH_CAPTION,
   applyOutcome,
   applyUnknownSegments,
@@ -563,6 +564,89 @@ describe("LightDetail Apply unknown colour", () => {
       true,
     );
     expect(screen.getByText(/End the Preview first\. Preview is not Apply/)).toBeTruthy();
+  });
+
+  it("captions first locate when restore segment count is unknown — not leftover-clear success", async () => {
+    const initial = lightDetail({
+      light: lightView({
+        reachability: "online",
+        on: true,
+        brightness: 128,
+        bead: "#4f7dff",
+        segmentCount: null,
+        lastSeenAt: "2026-09-26T20:00:00.000Z",
+      }),
+      snapshotAt: "2026-09-26T20:00:00.000Z",
+      display: {
+        declared: [
+          {
+            id: "el-door",
+            label: "Door",
+            start: 0,
+            stop: 60,
+            length: 60,
+            differs: false,
+            error: false,
+          },
+        ],
+        reported: [],
+        regions: [],
+        notes: [{ text: "Segments unknown — no report to compare." }],
+      },
+    });
+    const after: LightDetailPayload = {
+      ...initial,
+      session: {
+        id: "sess-preview",
+        kind: "preview",
+        lightId: initial.light.id,
+        target: { elementId: null, label: "4–5", start: 4, stop: 5 },
+        color: "#fff4dc",
+        brightness: 180,
+        startedAt: "2026-09-26T20:00:00.000Z",
+        restore: {
+          on: true,
+          brightness: 128,
+          color: "#4f7dff",
+          segments: null,
+        },
+        source: "fixture",
+        seenByYou: null,
+      },
+      liveCaption: `Software-green from the fixture. Not Hardware Done. ${FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION}`,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = requestPath(String(input));
+        if (path === `/api/lights/${initial.light.id}/preview`) {
+          return new Response(JSON.stringify(after), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (path === `/api/lights/${initial.light.id}/preview/end`) {
+          return new Response(JSON.stringify({ ...initial, session: null, liveCaption: null }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ message: "unexpected path" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+    render(<LightDetail initial={initial} mode="ranges" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show on the real strip" }));
+
+    expect(await screen.findByText(FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION, { exact: false })).toBeTruthy();
+    expect(screen.getByText(/Leftover controller segments were not cleared/)).toBeTruthy();
+    expect(screen.getByText(/Not treating leftover lights as this locate/)).toBeTruthy();
+    expect(screen.queryByText(/Applied/)).toBeNull();
+    expect(screen.queryByText(/controller reported this/)).toBeNull();
+    expect((screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { Light, WledSnapshot } from "@nightplot/shared";
+import {
+  FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION,
+  type Light,
+  type WledSnapshot,
+} from "@nightplot/shared";
 import { createLiveEngine } from "./engine.ts";
 import type { WledStateWrite } from "../wled/live.ts";
 
@@ -432,11 +436,15 @@ describe("Preview session update", () => {
       brightness: 180,
     });
     expect(started.ok).toBe(true);
+    if (!started.ok) return;
     expect(writes[0]?.seg).toEqual([
       { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
       { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
       { id: 2, start: 0, stop: 0 },
     ]);
+    expect(started.leftoverClears).toBeUndefined();
+    expect(started.caption).not.toBe(FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION);
+    expect(started.caption).not.toMatch(/Leftover controller segments were not cleared/);
     writes.length = 0;
 
     const hopped = await engine.startPreview({
@@ -451,6 +459,8 @@ describe("Preview session update", () => {
     if (!hopped.ok) return;
     expect(writes[0]?.seg).toEqual([{ id: 1, start: 5, stop: 6, col: [[255, 244, 220]] }]);
     expect(writes[0]?.seg?.some((seg) => seg.stop === 0)).toBe(false);
+    expect(hopped.leftoverClears).toBeUndefined();
+    expect(hopped.caption).not.toMatch(/Leftover controller segments were not cleared/);
   });
 
   it("uses the first restore segment count when locate opens after a named-Element Preview", async () => {
@@ -504,11 +514,35 @@ describe("Preview session update", () => {
       brightness: 180,
     });
     expect(started.ok).toBe(true);
+    if (!started.ok) return;
     expect(writes[0]?.seg).toEqual([
       { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
       { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
     ]);
     expect(writes[0]?.seg?.some((seg) => seg.stop === 0)).toBe(false);
+    expect(started.leftoverClears).toBe("unknown");
+    expect(started.caption).toContain(FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION);
+    expect(started.caption).toMatch(/Software-green from the fixture/);
+    expect(started.caption).not.toMatch(/controller reported/);
+    expect(started.caption).not.toMatch(/Applied/);
+    writes.length = 0;
+
+    const hopped = await engine.startPreview({
+      light,
+      live: infoOnly,
+      elements: [],
+      range: { start: 5, stop: 6 },
+      color: "#fff4dc",
+      brightness: 180,
+    });
+    expect(hopped.ok).toBe(true);
+    if (!hopped.ok) return;
+    expect(writes[0]?.seg).toEqual([{ id: 1, start: 5, stop: 6, col: [[255, 244, 220]] }]);
+    expect(writes[0]?.seg?.some((seg) => seg.stop === 0)).toBe(false);
+    expect(hopped.leftoverClears).toBe("unknown");
+    expect(hopped.caption).toContain(FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION);
+    expect(hopped.caption).not.toMatch(/controller reported/);
+    expect(hopped.caption).not.toMatch(/Applied/);
   });
 
   it("clears leftover overlay ids when End Preview restores after locate", async () => {

@@ -245,7 +245,8 @@ export function locateLitPieces(spans: PreviewSpan[], ledCount: number): Preview
  * so a gap cursor between Elements does not remap later lit ids.
  * That is hop packing, not a persistent Element→seg identity.
  * First locate leftover controller ids use `firstLocateWrite` from a
- * known snapshot count — not invented here.
+ * known snapshot count — not invented here. Unknown count is a soft
+ * picture write plus `unknown-segment-count` refuse, not a leftover invent.
  */
 export function overlayLocatePicture(
   spans: PreviewSpan[],
@@ -386,27 +387,36 @@ export function isLocateOverlayWrite(write: WledStateWrite | undefined): boolean
   return Boolean(segs?.length && segs.every((seg) => seg.id != null));
 }
 
+export type FirstLocateWriteResult =
+  | { ok: true; body: WledStateWrite }
+  | { ok: false; reason: "unknown-segment-count"; body: WledStateWrite };
+
 /**
  * First locate open: `stop: 0` leftover controller ids above the overlay
  * picture when `previousSegmentCount` is known and higher. Same leftover-id
  * class as Apply’s known-count clears — not leftover vs a prior locate
- * picture (`locateHopWrite`). Unknown (`null`) is not zero: no leftover
- * invent. Known empty is no leftover clears. Overlay ids stay 0…n; we do
- * not invent a stable segment identity. Preview is not Apply.
+ * picture (`locateHopWrite`). Unknown (`null`) is not zero: leftover
+ * clears refuse (`unknown-segment-count`) and the body stays the overlay
+ * picture — soft write, never an invented leftover count. Known empty is
+ * no leftover clears. Overlay ids stay 0…n; we do not invent a stable
+ * segment identity. Preview is not Apply.
  */
 export function firstLocateWrite(
   picture: WledStateWrite,
   previousSegmentCount: number | null,
-): WledStateWrite {
+): FirstLocateWriteResult {
+  if (previousSegmentCount === null) {
+    return { ok: false, reason: "unknown-segment-count", body: picture };
+  }
   const segs = picture.seg;
-  if (!segs?.length || previousSegmentCount === null) return picture;
+  if (!segs?.length) return { ok: true, body: picture };
   const overlayCount = overlayAuthoredIdCount(segs);
-  if (previousSegmentCount <= overlayCount) return picture;
+  if (previousSegmentCount <= overlayCount) return { ok: true, body: picture };
   const leftovers: WledSegWrite[] = [];
   for (let id = overlayCount; id < previousSegmentCount; id += 1) {
     leftovers.push({ id, start: 0, stop: 0 });
   }
-  return { ...picture, seg: [...segs, ...leftovers] };
+  return { ok: true, body: { ...picture, seg: [...segs, ...leftovers] } };
 }
 
 /**

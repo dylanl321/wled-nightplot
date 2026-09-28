@@ -5,9 +5,12 @@ import {
   blinkRefuseReason,
   countRangeMatches,
   fixtureCaption,
+  FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION,
+  firstLocateUnknownCaption,
   PREVIEW_HOP_UNREAD_CAPTION,
   parseHexColor,
   previewHopCaption,
+  previewLocateCaption,
   parseLiveLeds,
   previewRefuseReason,
   proofLadder,
@@ -77,6 +80,50 @@ describe("live readback", () => {
     expect(previewHopCaption("sim")).toMatch(/software path only/i);
     expect(previewHopCaption("controller")).toBe(PREVIEW_HOP_UNREAD_CAPTION);
     expect(previewHopCaption("controller")).not.toMatch(/controller reported/);
+  });
+
+  it("captions first-locate unknown leftover count — not clear-as-success", () => {
+    expect(firstLocateUnknownCaption("controller")).toBe(FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION);
+    expect(firstLocateUnknownCaption("controller")).toMatch(/Segments unknown/);
+    expect(firstLocateUnknownCaption("controller")).toMatch(
+      /Leftover controller segments were not cleared/,
+    );
+    expect(firstLocateUnknownCaption("controller")).toMatch(/Not treating leftover lights as this locate/);
+    expect(firstLocateUnknownCaption("controller")).not.toMatch(/controller reported/);
+    expect(firstLocateUnknownCaption("controller")).not.toMatch(/Applied/);
+    expect(firstLocateUnknownCaption("fixture")).toMatch(/Software-green from the fixture/);
+    expect(firstLocateUnknownCaption("fixture")).toMatch(/Leftover controller segments were not cleared/);
+    expect(firstLocateUnknownCaption("fixture")).toMatch(/Not Hardware Done/);
+    expect(firstLocateUnknownCaption("sim")).toMatch(/software path only/i);
+    expect(firstLocateUnknownCaption("sim")).toMatch(/Leftover controller segments were not cleared/);
+    expect(
+      previewLocateCaption({
+        source: "controller",
+        live: { source: "controller", leds: ["#fff4dc"] },
+        leftoverUnknown: true,
+      }),
+    ).toBe(FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION);
+    expect(
+      previewLocateCaption({
+        source: "controller",
+        live: { source: "controller", leds: ["#fff4dc"] },
+        leftoverUnknown: true,
+      }),
+    ).not.toMatch(/controller reported/);
+    expect(
+      previewLocateCaption({
+        source: "controller",
+        live: null,
+        leftoverUnknown: false,
+      }),
+    ).toBe(PREVIEW_HOP_UNREAD_CAPTION);
+    expect(
+      previewLocateCaption({
+        source: "controller",
+        live: { source: "controller", leds: ["#fff4dc"] },
+        leftoverUnknown: false,
+      }),
+    ).toBe(fixtureCaption("controller"));
   });
 
   it("keeps unreachable beads unknown — never a last colour", () => {
