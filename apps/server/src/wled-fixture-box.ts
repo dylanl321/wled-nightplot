@@ -189,79 +189,38 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
         col,
       });
     }
-    // Honor leftover `stop: 0` even when the rest of the write is un-id’d
-    // (named-Element Preview after locate overlay). Unpaint that range so
-    // leftover lit pieces do not stay the last overlay colour. Unnamed
-    // writes that omit leftover `stop: 0` keep leftover overlay ids.
-    const paints: typeof incoming = [];
-    for (const row of incoming) {
-      if (row.id != null && row.stop <= row.start) {
-        const found = state.seg.find((seg, index) => (seg.id ?? index) === row.id);
+    // WLED `deserializeSegment`: `id = elem["id"] | it` (ArduinoJson default —
+    // named id, else array index). Rows apply in that order. A later leftover
+    // `id: 1` `stop: 0` can delete a just-inferred second unnamed range.
+    // Leftover pre-pass before inferred apply was the fixture gap (CONFIG-143).
+    // Unmentioned leftover overlay ids stay. Fixture stand-in — not metal.
+    const byId = new Map<number, Seg>();
+    state.seg.forEach((seg, index) => {
+      byId.set(seg.id ?? index, { ...seg, id: seg.id ?? index });
+    });
+    incoming.forEach((row, it) => {
+      const id = row.id ?? it;
+      if (row.stop <= row.start) {
+        const found = byId.get(id);
         if (found) {
           paint(pixels, found.start, found.stop, [0, 0, 0]);
-          state.seg = state.seg.filter((seg, index) => (seg.id ?? index) !== row.id);
+          byId.delete(id);
         }
-        continue;
+        return;
       }
-      paints.push(row);
+      const prev = byId.get(id);
+      const col = row.col ?? prev?.col ?? state.seg[0]?.col ?? [];
+      byId.set(id, { id, start: row.start, stop: row.stop, col });
+    });
+    let segs = [...byId.values()].sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+    if (mismatch && segs.length > 0) {
+      const last = segs[segs.length - 1]!;
+      last.stop = Math.max(last.start + 1, last.stop - 10);
     }
-    const named = paints.length > 0 && paints.every((row) => row.id != null);
-    if (named) {
-      const byId = new Map<number, Seg>();
-      state.seg.forEach((seg, index) => {
-        byId.set(seg.id ?? index, { ...seg, id: seg.id ?? index });
-      });
-      for (const row of paints) {
-        const id = row.id!;
-        if (row.stop <= row.start) {
-          byId.delete(id);
-          continue;
-        }
-        const prev = byId.get(id);
-        const col = row.col ?? prev?.col ?? state.seg[0]?.col ?? [];
-        byId.set(id, { id, start: row.start, stop: row.stop, col });
-      }
-      let segs = [...byId.values()].sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
-      if (mismatch && segs.length > 0) {
-        const last = segs[segs.length - 1]!;
-        last.stop = Math.max(last.start + 1, last.stop - 10);
-      }
-      state.seg = segs;
-      for (const seg of state.seg) {
-        const rgb = seg.col[0];
-        if (rgb) paint(pixels, seg.start, seg.stop, rgb);
-      }
-    } else {
-      // WLED infers omitted id from array order (`id | it`) and leaves
-      // leftover overlay ids that were not mentioned. Replacing state.seg
-      // is not that behaviour. Leftover pixels stay until leftover stop:0.
-      // Fixture stand-in — not metal.
-      const byId = new Map<number, Seg>();
-      state.seg.forEach((seg, index) => {
-        byId.set(seg.id ?? index, { ...seg, id: seg.id ?? index });
-      });
-      let inferred = 0;
-      for (const row of paints) {
-        const id = row.id ?? inferred;
-        inferred += 1;
-        if (row.stop <= row.start) {
-          byId.delete(id);
-          continue;
-        }
-        const prev = byId.get(id);
-        const col = row.col ?? prev?.col ?? state.seg[0]?.col ?? [];
-        byId.set(id, { id, start: row.start, stop: row.stop, col });
-      }
-      let segs = [...byId.values()].sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
-      if (mismatch && segs.length > 0) {
-        const last = segs[segs.length - 1]!;
-        last.stop = Math.max(last.start + 1, last.stop - 10);
-      }
-      if (segs.length) state.seg = segs;
-      for (const seg of state.seg) {
-        const rgb = seg.col[0];
-        if (rgb) paint(pixels, seg.start, seg.stop, rgb);
-      }
+    if (segs.length) state.seg = segs;
+    for (const seg of state.seg) {
+      const rgb = seg.col[0];
+      if (rgb) paint(pixels, seg.start, seg.stop, rgb);
     }
     if (unknownReread) hideSegAfterWrite = true;
   }

@@ -586,6 +586,29 @@ describe("End Preview restore after locate overlay (CONFIG-140)", () => {
     expect(write.bri).toBe(40);
   });
 
+  it("posts leftover overlay id:1 stop:0 after two unnamed restore ranges", () => {
+    const overlay = previewWrite(4, 5, lit, 180, 10);
+    const write = restoreWriteLeavingOverlay(
+      {
+        on: true,
+        brightness: 40,
+        color: "#ffa000",
+        segments: [
+          { start: 0, stop: 3, color: "#ffa000" },
+          { start: 3, stop: 7, color: "#ffa000" },
+        ],
+      },
+      overlay,
+    );
+    expect(write.seg).toEqual([
+      { start: 0, stop: 3, col: [[255, 160, 0]] },
+      { start: 3, stop: 7, col: [[255, 160, 0]] },
+      { id: 1, start: 0, stop: 0 },
+    ]);
+    expect(write.seg?.[0]).not.toHaveProperty("id");
+    expect(write.seg?.[1]).not.toHaveProperty("id");
+  });
+
   it("clears leftover hold overlay ids on restore, not the un-id’d restore slot", () => {
     const overlay = previewWriteSpans(
       [

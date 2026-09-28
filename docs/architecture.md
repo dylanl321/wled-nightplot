@@ -82,7 +82,7 @@ Strip Apply (`buildProvisionWrite`) writes WLED `order: 0` (GRBW on SK6812 RGBW;
 | Find collect | `createCollector` | `apps/server/src/discovery/collect.ts` |
 | Find probe bound | `FIND_PROBE_CONCURRENCY` (4) | `apps/server/src/discovery/map-limit.ts` |
 | All Off Light bound | `ALL_OFF_PROBE_CONCURRENCY` (4), `mapLimitSettled` | `apps/server/src/discovery/map-limit.ts` |
-| Fixture | `createFixtureBox` (`kind: "fixture"`) | `apps/server/src/wled-fixture-box.ts` — in-process / `pnpm fixture`. Unnamed Preview writes infer omitted `id` from array order and retain leftover overlay ids that were not mentioned (WLED-shaped). Leftover pixels stay until an explicit leftover `stop: 0`. Production leftover `stop: 0` is still the stand-in that clears them. Fixture software-green is not Hardware Done. |
+| Fixture | `createFixtureBox` (`kind: "fixture"`) | `apps/server/src/wled-fixture-box.ts` — in-process / `pnpm fixture`. Unnamed writes infer omitted `id` from array order (`id | it`) and apply leftover `stop: 0` in that same order — a later leftover `id: 1` can drop a just-inferred second range (WLED-shaped). Unmentioned leftover overlay ids stay. Leftover pixels stay until leftover `stop: 0`. Production leftover `stop: 0` is still the stand-in that clears them. Fixture software-green is not Hardware Done. |
 | Sim / e2e | `pnpm sim` / `spawnWledSim` | `apps/server/src/wled-sim.ts`, `wled-sim-spawn.ts`, `wled-ddp.ts` — external process, DDP UDP. Quiet caption **software path only** |
 
 `GET /health` returns `{ ok, service: "nightplot-configure", slice: CURRENT_SLICE }`.
