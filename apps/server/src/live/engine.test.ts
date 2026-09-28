@@ -226,11 +226,12 @@ describe("Preview restore honesty", () => {
     });
     expect(started.ok).toBe(true);
     expect(writes[0]?.seg).toEqual([
-      { id: 0, start: 0, stop: 4, col: [[212, 165, 116]] },
-      { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
-      { id: 2, start: 5, stop: 8, col: [[212, 165, 116]] },
-      { id: 3, start: 8, stop: 10, col: [[0, 0, 0]] },
+      { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+      { id: 1, start: 0, stop: 4, col: [[212, 165, 116]] },
+      { id: 2, start: 4, stop: 5, col: [[255, 244, 220]] },
+      { id: 3, start: 5, stop: 8, col: [[212, 165, 116]] },
     ]);
+    expect(writes[0]?.tt).toBe(0);
   });
 
   it("blacks the rest of the strip for an ad-hoc Preview range", async () => {
@@ -245,10 +246,10 @@ describe("Preview restore honesty", () => {
     });
     expect(started.ok).toBe(true);
     expect(writes[0]?.seg).toEqual([
-      { id: 0, start: 0, stop: 2, col: [[0, 0, 0]] },
+      { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
       { id: 1, start: 2, stop: 4, col: [[255, 244, 220]] },
-      { id: 2, start: 4, stop: 10, col: [[0, 0, 0]] },
     ]);
+    expect(writes[0]?.tt).toBe(0);
   });
 });
 
@@ -370,5 +371,41 @@ describe("Preview session update", () => {
     expect(hopped.reread).toBe(true);
     expect(hopped.live).not.toBeNull();
     expect(reads).toHaveLength(1);
+  });
+
+  it("posts only the moved cursor segment on a locate hop", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    await engine.startPreview({
+      light,
+      live: { ...infoOnly, on: true, brightness: 40 },
+      elements: [],
+      range: { start: 4, stop: 5 },
+      color: "#fff4dc",
+      brightness: 180,
+    });
+    expect(writes[0]?.seg).toEqual([
+      { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+      { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+    ]);
+    writes.length = 0;
+
+    const hopped = await engine.startPreview({
+      light,
+      live: infoOnly,
+      elements: [],
+      range: { start: 5, stop: 6 },
+      color: "#fff4dc",
+      brightness: 180,
+    });
+    expect(hopped.ok).toBe(true);
+    if (!hopped.ok) return;
+    expect(hopped.wrote).toBe(true);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.seg).toEqual([{ id: 1, start: 5, stop: 6, col: [[255, 244, 220]] }]);
+    expect(writes[0]?.tt).toBe(0);
+    expect(writes[0]?.seg).toHaveLength(1);
+    expect(writes[0]).not.toHaveProperty("on");
+    expect(writes[0]).not.toHaveProperty("bri");
   });
 });

@@ -137,6 +137,39 @@ describe("fixture info/cfg name divergence", () => {
     expect(after.state.seg).toBeUndefined();
   });
 
+  it("keeps the underlay and moves one named locate segment on a hop", async () => {
+    const box = createFixtureBox({ ledCount: 10, name: "WLED" });
+    const base = await listen(box);
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        on: true,
+        bri: 180,
+        tt: 0,
+        seg: [
+          { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+          { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+        ],
+      }),
+    });
+    const afterFirst = (await (await fetch(`${base}/json/live`)).json()) as { leds: string[] };
+    expect(afterFirst.leds[4]).toBe("fff4dc");
+    expect(afterFirst.leds[0]).toBe("000000");
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tt: 0,
+        seg: [{ id: 1, start: 5, stop: 6, col: [[79, 125, 255]] }],
+      }),
+    });
+    const afterHop = (await (await fetch(`${base}/json/live`)).json()) as { leds: string[] };
+    expect(afterHop.leds[5]).toBe("4f7dff");
+    expect(afterHop.leds[4]).toBe("000000");
+    expect(afterHop.leds[0]).toBe("000000");
+  });
+
   it("leaves the bus stale when busMismatch is on", async () => {
     const box = createFixtureBox({ ledCount: 60, busMismatch: true });
     box.applyCfg({

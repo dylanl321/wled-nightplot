@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { WledSnapshot } from "@nightplot/shared";
 import {
   applyRangesWrite,
+  locateHopWrite,
+  locateLitPieces,
+  overlayLocatePicture,
+  previewWrite,
+  previewWriteSpans,
   restoreBriField,
   restoreColField,
   restoreOnField,
@@ -199,5 +204,154 @@ describe("applyRangesWrite", () => {
     expect(planned.body.seg?.[0]).toEqual({ id: 0, start: 0, stop: 24 });
     expect(planned.body.seg?.[0]).not.toHaveProperty("col");
     expect(JSON.stringify(planned.body)).not.toContain("255,160,0");
+  });
+});
+
+describe("locate write shape (CONFIG-126)", () => {
+  const lit = "#fff4dc";
+  const peach = "#d4a574";
+
+  it("uses a whole-strip underlay plus one lit piece — not black|lit|black tiles", () => {
+    const write = previewWrite(4, 5, lit, 180, 10);
+    expect(write.tt).toBe(0);
+    expect(write.seg).toEqual([
+      { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+      { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+    ]);
+    expect(write.seg).toHaveLength(2);
+  });
+
+  it("named-Element / Blink Preview stays one segment — no locate overlay", () => {
+    const write = previewWrite(0, 10, "#4f7dff", 180);
+    expect(write.tt).toBeUndefined();
+    expect(write.seg).toEqual([{ start: 0, stop: 10, col: [[79, 125, 255]] }]);
+    expect(write.seg?.[0]).not.toHaveProperty("id");
+  });
+
+  it("merges adjacent same-colour spans and does not emit black-gap tiles", () => {
+    const write = previewWriteSpans(
+      [
+        { start: 0, stop: 4, color: peach },
+        { start: 4, stop: 8, color: peach },
+        { start: 10, stop: 11, color: lit },
+      ],
+      180,
+      16,
+    );
+    expect(locateLitPieces(
+      [
+        { start: 0, stop: 4, color: peach },
+        { start: 4, stop: 8, color: peach },
+        { start: 10, stop: 11, color: lit },
+      ],
+      16,
+    )).toEqual([
+      { start: 0, stop: 8, color: peach },
+      { start: 10, stop: 11, color: lit },
+    ]);
+    expect(write.seg).toEqual([
+      { id: 0, start: 0, stop: 16, col: [[0, 0, 0]] },
+      { id: 1, start: 0, stop: 8, col: [[212, 165, 116]] },
+      { id: 2, start: 10, stop: 11, col: [[255, 244, 220]] },
+    ]);
+    expect(write.seg?.some((seg) => seg.col?.[0]?.every((n) => n === 0) && seg.id !== 0)).toBe(
+      false,
+    );
+  });
+
+  it("keeps an earlier span when a later span claims the same LEDs", () => {
+    const write = overlayLocatePicture(
+      [
+        { start: 0, stop: 6, color: peach },
+        { start: 4, stop: 5, color: lit },
+      ],
+      180,
+      10,
+    );
+    expect(write.seg).toEqual([
+      { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+      { id: 1, start: 0, stop: 6, col: [[212, 165, 116]] },
+    ]);
+  });
+
+  it("posts only the gap cursor when hold Elements did not move", () => {
+    const first = previewWriteSpans(
+      [
+        { start: 0, stop: 4, color: peach },
+        { start: 10, stop: 11, color: lit },
+      ],
+      180,
+      16,
+    );
+    const next = previewWriteSpans(
+      [
+        { start: 0, stop: 4, color: peach },
+        { start: 11, stop: 12, color: lit },
+      ],
+      180,
+      16,
+    );
+    expect(first.seg).toEqual([
+      { id: 0, start: 0, stop: 16, col: [[0, 0, 0]] },
+      { id: 1, start: 0, stop: 4, col: [[212, 165, 116]] },
+      { id: 2, start: 10, stop: 11, col: [[255, 244, 220]] },
+    ]);
+    expect(locateHopWrite(next, first).seg).toEqual([
+      { id: 2, start: 11, stop: 12, col: [[255, 244, 220]] },
+    ]);
+  });
+
+  it("posts only the moved cursor segment when the underlay did not change", () => {
+    const first = previewWrite(4, 5, lit, 180, 10);
+    const next = previewWrite(5, 6, lit, 180, 10);
+    const hop = locateHopWrite(next, first);
+    expect(hop.seg).toEqual([{ id: 1, start: 5, stop: 6, col: [[255, 244, 220]] }]);
+    expect(hop.seg).toHaveLength(1);
+    expect(hop.tt).toBe(0);
+    expect(hop).not.toHaveProperty("on");
+    expect(hop).not.toHaveProperty("bri");
+    expect(hop.seg?.some((seg) => seg.id === 0)).toBe(false);
+  });
+
+  it("does not invent segment ids beyond the overlay picture", () => {
+    const write = previewWriteSpans(
+      [
+        { start: 0, stop: 4, color: peach },
+        { start: 4, stop: 5, color: lit },
+        { start: 5, stop: 8, color: peach },
+      ],
+      180,
+      10,
+    );
+    expect(write.seg?.map((seg) => seg.id)).toEqual([0, 1, 2, 3]);
+    expect(write.seg?.[0]).toMatchObject({ start: 0, stop: 10, col: [[0, 0, 0]] });
+    expect(Math.max(...(write.seg ?? []).map((seg) => seg.id ?? -1))).toBe(3);
+  });
+
+  it("clears a leftover overlay id with stop:0 when the picture shrinks", () => {
+    const first = overlayLocatePicture(
+      [
+        { start: 0, stop: 4, color: peach },
+        { start: 4, stop: 5, color: lit },
+        { start: 5, stop: 8, color: peach },
+      ],
+      180,
+      10,
+    );
+    const next = overlayLocatePicture([{ start: 6, stop: 7, color: lit }], 180, 10);
+    const hop = locateHopWrite(next, first);
+    expect(hop.seg).toEqual([
+      { id: 1, start: 6, stop: 7, col: [[255, 244, 220]] },
+      { id: 2, start: 0, stop: 0 },
+      { id: 3, start: 0, stop: 0 },
+    ]);
+    expect(hop.seg?.some((seg) => seg.id === 0)).toBe(false);
+  });
+
+  it("rewrites the full picture when the underlay itself changes", () => {
+    const first = overlayLocatePicture([{ start: 0, stop: 10, color: peach }], 180, 10);
+    const next = previewWrite(4, 5, lit, 180, 10);
+    expect(first.seg).toEqual([{ id: 0, start: 0, stop: 10, col: [[212, 165, 116]] }]);
+    expect(locateHopWrite(next, first)).toEqual(next);
   });
 });

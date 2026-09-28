@@ -22,6 +22,7 @@ import {
   type WledSnapshot,
 } from "@nightplot/shared";
 import {
+  locateHopWrite,
   previewWrite,
   previewWriteSpans,
   restoreWrite,
@@ -154,7 +155,7 @@ export function createLiveEngine(deps: {
 
     const restore = updating ? openPreview.restore : (existing?.restore ?? restoreFrom(args.live!));
     const dest: HostPort = { hostname: args.light.hostname, port: args.light.port };
-    const body: WledStateWrite = painted
+    const picture: WledStateWrite = painted
       ? previewWriteSpans(painted, brightness, args.light.ledCount)
       : previewWrite(
           target.start,
@@ -164,9 +165,11 @@ export function createLiveEngine(deps: {
           kind === "preview" && adHoc ? args.light.ledCount : undefined,
         );
     const last = lastWrites.get(args.light.id);
-    const sameWrite = last != null && writeBodiesEqual(last, body);
+    const sameWrite = last != null && writeBodiesEqual(last, picture);
     let wrote = false;
     if (!sameWrite) {
+      const locateHop = painted != null || adHoc != null;
+      const body = locateHop ? locateHopWrite(picture, last) : picture;
       const sent = await deps.write(dest, body);
       if (!sent) {
         return {
@@ -176,7 +179,7 @@ export function createLiveEngine(deps: {
           message: "The controller did not take the temporary look. Nothing else changed.",
         };
       }
-      lastWrites.set(args.light.id, body);
+      lastWrites.set(args.light.id, picture);
       wrote = true;
     }
     const locateHop = painted != null || adHoc != null;

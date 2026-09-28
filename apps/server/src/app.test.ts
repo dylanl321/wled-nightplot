@@ -30,7 +30,9 @@ function memoryBox() {
   let on = true;
   let bri = 128;
   let color = "#ffa000";
-  let segs = [{ start: 0, stop: 60 }];
+  let segs: { id: number; start: number; stop: number; col?: number[][] }[] = [
+    { id: 0, start: 0, stop: 60, col: [[255, 160, 0]] },
+  ];
   let name = snapshot.name;
   const snap = () => ({
     ...snapshot,
@@ -38,28 +40,64 @@ function memoryBox() {
     on,
     brightness: bri,
     segmentColor: color,
-    segments: segs.map((seg) => ({ ...seg })),
+    segments: segs.map((seg) => ({ start: seg.start, stop: seg.stop })),
   });
   const write: WriteStateFn = async (_target, body) => {
     if (typeof body.on === "boolean") on = body.on;
     if (typeof body.bri === "number") bri = body.bri;
     if (body.seg) {
-      const next: { start: number; stop: number }[] = [];
-      for (const seg of body.seg) {
-        if (seg.stop <= seg.start) continue;
-        next.push({ start: seg.start, stop: seg.stop });
-        const rgb = seg.col?.[0];
-        if (!rgb) continue;
-        const hex = `#${rgb
-          .slice(0, 3)
-          .map((n) => n.toString(16).padStart(2, "0"))
-          .join("")}`;
-        color = hex;
-        for (let i = seg.start; i < seg.stop && i < leds.length; i += 1) {
-          leds[i] = hex;
+      const named = body.seg.length > 0 && body.seg.every((seg) => typeof seg.id === "number");
+      if (named) {
+        const byId = new Map<number, { id: number; start: number; stop: number; col?: number[][] }>();
+        for (const seg of segs) {
+          byId.set(seg.id, seg);
         }
+        for (const seg of body.seg) {
+          const id = seg.id!;
+          if (seg.stop <= seg.start) {
+            byId.delete(id);
+            continue;
+          }
+          const prev = byId.get(id);
+          byId.set(id, { id, start: seg.start, stop: seg.stop, col: seg.col ?? prev?.col });
+        }
+        const ordered = [...byId.values()].sort((a, b) => a.id - b.id);
+        segs = ordered;
+        for (const seg of ordered) {
+          const rgb = seg.col?.[0];
+          if (!rgb) continue;
+          const hex = `#${rgb
+            .slice(0, 3)
+            .map((n) => n.toString(16).padStart(2, "0"))
+            .join("")}`;
+          color = hex;
+          for (let i = seg.start; i < seg.stop && i < leds.length; i += 1) {
+            leds[i] = hex;
+          }
+        }
+      } else {
+        const next: { id: number; start: number; stop: number; col?: number[][] }[] = [];
+        for (const [index, seg] of body.seg.entries()) {
+          if (seg.stop <= seg.start) continue;
+          next.push({
+            id: typeof seg.id === "number" ? seg.id : index,
+            start: seg.start,
+            stop: seg.stop,
+            col: seg.col,
+          });
+          const rgb = seg.col?.[0];
+          if (!rgb) continue;
+          const hex = `#${rgb
+            .slice(0, 3)
+            .map((n) => n.toString(16).padStart(2, "0"))
+            .join("")}`;
+          color = hex;
+          for (let i = seg.start; i < seg.stop && i < leds.length; i += 1) {
+            leds[i] = hex;
+          }
+        }
+        if (next.length) segs = next;
       }
-      if (next.length) segs = next;
     }
     return true;
   };
@@ -1074,6 +1112,8 @@ describe("preview + blink", () => {
     expect(probes).toBe(afterStart.probes);
     expect(liveReads).toBe(afterStart.liveReads);
     expect(box.leds[5]).toBe("#4f7dff");
+    expect(box.leds[2]).toBe("#000000");
+    expect(box.leds[3]).toBe("#000000");
   });
 
   it("blinks then restores, and refuses both when offline", async () => {
