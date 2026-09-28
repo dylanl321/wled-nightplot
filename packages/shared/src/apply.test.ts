@@ -5,6 +5,7 @@ import {
   APPLY_UNKNOWN_COLOUR_REASON,
   APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE,
   APPLY_UNKNOWN_SEGMENTS_MESSAGE,
+  APPLY_EMPTY_READ_CAPTION,
   APPLY_UNREAD_CAPTION,
   adoptControllerRangesReason,
   adoptableControllerRanges,
@@ -168,7 +169,9 @@ describe("apply match", () => {
     const knownEmpty = applyOutcome(sent, [], "controller");
     expect(knownEmpty.read).toEqual([]);
     expect(knownEmpty.status).toBe("mismatch");
-    expect(knownEmpty.caption).toMatch(/controller reported these ranges/);
+    expect(knownEmpty.caption).toBe(APPLY_EMPTY_READ_CAPTION);
+    expect(knownEmpty.caption).toMatch(/reported no ranges/);
+    expect(knownEmpty.caption).not.toMatch(/these ranges/);
     expect(knownEmpty.caption).not.toBe(APPLY_UNREAD_CAPTION);
     expect(adoptControllerRangesReason(knownEmpty)).toBe(APPLY_ADOPT_EMPTY_REASON);
   });
@@ -200,6 +203,8 @@ describe("apply match", () => {
     expect(emptyVsEmpty.matched).toBe(true);
     expect(emptyVsEmpty.status).toBe("matched");
     expect(emptyVsEmpty.read).toEqual([]);
+    expect(emptyVsEmpty.caption).toBe(APPLY_EMPTY_READ_CAPTION);
+    expect(emptyVsEmpty.caption).not.toMatch(/these ranges/);
 
     const declaredVsEmpty = applyOutcome(
       [{ label: "Right run", start: 24, stop: 50 }],
@@ -211,10 +216,11 @@ describe("apply match", () => {
     expect(declaredVsEmpty.read).toEqual([]);
     expect(declaredVsEmpty.message).toMatch(/didn’t stick/);
     expect(declaredVsEmpty.message).not.toBe(APPLY_UNKNOWN_SEGMENTS_MESSAGE);
-    expect(declaredVsEmpty.caption).toMatch(/controller reported these ranges/);
+    expect(declaredVsEmpty.caption).toBe(APPLY_EMPTY_READ_CAPTION);
+    expect(declaredVsEmpty.caption).not.toMatch(/these ranges/);
   });
 
-  it("captions from the read, not the source — unread does not claim a report", () => {
+  it("captions from the read, not the source — unread and known empty do not say these ranges", () => {
     expect(applyCaption("controller", null)).toBe(APPLY_UNREAD_CAPTION);
     expect(applyCaption("controller", null)).not.toMatch(/controller reported these ranges/);
     expect(applyCaption("fixture", null)).toMatch(/Software-green from the fixture/);
@@ -222,7 +228,11 @@ describe("apply match", () => {
     expect(applyCaption("controller", [{ start: 0, stop: 24 }])).toMatch(
       /controller reported these ranges/,
     );
-    expect(applyCaption("controller", [])).toMatch(/controller reported these ranges/);
+    expect(applyCaption("controller", [])).toBe(APPLY_EMPTY_READ_CAPTION);
+    expect(applyCaption("controller", [])).toMatch(/reported no ranges/);
+    expect(applyCaption("controller", [])).not.toMatch(/these ranges/);
+    expect(applyCaption("controller", [])).not.toBe(APPLY_UNREAD_CAPTION);
+    expect(applyCaption("fixture", [])).toMatch(/Software-green from the fixture/);
     expect(applyCaption("fixture", [{ start: 0, stop: 24 }])).toMatch(
       /Software-green from the fixture/,
     );

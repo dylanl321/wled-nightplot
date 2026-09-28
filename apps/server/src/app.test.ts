@@ -1435,6 +1435,7 @@ describe("apply + re-address", () => {
         kind: "found" as const,
         snapshot: written ? { ...snapshot, segments: [] } : snapshot,
       }),
+      readLive: async () => ({ source: "controller", leds: [] }),
     });
     const id = await enroll(app);
     const detail = (await (await app.request(`/api/lights/${id}`)).json()) as {
@@ -1448,7 +1449,13 @@ describe("apply + re-address", () => {
     expect(res.status).toBe(409);
     const body = (await res.json()) as {
       error?: string;
-      apply: { matched: boolean; status: string; message: string; read: unknown };
+      apply: {
+        matched: boolean;
+        status: string;
+        message: string;
+        read: unknown;
+        caption: string;
+      };
     };
     expect(written).toBe(true);
     expect(body.error).not.toBe("reread-unknown-segments");
@@ -1457,6 +1464,9 @@ describe("apply + re-address", () => {
     expect(body.apply.read).toEqual([]);
     expect(body.apply.message).toMatch(/didn’t stick/);
     expect(body.apply.message).not.toMatch(/segments are unknown/);
+    expect(body.apply.caption).toMatch(/reported no ranges/);
+    expect(body.apply.caption).not.toMatch(/these ranges/);
+    expect(body.apply.caption).not.toMatch(/Ranges were not read/);
     expect(store.findById(id)?.lastSnapshot).toBeFalsy();
   });
 

@@ -1,6 +1,7 @@
 import {
   APPLY_ADOPT_EMPTY_REASON,
   APPLY_ADOPT_UNKNOWN_REASON,
+  APPLY_EMPTY_READ_CAPTION,
   APPLY_UNKNOWN_SEGMENTS_MESSAGE,
   APPLY_UNREAD_CAPTION,
   applyOutcome,
@@ -836,6 +837,30 @@ describe("LightDetail ApplyFailed copy", () => {
     expect(screen.queryByText(APPLY_ADOPT_EMPTY_REASON)).toBeNull();
     expect(screen.getByText(APPLY_UNREAD_CAPTION)).toBeTruthy();
     expect(screen.queryByText(/The controller reported these ranges/)).toBeNull();
+  });
+
+  it("captions a known empty apply.read as reported no ranges — not these ranges", async () => {
+    const initial = applyRangesDetail();
+    const apply = applyOutcome(
+      [{ label: "Door", start: 0, stop: 60 }],
+      [],
+      "controller",
+    );
+    stubApplyResult(initial, apply);
+
+    render(<LightDetail initial={initial} mode="ranges" />);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(await screen.findByText(/Apply didn’t stick/)).toBeTruthy();
+    expect(screen.getByText(APPLY_EMPTY_READ_CAPTION)).toBeTruthy();
+    expect(screen.getByText(APPLY_ADOPT_EMPTY_REASON)).toBeTruthy();
+    expect(screen.queryByText(/The controller reported these ranges/)).toBeNull();
+    expect(screen.queryByText(APPLY_UNREAD_CAPTION)).toBeNull();
+    expect(screen.getByText("nothing")).toBeTruthy();
+    expect(screen.queryByText("unknown")).toBeNull();
+    expect(
+      (screen.getByRole("button", { name: "Use controller’s" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 });
 

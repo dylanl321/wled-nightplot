@@ -43,6 +43,10 @@ export const APPLY_ADOPT_EMPTY_REASON =
 export const APPLY_UNREAD_CAPTION =
   "Ranges were not read. Not Hardware Done until you see them on the strip.";
 
+/** ApplyFailed caption when the reread was a known empty list (`apply.read` `[]`). */
+export const APPLY_EMPTY_READ_CAPTION =
+  "The controller reported no ranges. Not Hardware Done until you see them on the strip.";
+
 /**
  * Fail-closed Apply copy when leftover-segment clears cannot run because
  * the pre-apply segment count is unknown — not zero.
@@ -229,7 +233,7 @@ export function adoptControllerRangesReason(apply: ApplyResult): string | null {
   return apply.read === null ? APPLY_ADOPT_UNKNOWN_REASON : APPLY_ADOPT_EMPTY_REASON;
 }
 
-/** Caption from the reread. Unread (`null`) does not claim the controller reported ranges. */
+/** Caption from the reread. Unread (`null`) does not claim a report. Known empty does not say “these ranges”. */
 export function applyCaption(
   source: "fixture" | "controller",
   read: RangeSpan[] | null,
@@ -239,6 +243,9 @@ export function applyCaption(
   }
   if (read == null) {
     return APPLY_UNREAD_CAPTION;
+  }
+  if (read.length === 0) {
+    return APPLY_EMPTY_READ_CAPTION;
   }
   return "The controller reported these ranges. Not Hardware Done until you see them on the strip.";
 }
