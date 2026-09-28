@@ -37,6 +37,16 @@ export const LED_CATALOG_PER_LIGHT_COPY =
   "Length, GPIO, ranges, and field overrides. Apply writes only this Light’s bus.";
 export const LED_CATALOG_ATTACH_COPY =
   "Attach is Nightplot bookkeeping — not Apply, not a WLED write, not Hardware Done.";
+export const LED_CATALOG_DELETE_COPY =
+  "Delete removes a recipe only when no Light attaches it. Unknown or partial attach counts refuse. There is no “I understand” override. Delete is not Apply, not a WLED write, not Hardware Done.";
+export const LED_CATALOG_DELETE_CAPTION =
+  "Catalog delete is bookkeeping. Not Apply, not a WLED write, not Hardware Done.";
+export const LED_CATALOG_DELETE_CLEARED =
+  "Removed from the catalog. Not a WLED write, not Apply, not Hardware Done.";
+export const LED_CATALOG_DELETE_REFUSE_ATTACHED =
+  "Lights still attach this recipe. Detach them on Strip first. There is no override.";
+export const LED_CATALOG_DELETE_REFUSE_UNKNOWN =
+  "Unknown or partial attach count is not safe. There is no “I understand” override.";
 
 export type LedProduct = {
   id: string;
@@ -102,6 +112,51 @@ export type LedProductAttachResolve =
 export type ProvisionDraftFromProduct =
   | { ok: true; draft: WledStripProvisionDraft }
   | { ok: false; error: "unknown_driver" | "unsupported_led_type"; message: string };
+
+export type LedProductAttachRef = {
+  id: string;
+  name: string;
+  ledProductId: string | null;
+};
+
+export type LedProductAttachCount =
+  | {
+      known: true;
+      complete: true;
+      count: number;
+      lights: LedProductAttachRef[];
+    }
+  | {
+      known: false;
+      complete: false;
+      error: "unknown" | "partial";
+      message: string;
+    };
+
+export type CatalogDeleteCheckStatus = "ok" | "blocked" | "unknown";
+
+export type CatalogDeleteCheck = {
+  key: "attaches";
+  label: "Lights attach";
+  status: CatalogDeleteCheckStatus;
+  detail: string;
+};
+
+export type LedProductDeleteDecision =
+  | { ok: true; count: 0 }
+  | {
+      ok: false;
+      error: "in_use" | "unknown_refs";
+      message: string;
+      attached: number | null;
+      lights: LedProductAttachRef[];
+    };
+
+export type LedProductDeleteImpact = {
+  count: LedProductAttachCount;
+  checks: CatalogDeleteCheck[];
+  decision: LedProductDeleteDecision;
+};
 
 export function provisionLedTypeForDriver(driverId: string): ProvisionLedType | null {
   return (PROVISION_LED_TYPES as readonly string[]).includes(driverId)
@@ -174,6 +229,174 @@ export function parseLedProductAttach(input: unknown): LedProductAttachParse {
     };
   }
   return { ok: true, ledProductId: row.ledProductId.trim() };
+}
+
+export function parseLedProductAttachRef(
+  value: unknown,
+): { ok: true; ref: LedProductAttachRef } | { ok: false; error: "partial" } {
+  if (!value || typeof value !== "object") {
+    return { ok: false, error: "partial" };
+  }
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== "string" || !row.id.trim()) {
+    return { ok: false, error: "partial" };
+  }
+  const name = typeof row.name === "string" && row.name.trim() ? row.name.trim() : row.id.trim();
+  if (!("ledProductId" in row) || row.ledProductId === undefined || row.ledProductId === null) {
+    return { ok: true, ref: { id: row.id, name, ledProductId: null } };
+  }
+  if (typeof row.ledProductId === "string") {
+    return {
+      ok: true,
+      ref: { id: row.id, name, ledProductId: row.ledProductId.trim() || null },
+    };
+  }
+  return { ok: false, error: "partial" };
+}
+
+/**
+ * Count Lights that attach `productId`. A non-list or a row we cannot read
+ * is unknown / partial — not zero, and not safe to delete.
+ */
+export function countLedProductAttaches(
+  lights: unknown,
+  productId: string,
+): LedProductAttachCount {
+  const id = productId.trim();
+  if (!Array.isArray(lights)) {
+    return {
+      known: false,
+      complete: false,
+      error: "unknown",
+      message: LED_CATALOG_DELETE_REFUSE_UNKNOWN,
+    };
+  }
+  const attached: LedProductAttachRef[] = [];
+  for (const row of lights) {
+    const parsed = parseLedProductAttachRef(row);
+    if (!parsed.ok) {
+      return {
+        known: false,
+        complete: false,
+        error: "partial",
+        message: LED_CATALOG_DELETE_REFUSE_UNKNOWN,
+      };
+    }
+    if (id && parsed.ref.ledProductId === id) {
+      attached.push(parsed.ref);
+    }
+  }
+  return {
+    known: true,
+    complete: true,
+    count: attached.length,
+    lights: attached,
+  };
+}
+
+export function catalogDeleteAttachedDetail(lights: readonly LedProductAttachRef[]): string {
+  if (lights.length === 0) return LED_CATALOG_DELETE_REFUSE_ATTACHED;
+  const names = lights.map((light) => light.name);
+  if (names.length === 1) {
+    return `${names[0]} still attaches this recipe. Detach on Strip first. There is no override.`;
+  }
+  const who = names.length === 2 ? `${names[0]} and ${names[1]}` : `${names.length} Lights`;
+  return `${who} still attach this recipe. Detach on Strip first. There is no override.`;
+}
+
+export function catalogDeleteChecks(count: LedProductAttachCount): CatalogDeleteCheck[] {
+  if (!count.known) {
+    return [
+      {
+        key: "attaches",
+        label: "Lights attach",
+        status: "unknown",
+        detail: count.message,
+      },
+    ];
+  }
+  if (count.count > 0) {
+    return [
+      {
+        key: "attaches",
+        label: "Lights attach",
+        status: "blocked",
+        detail: catalogDeleteAttachedDetail(count.lights),
+      },
+    ];
+  }
+  return [
+    {
+      key: "attaches",
+      label: "Lights attach",
+      status: "ok",
+      detail: "No Lights attach this recipe. Removing it is catalog bookkeeping only.",
+    },
+  ];
+}
+
+export function canDeleteCatalog(checks: readonly CatalogDeleteCheck[]): boolean {
+  return checks.length > 0 && checks.every((check) => check.status === "ok");
+}
+
+export function catalogDeleteProgress(checks: readonly CatalogDeleteCheck[]): {
+  done: number;
+  total: number;
+} {
+  return {
+    done: checks.filter((check) => check.status === "ok").length,
+    total: checks.length,
+  };
+}
+
+export function catalogDeleteRefuseReason(
+  checks: readonly CatalogDeleteCheck[],
+): string | null {
+  if (canDeleteCatalog(checks)) return null;
+  const unknown = checks.find((check) => check.status === "unknown");
+  if (unknown) return LED_CATALOG_DELETE_REFUSE_UNKNOWN;
+  const blocked = checks.find((check) => check.status === "blocked");
+  return blocked?.detail ?? LED_CATALOG_DELETE_REFUSE_ATTACHED;
+}
+
+export function decideLedProductDelete(
+  count: LedProductAttachCount,
+): LedProductDeleteDecision {
+  if (!count.known) {
+    return {
+      ok: false,
+      error: "unknown_refs",
+      message: LED_CATALOG_DELETE_REFUSE_UNKNOWN,
+      attached: null,
+      lights: [],
+    };
+  }
+  if (count.count > 0) {
+    return {
+      ok: false,
+      error: "in_use",
+      message: catalogDeleteAttachedDetail(count.lights),
+      attached: count.count,
+      lights: count.lights,
+    };
+  }
+  return { ok: true, count: 0 };
+}
+
+export function ledProductDeleteImpact(
+  lights: unknown,
+  productId: string,
+): LedProductDeleteImpact {
+  const count = countLedProductAttaches(lights, productId);
+  return {
+    count,
+    checks: catalogDeleteChecks(count),
+    decision: decideLedProductDelete(count),
+  };
+}
+
+export function unknownLedProductDeleteImpact(): LedProductDeleteImpact {
+  return ledProductDeleteImpact(null, "");
 }
 
 export function resolveLedProductAttach(

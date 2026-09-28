@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -3011,6 +3011,128 @@ describe("LED product catalog", () => {
         driverId: "ws281x",
       }),
     });
+    expect(missing.status).toBe(404);
+    expect(writeCfg).not.toHaveBeenCalled();
+  });
+
+  it("deletes an unattached recipe and refuses while Lights attach or refs are unknown", async () => {
+    const writeCfg = vi.fn(async () => true);
+    const { app, store, dir } = testApp({ writeCfg });
+    const lightsPath = join(dir, "lights.json");
+
+    const created = await app.request("/api/led-products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "eave-cob",
+        label: "Eave COB",
+        formFactor: "cob",
+        driverId: "ws281x",
+        defaultLength: 120,
+      }),
+    });
+    expect(created.status).toBe(201);
+
+    const clearChecks = await app.request("/api/led-products/eave-cob/delete-checks");
+    expect(clearChecks.status).toBe(200);
+    const clearBody = (await clearChecks.json()) as {
+      attached: number | null;
+      checks: { status: string; detail: string }[];
+    };
+    expect(clearBody.attached).toBe(0);
+    expect(clearBody.checks[0]?.status).toBe("ok");
+
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.72" }),
+    });
+    expect(enroll.status).toBe(201);
+    const lightId = ((await enroll.json()) as { light: { id: string } }).light.id;
+
+    const attached = await app.request(`/api/lights/${lightId}/led-product`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ledProductId: "eave-cob" }),
+    });
+    expect(attached.status).toBe(200);
+    expect(store.findById(lightId)?.ledProductId).toBe("eave-cob");
+
+    const blockedChecks = await app.request("/api/led-products/eave-cob/delete-checks");
+    const blockedCheckBody = (await blockedChecks.json()) as {
+      attached: number | null;
+      checks: { status: string }[];
+    };
+    expect(blockedCheckBody.attached).toBe(1);
+    expect(blockedCheckBody.checks[0]?.status).toBe("blocked");
+
+    const refused = await app.request("/api/led-products/eave-cob", { method: "DELETE" });
+    expect(refused.status).toBe(409);
+    const refusedBody = (await refused.json()) as {
+      error: string;
+      message: string;
+      attached: number | null;
+    };
+    expect(refusedBody.error).toBe("in_use");
+    expect(refusedBody.attached).toBe(1);
+    expect(refusedBody.message).toMatch(/still attaches this recipe/);
+    expect((await (await app.request("/api/led-products/eave-cob")).json()) as { product: { id: string } })
+      .toMatchObject({ product: { id: "eave-cob" } });
+    expect(writeCfg).not.toHaveBeenCalled();
+
+    const clearedAttach = await app.request(`/api/lights/${lightId}/led-product`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ledProductId: null }),
+    });
+    expect(clearedAttach.status).toBe(200);
+
+    const deleted = await app.request("/api/led-products/eave-cob", { method: "DELETE" });
+    expect(deleted.status).toBe(200);
+    const deletedBody = (await deleted.json()) as {
+      deleted: boolean;
+      attached: number;
+      product: { id: string };
+      message: string;
+    };
+    expect(deletedBody).toMatchObject({ deleted: true, attached: 0, product: { id: "eave-cob" } });
+    expect(deletedBody.message).toMatch(/Not a WLED write/);
+    expect((await app.request("/api/led-products/eave-cob")).status).toBe(404);
+    expect(writeCfg).not.toHaveBeenCalled();
+
+    const again = await app.request("/api/led-products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "eave-cob",
+        label: "Eave COB",
+        formFactor: "cob",
+        driverId: "ws281x",
+      }),
+    });
+    expect(again.status).toBe(201);
+
+    writeFileSync(lightsPath, "{not-json");
+    const unknown = await app.request("/api/led-products/eave-cob", { method: "DELETE" });
+    expect(unknown.status).toBe(422);
+    expect(((await unknown.json()) as { error: string }).error).toBe("unknown_refs");
+    expect((await (await app.request("/api/led-products/eave-cob")).json()) as { product: { id: string } })
+      .toMatchObject({ product: { id: "eave-cob" } });
+
+    writeFileSync(
+      lightsPath,
+      `${JSON.stringify({
+        version: 1,
+        lights: [{ id: "light-garage", name: "Garage", ledProductId: 12 }],
+        elements: [],
+      })}\n`,
+    );
+    const partial = await app.request("/api/led-products/eave-cob", { method: "DELETE" });
+    expect(partial.status).toBe(422);
+    expect(((await partial.json()) as { error: string }).error).toBe("unknown_refs");
+    expect((await app.request("/api/led-products/eave-cob")).status).toBe(200);
+
+    const missing = await app.request("/api/led-products/no-such-sku", { method: "DELETE" });
     expect(missing.status).toBe(404);
     expect(writeCfg).not.toHaveBeenCalled();
   });

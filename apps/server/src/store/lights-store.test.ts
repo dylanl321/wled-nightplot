@@ -44,4 +44,32 @@ describe("lights store ledProductId", () => {
     );
     expect(new FileLightsStore(file).findById(base.id)?.ledProductId).toBeNull();
   });
+
+  it("tryLoadRaw treats a missing file as empty and refuses corrupt or invalid files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-lights-"));
+    const missing = join(dir, "missing.json");
+    expect(new FileLightsStore(missing).tryLoadRaw()).toEqual({ ok: true, lights: [] });
+
+    const valid = join(dir, "valid.json");
+    const store = new FileLightsStore(valid);
+    store.upsert(base);
+    const loaded = store.tryLoadRaw();
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    expect(loaded.lights).toHaveLength(1);
+
+    const corrupt = join(dir, "corrupt.json");
+    writeFileSync(corrupt, "{not-json");
+    expect(new FileLightsStore(corrupt).tryLoadRaw()).toEqual({
+      ok: false,
+      error: "unreadable",
+    });
+
+    const invalid = join(dir, "invalid.json");
+    writeFileSync(invalid, `${JSON.stringify({ version: 2, lights: [] })}\n`);
+    expect(new FileLightsStore(invalid).tryLoadRaw()).toEqual({
+      ok: false,
+      error: "invalid",
+    });
+  });
 });

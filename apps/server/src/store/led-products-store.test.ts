@@ -89,4 +89,25 @@ describe("FileLedProductsStore", () => {
     const restarted = new FileLedProductsStore(file);
     expect(restarted.findById("eave-cob")).toEqual(updated);
   });
+
+  it("removes an existing row and leaves a missing id untouched", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-led-"));
+    const file = join(dir, "led-products.json");
+    const store = new FileLedProductsStore(file);
+    const created = store.create({
+      id: "eave-cob",
+      label: "Eave COB",
+      notes: "",
+      formFactor: "cob",
+      driverId: "ws281x",
+    });
+
+    expect(store.remove(created.id)).toEqual(created);
+    expect(store.findById(created.id)).toBeUndefined();
+    expect(store.remove("no-such-sku")).toBeUndefined();
+
+    const restarted = new FileLedProductsStore(file);
+    expect(restarted.findById(created.id)).toBeUndefined();
+    expect(restarted.list().some((row) => row.id === created.id)).toBe(false);
+  });
 });

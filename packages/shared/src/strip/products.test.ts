@@ -4,10 +4,19 @@ import { defaultStripPreset, STRIP_PRESETS } from "./presets.ts";
 import {
   inheritLedProductFields,
   LED_CATALOG_ATTACH_COPY,
+  LED_CATALOG_DELETE_CAPTION,
+  LED_CATALOG_DELETE_CLEARED,
+  LED_CATALOG_DELETE_COPY,
+  LED_CATALOG_DELETE_REFUSE_UNKNOWN,
   LED_CATALOG_PER_LIGHT_COPY,
   LED_CATALOG_PER_LIGHT_HEADING,
   LED_CATALOG_SHARED_COPY,
   LED_CATALOG_SHARED_HEADING,
+  canDeleteCatalog,
+  catalogDeleteChecks,
+  catalogDeleteRefuseReason,
+  countLedProductAttaches,
+  decideLedProductDelete,
   parseLedProductAttach,
   parseLedProductInput,
   provisionApplyBodyFromProduct,
@@ -250,6 +259,75 @@ describe("LED product attach + draft fill", () => {
     expect(LED_CATALOG_ATTACH_COPY).toMatch(/not Apply/);
     expect(LED_CATALOG_ATTACH_COPY).toMatch(/not a WLED write/);
     expect(LED_CATALOG_ATTACH_COPY).toMatch(/not Hardware Done/);
+    expect(LED_CATALOG_DELETE_COPY).toMatch(/Unknown or partial attach counts refuse/);
+    expect(LED_CATALOG_DELETE_COPY).toMatch(/I understand/);
+    expect(LED_CATALOG_DELETE_COPY).toMatch(/not Hardware Done/);
+    expect(LED_CATALOG_DELETE_CAPTION).toMatch(/Not Apply/);
+    expect(LED_CATALOG_DELETE_CLEARED).toMatch(/Not a WLED write/);
+  });
+
+  it("counts attaches and refuses delete when refs are unknown, partial, or in use", () => {
+    const productId = "led-ws281x-60-gpio16";
+    expect(countLedProductAttaches([], productId)).toEqual({
+      known: true,
+      complete: true,
+      count: 0,
+      lights: [],
+    });
+    expect(decideLedProductDelete(countLedProductAttaches([], productId))).toEqual({
+      ok: true,
+      count: 0,
+    });
+
+    const attached = countLedProductAttaches(
+      [
+        { id: "light-garage", name: "Garage", ledProductId: productId },
+        { id: "light-porch", name: "Porch", ledProductId: productId },
+        { id: "light-eave", name: "Eave", ledProductId: null },
+      ],
+      productId,
+    );
+    expect(attached).toMatchObject({ known: true, complete: true, count: 2 });
+    const inUse = decideLedProductDelete(attached);
+    expect(inUse).toMatchObject({ ok: false, error: "in_use", attached: 2 });
+    expect(inUse.ok).toBe(false);
+    if (inUse.ok) return;
+    expect(inUse.message).toMatch(/Garage and Porch still attach/);
+    expect(inUse.message).toMatch(/no override/);
+
+    const unknown = countLedProductAttaches({ lights: [] }, productId);
+    expect(unknown).toMatchObject({ known: false, complete: false, error: "unknown" });
+    expect(decideLedProductDelete(unknown)).toMatchObject({
+      ok: false,
+      error: "unknown_refs",
+      attached: null,
+    });
+    expect(catalogDeleteRefuseReason(catalogDeleteChecks(unknown))).toBe(
+      LED_CATALOG_DELETE_REFUSE_UNKNOWN,
+    );
+    expect(canDeleteCatalog(catalogDeleteChecks(unknown))).toBe(false);
+
+    const partial = countLedProductAttaches(
+      [{ id: "light-garage", name: "Garage", ledProductId: 12 }],
+      productId,
+    );
+    expect(partial).toMatchObject({ known: false, complete: false, error: "partial" });
+    expect(decideLedProductDelete(partial)).toMatchObject({
+      ok: false,
+      error: "unknown_refs",
+    });
+    expect(canDeleteCatalog(catalogDeleteChecks(partial))).toBe(false);
+
+    const missingId = countLedProductAttaches(
+      [{ name: "Garage", ledProductId: productId }],
+      productId,
+    );
+    expect(missingId).toMatchObject({ known: false, complete: false, error: "partial" });
+
+    const clear = catalogDeleteChecks(countLedProductAttaches([], productId));
+    expect(canDeleteCatalog(clear)).toBe(true);
+    expect(catalogDeleteRefuseReason(clear)).toBeNull();
+    expect(clear[0]?.detail).toMatch(/catalog bookkeeping only/);
   });
 
   it("parses attach null and a catalog id; unknown ids fail closed", () => {

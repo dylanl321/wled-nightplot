@@ -13,6 +13,10 @@ type StoreShape = {
   elements: Element[];
 };
 
+export type LightsRawLoad =
+  | { ok: true; lights: unknown[] }
+  | { ok: false; error: "unreadable" | "invalid" };
+
 export class FileLightsStore {
   constructor(private readonly filePath: string) {}
 
@@ -34,6 +38,26 @@ export class FileLightsStore {
 
   findById(id: string): Light | undefined {
     return this.read().lights.find((light) => light.id === id);
+  }
+
+  /**
+   * Raw Lights rows for catalog attach counts. Missing file is a known empty
+   * list. Corrupt / wrong-shaped files are not empty — callers must refuse.
+   */
+  tryLoadRaw(): LightsRawLoad {
+    try {
+      const raw = readFileSync(this.filePath, "utf8");
+      const parsed = JSON.parse(raw) as FileShape;
+      if (parsed.version !== 1 || !Array.isArray(parsed.lights)) {
+        return { ok: false, error: "invalid" };
+      }
+      return { ok: true, lights: parsed.lights };
+    } catch (error) {
+      if (isEnoent(error)) {
+        return { ok: true, lights: [] };
+      }
+      return { ok: false, error: "unreadable" };
+    }
   }
 
   upsert(next: Light): void {
@@ -101,6 +125,10 @@ function withLedProductId(light: Light): Light {
     ...light,
     ledProductId: normalizeLightLedProductId(light.ledProductId),
   };
+}
+
+function isEnoent(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
 }
 
 function isElement(value: unknown): value is Element {
