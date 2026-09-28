@@ -191,7 +191,8 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     }
     // Honor leftover `stop: 0` even when the rest of the write is un-id’d
     // (named-Element Preview after locate overlay). Unpaint that range so
-    // leftover lit pieces do not stay the last overlay colour.
+    // leftover lit pieces do not stay the last overlay colour. Unnamed
+    // writes that omit leftover `stop: 0` keep leftover overlay ids.
     const paints: typeof incoming = [];
     for (const row of incoming) {
       if (row.id != null && row.stop <= row.start) {
@@ -231,23 +232,36 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
         if (rgb) paint(pixels, seg.start, seg.stop, rgb);
       }
     } else {
-      const segs: Seg[] = [];
+      // WLED infers omitted id from array order (`id | it`) and leaves
+      // leftover overlay ids that were not mentioned. Replacing state.seg
+      // is not that behaviour. Leftover pixels stay until leftover stop:0.
+      // Fixture stand-in — not metal.
+      const byId = new Map<number, Seg>();
+      state.seg.forEach((seg, index) => {
+        byId.set(seg.id ?? index, { ...seg, id: seg.id ?? index });
+      });
+      let inferred = 0;
       for (const row of paints) {
-        if (row.stop <= row.start) continue;
-        const col = row.col;
-        if (!col) {
-          segs.push({ start: row.start, stop: row.stop, col: state.seg[0]?.col ?? [] });
+        const id = row.id ?? inferred;
+        inferred += 1;
+        if (row.stop <= row.start) {
+          byId.delete(id);
           continue;
         }
-        const rgb = col[0]!.map(Number);
-        segs.push({ start: row.start, stop: row.stop, col: [rgb] });
-        paint(pixels, row.start, row.stop, rgb);
+        const prev = byId.get(id);
+        const col = row.col ?? prev?.col ?? state.seg[0]?.col ?? [];
+        byId.set(id, { id, start: row.start, stop: row.stop, col });
       }
+      let segs = [...byId.values()].sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
       if (mismatch && segs.length > 0) {
         const last = segs[segs.length - 1]!;
         last.stop = Math.max(last.start + 1, last.stop - 10);
       }
       if (segs.length) state.seg = segs;
+      for (const seg of state.seg) {
+        const rgb = seg.col[0];
+        if (rgb) paint(pixels, seg.start, seg.stop, rgb);
+      }
     }
     if (unknownReread) hideSegAfterWrite = true;
   }
