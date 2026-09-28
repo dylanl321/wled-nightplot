@@ -22,7 +22,7 @@ GitHub: [`dylanl321/wled-nightplot`](https://github.com/dylanl321/wled-nightplot
 - Preview is temporary. Apply is what persists on the controller. Ending Preview writes power, brightness, colour, and ranges only when the last snapshot knew them — an info-only report (info answered, state skipped or hung) does not invent on, brightness 128, `#ffa000`, or a whole-strip segment. Apply refuses when colour is unknown — it does not write `#ffa000`.
 - All Off cancels without restoring the previous look.
 - **Remove this Light** runs checks (Elements, live sessions, controller state). Unknown is not safe; there is no “I understand” override.
-- Safe settings and first-time Strip provision write only understood, fingerprinted fields. Unsupported firmware is refused — nothing is written. A `buildSafeWrite` refuse 422 includes `safeWrite` so Safe settings can show the write failure — not a notice-only line.
+- Safe settings and first-time Strip provision write only understood, fingerprinted fields. Unsupported firmware is refused — nothing is written. A `buildSafeWrite` refuse 422 includes `safeWrite`. Safe settings shows that as the write-failure panel (Sent / Read back) and hides the notice while it is up — not two identical destructive lines.
 - The local WLED-shaped fixture is a software stub for development. A green readback there is not proof that a real strip passed.
 
 After a Safe display-name write, the rack title uses the `/json/cfg` name even when metal `/json/info` still lags until reboot.
@@ -132,7 +132,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | GET | `/api/lights/:id/delete-checks` | Elements / live sessions / controller state. Unknown is not safe. |
 | DELETE | `/api/lights/:id` | 422 until every check is `ok`. Does not write the controller. |
 | GET | `/api/lights/:id/safe` | Fingerprinted Safe settings from `/json/cfg`. Empty fingerprint → refuse. |
-| POST | `/api/lights/:id/safe` | `{ settings }` — write only understood fields, then reread. 422 if unsupported — refuse includes `safeWrite` (write-failure UI, not notice-only). A matched display-name write patches the enrolled title from cfg even when `/json/info` still lags. |
+| POST | `/api/lights/:id/safe` | `{ settings }` — write only understood fields, then reread. 422 if unsupported — refuse includes `safeWrite` (Safe settings failure panel, notice hidden). A matched display-name write patches the enrolled title from cfg even when `/json/info` still lags. |
 | PATCH | `/api/lights/:id/led-product` | `{ ledProductId }` — attach a shared catalog product or `null` for manual fields. Persists on the Light. Does not write WLED. Does not replace Strip Apply. |
 | GET | `/api/lights/:id/provision` | First-time strip bus from `/json/cfg` (`hw.led.ins[0]`). Empty / multi-bus / unsupported firmware → refuse. |
 | POST | `/api/lights/:id/provision` | `{ provision: { ledType, length, gpio } }` — `ws281x` or `sk6812-rgbw`. Writes reviewed cfg bus fields, then rereads cfg and snapshot. 200 only on match. 409 keeps the failure. 422 if unsupported — refuse includes `provisionWrite` (Strip failure panel, not notice-only). Unknown types are not written. A successful length change reconciles declared Elements (clip / drop / flag leftover coverage) and returns `provisionWrite.ranges`. |
@@ -145,7 +145,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | `/discover` | Find / type an address / add. A Find load miss still lists enrolled Lights; it does not claim the configure server is down. Retry Find Lights or type an address. |
 | `/lights/:id` | Inspect — identity + StripBeads + declared vs reported + Delete checks. A detail load miss still lists enrolled Lights; it does not claim the configure server is down. |
 | `/lights/:id?mode=strip` | Strip — attach a shared catalog product or set WS281x / SK6812 RGBW plus this Light’s length / GPIO; fields still override. Apply writes `/json/cfg` then re-reads. Mismatch or refuse stays, titled with the write message (`provisionWrite` on 409 / 422). |
-| `/lights/:id?mode=safe` | Safe settings — name, boot, transition, current limit; refuse if unsupported. Refuse 422 includes `safeWrite` so the write failure stays, not a notice-only line. A rename updates the title from `/json/cfg` without waiting for reboot. |
+| `/lights/:id?mode=safe` | Safe settings — name, boot, transition, current limit; refuse if unsupported. Refuse 422 includes `safeWrite`. The write-failure panel shows Sent / Read back; notice is hidden while that panel is up. A rename updates the title from `/json/cfg` without waiting for reboot. |
 | `/lights/:id?mode=ranges` | Edit ranges — draft save, Apply write+reread, failed Apply stays |
 | `/lights/:id?mode=live` | Test live — Preview / Blink, proof ladder, `/json/live` beads |
 

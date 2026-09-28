@@ -2,9 +2,11 @@
 
 import {
   fieldLabel,
+  requestedFields,
   transitionMs,
   transitionUnitsFromMs,
   type LightDetail,
+  type SafeFieldKey,
   type SafeRead,
   type SafeWriteResult,
   type WledSafeSettings,
@@ -104,6 +106,9 @@ export function SafeSettingsPanel({
       </p>
     );
   }
+
+  const failed = result && !result.matched;
+  const sentKeys = failed ? requestedFields(result.sent) : [];
 
   return (
     <div className="flex flex-col gap-4">
@@ -227,13 +232,29 @@ export function SafeSettingsPanel({
         </p>
       ) : null}
 
-      {result ? (
-        <p className={cn("text-[13px]", result.matched ? "text-primary" : "text-destructive")}>
-          {result.message}
-        </p>
+      {failed ? (
+        <div className="flex flex-col gap-2 rounded-[14px] border border-[#5a2f33] bg-[#1a1113] p-4">
+          <span className="text-[16px] font-semibold text-destructive">{result.message}</span>
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[13px]">
+            <span className="text-muted-foreground">Sent</span>
+            <span className="font-mono">{formatSafeWriteLine(result.sent, sentKeys)}</span>
+            <span className="text-muted-foreground">Read back</span>
+            <span className="font-mono text-destructive">
+              {formatSafeWriteLine(
+                result.read,
+                sentKeys.length > 0 ? sentKeys : requestedFields(result.read),
+              )}
+            </span>
+          </div>
+          <p className="text-[12px] text-primary">{result.caption}</p>
+        </div>
       ) : null}
-      {notice ? <p className="text-[13px] text-destructive">{notice}</p> : null}
-      <p className="text-[12px] text-primary">{read.caption}</p>
+
+      {result?.matched ? (
+        <p className="text-[13px] text-primary">{result.message}</p>
+      ) : null}
+      {notice && !failed ? <p className="text-[13px] text-destructive">{notice}</p> : null}
+      {!failed ? <p className="text-[12px] text-primary">{read.caption}</p> : null}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
         <Button
@@ -253,6 +274,30 @@ export function SafeSettingsPanel({
       </div>
     </div>
   );
+}
+
+function formatSafeWriteValue(
+  key: SafeFieldKey,
+  value: WledSafeSettings[SafeFieldKey] | undefined,
+): string {
+  if (value === null || value === undefined) return "—";
+  switch (key) {
+    case "turnOnAtBoot":
+      return value ? "on" : "stay off";
+    case "defaultTransition":
+      return typeof value === "number" ? `${transitionMs(value)} ms` : "—";
+    case "currentLimitMa":
+      return `${value} mA`;
+    default:
+      return String(value);
+  }
+}
+
+function formatSafeWriteLine(settings: Partial<WledSafeSettings>, keys: SafeFieldKey[]): string {
+  if (keys.length === 0) return "—";
+  return keys
+    .map((key) => `${fieldLabel(key)} ${formatSafeWriteValue(key, settings[key])}`)
+    .join(" · ");
 }
 
 function SafeField({
