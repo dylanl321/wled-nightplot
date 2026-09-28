@@ -2966,6 +2966,10 @@ describe("LED product catalog", () => {
       defaultLength: 150,
     });
     expect(writeCfg).not.toHaveBeenCalled();
+    const after = store.findById(lightId);
+    expect(after).toEqual(before);
+    expect(after?.ledProductId).toBeNull();
+    expect(after?.ledCount).toBe(before?.ledCount);
 
     const listed = await app.request("/api/led-products/eave-cob");
     expect(((await listed.json()) as { product: { label: string } }).product.label).toBe(
