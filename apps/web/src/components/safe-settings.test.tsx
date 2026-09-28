@@ -94,7 +94,7 @@ describe("Safe settings", () => {
     vi.stubGlobal("fetch", fetch);
 
     render(<SafeSettingsPanel lightId="light-garage" unreachable={false} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Write Safe settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply settings" }));
 
     const titles = await screen.findAllByText(BUILD_REFUSE_MESSAGE);
     expect(titles).toHaveLength(1);
@@ -126,7 +126,7 @@ describe("Safe settings", () => {
     vi.stubGlobal("fetch", fetch);
 
     render(<SafeSettingsPanel lightId="light-garage" unreachable={false} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Write Safe settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply settings" }));
 
     const titles = await screen.findAllByText(CFG_MISMATCH_MESSAGE);
     expect(titles).toHaveLength(1);
@@ -147,7 +147,7 @@ describe("Safe settings", () => {
     vi.stubGlobal("fetch", fetch);
 
     render(<SafeSettingsPanel lightId="light-garage" unreachable={false} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Write Safe settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply settings" }));
 
     const notice = await screen.findByText(NOTICE_ONLY_MESSAGE);
     expect(notice.tagName).toBe("P");
@@ -200,7 +200,7 @@ describe("Safe settings", () => {
 
     render(<SafeSettingsPanel lightId="light-garage" unreachable={false} />);
 
-    expect(await screen.findByRole("button", { name: "Write Safe settings" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Apply settings" })).toBeTruthy();
     expect(screen.getAllByText(/Not Hardware Done/)).toHaveLength(1);
     expect(screen.queryByText(BUILD_REFUSE_MESSAGE)).toBeNull();
     expect(screen.queryByText("Sent")).toBeNull();
@@ -225,7 +225,7 @@ describe("Safe settings", () => {
     vi.stubGlobal("fetch", fetch);
 
     render(<SafeSettingsPanel lightId="light-garage" unreachable={false} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Write Safe settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply settings" }));
 
     const line = await screen.findByText(MATCHED_MESSAGE);
     expect(line.tagName).toBe("P");

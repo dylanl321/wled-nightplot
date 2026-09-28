@@ -78,6 +78,17 @@ export type LightView = Light & {
   /** Null when `state.seg` is unknown. 0 is a known empty list. */
   segmentCount: number | null;
   driftLabel: string | null;
+  /**
+   * Declared Elements from the list’s existing range display.
+   * `differs` is that compare — the list does not re-probe or read cfg.
+   */
+  declared: {
+    id: string;
+    label: string;
+    start: number;
+    stop: number;
+    differs: boolean;
+  }[];
 };
 
 export type LightDetail = {

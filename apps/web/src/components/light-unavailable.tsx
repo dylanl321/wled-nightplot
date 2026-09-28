@@ -20,7 +20,7 @@ export function LightUnavailable({
   const body =
     kind === "missing"
       ? "It may have been removed, or this address never enrolled. Nothing was sent to a controller."
-      : "Enrolled Lights stay listed. This is not a claim that the configure server is down. Open another Light from the rail, or go back to Lights.";
+      : "Enrolled Lights stay listed. This is not a claim that the configure server is down. Go back to Lights.";
 
   return (
     <div className="mx-auto flex w-full max-w-[640px] flex-1 flex-col gap-4 px-5 py-10 sm:px-8">

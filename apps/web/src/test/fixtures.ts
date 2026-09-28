@@ -52,6 +52,7 @@ export function lightView(overrides: Partial<LightView> = {}): LightView {
     elementCount: 1,
     segmentCount: null,
     driftLabel: null,
+    declared: [],
     ...overrides,
   };
 }

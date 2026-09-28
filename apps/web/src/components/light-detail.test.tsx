@@ -52,7 +52,7 @@ describe("LightDetail Refresh", () => {
     render(<LightDetail initial={initial} mode="inspect" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-    expect(await screen.findByText("Online")).toBeTruthy();
+    expect(await screen.findByText(/On · 50%/)).toBeTruthy();
 
     const paths = fetch.mock.calls.map((call) => requestPath(String(call[0])));
     expect(paths.some((path) => isOneLightProbe(path, initial.light.id))).toBe(true);
@@ -76,7 +76,8 @@ describe("LightDetail reported rails", () => {
     } as unknown as LightDetailPayload;
 
     expect(() => render(<LightDetail initial={initial} mode="ranges" />)).not.toThrow();
-    expect(screen.getByText(/above: declared · below: reported/)).toBeTruthy();
+    expect(screen.getByText("Your Elements")).toBeTruthy();
+    expect(screen.getByText("Controller segments")).toBeTruthy();
   });
 
   it("keeps mapping reported rails after a successful Preview", async () => {
@@ -133,7 +134,7 @@ describe("LightDetail reported rails", () => {
     );
 
     render(<LightDetail initial={initial} mode="live" />);
-    fireEvent.click(screen.getByRole("button", { name: /Preview on Door/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
 
     expect(await screen.findByText(/Preview live on/)).toBeTruthy();
     expect(screen.getByText(/Controller reports 60 \/ 60 in Door/)).toBeTruthy();
@@ -286,7 +287,7 @@ describe("LightDetail info-only segments", () => {
     );
 
     const row = screen.getByRole("button", { name: /Door 0–60/ });
-    expect(row.textContent).toMatch(/matches/);
+    expect(row.textContent).toMatch(/Matches/);
     expect(row.textContent).not.toMatch(/no compare/);
   });
 
@@ -326,13 +327,13 @@ describe("LightDetail info-only power", () => {
           }),
           snapshotAt: "2026-09-26T18:00:00.000Z",
         })}
-        mode="inspect"
+        mode="ranges"
       />,
     );
 
-    expect(screen.getByText("Online · unknown")).toBeTruthy();
+    expect(screen.getByText("Power unknown")).toBeTruthy();
     expect(screen.queryByText("Online · off")).toBeNull();
-    expect(screen.getByText(/Power unknown/)).toBeTruthy();
+    expect(screen.queryByText("Off")).toBeNull();
     expect(screen.queryByText("Answering. Off.")).toBeNull();
     const strip = screen.getByRole("img", { name: "Garage strip, 60 LEDs, RGB" });
     expect(strip.innerHTML).not.toContain("#ffa000");
@@ -352,12 +353,12 @@ describe("LightDetail info-only power", () => {
           }),
           snapshotAt: "2026-09-26T18:00:00.000Z",
         })}
-        mode="inspect"
+        mode="ranges"
       />,
     );
 
-    expect(screen.getByText("Online · off")).toBeTruthy();
-    expect(screen.getByText("Answering. Off.")).toBeTruthy();
+    expect(screen.getByText("Off")).toBeTruthy();
+    expect(screen.queryByText("Power unknown")).toBeNull();
     const strip = screen.getByRole("img", { name: "Garage strip, 60 LEDs, RGB" });
     expect(strip.innerHTML).toContain("#141519");
     expect(strip.innerHTML).not.toContain("#1d1d1f");
@@ -380,14 +381,14 @@ describe("LightDetail RGBW honesty", () => {
             stripChip: "WS281x RGB",
           }),
         })}
-        mode="inspect"
+        mode="ranges"
       />,
     );
 
-    expect(screen.getByText("WS281x RGB")).toBeTruthy();
+    expect(screen.getByText(/WS281x RGB/)).toBeTruthy();
     expect(screen.queryByText("WS281x RGBW")).toBeNull();
-    expect(screen.getByText(/RGB · above: declared · below: reported/)).toBeTruthy();
-    expect(paragraphWith(/60 LEDs \(RGB\) in/)).toBeTruthy();
+    expect(screen.getByText("Your Elements")).toBeTruthy();
+    expect(screen.getByText("Controller segments")).toBeTruthy();
   });
 
   it("grows a second die for SK6812 RGBW", () => {
@@ -406,13 +407,13 @@ describe("LightDetail RGBW honesty", () => {
             stripChip: "SK6812 RGBW",
           }),
         })}
-        mode="inspect"
+        mode="ranges"
       />,
     );
 
-    expect(screen.getByText("SK6812 RGBW")).toBeTruthy();
-    expect(screen.getByText(/RGBW · above: declared · below: reported/)).toBeTruthy();
-    expect(paragraphWith(/60 LEDs \(RGBW\) in/)).toBeTruthy();
+    expect(screen.getByText(/SK6812 RGBW/)).toBeTruthy();
+    expect(screen.getByText("Your Elements")).toBeTruthy();
+    expect(screen.getByText(/60 LEDs · SK6812 RGBW/)).toBeTruthy();
     const lit = screen.getByRole("img", { name: "Porch strip, 60 LEDs, RGBW" });
     expect(lit.innerHTML).toContain("#fff4dc");
     expect(lit.innerHTML).toContain("#ffa000");
@@ -434,7 +435,7 @@ describe("LightDetail RGBW honesty", () => {
             stripChip: "SK6812 RGBW",
           }),
         })}
-        mode="inspect"
+        mode="ranges"
       />,
     );
 
@@ -443,7 +444,7 @@ describe("LightDetail RGBW honesty", () => {
     expect(grey.innerHTML).not.toContain("#fff4dc");
     expect(grey.innerHTML).toContain("#141519");
     expect(screen.getByText(/Beads stay grey/)).toBeTruthy();
-    expect(screen.getByText("SK6812 RGBW")).toBeTruthy();
+    expect(screen.getByText(/SK6812 RGBW/)).toBeTruthy();
   });
 });
 
@@ -1095,11 +1096,4 @@ function stubApplyResult(initial: LightDetailPayload, apply: ApplyResult): void 
       });
     }),
   );
-}
-
-function paragraphWith(pattern: RegExp): HTMLElement {
-  return screen.getByText((_, node) => {
-    if (node?.tagName !== "P") return false;
-    return pattern.test(node.textContent ?? "");
-  });
 }

@@ -2,7 +2,6 @@ import type { LightView } from "@nightplot/shared";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { AllOffControl, type LiveHint } from "@/components/all-off-control";
-import { MiniStrip } from "@/components/mini-strip";
 import { cn } from "@/lib/utils";
 
 type AppShellProps = {
@@ -17,95 +16,36 @@ type AppShellProps = {
 export function AppShell({
   children,
   lights = [],
-  lightCount,
   nav,
-  activeLightId,
   sessions = [],
 }: AppShellProps) {
+  const lightsActive = nav === "lights" || nav === "light" || nav === "discover";
+
   return (
-    <div className="flex min-h-dvh bg-background text-foreground">
-      <aside className="hidden w-[248px] shrink-0 flex-col border-r border-border bg-rail lg:flex">
-        <div className="flex h-16 items-center gap-2.5 px-5">
-          <Brand markClassName="h-3 w-11" />
-        </div>
-        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-1">
-          <NavLink href="/" active={nav === "lights"}>
-            <span>All Lights</span>
-            <span className="ml-auto font-mono text-xs text-muted-foreground">
-              {lightCount}
-            </span>
-          </NavLink>
-          {lights.map((light) => {
-            const session = sessions.find((item) => item.lightId === light.id);
-            return (
-              <Link
-                key={light.id}
-                href={`/lights/${light.id}`}
-                className={cn(
-                  "flex flex-col gap-1.5 rounded-md px-2.5 py-2.5 hover:bg-secondary/60",
-                  activeLightId === light.id &&
-                    "bg-secondary font-medium shadow-[inset_2px_0_0_#d4a574]",
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <span
-                    className="size-1.5 rounded-full"
-                    style={{
-                      background:
-                        light.reachability === "no-answer" ? "#e07070" : "#7ee0d0",
-                    }}
-                  />
-                  <span className="truncate">{light.name}</span>
-                  <span
-                    className={cn(
-                      "ml-auto text-[11px]",
-                      session
-                        ? "text-online"
-                        : light.reachability === "no-answer"
-                          ? "text-destructive"
-                          : "text-muted-foreground",
-                    )}
-                  >
-                    {session
-                      ? session.kind === "blink"
-                        ? "Blink"
-                        : "Preview"
-                      : light.reachability === "no-answer"
-                        ? "No answer"
-                        : light.on
-                          ? "On"
-                          : "Off"}
-                  </span>
-                </div>
-                <MiniStrip
-                  id={`nav-${light.id}`}
-                  bead={light.bead}
-                  count={40}
-                  pitch={4.8}
-                />
-              </Link>
-            );
-          })}
-          <NavLink href="/discover" active={nav === "discover"}>
-            + Add a Light
+    <div className="flex min-h-dvh flex-col bg-background text-foreground">
+      <header className="hidden h-14 items-center gap-7 border-b border-border bg-rail px-6 lg:flex">
+        <Brand markClassName="h-3 w-11" />
+        <nav className="flex items-center gap-1">
+          <NavLink href="/" active={lightsActive}>
+            Lights
           </NavLink>
           <NavLink href="/led-products" active={nav === "catalog"}>
             LED products
           </NavLink>
         </nav>
-        <div className="max-h-[55%] overflow-y-auto border-t border-border p-4">
-          <AllOffControl size="sidebar" lights={lights} sessions={sessions} />
+        <div className="ml-auto">
+          <AllOffControl size="bar" lights={lights} sessions={sessions} />
         </div>
-      </aside>
+      </header>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-[52px] items-center gap-2.5 border-b border-border px-5 lg:hidden">
-          <Brand markClassName="h-2.5 w-9" />
-        </header>
-        <main className="flex min-h-0 flex-1 flex-col">{children}</main>
-        <div className="border-t border-border bg-rail px-4 pb-7 pt-3 lg:hidden">
-          <AllOffControl size="thumb" lights={lights} sessions={sessions} />
-        </div>
+      <header className="flex h-[52px] items-center gap-2.5 border-b border-border px-5 lg:hidden">
+        <Brand markClassName="h-2.5 w-9" />
+      </header>
+
+      <main className="flex min-h-0 flex-1 flex-col">{children}</main>
+
+      <div className="border-t border-border bg-rail px-4 pb-7 pt-3 lg:hidden">
+        <AllOffControl size="thumb" lights={lights} sessions={sessions} />
       </div>
     </div>
   );
@@ -134,10 +74,8 @@ function NavLink({
     <Link
       href={href}
       className={cn(
-        "flex items-center rounded-md px-2.5 py-2.5 text-[14px]",
-        active
-          ? "bg-secondary font-medium shadow-[inset_2px_0_0_#d4a574]"
-          : "text-foreground hover:bg-secondary/60",
+        "rounded-md px-3 py-1.5 text-[14px]",
+        active ? "bg-secondary font-medium" : "text-muted-foreground hover:bg-secondary/60",
       )}
     >
       {children}

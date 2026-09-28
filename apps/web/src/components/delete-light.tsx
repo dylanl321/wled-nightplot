@@ -16,13 +16,15 @@ export function DeleteLight({
   lightId,
   name,
   initialChecks,
+  alwaysOpen = false,
 }: {
   lightId: string;
   name: string;
   initialChecks?: DeleteCheck[] | null;
+  alwaysOpen?: boolean;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(alwaysOpen);
   const [checks, setChecks] = useState<DeleteCheck[]>(initialChecks ?? []);
   const [caption, setCaption] = useState<string | null>(null);
   const [busy, setBusy] = useState<"check" | "delete" | null>(null);
@@ -147,11 +149,16 @@ export function DeleteLight({
         {unlocked ? (
           <Button
             type="button"
-            className="h-[52px] bg-destructive text-primary-foreground hover:bg-[#c45c5c] sm:h-10 sm:min-w-[220px]"
+            variant={alwaysOpen ? "outline" : "default"}
+            className={
+              alwaysOpen
+                ? "h-9 border-destructive text-destructive hover:bg-[#1a1113]"
+                : "h-[52px] bg-destructive text-primary-foreground hover:bg-[#c45c5c] sm:h-10 sm:min-w-[220px]"
+            }
             disabled={busy !== null}
             onClick={() => void remove()}
           >
-            {busy === "delete" ? "Deleting…" : `Delete ${name}`}
+            {busy === "delete" ? "Removing…" : alwaysOpen ? `Remove ${name}` : `Delete ${name}`}
           </Button>
         ) : (
           <div className="relative h-10 w-full overflow-hidden rounded-lg border border-[#3a4150] bg-[#1a1d24] sm:w-[220px]">
@@ -173,6 +180,7 @@ export function DeleteLight({
             Unlocks when every check is complete.
           </span>
         ) : null}
+        {alwaysOpen ? null : (
         <Button
           type="button"
           variant="outline"
@@ -184,6 +192,7 @@ export function DeleteLight({
         >
           Keep it
         </Button>
+        )}
       </div>
     </div>
   );

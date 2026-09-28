@@ -21,6 +21,7 @@ const buttonVariants = cva(
         lg: "h-12 px-5 text-[15px]",
         thumb: "h-12 w-full text-[15px]",
         sidebar: "h-11 w-full",
+        bar: "h-[34px] px-3.5 text-[13px]",
       },
     },
     defaultVariants: {

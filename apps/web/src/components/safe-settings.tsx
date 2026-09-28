@@ -26,10 +26,14 @@ type SafePayload = LightDetail & {
 export function SafeSettingsPanel({
   lightId,
   unreachable,
+  embedded = false,
+  staleInfoName,
   onUpdated,
 }: {
   lightId: string;
   unreachable: boolean;
+  embedded?: boolean;
+  staleInfoName?: string | null;
   onUpdated?: (detail: LightDetail) => void;
 }) {
   const [read, setRead] = useState<SafeRead | null>(null);
@@ -110,8 +114,11 @@ export function SafeSettingsPanel({
   const failed = result && !result.matched;
   const sentKeys = failed ? requestedFields(result.sent) : [];
 
+  const formDirty = JSON.stringify(draft) !== JSON.stringify(read.settings);
+
   return (
     <div className="flex flex-col gap-4">
+      {embedded ? null : (
       <div className="flex flex-col gap-1">
         <h2 className="text-[20px] font-semibold">Safe settings</h2>
         <p className="text-[13px] leading-5 text-[#c9c3b8]">
@@ -119,6 +126,7 @@ export function SafeSettingsPanel({
           form — they are not written.
         </p>
       </div>
+      )}
 
       {read.refuse || unreachable ? (
         <div className="rounded-[14px] border border-[#5a2f33] bg-[#1a1113] p-4">
@@ -143,26 +151,36 @@ export function SafeSettingsPanel({
               className="font-sans"
               maxLength={32}
             />
+            {staleInfoName ? (
+              <p className="text-[12px] text-muted-foreground">
+                /json/info still reports {staleInfoName} until reboot. The title uses the name
+                from /json/cfg.
+              </p>
+            ) : null}
           </SafeField>
           <SafeField
             present={fields.includes("turnOnAtBoot")}
             label="Turn on at boot"
             hint="After power-up or reset."
           >
-            <div className="flex gap-2">
-              <Toggle
-                active={draft.turnOnAtBoot === true}
-                onClick={() => patch("turnOnAtBoot", true)}
-              >
-                On
-              </Toggle>
-              <Toggle
-                active={draft.turnOnAtBoot === false}
-                onClick={() => patch("turnOnAtBoot", false)}
-              >
-                Stay off
-              </Toggle>
-            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={draft.turnOnAtBoot === true}
+              aria-label="Turn on at boot"
+              onClick={() => patch("turnOnAtBoot", draft.turnOnAtBoot !== true)}
+              className={cn(
+                "relative h-5 w-[34px] rounded-full",
+                draft.turnOnAtBoot === true ? "bg-primary" : "bg-input",
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute top-0.5 size-4 rounded-full bg-foreground",
+                  draft.turnOnAtBoot === true ? "left-4" : "left-0.5",
+                )}
+              />
+            </button>
           </SafeField>
           <SafeField
             present={fields.includes("bootBrightness")}
@@ -270,8 +288,12 @@ export function SafeSettingsPanel({
         >
           Revert
         </Button>
-        <Button onClick={() => void write()} disabled={!writable || busy !== null}>
-          {busy === "write" ? "Writing…" : "Write Safe settings"}
+        <Button
+          variant={formDirty ? "default" : "outline"}
+          onClick={() => void write()}
+          disabled={!writable || busy !== null}
+        >
+          {busy === "write" ? "Writing…" : "Apply settings"}
         </Button>
       </div>
     </div>
@@ -333,30 +355,5 @@ function SafeField({
       {children}
       <span className="text-[12px] text-quiet">{hint}</span>
     </label>
-  );
-}
-
-function Toggle({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "h-9 flex-1 rounded-md border px-3 text-[13px] font-semibold",
-        active
-          ? "border-primary bg-secondary text-foreground"
-          : "border-input text-muted-foreground",
-      )}
-    >
-      {children}
-    </button>
   );
 }

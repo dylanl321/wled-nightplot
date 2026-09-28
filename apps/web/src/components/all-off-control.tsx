@@ -22,7 +22,7 @@ export type LiveHint = {
 };
 
 type AllOffControlProps = {
-  size: "sidebar" | "thumb";
+  size: "sidebar" | "thumb" | "bar";
   lights: LightView[];
   sessions: LiveHint[];
 };
@@ -101,6 +101,69 @@ export function AllOffControl({ size, lights, sessions }: AllOffControlProps) {
   const failedIds = result?.failedIds ?? [];
   const confirming = phase === "confirm";
   const showingResult = phase === "result" && result !== null;
+  const liveSession = sessions.length > 0;
+
+  if (size === "bar") {
+    return (
+      <>
+        {mounted && confirming
+          ? createPortal(
+              <div
+                data-all-off-overlay=""
+                className="pointer-events-none fixed inset-0 z-40 bg-black/60"
+                aria-hidden
+              />,
+              document.body,
+            )
+          : null}
+        <div className="relative flex items-center gap-3">
+          <p
+            suppressHydrationWarning
+            className={cn(
+              "text-[12px]",
+              liveSession ? "text-online" : "text-muted-foreground",
+            )}
+          >
+            {caption}
+          </p>
+          <Button
+            type="button"
+            variant="allOff"
+            size="bar"
+            disabled={busy}
+            onClick={() => void onAllOff()}
+          >
+            {busy ? "Turning off…" : "All Off"}
+          </Button>
+          {confirming || showingResult ? (
+            <div className="absolute top-[calc(100%+8px)] right-0 z-50 w-[380px] rounded-xl border border-destructive bg-[#1a1113] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.6)]">
+              {confirming ? (
+                <ConfirmBody
+                  confirm={confirm}
+                  busy={busy}
+                  onRun={() => void run()}
+                  onDismiss={dismiss}
+                />
+              ) : result ? (
+                <ResultCard
+                  result={result}
+                  retry={retry}
+                  busy={busy}
+                  onRetry={() => void run(failedIds)}
+                  onClose={dismiss}
+                />
+              ) : null}
+              {error ? <p className="mt-2 text-[12px] leading-5 text-destructive">{error}</p> : null}
+            </div>
+          ) : error ? (
+            <p className="absolute top-[calc(100%+8px)] right-0 text-[12px] leading-5 text-destructive">
+              {error}
+            </p>
+          ) : null}
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -110,7 +173,7 @@ export function AllOffControl({ size, lights, sessions }: AllOffControlProps) {
               data-all-off-overlay=""
               className={
                 size === "sidebar"
-                  ? "pointer-events-none fixed top-0 right-0 bottom-0 left-[248px] z-40 bg-black/60 max-lg:hidden"
+                  ? "pointer-events-none fixed inset-0 z-40 bg-black/60"
                   : "pointer-events-none fixed inset-0 z-40 bg-black/60 lg:hidden"
               }
               aria-hidden
@@ -134,29 +197,12 @@ export function AllOffControl({ size, lights, sessions }: AllOffControlProps) {
         ) : null}
 
         {confirming ? (
-          <>
-            <p className="text-[16px] font-semibold">{confirm.title}</p>
-            <div className="flex flex-col gap-2 text-[13px] leading-5 text-[#c9c3b8]">
-              {confirm.ends ? (
-                <p>
-                  {confirm.ends}{" "}
-                  <span className="text-primary">{confirm.colour}</span>
-                </p>
-              ) : null}
-              <p>{confirm.then}</p>
-            </div>
-            <Button
-              type="button"
-              className="h-11 w-full bg-destructive text-primary-foreground hover:bg-[#c45c5c]"
-              disabled={busy}
-              onClick={() => void run()}
-            >
-              {busy ? "Turning off…" : "Turn all off"}
-            </Button>
-            <Button type="button" variant="outline" className="h-9 w-full" onClick={dismiss}>
-              Not now
-            </Button>
-          </>
+          <ConfirmBody
+            confirm={confirm}
+            busy={busy}
+            onRun={() => void run()}
+            onDismiss={dismiss}
+          />
         ) : showingResult && result ? (
           <ResultCard
             result={result}
@@ -176,12 +222,51 @@ export function AllOffControl({ size, lights, sessions }: AllOffControlProps) {
             >
               {busy ? "Turning off…" : "All Off"}
             </Button>
-            <p className="text-center text-[11px] text-quiet">{caption}</p>
+            <p className="text-center text-[11px] text-quiet" suppressHydrationWarning>
+              {caption}
+            </p>
           </>
         )}
         {error ? <p className="text-[12px] leading-5 text-destructive">{error}</p> : null}
       </div>
     </>
+  );
+}
+
+function ConfirmBody({
+  confirm,
+  busy,
+  onRun,
+  onDismiss,
+}: {
+  confirm: { title: string; ends: string | null; colour: string | null; then: string };
+  busy: boolean;
+  onRun: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-[16px] font-semibold">{confirm.title}</p>
+      <div className="flex flex-col gap-2 text-[13px] leading-5 text-[#c9c3b8]">
+        {confirm.ends ? (
+          <p>
+            {confirm.ends} <span className="text-primary">{confirm.colour}</span>
+          </p>
+        ) : null}
+        <p>{confirm.then}</p>
+      </div>
+      <Button
+        type="button"
+        className="h-11 w-full bg-destructive text-primary-foreground hover:bg-[#c45c5c]"
+        disabled={busy}
+        onClick={onRun}
+      >
+        {busy ? "Turning off…" : "Turn all off"}
+      </Button>
+      <Button type="button" variant="outline" className="h-9 w-full" onClick={onDismiss}>
+        Not now
+      </Button>
+    </div>
   );
 }
 

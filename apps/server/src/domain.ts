@@ -73,6 +73,7 @@ export function toLightView(
     elementCount: number;
     segmentCount: number | null;
     driftLabel: string | null;
+    declared?: LightView["declared"];
     product?: LedProduct | null;
   } = {
     elementCount: 0,
@@ -93,6 +94,7 @@ export function toLightView(
     elementCount: extras.elementCount,
     segmentCount: extras.segmentCount,
     driftLabel: extras.driftLabel,
+    declared: extras.declared ?? [],
   };
 }
 
@@ -111,6 +113,13 @@ export function lightDetail(
       elementCount: elements.length,
       segmentCount: reachable ? snapshotSegmentCount(live) : null,
       driftLabel: display.notes[0]?.text ?? null,
+      declared: display.declared.map((rail, index) => ({
+        id: rail.id ?? `span-${index}`,
+        label: rail.label,
+        start: rail.start,
+        stop: rail.stop,
+        differs: rail.differs,
+      })),
       product,
     }),
     elements,

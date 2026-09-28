@@ -1,6 +1,8 @@
-# Nightplot Configure — v2 UI prototype
+# Nightplot Configure — UI notes
 
-This folder is the visual source of truth for Quiet-utility Configure. The running app should follow it; it is not the running app.
+The running shell is the v3 top bar in `apps/web`: Lights and LED products in the bar, All Off on the bar (thumb bar below `lg`), Elements and Settings on a Light, strip-map cards on Lights.
+
+This folder keeps the earlier v2 bead-language prototype. It is not the running app.
 
 ## Files
 

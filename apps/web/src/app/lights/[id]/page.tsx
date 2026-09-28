@@ -13,20 +13,18 @@ export default async function LightPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ mode?: string }>;
+  searchParams: Promise<{ mode?: string; tab?: string }>;
 }) {
   const { id } = await params;
-  const requested = (await searchParams).mode;
-  const mode =
-    requested === "ranges"
-      ? "ranges"
-      : requested === "live"
-        ? "live"
-        : requested === "safe"
-          ? "safe"
-          : requested === "strip"
-            ? "strip"
-            : "inspect";
+  const query = await searchParams;
+  const tab =
+    query.tab === "settings" || query.tab === "elements"
+      ? query.tab
+      : query.mode === "ranges" || query.mode === "live"
+        ? "elements"
+        : query.mode === "inspect" || query.mode === "strip" || query.mode === "safe"
+          ? "settings"
+          : "elements";
 
   const [lightsResult, detailResult] = await Promise.allSettled([
     fetchJson<LightsPayload>("/api/lights"),
@@ -68,7 +66,7 @@ export default async function LightPage({
       activeLightId={id}
       sessions={model.lights.sessions}
     >
-      <LightDetail initial={model.detail} mode={mode} />
+      <LightDetail initial={model.detail} tab={tab} mode={query.mode === "inspect" || query.mode === "ranges" || query.mode === "live" || query.mode === "safe" || query.mode === "strip" ? query.mode : undefined} />
     </AppShell>
   );
 }

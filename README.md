@@ -78,7 +78,7 @@ Full build / run / multicast caveats: [docs/deploy.md](docs/deploy.md).
 pnpm dev:demo
 ```
 
-or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light for Inspect, then **Strip** to pick a catalog LED product or set WS281x / SK6812 RGBW / node count / GPIO and **Apply** (writes `/json/cfg`, then re-reads the snapshot), **Edit ranges** to declare Elements, **Test live** to Preview or Blink, or **Safe settings** for the small `/json/cfg` set. **All Off** is on the rail / thumb bar. **Remove this Light** on Inspect runs three checks and refuses until they complete. The fixture is a software stub for development, not a verified real strip.
+or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light on **Elements** to declare ranges, Preview, and Apply, or **Settings** for strip hardware, the small Safe set, network facts, and Remove. **All Off** is on the top bar (thumb bar below `lg`). **Remove {name}** on Settings runs three checks and refuses until they complete. The fixture is a software stub for development, not a verified real strip.
 
 `pnpm sim` is a separate **external process** (`127.0.0.1:48211`, DDP UDP `4048`) for the enroll → provision → Apply → live/DDP lane. Type `127.0.0.1:48211` on Add a Light. Quiet caption is **software path only**. That is not Hardware Done. Three Done layers stay distinct: fixture → sim/e2e → metal (human benches). `pnpm test` spawns the sim.
 
@@ -96,7 +96,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | [docs/install.md](docs/install.md) | Install, env, fixture, sim / e2e, proto |
 | [docs/deploy.md](docs/deploy.md) | Docker / compose / GHCR on a LAN |
 | [docs/architecture.md](docs/architecture.md) | Real paths and symbols |
-| [docs/ui/README.md](docs/ui/README.md) | v2 prototype (visual source of truth) |
+| [docs/ui/README.md](docs/ui/README.md) | Bead language; the running shell is the v3 top bar |
 | [docs/PLANE.md](docs/PLANE.md) | CONFIG tickets, REST-only Plane duties |
 | [AGENTS.md](AGENTS.md) | Slice duties and product words |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Tests, PRs, product words |
@@ -146,23 +146,20 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 
 | Path | What |
 | --- | --- |
-| `/` | Lights rack + unenrolled tray. All Off on the rail / thumb bar |
+| `/` | Lights cards + found banner. All Off on the top bar / thumb bar |
 | `/led-products` | Shared LED product catalog — list / create / edit / delete recipes (LED type / IC). Delete refuses while Lights still attach that recipe; unknown or partial attach counts are not safe. Length, GPIO, and ranges stay on each Light. A catalog-only load miss keeps enrolled Lights; it does not claim the configure server is down. |
 | `/discover` | Find / type an address / add. A Find load miss still lists enrolled Lights; it does not claim the configure server is down. Retry Find Lights or type an address. |
-| `/lights/:id` | Inspect — identity + StripBeads + declared vs reported + Delete checks. A detail load miss still lists enrolled Lights; it does not claim the configure server is down. |
-| `/lights/:id?mode=strip` | Strip — attach a shared catalog recipe or set this Light’s WS281x / SK6812 RGBW plus length / GPIO; this Light’s fields still override. Attach is bookkeeping, not Apply. Apply writes `/json/cfg` then re-reads. Mismatch or refuse stays, titled with the write message (`provisionWrite` on 409 / 422). A GET/load refuse uses the form banner once. |
-| `/lights/:id?mode=safe` | Safe settings — name, boot, transition, current limit; refuse if unsupported. Refuse 422 includes `safeWrite`. The write-failure panel shows Sent / Read back; notice is hidden while that panel is up. A GET/load refuse uses the form banner once. A rename updates the title from `/json/cfg` without waiting for reboot. |
-| `/lights/:id?mode=ranges` | Edit ranges — draft save, Apply write+reread, failed Apply stays |
-| `/lights/:id?mode=live` | Test live — Preview / Blink, proof ladder, `/json/live` beads |
+| `/lights/:id` | Elements (`?tab=elements`, the default) — strip, declared ranges, Preview, Save & Apply. Settings (`?tab=settings`) — strip hardware, Safe settings, network, Remove. Old `?mode=ranges` and `?mode=live` open Elements; `?mode=inspect`, `?mode=strip`, and `?mode=safe` open Settings. A detail load miss still lists enrolled Lights; it does not claim the configure server is down. |
+| `/lights/:id?tab=settings` | Strip hardware — attach a shared catalog recipe or set this Light’s WS281x / SK6812 RGBW plus length / GPIO; this Light’s fields still override. Attach is bookkeeping. **Apply hardware** writes `/json/cfg` then re-reads. Mismatch or refuse stays (`provisionWrite` on 409 / 422). Controller — name, boot, transition, current limit; **Apply settings**; refuse 422 includes `safeWrite`. Network — last snapshot address, MAC, firmware. Remove stays open, runs three checks, and stays disabled until they complete. |
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `apps/web` | Quiet-utility Lights rack, Discover, LED product catalog, Inspect / Strip / Edit ranges / Test live / Safe settings, All Off, Delete, `StripBeads` |
+| `apps/web` | Quiet-utility top bar, Lights cards, Discover, LED product catalog, Elements, Settings, All Off, Remove, `StripBeads` |
 | `apps/server` | Discover/connect, JSON Light store, LED product catalog, WLED snapshot + live + Apply + Strip provision + All Off + Delete + Safe settings + fixture |
 | `packages/shared` | LAN guard, WLED parse, catalogs, Light / Element types |
-| `docs/ui/` | Nightplot Configure v2 prototype. See [docs/ui/README.md](docs/ui/README.md). |
+| `docs/ui/` | Bead-language prototype. The running shell is the v3 top bar. See [docs/ui/README.md](docs/ui/README.md). |
 | `docs/PLANE.md` | CONFIG tickets, REST-only Plane duties. |
 | `Dockerfile` / `docker-compose.yml` | Local/LAN image + compose. See [docs/deploy.md](docs/deploy.md). |
 

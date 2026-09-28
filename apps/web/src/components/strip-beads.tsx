@@ -263,7 +263,7 @@ function stripSvg(o: StripBeadsProps) {
   const over: ReactNode[] = [];
   (o.declared ?? []).forEach((sp, si) => {
     const ps = pieces(sp.start, sp.stop);
-    const t = sp.error ? "#e07070" : sp.sel ? "#d4a574" : "#9a9488";
+    const t = sp.error ? "#e07070" : sp.sel || sp.differs ? "#d4a574" : "#9a9488";
     ps.forEach((p, pi) => {
       const y0 = rowTop(p.r) + top - 9;
       const x0 = xAt(p.a) + 1.5;
@@ -275,6 +275,7 @@ function stripSvg(o: StripBeadsProps) {
           fill: "none",
           stroke: t,
           strokeWidth: sp.sel ? 1.4 : 1,
+          strokeDasharray: sp.differs && !sp.sel ? "3 2" : undefined,
         }),
       );
       if (pi === 0) {
@@ -295,7 +296,7 @@ function stripSvg(o: StripBeadsProps) {
               "tspan",
               {
                 fontFamily: "IBM Plex Mono",
-                fill: sp.error ? "#e07070" : "#7d7870",
+                fill: sp.error ? "#e07070" : sp.differs ? "#d4a574" : "#9a9488",
                 dx: 6,
                 fontSize: fs,
               },

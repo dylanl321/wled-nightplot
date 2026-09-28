@@ -34,10 +34,12 @@ type ProvisionPayload = LightDetail & {
 export function StripProvisionPanel({
   lightId,
   unreachable,
+  embedded = false,
   onUpdated,
 }: {
   lightId: string;
   unreachable: boolean;
+  embedded?: boolean;
   onUpdated?: (detail: LightDetail) => void;
 }) {
   const [read, setRead] = useState<ProvisionRead | null>(null);
@@ -173,8 +175,15 @@ export function StripProvisionPanel({
     afterSameTypeApply,
   });
 
+  const fallback = defaultStripPreset();
+  const formDirty =
+    draft.ledType !== draftLedTypeFromSettings(read.settings.ledType) ||
+    draft.length !== (read.settings.length ?? fallback.length) ||
+    draft.gpio !== (read.settings.gpio ?? fallback.gpio);
+
   return (
     <div className="flex flex-col gap-4">
+      {embedded ? null : (
       <div className="flex flex-col gap-1">
         <h2 className="text-[20px] font-semibold">Strip</h2>
         <p className="text-[13px] leading-5 text-[#c9c3b8]">
@@ -185,6 +194,7 @@ export function StripProvisionPanel({
           past the new strip, and flags leftover coverage. Preview is not Apply.
         </p>
       </div>
+      )}
 
       <fieldset className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
         <legend className="px-1 font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
@@ -383,8 +393,12 @@ export function StripProvisionPanel({
         >
           Revert
         </Button>
-        <Button onClick={() => void apply()} disabled={!writable || busy !== null}>
-          {busy === "apply" ? "Applying…" : "Apply"}
+        <Button
+          variant={formDirty ? "default" : "outline"}
+          onClick={() => void apply()}
+          disabled={!writable || busy !== null}
+        >
+          {busy === "apply" ? "Applying…" : "Apply hardware"}
         </Button>
       </div>
     </div>

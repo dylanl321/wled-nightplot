@@ -80,8 +80,8 @@ function payload(overrides: Partial<LightDetailPayload> = {}): LightDetailPayloa
 describe("Strip provision", () => {
   it("offers Strip on an enrolled Light", () => {
     render(<LightDetail initial={payload()} mode="inspect" />);
-    expect(screen.getByRole("button", { name: "Strip" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /type, length, GPIO/ })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Strip hardware" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Settings" })).toBeTruthy();
   });
 
   it("names shared catalog vs this Light and links to LED products", async () => {
@@ -169,7 +169,7 @@ describe("Strip provision", () => {
 
     render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
 
-    expect(await screen.findByRole("button", { name: "Apply" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Apply hardware" })).toBeTruthy();
     expect(screen.getAllByText(/Not Hardware Done/)).toHaveLength(1);
     expect(screen.queryByText(CFG_REFUSE_MESSAGE)).toBeNull();
     expect(screen.queryByText("Sent")).toBeNull();
@@ -219,8 +219,8 @@ describe("Strip provision", () => {
 
     render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
 
-    expect(await screen.findByRole("button", { name: "Apply" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(await screen.findByRole("button", { name: "Apply hardware" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Apply hardware" }));
 
     const title = await screen.findByText(CFG_MISMATCH_MESSAGE);
     expect(title.tagName).toBe("SPAN");
@@ -284,7 +284,7 @@ describe("Strip provision", () => {
     vi.stubGlobal("fetch", fetch);
 
     render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Apply" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply hardware" }));
 
     const title = await screen.findByText(DIDNT_STICK_MESSAGE);
     expect(title.tagName).toBe("SPAN");
@@ -328,7 +328,7 @@ describe("Strip provision", () => {
     vi.stubGlobal("fetch", fetch);
 
     render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Apply" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply hardware" }));
 
     const title = await screen.findByText(CFG_REFUSE_MESSAGE);
     expect(title.tagName).toBe("SPAN");
@@ -374,7 +374,7 @@ describe("Strip provision", () => {
     vi.stubGlobal("fetch", fetch);
 
     render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Apply" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply hardware" }));
 
     const title = await screen.findByText(BUILD_REFUSE_MESSAGE);
     expect(title.tagName).toBe("SPAN");
@@ -470,7 +470,7 @@ describe("Strip provision", () => {
       expect(attaches).toEqual([{ ledProductId: product.id }]);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply hardware" }));
 
     await waitFor(() => {
       expect(posts).toEqual([applyBody.body]);
@@ -524,7 +524,7 @@ describe("Strip provision", () => {
       );
     });
     fireEvent.change(screen.getByLabelText("Node count"), { target: { value: "180" } });
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply hardware" }));
 
     await waitFor(() => {
       expect(posts).toEqual([
@@ -597,7 +597,7 @@ describe("Strip provision", () => {
 
     render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
     fireEvent.click(await screen.findByRole("button", { name: "SK6812 RGBW" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply hardware" }));
 
     await waitFor(() => {
       expect(posts).toEqual([
@@ -690,7 +690,7 @@ describe("Strip provision", () => {
     vi.stubGlobal("fetch", fetch);
 
     render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Apply" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply hardware" }));
 
     expect(await screen.findByText("Controller reports the strip we sent.")).toBeTruthy();
     expect(
@@ -804,12 +804,12 @@ describe("Strip provision", () => {
     vi.stubGlobal("fetch", fetch);
 
     render(<LightDetail initial={initial} mode="strip" />);
-    fireEvent.click(await screen.findByRole("button", { name: "Apply" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply hardware" }));
     expect(
       await screen.findByText("Door 0–60 was clipped to 0–30. It ran past the new strip (30 LEDs)."),
     ).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit ranges" }));
+    fireEvent.click(screen.getByRole("button", { name: "Elements" }));
     expect((await screen.findAllByText("0–30")).length).toBeGreaterThan(0);
     expect(screen.queryByText("0–60")).toBeNull();
   });
@@ -885,7 +885,7 @@ describe("Strip provision", () => {
 
     render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
     fireEvent.change(await screen.findByLabelText("Node count"), { target: { value: "90" } });
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply hardware" }));
 
     expect(await screen.findByText("Controller reports the strip we sent.")).toBeTruthy();
     expect(screen.getByText(kept)).toBeTruthy();

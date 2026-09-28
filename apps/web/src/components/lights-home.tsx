@@ -1,9 +1,14 @@
+"use client";
+
 import { stripBeadCaption, type DiscoverRow, type LightView } from "@nightplot/shared";
 import Link from "next/link";
-import { MiniStrip } from "@/components/mini-strip";
+import { useState, type MouseEvent } from "react";
 import { StripBeads } from "@/components/strip-beads";
 import { Button } from "@/components/ui/button";
-import { displayBead, lightPowerStatus } from "@/lib/power-status";
+import { postJson } from "@/lib/api";
+import { displayBead } from "@/lib/power-status";
+import { brightnessPct, lastSeenLabel } from "@/lib/time";
+import { cn } from "@/lib/utils";
 
 export function LightsHome({
   lights,
@@ -15,10 +20,10 @@ export function LightsHome({
   if (lights.length === 0) {
     return (
       <div className="mx-auto flex w-full max-w-[720px] flex-1 flex-col gap-6 px-5 py-8 sm:px-8 sm:py-10">
-        <Header
-          title="Lights"
-          subtitle="Nothing on this network has been added yet."
-        />
+        <div className="flex flex-col gap-1">
+          <h1 className="text-[26px] font-semibold tracking-[-0.01em]">Lights</h1>
+          <p className="text-muted-foreground">Nothing on this network has been added yet.</p>
+        </div>
         <div className="flex justify-center rounded-[14px] border border-border bg-card px-3.5 py-5">
           <StripBeads
             id="empty"
@@ -50,138 +55,188 @@ export function LightsHome({
             <Link href="/led-products">LED products</Link>
           </Button>
         </div>
-        <UnenrolledTray rows={unenrolled} />
+        <FoundBanner rows={unenrolled} />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[920px] flex-1 flex-col gap-4 px-5 py-8 sm:px-8">
-      <Header
-        title="Lights"
-        subtitle={
-          lights.length === 1
-            ? "One strip on this network. It shows what it last reported."
-            : `${lights.length} strips on this network. Each shows what it last reported.`
-        }
-      />
+    <div className="mx-auto flex w-full max-w-[1040px] flex-1 flex-col gap-4 px-6 py-6 sm:px-10">
+      <div className="flex items-center gap-4">
+        <h1 className="text-[28px] font-semibold tracking-[-0.01em]">Lights</h1>
+        <Button asChild className="ml-auto">
+          <Link href="/discover">Add a Light</Link>
+        </Button>
+      </div>
       {lights.map((light) => (
-        <LightRow key={light.id} light={light} />
+        <LightCard key={light.id} light={light} />
       ))}
-      <UnenrolledTray rows={unenrolled} />
+      <FoundBanner rows={unenrolled} />
     </div>
   );
 }
 
-function Header({ title, subtitle }: { title: string; subtitle: string }) {
-  return (
-    <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:gap-4">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-[26px] font-semibold tracking-[-0.01em]">{title}</h1>
-        <p className="text-muted-foreground">{subtitle}</p>
-      </div>
-      <div className="mt-3 flex flex-col gap-2 sm:ml-auto sm:mt-0 sm:flex-row">
-        <Button asChild variant="outline">
-          <Link href="/led-products">LED products</Link>
-        </Button>
-        <Button asChild>
-          <Link href="/discover">Find Lights</Link>
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function LightRow({ light }: { light: LightView }) {
+function LightCard({ light }: { light: LightView }) {
   const unreachable = light.reachability === "no-answer";
   const bead = displayBead(light);
-  const status = lightPowerStatus(light);
-  const elementLine =
-    light.elementCount === 0
-      ? `${light.ledCount} LEDs · ${stripBeadCaption(light.stripBead)} · no Elements`
-      : `${light.ledCount} LEDs · ${stripBeadCaption(light.stripBead)} · ${light.elementCount} Element${
-          light.elementCount === 1 ? "" : "s"
-        }`;
-  const segmentLine =
-    light.segmentCount === null
-      ? "segments unknown"
-      : `${light.segmentCount} segment${light.segmentCount === 1 ? "" : "s"}`;
+  const status = cardStatus(light);
+  const drifted = light.declared.filter((span) => span.differs);
+  const [blinkBusy, setBlinkBusy] = useState(false);
 
-  return (
-    <Link
-      id={`light-${light.id}`}
-      href={`/lights/${light.id}`}
-      className="grid items-center gap-5 rounded-xl border border-border bg-card px-[18px] py-4 md:grid-cols-[200px_minmax(0,1fr)]"
-    >
-      <div className="flex flex-col gap-1.5">
-        <span className="text-base font-medium">{light.name}</span>
-        <span className={unreachable ? "text-xs text-destructive" : "text-xs text-online"}>
-          {status}
-        </span>
-        <span className="font-mono text-[11px] leading-4 text-quiet">
-          {light.displayHost}
-          <br />
-          {elementLine}
-          {` · ${segmentLine}`}
-          {light.firmware ? ` · ${light.firmware}` : ""}
-        </span>
-        {light.driftLabel ? (
-          <span className="text-xs text-primary">{light.driftLabel}</span>
-        ) : null}
-      </div>
-      <StripBeads
-        id={`rack-${light.id}`}
-        count={Math.min(Math.max(light.ledCount, 1), 300)}
-        perRow={100}
-        pitch={6.8}
-        gutter={0}
-        top={8}
-        bottom={4}
-        color={() => bead}
-        brightness={unreachable ? 1 : 0.8}
-        rgbw={light.stripBead === "rgbw"}
-        ariaLabel={`${light.name} strip, ${stripBeadCaption(light.stripBead)}`}
-      />
-    </Link>
-  );
-}
-
-function UnenrolledTray({ rows }: { rows: DiscoverRow[] }) {
-  if (rows.length === 0) {
-    return (
-      <div className="rounded-xl border border-dashed border-[#3a4150] px-4 py-4 text-[13px] leading-5 text-quiet">
-        Unenrolled WLEDs wait here after a find. Nothing in the tray until a
-        controller answers.
-      </div>
-    );
+  async function blink(event: MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (unreachable || blinkBusy) return;
+    setBlinkBusy(true);
+    await postJson(`/api/lights/${light.id}/blink`, {});
+    setBlinkBusy(false);
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      {rows.map((row) => (
-        <div
-          key={row.key}
-          className="flex flex-col gap-3 rounded-xl border border-dashed border-[#3a4150] px-4 py-3 sm:flex-row sm:items-center"
+    <article
+      id={`light-${light.id}`}
+      className="relative flex flex-col gap-3.5 rounded-[14px] border border-border bg-card px-5 pt-[18px] pb-4"
+    >
+      <Link
+        href={`/lights/${light.id}`}
+        className="absolute inset-0 rounded-[14px]"
+        aria-label={`Open ${light.name}`}
+      />
+      <div className="pointer-events-none flex items-center gap-3">
+        <span className="text-[18px] font-medium">{light.name}</span>
+        <span className={cn("inline-flex items-center gap-1.5 text-[13px]", status.className)}>
+          <span className="size-1.5 rounded-full" style={{ background: status.dot }} />
+          {status.label}
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          className={cn("pointer-events-auto relative z-10 ml-auto h-8", unreachable && "opacity-40")}
+          disabled={unreachable || blinkBusy}
+          onClick={(event) => void blink(event)}
         >
-          <div className="w-[180px]">
-            <MiniStrip
-              id={`tray-${row.key}`}
-              bead={row.bead}
-              count={36}
-            />
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <span>{row.name ?? "WLED"} is on this network but not added</span>
-            <span className="font-mono text-[11px] text-quiet">
-              {row.displayHost} · found via {row.via === "targets" ? "listed address" : row.via}
-            </span>
-            {row.portWarning ? (
-              <span className="mt-1 text-xs leading-5 text-primary">{row.portWarning}</span>
-            ) : null}
-          </div>
-          <Link href="/discover" className="text-primary sm:ml-auto">
-            Look at it
-          </Link>
+          Blink
+        </Button>
+      </div>
+      <div className="pointer-events-none overflow-x-auto">
+        <StripBeads
+          id={`rack-${light.id}`}
+          count={Math.max(light.ledCount, 1)}
+          perRow={150}
+          pitch={6.5}
+          gutter={0}
+          top={28}
+          bottom={6}
+          fontSize={11}
+          color={() => bead}
+          brightness={unreachable ? 1 : 0.85}
+          rgbw={light.stripBead === "rgbw"}
+          declared={light.declared.map((span) => ({
+            start: span.start,
+            stop: span.stop,
+            label: span.label,
+            differs: span.differs,
+          }))}
+          ariaLabel={`${light.name} strip, ${stripBeadCaption(light.stripBead)}`}
+        />
+      </div>
+      <div className="pointer-events-none flex flex-wrap items-center gap-2 text-[13px]">
+        <span className="text-muted-foreground">
+          {light.ledCount} LEDs · {light.stripChip} · {light.displayHost}
+        </span>
+        <span className="ml-auto">
+          <CardSync light={light} drifted={drifted.length} />
+        </span>
+      </div>
+    </article>
+  );
+}
+
+function CardSync({ light, drifted }: { light: LightView; drifted: number }) {
+  if (light.reachability === "no-answer") {
+    return (
+      <span className="text-destructive" suppressHydrationWarning>
+        {lastSeenLabel(light.lastSeenAt)} · shown grey, not its last colour
+      </span>
+    );
+  }
+  if (light.segmentCount == null) {
+    return <span className="text-muted-foreground">Segments unknown</span>;
+  }
+  if (light.segmentCount === 0) {
+    return <span className="text-muted-foreground">0 segments</span>;
+  }
+  if (drifted > 0) {
+    return (
+      <span className="text-primary">
+        {drifted} Element{drifted === 1 ? "" : "s"} don’t match the controller · Review
+      </span>
+    );
+  }
+  if (light.driftLabel) {
+    return <span className="text-primary">{light.driftLabel} · Review</span>;
+  }
+  return <span className="text-muted-foreground">In sync with the controller</span>;
+}
+
+function cardStatus(light: LightView): { label: string; className: string; dot: string } {
+  if (light.reachability === "no-answer") {
+    return { label: "Not answering", className: "text-destructive", dot: "#e07070" };
+  }
+  if (light.on === true) {
+    const pct = brightnessPct(light.brightness);
+    return {
+      label: pct !== null ? `On · ${pct}%` : "On",
+      className: "text-online",
+      dot: "#7ee0d0",
+    };
+  }
+  if (light.on === false) {
+    return { label: "Off", className: "text-[#c9c3b8]", dot: "#3e3c37" };
+  }
+  return { label: "Power unknown", className: "text-[#c9c3b8]", dot: "#3e3c37" };
+}
+
+function FoundBanner({ rows }: { rows: DiscoverRow[] }) {
+  const [busyHost, setBusyHost] = useState<string | null>(null);
+  if (rows.length === 0) return null;
+
+  async function blink(host: string) {
+    setBusyHost(host);
+    await postJson("/api/discover/blink", { host });
+    setBusyHost(null);
+  }
+
+  const noun =
+    rows.length === 1
+      ? "Found 1 controller that isn’t added"
+      : `Found ${rows.length} controllers that aren’t added`;
+
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-dashed border-[#3a4150] px-4 py-3">
+      <div className="flex items-center gap-3.5">
+        <span className="size-2 rounded-full bg-primary" />
+        <span>{noun}</span>
+      </div>
+      {rows.map((row) => (
+        <div key={row.key} className="flex flex-wrap items-center gap-3.5">
+          <span className="font-mono text-[13px] text-muted-foreground">
+            WLED · {row.displayHost}
+          </span>
+          <Button asChild variant="outline" className="h-8">
+            <Link href="/discover">Add</Link>
+          </Button>
+          <button
+            type="button"
+            className="text-[13px] text-foreground"
+            disabled={busyHost === row.displayHost}
+            onClick={() => void blink(row.displayHost)}
+          >
+            Blink it
+          </button>
+          {row.portWarning ? (
+            <span className="basis-full text-xs text-primary">{row.portWarning}</span>
+          ) : null}
         </div>
       ))}
     </div>

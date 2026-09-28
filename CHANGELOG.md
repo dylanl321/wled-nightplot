@@ -23,6 +23,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Changed
 
+- The Configure shell is a 56px top bar (Lights, LED products, All Off). A Light has Elements and Settings. Lights are cards with a found banner. `GET /api/lights` includes each Light’s declared ranges from the list’s existing range display. Preview is not Apply.
 - Public docs state enroll-then-assign: the LED product catalog is the shared type / IC recipe (managed on `/led-products`); length, GPIO, ranges, and overrides live on the Light; Strip-assist plugins (length helper first; segment helper later) are modular help and do not replace catalog attach. Attach is not Apply. A length helper is not on Strip today. Preview is not Apply. A catalog row is not Hardware Done (CONFIG-115).
 - Strip Apply authors GRBW (`order: 0` / `COL_ORDER_GRB`) only when the native bus type changes to a mapped type, including convert to SK6812 RGBW. Same-type length or GPIO writes keep the colour order already on the box. There is no order picker. Fixture software-green is not Hardware Done. Preview is not Apply (CONFIG-59).
 - `docs/PLANE.md` lists filed CONFIG tickets through CONFIG-50 and records the live GitHub home `dylanl321/wled-nightplot` with package name `nightplot-configure` (CONFIG-34).

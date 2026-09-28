@@ -38,7 +38,7 @@ Layout:
 - `apps/web` — Quiet-utility shell (Next.js)
 - `apps/server` — catalogs, Discover/connect, JSON Light store, live / Apply / provision / Safe / All Off
 - `packages/shared` — types and catalogs
-- `docs/ui/` — v2 prototype (visual source of truth)
+- `docs/ui/` — bead-language prototype. The running shell is the v3 top bar (Lights, LED products, All Off; Elements and Settings on a Light).
 
 The store is `data/lights.json`.
 
@@ -67,3 +67,12 @@ pnpm dev
 
 Web: `http://127.0.0.1:43180`  
 API: `http://127.0.0.1:43181`
+
+## Learned User Preferences
+
+- Prefer Corepack to activate the root `packageManager` pnpm pin; avoid the standalone pnpm installer, which can rewrite that pin to a Corepack-incompatible version.
+
+## Learned Workspace Facts
+
+- Find must send mDNS and SSDP on each non-loopback IPv4 except `169.254.0.0/16`. Joining multicast on every interface is not enough if the query still leaves through the OS default adapter.
+- mDNS Find rows are only `_wled._tcp` SRV records. Other services heard on the link are not WLED candidates and must not be probed.

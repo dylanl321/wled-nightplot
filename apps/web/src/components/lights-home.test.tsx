@@ -37,7 +37,8 @@ describe("LightsHome cached beads", () => {
       />,
     );
 
-    expect(screen.getByText("No answer · last seen 2 h ago")).toBeTruthy();
+    expect(screen.getByText(/last seen 2 h ago/)).toBeTruthy();
+    expect(screen.getByText(/shown grey, not its last colour/)).toBeTruthy();
     const strip = screen.getByRole("img", { name: "Garage strip, RGB" });
     expect(strip.innerHTML).not.toContain(LAST_COLOUR);
     expect(strip.innerHTML).toContain("#1d1d1f");
@@ -65,7 +66,7 @@ describe("LightsHome cached beads", () => {
       />,
     );
 
-    expect(screen.getByText(/60 LEDs · RGBW · 1 Element/)).toBeTruthy();
+    expect(screen.getByText(/60 LEDs · SK6812 RGBW · 192\.168\.1\.40/)).toBeTruthy();
     const strip = screen.getByRole("img", { name: "Porch strip, RGBW" });
     expect(strip.innerHTML).not.toContain(LAST_COLOUR);
     expect(strip.innerHTML).toContain("#141519");
@@ -90,8 +91,8 @@ describe("LightsHome cached beads", () => {
       />,
     );
 
-    expect(screen.getByText("Online · unknown")).toBeTruthy();
-    expect(screen.queryByText("Online · off")).toBeNull();
+    expect(screen.getByText("Power unknown")).toBeTruthy();
+    expect(screen.queryByText("Off")).toBeNull();
     const strip = screen.getByRole("img", { name: "Garage strip, RGB" });
     expect(strip.innerHTML).not.toContain(LAST_COLOUR);
     expect(strip.innerHTML).toContain("#1d1d1f");
@@ -115,7 +116,7 @@ describe("LightsHome cached beads", () => {
       />,
     );
 
-    expect(screen.getByText(/segments unknown/)).toBeTruthy();
+    expect(screen.getByText(/segments unknown/i)).toBeTruthy();
     expect(screen.queryByText(/0 segments/)).toBeNull();
   });
 
@@ -136,7 +137,7 @@ describe("LightsHome cached beads", () => {
     );
 
     expect(screen.getByText(/0 segments/)).toBeTruthy();
-    expect(screen.queryByText(/segments unknown/)).toBeNull();
+    expect(screen.queryByText(/segments unknown/i)).toBeNull();
   });
 
   it("still names known off", () => {
@@ -154,7 +155,7 @@ describe("LightsHome cached beads", () => {
       />,
     );
 
-    expect(screen.getByText("Online · off")).toBeTruthy();
+    expect(screen.getByText("Off")).toBeTruthy();
     const strip = screen.getByRole("img", { name: "Garage strip, RGB" });
     expect(strip.innerHTML).toContain("#141519");
     expect(strip.innerHTML).not.toContain("#1d1d1f");
@@ -177,7 +178,7 @@ describe("LightsHome cached beads", () => {
       />,
     );
 
-    expect(screen.getByText("Online · on · 50%")).toBeTruthy();
+    expect(screen.getByText("On · 50%")).toBeTruthy();
     const strip = screen.getByRole("img", { name: "Garage strip, RGB" });
     expect(strip.innerHTML).not.toContain(LAST_COLOUR);
     expect(strip.innerHTML).toContain("#1d1d1f");
@@ -200,10 +201,7 @@ describe("LightsHome cached beads", () => {
       />,
     );
 
-    expect(
-      screen.getByText("Hue-shaped is on this network but not added"),
-    ).toBeTruthy();
-    expect(screen.getByText(/192\.168\.1\.80 · found via ssdp/)).toBeTruthy();
+    expect(screen.getByText(/WLED · 192\.168\.1\.80/)).toBeTruthy();
     expect(screen.queryByText(/192\.168\.1\.80:80/)).toBeNull();
     expect(screen.getByText(ESPALEXA_PORT_WARNING)).toBeTruthy();
   });
