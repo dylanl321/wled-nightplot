@@ -248,7 +248,7 @@ button{font-family:inherit;cursor:pointer}
       <span style="align-self:flex-start;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#0c0d10;background:#d4a574;border-radius:4px;padding:2px 7px;font-weight:500;">2d</span>
       <h2 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Light · Edit ranges</h2>
       <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">PRIMARY JOB</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Drag an Element’s handles on the beads, or type numbers. Start is inclusive, stop exclusive, length is derived. Then Apply to the controller.</p></div>
-      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">HONESTY RULE</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Overlap is red on the beads and blocks Apply with the reason. Drift shows as a gap between the two rails. Phone: a failed Apply stays on the failure.</p></div>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">HONESTY RULE</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Overlap is red on the beads and blocks Apply with the reason. Drift shows as a gap between the two rails. Legend keys follow that scene — dashed drift and the red error word only when this frame has that condition, same as the running app. Phone: a failed Apply stays on the failure.</p></div>
     </aside>
     </sc-if>
     <div style="width:1280px;height:800px;flex:none;border:1px solid #262c37;border-radius:12px;overflow:hidden;background:#0c0d10;display:flex;box-shadow:0 30px 80px rgba(0,0,0,.45);">
@@ -270,7 +270,7 @@ button{font-family:inherit;cursor:pointer}
         </div>
         <div style="display:flex;align-items:center;gap:14px;"><div style="display:flex;padding:3px;background:#12141a;border:1px solid #262c37;border-radius:9px;"><a href="#2c" style="padding:6px 14px;color:#9a9488;">Inspect</a><span style="padding:6px 14px;border-radius:6px;background:#2f3542;font-weight:500;">Edit ranges</span><a href="#2e" style="padding:6px 14px;color:#9a9488;">Test live</a></div><span style="margin-left:auto;font-size:12px;color:#7d7870;">Drag a handle or type numbers</span></div>
         <div style="padding:16px 20px 10px;background:#07080a;border:1px solid #1d2129;border-radius:14px;display:flex;flex-direction:column;gap:6px;">
-          <div style="display:flex;gap:18px;font-size:12px;color:#7d7870;align-items:center;"><span style="color:#c9c3b8;">Draft</span><span style="display:flex;align-items:center;gap:6px;color:#d4a574;"><span style="width:12px;height:8px;border:1px dashed #d4a574;border-radius:2px;"></span>drift</span><span style="display:flex;align-items:center;gap:6px;color:#e07070;"><span style="width:12px;height:8px;border:1px solid #e07070;background:rgba(224,112,112,.2);border-radius:2px;"></span>overlap</span><span style="margin-left:auto;">above: declared · below: reported</span></div>
+          {{ editLegend }}
           {{ editStrip }}
         </div>
         <div style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px;">
@@ -616,6 +616,20 @@ class Component extends DCLogic {
       h('defs', null, defs),
       h('g', null, spill), k.slice(0, railN), regs.length ? h('g', null, regs) : null, h('g', null, bloom), k.slice(railN), over);
   }
+  beadLegend(o) {
+    const h = React.createElement;
+    const hasDrift = (o.declared || []).some(r => r.differs) || (o.reported || []).some(r => r.differs) || (o.regions || []).some(g => g.kind === 'drift');
+    const err = (o.regions || []).find(g => g.kind === 'error');
+    const hasError = Boolean(err) || (o.declared || []).some(r => r.error);
+    const errorLabel = (err && err.label) || o.errorLabel || 'overlap';
+    const key = (swatch, color, text, aria) => h('span', { style: { display: 'flex', alignItems: 'center', gap: 6, color }, 'aria-label': aria },
+      h('span', { style: Object.assign({ width: 12, height: 8, borderRadius: 2 }, swatch) }), text);
+    return h('div', { style: { display: 'flex', gap: 18, fontSize: 12, color: '#7d7870', alignItems: 'center' } },
+      h('span', { style: { color: '#c9c3b8' } }, 'Draft'),
+      hasDrift ? key({ border: '1px dashed #d4a574' }, '#d4a574', 'drift', 'Range drift key') : null,
+      hasError ? key({ border: '1px solid #e07070', background: 'rgba(224,112,112,.2)' }, '#e07070', errorLabel, 'Range error key') : null,
+      h('span', { style: { marginLeft: 'auto' } }, 'above: declared · below: reported'));
+  }
   renderVals() {
     const map = { blue: ['#4f7dff', 'blue'], red: ['#ff4a3d', 'red'], green: ['#3dff7a', 'green'], amber: ['#ffa000', 'amber'] };
     const [pc, pname] = map[this.props.previewColor ?? 'blue'] || map.blue;
@@ -624,6 +638,8 @@ class Component extends DCLogic {
     const rep = [{ start: 0, stop: 120 }, { start: 120, stop: 180 }, { start: 180, stop: 290, differs: true }];
     const mini = (id, count, color, pitch, extra = {}) => this.strip(Object.assign({ id, count, pitch, gutter: 0, top: 3, bottom: 3, color }, extra));
     const live = i => (i >= 120 && i < 180 ? pc : warm);
+    const editDeclared = [{ label: 'Left run', start: 0, stop: 120 }, { label: 'Peak', start: 120, stop: 185, sel: true, error: true }, { label: 'Right run', start: 180, stop: 300 }];
+    const editRegions = [{ kind: 'error', start: 180, stop: 185, label: 'overlap' }, { kind: 'drift', start: 290, stop: 300 }];
     return {
       showAnnotations: this.props.showAnnotations ?? true,
       previewHex: pc.toUpperCase(), previewName: pname,
@@ -639,8 +655,8 @@ class Component extends DCLogic {
       inspectStrip: this.strip({ id: 'is', count: 300, perRow: 100, pitch: 8.7, color: () => warm, bri: 0.8, declared: eave, reported: rep, regions: [{ kind: 'drift', start: 290, stop: 300 }] }),
       inspectStripPhone: this.strip({ id: 'isp', count: 300, perRow: 60, pitch: 5.4, gutter: 18, top: 20, bottom: 14, color: i => (i >= 290 ? null : warm), bri: 0.8, declared: eave, reported: rep, regions: [{ kind: 'drift', start: 290, stop: 300 }], fs: 9 }),
       editStrip: this.strip({ id: 'ed', count: 300, perRow: 100, pitch: 8.7, color: i => (i >= 290 ? null : warm), bri: 0.8, handles: true,
-        declared: [{ label: 'Left run', start: 0, stop: 120 }, { label: 'Peak', start: 120, stop: 185, sel: true, error: true }, { label: 'Right run', start: 180, stop: 300 }],
-        reported: rep, regions: [{ kind: 'error', start: 180, stop: 185 }, { kind: 'drift', start: 290, stop: 300 }] }),
+        declared: editDeclared, reported: rep, regions: editRegions }),
+      editLegend: this.beadLegend({ declared: editDeclared, reported: rep, regions: editRegions }),
       editStripPhone: this.strip({ id: 'edp', count: 300, perRow: 60, pitch: 5.4, gutter: 18, top: 20, bottom: 14, color: i => (i >= 290 ? null : warm), bri: 0.8, declared: eave, reported: rep, regions: [{ kind: 'drift', start: 290, stop: 300 }], fs: 9 }),
       liveStrip: this.strip({ id: 'lv', count: 300, perRow: 100, pitch: 8.7, color: live, bri: 0.9, top: 30, bottom: 8,
         declared: [{ label: 'Left run', start: 0, stop: 120 }, { label: 'Peak', start: 120, stop: 180, sel: true }, { label: 'Right run', start: 180, stop: 300 }], regions: [{ kind: 'sel', start: 120, stop: 180 }] }),
