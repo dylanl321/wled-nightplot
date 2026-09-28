@@ -87,16 +87,21 @@ export function validateDeclaredRanges(
       });
       continue;
     }
-    if (draft.start >= draft.stop) {
+    const inverted = draft.start >= draft.stop;
+    const pastStrip = rangeRunsPastStrip(draft, ledCount);
+    if (inverted) {
+      const invertCore = `${rangeLabel(draft)} is inverted: start ${draft.start} is not before stop ${draft.stop}`;
       issues.push({
         code: "invert",
         elementId: draft.id,
         start: draft.start,
         stop: draft.stop,
-        message: `${rangeLabel(draft)} is inverted: start ${draft.start} is not before stop ${draft.stop}.`,
+        message: pastStrip
+          ? `${invertCore}, and ${draft.start}–${draft.stop} runs past the strip (${ledCount} LEDs).`
+          : `${invertCore}.`,
       });
     }
-    if (draft.start < 0 || draft.stop > ledCount) {
+    if (pastStrip) {
       issues.push({
         code: "over-ledCount",
         elementId: draft.id,
@@ -361,4 +366,9 @@ function shrinkLengthNotes(input: {
 
 function isOpenRange(span: RangeSpan): boolean {
   return isWholeIndex(span.start) && isWholeIndex(span.stop) && span.start < span.stop;
+}
+
+/** Inclusive start / exclusive stop — start at ledCount or stop below 0 is past the strip. */
+function rangeRunsPastStrip(span: RangeSpan, ledCount: number): boolean {
+  return span.start < 0 || span.start >= ledCount || span.stop < 0 || span.stop > ledCount;
 }

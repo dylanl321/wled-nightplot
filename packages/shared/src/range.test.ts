@@ -52,6 +52,81 @@ describe("validateDeclaredRanges", () => {
     ]);
   });
 
+  it("names past strip when an inverted range starts past the strip", () => {
+    const issues = validateDeclaredRanges(
+      [{ id: "p", label: "Peak", start: 80, stop: 40 }],
+      60,
+    );
+    expect(issues.map((issue) => issue.code)).toEqual(["invert", "over-ledCount"]);
+    expect(issues[0]?.message).toMatch(/inverted/);
+    expect(issues[0]?.message).toMatch(/past the strip \(60 LEDs\)/);
+    expect(issues[1]).toEqual(
+      expect.objectContaining({
+        code: "over-ledCount",
+        start: 80,
+        stop: 40,
+        message: "Peak 80–40 runs past the strip (60 LEDs).",
+      }),
+    );
+  });
+
+  it("names past strip on inverted edges that leave the strip", () => {
+    const atCount = validateDeclaredRanges(
+      [{ id: "a", label: "Peak", start: 60, stop: 40 }],
+      60,
+    );
+    expect(atCount.map((issue) => issue.code)).toEqual(["invert", "over-ledCount"]);
+
+    const zeroPast = validateDeclaredRanges(
+      [{ id: "b", label: "Peak", start: 80, stop: 80 }],
+      60,
+    );
+    expect(zeroPast.map((issue) => issue.code)).toEqual(["invert", "over-ledCount"]);
+
+    const bothPast = validateDeclaredRanges(
+      [{ id: "c", label: "Peak", start: 70, stop: 65 }],
+      60,
+    );
+    expect(bothPast.map((issue) => issue.code)).toEqual(["invert", "over-ledCount"]);
+
+    const stopBelow = validateDeclaredRanges(
+      [{ id: "d", label: "Peak", start: 20, stop: -5 }],
+      60,
+    );
+    expect(stopBelow.map((issue) => issue.code)).toEqual(["invert", "over-ledCount"]);
+    expect(stopBelow[1]?.message).toMatch(/past the strip \(60 LEDs\)/);
+  });
+
+  it("keeps invert-only when the inverted range stays on the strip", () => {
+    const issues = validateDeclaredRanges(
+      [{ id: "p", label: "Peak", start: 40, stop: 20 }],
+      60,
+    );
+    expect(issues.map((issue) => issue.code)).toEqual(["invert"]);
+    expect(issues[0]?.message).toBe(
+      "Peak is inverted: start 40 is not before stop 20.",
+    );
+    expect(issues[0]?.message).not.toMatch(/past the strip/);
+  });
+
+  it("keeps over-ledCount-only when a forward range runs past the strip", () => {
+    expect(
+      validateDeclaredRanges([{ id: "r", label: "Right run", start: 50, stop: 80 }], 60).map(
+        (issue) => issue.code,
+      ),
+    ).toEqual(["over-ledCount"]);
+    expect(
+      validateDeclaredRanges([{ id: "p", label: "Peak", start: 80, stop: 90 }], 60).map(
+        (issue) => issue.code,
+      ),
+    ).toEqual(["over-ledCount"]);
+    expect(
+      validateDeclaredRanges([{ id: "n", label: "Nose", start: -5, stop: 10 }], 60).map(
+        (issue) => issue.code,
+      ),
+    ).toEqual(["over-ledCount"]);
+  });
+
   it("accepts contiguous declared ranges that fill the strip", () => {
     expect(
       validateDeclaredRanges(

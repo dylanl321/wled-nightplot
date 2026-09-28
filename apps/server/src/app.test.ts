@@ -689,6 +689,26 @@ describe("declared Elements", () => {
     });
     expect(over.status).toBe(422);
     expect(((await over.json()) as { error: string }).error).toBe("over-ledCount");
+
+    const invertPast = await app.request(`/api/lights/${light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: [{ label: "Peak", start: 80, stop: 40 }] }),
+    });
+    expect(invertPast.status).toBe(422);
+    const invertPastBody = (await invertPast.json()) as {
+      error: string;
+      message: string;
+      issues: { code: string; message: string }[];
+    };
+    expect(invertPastBody.error).toBe("invert");
+    expect(invertPastBody.message).toMatch(/inverted/);
+    expect(invertPastBody.message).toMatch(/past the strip \(60 LEDs\)/);
+    expect(invertPastBody.issues.map((issue) => issue.code)).toEqual([
+      "invert",
+      "over-ledCount",
+    ]);
+    expect(invertPastBody.issues[1]?.message).toMatch(/Peak 80–40 runs past the strip \(60 LEDs\)/);
     expect(store.elementsFor(light.id)).toEqual([]);
   });
 

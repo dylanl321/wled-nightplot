@@ -643,6 +643,31 @@ describe("LightDetail selected Element kind chip", () => {
     expect(screen.queryByText("overlap")).toBeNull();
   });
 
+  it("names past strip when an inverted range starts past the strip", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: null,
+            brightness: null,
+            bead: "unknown",
+            segmentCount: null,
+            lastSeenAt: "2026-09-26T18:00:00.000Z",
+            ledCount: 60,
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+          elements: [{ id: "el-door", lightId: "light-garage", label: "Door", start: 80, stop: 40 }],
+        })}
+        mode="ranges"
+      />,
+    );
+
+    expect(screen.getAllByText(/is inverted/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/80–40 runs past the strip \(60 LEDs\)/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Door 80–40 runs past the strip \(60 LEDs\)/)).toBeTruthy();
+  });
+
   it("says past strip when the selected range runs past the strip — not overlap", () => {
     render(
       <LightDetail
