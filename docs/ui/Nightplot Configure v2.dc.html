@@ -711,7 +711,7 @@ class Component extends DCLogic {
           h('tspan', { fontFamily: 'IBM Plex Sans', fontWeight: 500, fill: sp.sel ? '#d4a574' : '#ece7dc' }, sp.label),
           h('tspan', { fontFamily: 'IBM Plex Mono', fill: sp.error ? '#e07070' : '#7d7870', dx: 6, fontSize: fs }, `${sp.start}–${sp.stop}`)));
       });
-      if (sp.sel && o.handles) {
+      if (sp.sel && o.handles && ps[0] && ps[ps.length - 1]) {
         const f = ps[0], l = ps[ps.length - 1];
         [[xAt(f.a), f.r], [xEnd(l.b), l.r]].forEach(([hx, hr], hi) => {
           const y0 = rowTop(hr) + top - 9, col = hi === 1 && sp.error ? '#e07070' : '#d4a574';
