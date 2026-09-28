@@ -29,6 +29,8 @@ After a Safe display-name write, the rack title uses the `/json/cfg` name even w
 
 **Strip** sets WS281x RGB or SK6812 RGBW type, node count, and GPIO on an enrolled Light. Converting to SK6812 RGBW writes GRBW (`order` 0). A same-type length or GPIO Apply keeps the colour order already on the box, and Strip names that live order — including when an SK6812 bus is not GRBW. There is no colour-order picker. A catalog LED product fills that form from the SKU and its driver; fields still override. Attaching a product stores `ledProductId` on the Light and does not write the controller. Apply writes reviewed `/json/cfg` bus fields, then re-reads cfg and the snapshot. A mismatch stays on the failure UI, titled with the write message — not a hardcoded Apply didn’t stick. A length-changing Apply clips or drops declared Elements that run past the new strip, and flags leftover coverage on grow — the UI does not claim they still match.
 
+The LED product catalog is the shared type / IC recipe (SKU, driver, optional defaults). Length, GPIO, Element ranges, and field overrides live on that Light. Strip-assist plugins (a length helper first; a segment helper can plug in later) are modular help — they do not replace catalog attach. A length helper is not on Strip today. Preview is not Apply. Helper glow is not Hardware Done. The three rules: [docs/overview.md](docs/overview.md#shared-catalog-then-this-light).
+
 ## Quick start
 
 Needs Node 20+ and [pnpm](https://pnpm.io).
@@ -88,7 +90,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 
 | Doc | What |
 | --- | --- |
-| [docs/overview.md](docs/overview.md) | What Configure is and how the flow works |
+| [docs/overview.md](docs/overview.md) | What Configure is, enroll-then-assign, and how the flow works |
 | [docs/install.md](docs/install.md) | Install, env, fixture, proto |
 | [docs/deploy.md](docs/deploy.md) | Docker / compose / GHCR on a LAN |
 | [docs/architecture.md](docs/architecture.md) | Real paths and symbols |
@@ -106,8 +108,8 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | Method | Path | What |
 | --- | --- | --- |
 | GET | `/health` | Slice + liveness |
-| GET | `/api/catalogs` | Controller / strip / discovery seams, named strip presets (`stripPresets`), operator LED products (`ledProducts`) |
-| GET | `/api/led-products` | Nightplot LED product catalog (seeded SKUs + operator creates). Does not write WLED. |
+| GET | `/api/catalogs` | Controller / strip / discovery seams, named strip presets (`stripPresets`), operator LED products (`ledProducts`). Shared recipes — not a per-Light bus write. |
+| GET | `/api/led-products` | Nightplot LED product catalog (seeded SKUs + operator creates). Shared type / IC recipe. Does not write WLED. |
 | GET | `/api/led-products/:id` | One catalog row. 404 if missing. |
 | POST | `/api/led-products` | Create a product. 422 on unknown `driverId`, bad `formFactor`, or bad defaults. Does not write WLED. |
 | GET | `/api/lights` | Enrolled Lights (live snapshot or grey + last-seen), declared Elements, unenrolled tray. Does not GET `/json/cfg`. |
@@ -131,7 +133,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | DELETE | `/api/lights/:id` | 422 until every check is `ok`. Does not write the controller. |
 | GET | `/api/lights/:id/safe` | Fingerprinted Safe settings from `/json/cfg`. Empty fingerprint → refuse. |
 | POST | `/api/lights/:id/safe` | `{ settings }` — write only understood fields, then reread. 422 if unsupported — refuse includes `safeWrite` (write-failure UI, not notice-only). A matched display-name write patches the enrolled title from cfg even when `/json/info` still lags. |
-| PATCH | `/api/lights/:id/led-product` | `{ ledProductId }` — attach a catalog product or `null` for manual fields. Persists on the Light. Does not write WLED. |
+| PATCH | `/api/lights/:id/led-product` | `{ ledProductId }` — attach a shared catalog product or `null` for manual fields. Persists on the Light. Does not write WLED. Does not replace Strip Apply. |
 | GET | `/api/lights/:id/provision` | First-time strip bus from `/json/cfg` (`hw.led.ins[0]`). Empty / multi-bus / unsupported firmware → refuse. |
 | POST | `/api/lights/:id/provision` | `{ provision: { ledType, length, gpio } }` — `ws281x` or `sk6812-rgbw`. Writes reviewed cfg bus fields, then rereads cfg and snapshot. 200 only on match. 409 keeps the failure. 422 if unsupported — refuse includes `provisionWrite` (Strip failure panel, not notice-only). Unknown types are not written. A successful length change reconciles declared Elements (clip / drop / flag leftover coverage) and returns `provisionWrite.ranges`. |
 
@@ -142,7 +144,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | `/` | Lights rack + unenrolled tray. All Off on the rail / thumb bar |
 | `/discover` | Find / type an address / add. A Find load miss still lists enrolled Lights; it does not claim the configure server is down. Retry Find Lights or type an address. |
 | `/lights/:id` | Inspect — identity + StripBeads + declared vs reported + Delete checks. A detail load miss still lists enrolled Lights; it does not claim the configure server is down. |
-| `/lights/:id?mode=strip` | Strip — catalog product or WS281x / SK6812 RGBW plus length / GPIO; fields still override. Apply writes `/json/cfg` then re-reads. Mismatch or refuse stays, titled with the write message (`provisionWrite` on 409 / 422). |
+| `/lights/:id?mode=strip` | Strip — attach a shared catalog product or set WS281x / SK6812 RGBW plus this Light’s length / GPIO; fields still override. Apply writes `/json/cfg` then re-reads. Mismatch or refuse stays, titled with the write message (`provisionWrite` on 409 / 422). |
 | `/lights/:id?mode=safe` | Safe settings — name, boot, transition, current limit; refuse if unsupported. Refuse 422 includes `safeWrite` so the write failure stays, not a notice-only line. A rename updates the title from `/json/cfg` without waiting for reboot. |
 | `/lights/:id?mode=ranges` | Edit ranges — draft save, Apply write+reread, failed Apply stays |
 | `/lights/:id?mode=live` | Test live — Preview / Blink, proof ladder, `/json/live` beads |

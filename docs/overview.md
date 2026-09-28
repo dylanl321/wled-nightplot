@@ -23,7 +23,17 @@ It is early software. There is no authentication and no TLS. A fixture report is
 6. **Safe settings** — small `WledSafeSettings` set, fingerprint-gated. Unsupported firmware is refused — a write-build refuse 422 includes `safeWrite` so Safe settings shows the failure, not a notice-only line.
 7. **Manage** — Lights rack, All Off (cancels without restoring; up to four Light probes at a time), Delete (checks that run). If one Light’s Inspect cannot load, enrolled Lights stay listed — that is not a claim the configure server is down.
 
-The catalog slice id is `R6` (`CURRENT_SLICE` in `packages/shared/src/catalog.ts`). Strip provision, named presets (seeds), LED product attach, and range reconcile sit on that same flow. Operator LED products (`LedProduct`) are a Nightplot catalog of specific SKUs — form factor, driver, optional defaults — stored in `data/led-products.json`. Attaching one to a Light stores `ledProductId`. That is not a WLED write and not Hardware Done.
+The catalog slice id is `R6` (`CURRENT_SLICE` in `packages/shared/src/catalog.ts`). Strip provision, named presets (seeds), LED product attach, and range reconcile sit on that same flow.
+
+## Shared catalog, then this Light
+
+Enroll the controller first. Then attach a shared LED product and set what belongs to that Light.
+
+1. **Shared catalog** — the LED type / IC recipe. A catalog row is a SKU: driver (WS281x RGB or SK6812 RGBW), form factor, optional defaults. The same recipe can attach to many Lights. Drivers register in the strip catalog. Operator SKUs persist in `data/led-products.json` and appear on [`GET /api/catalogs`](../README.md#api) (`ledProducts`) and [`GET` / `POST /api/led-products`](../README.md#api). A catalog row is not Hardware Done. Form factor is metadata — not written to WLED.
+2. **This Light** — length, GPIO, Element ranges, and field overrides. [Strip](../README.md#ui) (`/lights/:id?mode=strip`) attaches a catalog row (`PATCH /api/lights/:id/led-product`) and fills type / length / GPIO from that SKU and its driver. Fields still override. Attach stores `ledProductId` and does not write WLED. Apply writes only this Light’s bus. Elements stay on the Light.
+3. **Strip-assist plugins** — modular help (a length helper first; a segment helper can plug in later). They do not replace catalog attach. A helper that lights beads to suggest a node count is Preview: temporary, confirm before Apply, All Off cancels without restore. That helper is not on Strip today. Preview is not Apply. Helper glow is not Hardware Done.
+
+Paths and types: [architecture.md](architecture.md#shared-catalog-vs-this-light).
 
 ## Honesty
 
@@ -40,7 +50,7 @@ The catalog slice id is `R6` (`CURRENT_SLICE` in `packages/shared/src/catalog.ts
 | --- | --- |
 | [install.md](install.md) | pnpm, ports, fixture |
 | [deploy.md](deploy.md) | Docker / compose / GHCR on a LAN |
-| [architecture.md](architecture.md) | Tree, seams, symbols |
+| [architecture.md](architecture.md) | Tree, seams, shared catalog vs this Light |
 | [ui/README.md](ui/README.md) | v2 prototype |
 | [PLANE.md](PLANE.md) | CONFIG tickets |
 | [../CONSTITUTION.md](../CONSTITUTION.md) | Non-negotiables |

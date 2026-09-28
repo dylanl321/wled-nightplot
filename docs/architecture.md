@@ -29,6 +29,22 @@ First members. Home directories are the registration point.
 
 `registered` means the slot exists. It is not proof hardware passed. `ControllerDescriptor.implementation` / `wired` / `capabilities` stay honest (`packages/shared/src/controller/types.ts`).
 
+## Shared catalog vs this Light
+
+The seams above register controller, strip-driver, and discovery members. Operator LED products sit on the strip-driver catalog: they are shared recipes, not per-Light bus writes. Product language: [overview.md](overview.md#shared-catalog-then-this-light).
+
+| Layer | What it owns | Home |
+| --- | --- | --- |
+| Strip / driver | IC recipe: channels, colour order, bead | `packages/shared/src/strip/catalog.ts` (`ws281x`, `sk6812-rgbw`) |
+| LED product | Shared SKU: `driverId`, form factor, optional defaults | `packages/shared/src/strip/products.ts`, `apps/server/src/store/led-products-store.ts`, `data/led-products.json` |
+| This Light | `ledProductId`, length / GPIO / type overrides, Element ranges | `packages/shared/src/lights.ts`, `data/lights.json` |
+
+Controller and discovery catalogs stay their own seams (`packages/shared/src/controller/`, `packages/shared/src/discovery/`). They do not replace the LED product catalog.
+
+Attach (`PATCH /api/lights/:id/led-product`) stores the catalog id on the Light. Strip Apply (`POST /api/lights/:id/provision`) writes that Light’s type / length / GPIO. Helpers that suggest a length — or later a segment — are Strip-assist plugins: they do not own the catalog and they do not replace attach. No assist plugin is registered on `main` today. Preview is not Apply. Helper glow is not Hardware Done.
+
+Routes and API: [README.md](../README.md#ui) / [README.md](../README.md#api).
+
 ## Domain types
 
 | Symbol | File | Meaning |
