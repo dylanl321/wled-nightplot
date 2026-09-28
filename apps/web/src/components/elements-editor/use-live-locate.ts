@@ -219,7 +219,7 @@ type LocateInput = {
 };
 
 type LocateStatus = {
-  error: { kind: "frame" | "end"; message: string } | null;
+  error: { kind: "frame" | "end"; message: string; notSent?: boolean; code?: string } | null;
   stopping: boolean;
 };
 
@@ -334,11 +334,14 @@ function createLocateSender(
     } catch (error) {
       if (attempt !== generation) return;
       lastAcknowledged = null;
+      const notSent = error instanceof Error && "sent" in error && error.sent === false;
       publish({
         ...status,
         error: {
           kind: "frame",
-          message: `Preview paused. ${errorMessage(error)} The last write is not confirmed.`,
+          message: `Preview paused. ${errorMessage(error)}${notSent ? "" : " The last write is not confirmed."}`,
+          notSent,
+          code: error instanceof Error && "code" in error && typeof error.code === "string" ? error.code : undefined,
         },
       });
     } finally {

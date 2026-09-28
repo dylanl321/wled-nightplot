@@ -24,6 +24,69 @@ import {
 } from "@/test/fixtures";
 
 describe("Segments Preview recovery", () => {
+  it("offers recovery before Preview and only clears after confirmation, leaving Preview off", async () => {
+    const initial = { ...initialDetail(), frozenPreview: true };
+    const writes: { path: string; body: unknown }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      if (init?.method === "POST") writes.push({ path, body: JSON.parse(String(init.body)) });
+      return new Response(JSON.stringify(path.endsWith("/preview/recover") ? {
+        ...initial, frozenPreview: false,
+        recovery: { cleared: true, wrote: true, restored: false, message: "Frozen LEDs cleared. Saved Segments are unchanged. Preview is off." },
+      } : initial));
+    }));
+    render(<LightDetail initial={initial} tab="elements" />);
+    expect((screen.getByRole("button", { name: "Light on strip" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Recover Preview…" }));
+    expect(screen.getByText(/Clearing these LEDs discards/)).toBeTruthy();
+    expect(writes).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(writes).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "Recover Preview…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear frozen LEDs" }));
+    await screen.findByText("Frozen LEDs cleared. Saved Segments are unchanged. Preview is off.");
+    expect(writes).toEqual([{ path: `/api/lights/${initial.light.id}/preview/recover`, body: { discardFrozenPixels: true } }]);
+    expect(screen.queryByRole("region", { name: "Preview recovery" })).toBeNull();
+    const toggle = screen.getByRole("button", { name: "Light on strip" });
+    expect((toggle as HTMLButtonElement).disabled).toBe(false);
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it.each([
+    { status: 422, body: { error: "recovery-unconfirmed", message: "Clearing frozen LEDs was not confirmed. Refresh before retrying." } },
+    { status: 200, body: {} },
+  ])("keeps Preview blocked when recovery is unconfirmed ($status)", async ({ status, body }) => {
+    const initial = { ...initialDetail(), frozenPreview: true };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(
+      JSON.stringify(requestPath(String(input)).endsWith("/preview/recover") ? body : initial),
+      { status: requestPath(String(input)).endsWith("/preview/recover") ? status : 200 },
+    )));
+    render(<LightDetail initial={initial} tab="elements" />);
+    fireEvent.click(screen.getByRole("button", { name: "Recover Preview…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear frozen LEDs" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("not confirmed");
+    expect((screen.getByRole("button", { name: "Light on strip" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Recover Preview…" })).toBeTruthy();
+  });
+
+  it("surfaces a frozen-controller refusal without claiming an uncertain write", async () => {
+    const initial = initialDetail();
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (requestPath(String(input)).endsWith("/preview")) return new Response(JSON.stringify({
+        error: "pixel-preview-frozen", sent: false,
+        message: "The controller is holding frozen LEDs. Nightplot has no snapshot of their original colours to restore. Nothing was sent.",
+      }), { status: 422 });
+      return new Response(JSON.stringify(initial));
+    }));
+    render(<LightDetail initial={initial} tab="elements" />);
+    fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Nothing was sent.");
+    expect(screen.getByRole("alert").textContent).not.toContain("last write is not confirmed");
+    expect(screen.queryByText("Preview not confirmed")).toBeNull();
+    expect(screen.getByText("Preview paused", { exact: true })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry Preview" })).toBeTruthy();
+  });
+
   function initialDetail() {
     return lightDetail({
       light: lightView({

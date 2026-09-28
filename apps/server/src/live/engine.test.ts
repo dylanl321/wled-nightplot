@@ -56,7 +56,103 @@ function engineWithWrites(writes: WledStateWrite[], reads: number[] = []) {
   });
 }
 
+describe("Frozen Preview recovery", () => {
+  const frozen: WledSnapshot = {
+    ...infoOnly, nativeRestoreUnavailable: "frozen", frozenSegments: [{ id: 7, start: 0, stop: 10 }],
+  };
+  const clear: WledSnapshot = {
+    ...infoOnly, nativeRestore: {
+      on: true, bri: 128, seg: [{ id: 7, start: 0, stop: 10, col: [[0, 0, 0]], frz: false }],
+    },
+  };
+
+  it("clears only validated frozen IDs and confirms the reread without opening Preview", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    const probe = async () => ({ kind: "found" as const, snapshot: writes.length ? clear : frozen });
+    expect(await engine.recoverFrozen(light, probe)).toMatchObject({ ok: true, wrote: true });
+    expect(writes).toEqual([{ seg: [{ id: 7, start: 0, stop: 10, frz: false }] }]);
+    expect(engine.get(light.id)).toBeUndefined();
+    expect(await engine.recoverFrozen(light, probe)).toMatchObject({ ok: true, wrote: false });
+    expect(writes).toHaveLength(1);
+  });
+
+  it.each([
+    ["missing fields", { ...frozen, frozenSegments: undefined }],
+    ["different controller", { ...frozen, mac: "aa:bb:cc:dd:ee:ff" }],
+    ["changed length", { ...frozen, ledCount: 20 }],
+    ["unsupported firmware", { ...frozen, firmware: "WLED 0.13.0" }],
+  ])("refuses %s without writing", async (_name, snapshot) => {
+    const writes: WledStateWrite[] = [];
+    const result = await engineWithWrites(writes).recoverFrozen(light, async () => ({ kind: "found", snapshot }));
+    expect(result).toMatchObject({ ok: false, sent: false });
+    expect(writes).toEqual([]);
+  });
+
+  it("does not clear a live session or discard its restore snapshot", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    await engine.startPreview({ light, live: clear, elements: [], range: { start: 0, stop: 1 } });
+    const count = writes.length;
+    expect(await engine.recoverFrozen(light, async () => ({ kind: "found", snapshot: frozen }))).toMatchObject({
+      ok: false, error: "busy", sent: false,
+    });
+    expect(writes).toHaveLength(count);
+    expect(engine.get(light.id)).toBeDefined();
+  });
+
+  it("honours All Off arriving during the recovery probe", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    let release!: () => void;
+    let entered!: () => void;
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const result = engine.recoverFrozen(light, async () => {
+      entered(); await gate; return { kind: "found", snapshot: frozen };
+    });
+    await ready;
+    const unblock = engine.block(light.id);
+    release();
+    expect(await result).toMatchObject({ ok: false, error: "cancelled", sent: false });
+    expect(writes).toEqual([]);
+    unblock();
+  });
+
+  it("does not report a successful recovery when the reread is still frozen", async () => {
+    const writes: WledStateWrite[] = [];
+    const result = await engineWithWrites(writes).recoverFrozen(light, async () => ({ kind: "found", snapshot: frozen }));
+    expect(result).toMatchObject({ ok: false, error: "recovery-unconfirmed" });
+    expect(result).not.toHaveProperty("sent");
+    expect(writes).toHaveLength(1);
+  });
+});
+
 describe("Preview restore honesty", () => {
+  it("refuses orphaned frozen pixels explicitly without writing or inventing a session", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    const result = await engine.startPreview({
+      light, live: { ...infoOnly, nativeRestoreUnavailable: "frozen" },
+      elements: [], pixels: true, spans: [{ start: 0, stop: 10, color: "#444444" }],
+    });
+    expect(result).toMatchObject({ ok: false, status: 422, error: "pixel-preview-frozen", sent: false });
+    expect(result.ok ? "" : result.message).toContain("no snapshot");
+    expect(result.ok ? "" : result.message).not.toContain("End Preview");
+    expect(engine.get(light.id)).toBeUndefined();
+    expect(writes).toEqual([]);
+  });
+
+  it("names an active playlist separately from missing native fields", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    expect(await engine.startPreview({
+      light, live: { ...infoOnly, nativeRestoreUnavailable: "playlist" },
+      elements: [], pixels: true, spans: [{ start: 0, stop: 10, color: "#444444" }],
+    })).toMatchObject({ error: "pixel-preview-playlist", sent: false });
+    expect(writes).toEqual([]);
+  });
+
   it("refuses pixel Preview without a restorable state and sends nothing", async () => {
     const writes: WledStateWrite[] = [];
     const engine = engineWithWrites(writes);

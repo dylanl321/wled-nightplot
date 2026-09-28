@@ -34,7 +34,7 @@ export function LightDetail({
   const router = useRouter();
   const [tab, setTab] = useState<DetailTab>(tabProp ?? tabFromMode(mode));
   const [detail, setDetail] = useState(initial);
-  const [busy, setBusy] = useState<"save" | "refresh" | "apply" | "readdress" | "blink" | null>(
+  const [busy, setBusy] = useState<"save" | "refresh" | "apply" | "readdress" | "blink" | "recover" | null>(
     null,
   );
   const [notice, setNotice] = useState<string | null>(null);
@@ -184,7 +184,7 @@ export function LightDetail({
               variant="outline"
               className="h-[34px] px-3 text-[13px]"
               onClick={() => void refresh()}
-              disabled={busy === "refresh"}
+              disabled={busy !== null}
             >
               {busy === "refresh" ? "Refreshing…" : "Refresh"}
             </Button>

@@ -17,12 +17,18 @@ export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T>
   });
   const body = (await res.json().catch(() => ({}))) as T & {
     message?: string;
+    error?: unknown;
+    sent?: unknown;
   };
   if (!res.ok) {
     const error = new Error(body.message ?? `Request failed (${res.status})`) as Error & {
       status: number;
+      code?: string;
+      sent?: false;
     };
     error.status = res.status;
+    if (typeof body.error === "string") error.code = body.error;
+    if (body.sent === false) error.sent = false;
     throw error;
   }
   return body;

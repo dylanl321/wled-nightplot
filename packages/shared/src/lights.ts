@@ -100,6 +100,8 @@ export type LightView = Light & {
 };
 
 export type LightDetail = {
+  /** Frozen controller pixels without a live session that can restore them. */
+  frozenPreview?: boolean;
   light: LightView;
   elements: Element[];
   reported: ReportedRail[];

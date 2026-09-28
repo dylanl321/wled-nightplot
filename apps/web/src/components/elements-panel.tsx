@@ -32,6 +32,7 @@ import {
 } from "@/components/elements-editor/ops";
 import { KeysBar } from "@/components/elements-editor/keys-bar";
 import { EditorPopover } from "@/components/elements-editor/popover";
+import { PreviewRecovery } from "@/components/elements-editor/preview-recovery";
 import { StripEditor } from "@/components/elements-editor/strip-editor";
 import {
   useEditorState,
@@ -51,7 +52,7 @@ import { patchJson, postJson } from "@/lib/api";
 import { displayBead, inspectPowerHow } from "@/lib/power-status";
 import { cn } from "@/lib/utils";
 
-type Busy = "save" | "refresh" | "apply" | "readdress" | "blink" | null;
+type Busy = "save" | "refresh" | "apply" | "readdress" | "blink" | "recover" | null;
 
 export function ElementsPanel({
   detail,
@@ -83,6 +84,7 @@ export function ElementsPanel({
   const [hues, setHues] = useState<Record<string, string>>({});
   const unreachable = light.reachability === "no-answer";
   const [scanning, setScanning] = useState<1 | -1 | null>(null);
+  const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setHues(readHues(light.id));
@@ -146,9 +148,10 @@ export function ElementsPanel({
     brightness: light.brightness,
     onDetail,
   });
+  const frozenPreview = detail.frozenPreview === true || (!recoveryNotice && locate.error?.code === "pixel-preview-frozen");
 
   const firstIssue = issues[0] ?? null;
-  const applyReason = applyRefuseReason({
+  const applyReason = frozenPreview ? "Recover the frozen LEDs before Apply." : applyRefuseReason({
     reachable: !unreachable,
     issueMessage: firstIssue?.message ?? null,
     elementCount: state.els.length,
@@ -240,12 +243,25 @@ export function ElementsPanel({
   }
 
   function toggleLive() {
-    if (unreachable) return;
+    if (unreachable || (frozenPreview && !live) || busy === "recover") return;
+    setRecoveryNotice(null);
     setLive((current) => !current);
   }
 
   return (
     <div className="flex flex-col gap-4">
+      {frozenPreview ? <PreviewRecovery
+        lightId={light.id}
+        lightName={light.name}
+        disabled={unreachable || busy !== null || locate.stopping}
+        onBusy={(running) => onBusy(running ? "recover" : null)}
+        onRecovered={(next, message) => {
+          setLive(false);
+          setRecoveryNotice(message);
+          onDetail(next);
+        }}
+      /> : null}
+      {recoveryNotice ? <p role="status" className="rounded-xl border border-online/40 px-4 py-3 text-[13px] text-online">{recoveryNotice}</p> : null}
       {applyFailed && apply ? (
         <ApplyFailed apply={apply} onAdopt={adopt} onRetry={() => void applyRanges()} />
       ) : segmentsUnknown ? (
@@ -293,8 +309,9 @@ export function ElementsPanel({
       {locate.error ? (
         <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/50 px-4 py-3 text-[13px]">
           <p className="flex-1 text-destructive">{locate.error.message}</p>
+          {locate.error.notSent ? <Button variant="outline" className="h-9 text-[13px]" onClick={onRefresh} disabled={busy !== null}>Refresh</Button> : null}
           {live && !unreachable && locate.error.kind === "frame" && !locate.stopping ? (
-            <Button variant="outline" className="h-9 text-[13px]" onClick={locate.retry}>
+            <Button variant="outline" className="h-9 text-[13px]" onClick={locate.retry} disabled={frozenPreview || busy !== null}>
               Retry Preview
             </Button>
           ) : null}
@@ -306,7 +323,7 @@ export function ElementsPanel({
           <span className={cn("inline-flex h-7 min-w-[74px] items-center justify-center rounded-md px-2.5 font-mono text-[14px] font-medium", read.hot ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground")}>{read.chip}</span>
           <span className="min-w-0 flex-1 text-[13px] text-[#c9c3b8]">{read.text}</span>
           <div className="ml-auto flex flex-wrap items-center gap-3 text-[12px]">
-            <Switch on={live && !unreachable} label="Light on strip" tone="online" disabled={unreachable} title={liveReason ?? undefined} onClick={toggleLive} />
+            <Switch on={live && !unreachable} label="Light on strip" tone="online" disabled={unreachable || (frozenPreview && !live) || busy === "recover"} title={frozenPreview ? "Recover the frozen LEDs before starting Preview." : liveReason ?? undefined} onClick={toggleLive} />
             {live && !unreachable ? <EditorPopover label={locateMode === "hold" ? `Segments ${backgroundPercent}% · cursor bright` : "Cursor only"} className="border-[#1f4a45] text-online">
               <div role="radiogroup" aria-label="Preview lighting" className="flex flex-col gap-3">
                 {(["cursor", "hold"] as const).map((mode) => <label key={mode} className="flex items-start gap-2 text-[13px]">
@@ -322,7 +339,7 @@ export function ElementsPanel({
             </EditorPopover> : null}
           </div>
           {locate.stopping || locate.error || (live && detail.liveCaption) ? <p role="status" className="basis-full text-[12px] text-muted-foreground">
-            {locate.stopping ? "Ending Preview…" : locate.error ? "Preview not confirmed" : detail.liveCaption}
+            {locate.stopping ? "Ending Preview…" : locate.error ? locate.error.notSent ? "Preview paused" : "Preview not confirmed" : detail.liveCaption}
           </p> : null}
         </div>
         <div className="px-5 pt-4 pb-2">
@@ -343,7 +360,7 @@ export function ElementsPanel({
         />
         </div>
         <KeysBar state={state} hues={hues} live={live && !unreachable && !locate.error && !locate.stopping} spacingMm={light.spacingMm} />
-        <CursorControls state={state} dispatch={dispatch} live={live} blocked={unreachable || Boolean(locate.error) || locate.stopping} onPreview={() => setLive(true)} onScanning={setScanning} />
+        <CursorControls state={state} dispatch={dispatch} live={live} blocked={unreachable || frozenPreview || busy === "recover" || Boolean(locate.error) || locate.stopping} onPreview={() => setLive(true)} onScanning={setScanning} />
         <StripZoom ledCount={Math.max(light.ledCount, 1)} elements={state.els} hues={hues} issueWord={wordFor} focus={zoom.focus} edge={zoom.edge} caption={zoom.caption} />
       </div>
 

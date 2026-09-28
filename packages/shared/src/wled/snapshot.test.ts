@@ -27,6 +27,16 @@ describe("snapshotSegmentCount", () => {
 });
 
 describe("parseWledPayload", () => {
+  it("retains why native Preview cannot restore a frozen controller or playlist", () => {
+    const frozen = parseWledPayload({
+      ...wledJson, state: { ...wledJson.state, seg: [{ id: 0, start: 0, stop: 60, frz: true }] },
+    });
+    expect(frozen?.nativeRestoreUnavailable).toBe("frozen");
+    expect(frozen?.nativeRestore).toBeUndefined();
+    expect(parseWledPayload({ ...wledJson, state: { ...wledJson.state, pl: 1 } })?.nativeRestoreUnavailable).toBe("playlist");
+    expect(parseWledPayload(wledJson)?.nativeRestoreUnavailable).toBeUndefined();
+  });
+
   it("captures sparse native IDs and RGBW colors without mutating the source", () => {
     const seg = {
       id: 3, start: 0, stop: 60, frz: false, on: true, bri: 120,
@@ -44,6 +54,14 @@ describe("parseWledPayload", () => {
       { ...state, seg: [{ ...seg, grp: undefined }] },
       { ...state, seg: [seg, seg] },
     ]) expect(parseWledPayload({ ...wledJson, state: unsafe })?.nativeRestore).toBeUndefined();
+    const frozen = { ...state, seg: [{ ...seg, frz: true }] };
+    expect(parseWledPayload({ ...wledJson, state: frozen })?.frozenSegments).toEqual([{ id: 3, start: 0, stop: 60 }]);
+    for (const unsafe of [
+      { ...frozen, pl: 1 },
+      { ...frozen, seg: [{ ...seg, frz: true, grp: undefined }] },
+      { ...frozen, seg: [{ ...seg, frz: true, stop: 61 }] },
+      { ...frozen, seg: [{ ...seg, frz: true }, { ...seg, frz: true }] },
+    ]) expect(parseWledPayload({ ...wledJson, state: unsafe })?.frozenSegments).toBeUndefined();
   });
   it("reads a combined /json snapshot", () => {
     const snap = parseWledPayload(wledJson);

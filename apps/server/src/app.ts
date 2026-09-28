@@ -752,6 +752,26 @@ export function createApp(deps: AppDeps) {
     return endLive(c.req.param("id"), kind);
   });
 
+  app.post("/api/lights/:id/preview/recover", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    const body = await c.req.json().catch(() => null);
+    if (!body || body.discardFrozenPixels !== true) return c.json({
+      error: "confirmation-required", sent: false,
+      message: "Clearing frozen LEDs discards their current per-LED colours. Confirm that recovery action first. Nothing was sent.",
+    }, 400);
+    const result = await live.recoverFrozen(stored, deps.probe);
+    if (!result.ok) return c.json(result, result.status);
+    const next = lightFromSnapshot(
+      { hostname: stored.hostname, port: stored.port }, result.snapshot, nowIso(), stored,
+    );
+    deps.store.replace(next);
+    return c.json({
+      ...(await decorateDetail(next, result.snapshot)),
+      recovery: { cleared: true, wrote: result.wrote, restored: false, message: result.message },
+    });
+  });
+
   app.post("/api/lights/:id/preview/seen", async (c) => {
     const stored = deps.store.findById(c.req.param("id"));
     if (!stored) {
@@ -1469,6 +1489,7 @@ export function createApp(deps: AppDeps) {
     return {
       ...detail,
       session: current ?? null,
+      frozenPreview: !current && snap?.nativeRestoreUnavailable === "frozen",
       deleteChecks: buildDeleteChecks({
         elementLabels: elems.map((element) => element.label),
         sessionLabel: current?.target.label ?? null,

@@ -83,14 +83,35 @@ the latest one, rather than accumulating a queue.
 Before opening this mode, Nightplot needs a complete native state with known
 segment IDs, colors, power, brightness, grouping and orientation. Already
 frozen segments and active playlists refuse this mode because their look cannot
-be reconstructed from the available snapshot. The refusal offers Refresh or
-Cursor only and sends nothing.
+be reconstructed from the available snapshot. The error names a frozen state
+or playlist explicitly and says **Nothing was sent**, rather than claiming an
+unconfirmed write.
+
+If the controller is frozen and Nightplot has no original snapshot, **End
+Preview** cannot recover that look. The page offers **Recover Preview…**, then
+explains the loss before **Clear frozen LEDs** sends anything. Recovery checks
+the controller identity, strip length and complete state, clears only its known
+frozen ranges, and reads back to confirm. Saved Segments stay unchanged and
+Preview stays off. Clearing frozen pixels discards their per-LED colours; it
+does not reconstruct the previous look. Restoring a saved look in WLED is
+another option. An active playlist must be stopped in WLED before trying this mode.
+Missing controller fields or unsupported firmware still refuse without writing.
+
+Recovery uses `POST /api/lights/:id/preview/recover` with
+`{ "discardFrozenPixels": true }`. It shares the Light's Preview/Blink queue,
+refuses while a live session owns the restore snapshot, and respects All Off
+cancellation. An uncertain write or readback remains unconfirmed and is never
+retried automatically. Refresh before deciding to retry.
 
 End Preview clears the temporary pixels and restores the captured segment
 settings, including white channels and effects. A failed write or restoration
 retains the original snapshot for another end attempt. These snapshots are
 in memory: restarting the server during Preview does not restore them.
 All Off deliberately cancels without restoring.
+
+A single controller range may cover several Segments on this page. The mismatch
+banner lists those Segments together and names the controller range once.
+It describes range differences; that alone is not a reason for Preview to fail.
 
 “Elements” is now “Segments” in operator-facing copy. Existing `elements`
 storage and API fields, `Element` TypeScript types, legacy links, and saved

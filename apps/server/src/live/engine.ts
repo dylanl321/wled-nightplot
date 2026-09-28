@@ -41,6 +41,7 @@ import {
   type WriteStateFn,
   type WledStateWrite,
 } from "../wled/live.ts";
+import type { ProbeFn } from "../wled/client.ts";
 
 export type LiveEngine = {
   revision(lightId: string): number;
@@ -51,6 +52,7 @@ export type LiveEngine = {
   startPreview: (args: StartArgs) => Promise<LiveActionResult>;
   startBlink: (args: StartArgs) => Promise<LiveActionResult>;
   end: (lightId: string, kind: LiveEndKind) => Promise<LiveActionResult>;
+  recoverFrozen: (light: Light, probe: ProbeFn) => Promise<FrozenRecoveryResult>;
   seen: (lightId: string, seenByYou: Exclude<SeenByYou, null>) => LiveSession | null;
   read: (light: Light) => Promise<LiveRead | null>;
   identifyHost: (target: HostPort, ledCount: number, snapshot: WledSnapshot) => Promise<LiveActionResult>;
@@ -97,7 +99,11 @@ export type LiveActionResult =
        */
       leftoverClears?: "unknown";
     }
-  | { ok: false; status: 400 | 403 | 404 | 422; error: string; message: string };
+  | { ok: false; status: 400 | 403 | 404 | 422; error: string; message: string; sent?: false };
+
+type FrozenRecoveryResult =
+  | { ok: true; snapshot: WledSnapshot; wrote: boolean; message: string }
+  | Extract<LiveActionResult, { ok: false }>;
 
 export function createLiveEngine(deps: {
   write: WriteStateFn;
@@ -195,9 +201,20 @@ export function createLiveEngine(deps: {
     const usePixels = kind === "preview" && (args.pixels === true || pixelSessions.has(args.light.id));
     const nativeRestore = updating ? nativeRestores.get(args.light.id) : args.live?.nativeRestore;
     if (usePixels && (!nativeRestore || !/^WLED (?:0\.1[45]\.|16\.)/.test(args.light.firmware ?? ""))) {
+      const unavailable = !nativeRestore ? args.live?.nativeRestoreUnavailable : undefined;
+      if (unavailable === "frozen") return {
+        ok: false, status: 422, error: "pixel-preview-frozen", sent: false,
+        message: "The controller is holding frozen LEDs. Nightplot has no snapshot of their original colours to restore. Use Recover Preview to deliberately clear them, or restore a saved look in WLED. Nothing was sent.",
+      };
+      if (unavailable === "playlist") return {
+        ok: false, status: 422, error: "pixel-preview-playlist", sent: false,
+        message: "The controller is running a playlist that Nightplot cannot restore. Stop the playlist in WLED, then Refresh and retry Preview. Nothing was sent.",
+      };
       return {
-        ok: false, status: 422, error: "pixel-preview-unavailable",
-        message: "Segments + cursor needs a complete, unfrozen controller state on supported WLED firmware. End Preview and Refresh, or use Cursor only. Nothing was sent.",
+        ok: false, status: 422, error: "pixel-preview-unavailable", sent: false,
+        message: updating
+          ? "This Preview has no complete snapshot for Segments stay lit. End Preview, Refresh, then try again. Nothing was sent."
+          : "Segments stay lit needs a complete controller state on supported WLED firmware. Refresh and retry, or use Cursor only. Nothing was sent.",
       };
     }
     const authored: WledStateWrite = usePixels
@@ -347,6 +364,47 @@ export function createLiveEngine(deps: {
     };
   }
 
+  function recoverFrozen(light: Light, probe: ProbeFn): Promise<FrozenRecoveryResult> {
+    const revision = revisions.get(light.id) ?? 0;
+    return serial(light.id, async () => {
+      const refuse = (error: string, message: string): FrozenRecoveryResult => ({
+        ok: false, status: 422, error, message: `${message} Nothing was sent.`, sent: false,
+      });
+      const cancelled = () => blocked.has(light.id) || revision !== (revisions.get(light.id) ?? 0);
+      if (cancelled()) return refuse("cancelled", "Recovery was cancelled by All Off.");
+      if (sessions.has(light.id)) return refuse("busy", "A Preview or Blink still owns this Light. End it to restore its snapshot.");
+      const target = { hostname: light.hostname, port: light.port };
+      const before = await probe(target).catch(() => null);
+      if (!before || before.kind !== "found") return refuse("offline", "The controller did not return a fresh state. Refresh and try again.");
+      const snapshot = before.snapshot;
+      if (!light.mac || snapshot.mac !== light.mac || snapshot.ledCount !== light.ledCount) {
+        return refuse("controller-changed", "The controller identity or strip length changed. Refresh before recovery.");
+      }
+      if (!/^WLED (?:0\.1[45]\.|16\.)/.test(snapshot.firmware)) return refuse("unsupported", "This firmware is not supported for frozen-pixel recovery.");
+      if (snapshot.nativeRestore) return {
+        ok: true, snapshot, wrote: false,
+        message: "The controller is no longer frozen. Nothing was sent. You can start Preview again.",
+      };
+      const frozen = snapshot.frozenSegments;
+      if (!frozen?.length) return refuse("state-unknown", "Recovery needs complete controller state with known frozen LEDs and no active playlist.");
+      // All Off may arrive while the probe is in flight. Never write after its cancellation.
+      if (cancelled()) return refuse("cancelled", "Recovery was cancelled by All Off.");
+      const written = await deps.write(target, {
+        seg: frozen.map((segment) => ({ ...segment, frz: false })),
+      }).catch(() => false);
+      const after = await probe(target).catch(() => null);
+      const reread = after?.kind === "found" ? after.snapshot : null;
+      if (!written || !reread || reread.mac !== light.mac || reread.ledCount !== light.ledCount || !reread.nativeRestore) return {
+        ok: false, status: 422, error: "recovery-unconfirmed",
+        message: "Clearing frozen LEDs was not confirmed. Refresh to check the controller before retrying. The previous per-LED colours cannot be restored.",
+      };
+      return {
+        ok: true, snapshot: reread, wrote: true,
+        message: "The controller reports frozen LEDs cleared. Their previous per-LED colours were discarded. Saved Segments are unchanged. Preview is off.",
+      };
+    });
+  }
+
   return {
     revision: (id) => revisions.get(id) ?? 0,
     block(id) {
@@ -363,6 +421,7 @@ export function createLiveEngine(deps: {
     startPreview: (args) => serial(args.light.id, () => start("preview", args)),
     startBlink: (args) => serial(args.light.id, () => start("blink", args)),
     end: (id, kind) => serial(id, () => end(id, kind)),
+    recoverFrozen,
     seen(lightId, seenByYou) {
       const session = sessions.get(lightId);
       if (!session) return null;

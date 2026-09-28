@@ -6,6 +6,17 @@ export function explainDrift(display: RangeDisplay): string[] {
   if (declared.length === 0) return [];
   const lines: string[] = [];
   const seenElements = new Set<string>();
+  const grouped = new Map<string, typeof declared>();
+  for (const rail of declared) {
+    if (!rail.differs) continue;
+    const there = bestOverlap(rail, display.reported);
+    if (!there || (there.start === rail.start && there.stop === rail.stop)) continue;
+    const key = `${there.start}:${there.stop}`;
+    const group = grouped.get(key) ?? [];
+    if (!group.some((item) => item.label === rail.label && item.start === rail.start && item.stop === rail.stop)) group.push(rail);
+    grouped.set(key, group);
+  }
+  const describedGroups = new Set<string>();
   for (const rail of declared) {
     if (!rail.differs) continue;
     const there = bestOverlap(rail, display.reported);
@@ -17,6 +28,15 @@ export function explainDrift(display: RangeDisplay): string[] {
       continue;
     }
     if (there.start === rail.start && there.stop === rail.stop) continue;
+    const groupKey = `${there.start}:${there.stop}`;
+    const group = grouped.get(groupKey) ?? [];
+    if (group.length > 1) {
+      if (describedGroups.has(groupKey)) continue;
+      describedGroups.add(groupKey);
+      const names = group.map((item) => `${item.label} (${item.start}–${item.stop})`).join(", ");
+      lines.push(`This page has ${group.length} Segments: ${names}. The controller has one range across them: ${there.start}–${there.stop}.`);
+      continue;
+    }
     lines.push(
       `${rail.label} is ${rail.start}–${rail.stop} here. The controller has ${there.start}–${there.stop}.`,
     );

@@ -22,6 +22,10 @@ export type WledSnapshot = {
   segments: RangeSpan[] | null;
   /** Restorable state for individual-pixel Preview. Never derived from an RGB bead. */
   nativeRestore?: WledNativeRestore;
+  /** A known reason the native look cannot be captured; missing fields remain unknown. */
+  nativeRestoreUnavailable?: "frozen" | "playlist";
+  /** Validated native IDs and unchanged bounds for deliberate frozen-pixel recovery. */
+  frozenSegments?: { id: number; start: number; stop: number }[];
 };
 
 /** Unknown when `segments` is null. Distinct from a known empty `[]`. */
@@ -55,6 +59,14 @@ export function parseWledPayload(body: unknown): WledSnapshot | null {
   const segmentColor = on ? colorFromState(state) : null;
 
   const nativeRestore = readNativeRestore(state);
+  const nativeRestoreUnavailable = Array.isArray(state?.seg) &&
+    state.seg.some((segment) => isRecord(segment) && segment.frz === true)
+    ? "frozen" as const
+    : typeof state?.pl === "number" && state.pl >= 0 ? "playlist" as const : undefined;
+  const frozenState = nativeRestoreUnavailable === "frozen" ? readNativeRestore(state, true) : null;
+  const frozenSegments = frozenState?.seg.every((segment) => segment.stop <= count)
+    ? frozenState.seg.filter((segment) => segment.frz).map(({ id, start, stop }) => ({ id, start, stop }))
+    : undefined;
   return {
     name,
     firmware: ver.startsWith("0") || ver.includes(".") ? `WLED ${ver}` : ver,
@@ -66,10 +78,12 @@ export function parseWledPayload(body: unknown): WledSnapshot | null {
     segmentColor,
     segments: parseSegments(state, count),
     ...(nativeRestore ? { nativeRestore } : {}),
+    ...(nativeRestoreUnavailable ? { nativeRestoreUnavailable } : {}),
+    ...(frozenSegments?.length ? { frozenSegments } : {}),
   };
 }
 
-function readNativeRestore(state: Record<string, unknown> | null): WledNativeRestore | null {
+function readNativeRestore(state: Record<string, unknown> | null, allowFrozen = false): WledNativeRestore | null {
   if (!state || typeof state.on !== "boolean" || !Number.isInteger(state.bri)
     || Number(state.bri) < 0 || Number(state.bri) > 255 || !Array.isArray(state.seg) || !state.seg.length) return null;
   // A playlist or frozen pixel buffer cannot be reconstructed from segment JSON.
@@ -81,13 +95,13 @@ function readNativeRestore(state: Record<string, unknown> | null): WledNativeRes
       || !Number.isInteger(raw.start) || !Number.isInteger(raw.stop) || Number(raw.stop) <= Number(raw.start)
       || Number(raw.start) < 0 || typeof raw.on !== "boolean" || typeof raw.rev !== "boolean" || typeof raw.mi !== "boolean"
       || !["bri", "grp", "spc", "of"].every((key) => Number.isInteger(raw[key]))
-      || raw.frz !== false || !Array.isArray(raw.col) || !raw.col.length
+      || (allowFrozen ? typeof raw.frz !== "boolean" : raw.frz !== false) || !Array.isArray(raw.col) || !raw.col.length
       || !raw.col.every((color) => Array.isArray(color) && color.length >= 3 && color.length <= 4
         && color.every((value) => Number.isInteger(value) && value >= 0 && value <= 255))) return null;
     ids.add(Number(raw.id));
     const segment: WledNativeSegment = {
       id: Number(raw.id), start: Number(raw.start), stop: Number(raw.stop),
-      col: raw.col.map((color) => [...color]), frz: false,
+      col: raw.col.map((color) => [...color]), frz: raw.frz as boolean,
     };
     for (const key of ["on", "bri", "cct", "grp", "spc", "of", "rev", "mi", "fx", "sx", "ix", "pal",
       "c1", "c2", "c3", "o1", "o2", "o3", "sel", "set", "m12", "si", "n"]) {

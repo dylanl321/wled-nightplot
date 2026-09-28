@@ -7,6 +7,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- Preview refusals now distinguish frozen controller pixels and active playlists from incomplete state. A known refusal carries **Nothing was sent** through to the UI without an unconfirmed-write claim. **Recover Preview…** offers deliberate clearing when frozen pixels have no restore snapshot, explains the loss, rechecks the controller before writing and confirms the readback. Saved Segments stay unchanged and Preview stays off; recovery respects active sessions and All Off. Mismatch copy groups several page Segments under one controller range instead of repeating that range for each Segment.
+
 - Segment editor v3 makes keyboard focus explicit: click a Segment, boundary LED, or free LED and use the arrows; Shift moves ten, Tab cycles edges, and Esc steps back. Touching Segments resize together, with Alt / ⌥ to detach. Consecutive arrows share an Undo step and small pointer movements no longer resize on click. Hover is separate from the cursor outside Locate.
 - The strip card now contains Preview options, contextual keyboard hints, compact cursor/scan controls and a 31-LED Zoom. Selection options open on drag release, Mark end or Enter. Segment actions live in the Inspector, with Cut at cursor added; the list has a separate calculated Length column and Free-range Add controls. Preview follows the focused LED during movement. Existing Preview restoration, Apply checks and data formats remain in place.
 
