@@ -30,6 +30,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Fixed
 
+- v2 Edit-ranges canvas (#2d) selected-Element kind chip no longer says **seg 1**. On this overlap scene the chip says **overlap**, the same word as the Peak list row and the running app after CONFIG-80 / CONFIG-87. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-122).
 - v2 Edit-ranges canvas (#2d) bead legend no longer always paints dashed **drift** and solid **overlap**. Keys follow the framed scene the same way the running app does after CONFIG-103 / CONFIG-92: drift only when compare shows drift; the red key only when invert, past strip, or overlap is present. This scene has both, so both keys still show — they are not a permanent always-on demo set. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-116).
 - Strip GET/load refuse shows once on the form banner. Notice is not set from `provision.refuse`, and `read.caption` is not repeated under the form. CONFIG-105-class write-path Sent / Read (`provisionWrite`) is unchanged. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-119).
 - Safe settings GET/load refuse shows once on the form banner. Notice is not set from `safe.refuse`, and `read.caption` is not repeated under the form. CONFIG-105 write-path Sent / Read back panel is unchanged. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-117).
