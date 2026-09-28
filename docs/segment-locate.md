@@ -64,6 +64,15 @@ options: **Cursor only**, or **Segments stay lit** with a bright cursor.
 0–100%. It does not change saved colors or overall controller brightness.
 The focused node stays bright, including while an edge or Segment moves.
 
+**Count off · every 10th LED** lights the entire strip dimly and marks the
+10th, 20th, 30th… LEDs in a bright, different colour. It counts from the first
+LED (zero-based indices 9, 19, 29…). This is a stationary Preview, not a
+moving chase or a range edit. It needs the same restorable pixel Preview state
+as Segments stay lit and is offered for strips up to 2560 LEDs; longer strips
+would exceed the 512-span Preview limit, so the option is disabled rather than
+showing an incomplete count. End Preview restores the previous look; All Off
+cancels without restoring. No count-off colour or range is saved or Applied.
+
 Use the cursor’s LED number or −/+ buttons to move it. **Phone remote** on the
 Segments strip opens a full-screen view with large previous/next LED buttons
 and the current zero-based LED number. Start Preview there to light that cursor

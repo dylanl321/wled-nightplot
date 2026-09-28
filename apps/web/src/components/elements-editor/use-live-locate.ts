@@ -6,7 +6,11 @@ import { fetchJson } from "@/lib/api";
 import type { Drag, EditorState } from "./use-editor-state";
 import { LOCATE_LIT, LOCATE_OFF, type Range } from "./ops";
 
-export type LocateMode = "cursor" | "hold";
+export type LocateMode = "cursor" | "hold" | "count";
+
+/** Two painted spans per ten LEDs; the pixel Preview API accepts at most 512. */
+export const COUNT_OFF_MAX_LEDS = 2560;
+const COUNT_OFF_BASE = "#2c4e49";
 
 export type LocateSpan = {
   start: number;
@@ -47,6 +51,7 @@ export function locateFrame(input: {
 }): LocateFrame | null {
   if (!input.enabled || input.ledCount < 1) return null;
   const name = input.lightName;
+  if (input.mode === "count") return countOffFrame(input.ledCount, name);
   if (input.mode === "hold") return holdFrame(input);
   if (input.hoverIndex != null && !input.dragging) {
     const index = input.hoverIndex;
@@ -79,6 +84,21 @@ export function locateFrame(input: {
     stop: input.ledCount,
     color: LOCATE_OFF,
     caption: "Preview on · pick something to light",
+  };
+}
+
+/** Zero-based strip indices 9, 19, … are the 10th, 20th, … LEDs counted from one. */
+export function countOffFrame(ledCount: number, lightName: string): LocateFrame | null {
+  if (!Number.isInteger(ledCount) || ledCount < 1 || ledCount > COUNT_OFF_MAX_LEDS) return null;
+  const spans: LocateSpan[] = [];
+  for (let start = 0; start < ledCount; start += 10) {
+    const marker = start + 9;
+    spans.push({ start, stop: Math.min(marker, ledCount), color: COUNT_OFF_BASE });
+    if (marker < ledCount) spans.push({ start: marker, stop: marker + 1, color: LOCATE_LIT });
+  }
+  return {
+    start: 0, stop: ledCount, color: COUNT_OFF_BASE, spans, pixels: true,
+    caption: `Count off on ${lightName} · every 10th LED is bright (10, 20, …)`,
   };
 }
 

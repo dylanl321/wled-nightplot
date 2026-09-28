@@ -42,6 +42,7 @@ import {
 } from "@/components/elements-editor/use-editor-state";
 import { explainDrift } from "@/components/elements-editor/drift-copy";
 import {
+  COUNT_OFF_MAX_LEDS,
   drawingRange,
   locateFrame,
   useLiveLocate,
@@ -355,11 +356,11 @@ export function ElementsPanel({
               Phone remote
             </Button>
             <Switch on={live && !unreachable} label="Light on strip" tone="online" disabled={unreachable || (frozenPreview && !live) || busy === "recover"} title={frozenPreview ? "Recover the frozen LEDs before starting Preview." : liveReason ?? undefined} onClick={toggleLive} />
-            {live && !unreachable ? <EditorPopover label={locateMode === "hold" ? `Segments ${backgroundPercent}% · cursor bright` : "Cursor only"} className="border-[#1f4a45] text-online">
+            {live && !unreachable ? <EditorPopover label={locateMode === "hold" ? `Segments ${backgroundPercent}% · cursor bright` : locateMode === "count" ? "Count off · every 10th LED" : "Cursor only"} className="border-[#1f4a45] text-online">
               <div role="radiogroup" aria-label="Preview lighting" className="flex flex-col gap-3">
-                {(["cursor", "hold"] as const).map((mode) => <label key={mode} className="flex items-start gap-2 text-[13px]">
-                  <input type="radio" name={`preview-mode-${light.id}`} checked={locateMode === mode} onChange={() => setLocateMode(mode)} className="mt-1 accent-[#7ee0d0]" />
-                  <span>{mode === "cursor" ? "Cursor only" : "Segments stay lit"}<span className="mt-0.5 block text-[12px] text-muted-foreground">{mode === "cursor" ? "Only the cursor or selection lights." : "Every Segment glows in its colour."}</span></span>
+                {(["cursor", "hold", "count"] as const).map((mode) => <label key={mode} className="flex items-start gap-2 text-[13px]">
+                  <input type="radio" name={`preview-mode-${light.id}`} checked={locateMode === mode} disabled={mode === "count" && light.ledCount > COUNT_OFF_MAX_LEDS} onChange={() => setLocateMode(mode)} className="mt-1 accent-[#7ee0d0]" />
+                  <span>{mode === "cursor" ? "Cursor only" : mode === "hold" ? "Segments stay lit" : "Count off · every 10th LED"}<span className="mt-0.5 block text-[12px] text-muted-foreground">{mode === "cursor" ? "Only the cursor or selection lights." : mode === "hold" ? "Every Segment glows in its colour." : light.ledCount > COUNT_OFF_MAX_LEDS ? `Count off supports up to ${COUNT_OFF_MAX_LEDS} LEDs; this strip has ${light.ledCount}.` : "Count 10, 20, 30… from the first LED. Every tenth is bright; the rest glow dimly."}</span></span>
                 </label>)}
               </div>
               {locateMode === "hold" ? <label className="mt-4 flex flex-wrap items-center gap-2 text-[12px]">

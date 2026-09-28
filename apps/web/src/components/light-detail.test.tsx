@@ -24,6 +24,29 @@ import {
 } from "@/test/fixtures";
 
 describe("Segments Preview recovery", () => {
+  it("switches to count-off without Apply and ends through the same Preview session", async () => {
+    const initial = lightDetail({ light: lightView({ reachability: "online", on: true, brightness: 180 }) });
+    const writes: { path: string; body: unknown }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      if (init?.method === "POST") writes.push({ path, body: JSON.parse(String(init.body)) });
+      return new Response(JSON.stringify(initial));
+    }));
+    render(<LightDetail initial={initial} tab="elements" />);
+    fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
+    fireEvent.click(screen.getByRole("button", { name: /Segments 35% · cursor bright/ }));
+    const options = screen.getByRole("radiogroup", { name: "Preview lighting" });
+    fireEvent.click(within(options).getByRole("radio", { name: /Count off/ }));
+    await waitFor(() => expect(writes.some((write) => write.path.endsWith("/preview") &&
+      (write.body as { pixels?: boolean }).pixels === true)).toBe(true));
+    const count = writes.find((write) => write.path.endsWith("/preview") && (write.body as { pixels?: boolean }).pixels);
+    expect(count?.body).toMatchObject({ pixels: true, spans: expect.arrayContaining([
+      { start: 9, stop: 10, color: "#fff4dc" },
+    ]) });
+    fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
+    await waitFor(() => expect(writes.some((write) => write.path.endsWith("/preview/end"))).toBe(true));
+    expect(writes.some((write) => write.path.endsWith("/apply"))).toBe(false);
+  });
   it("uses the existing Preview sender for the phone remote and ends it on return", async () => {
     const initial = lightDetail({ light: lightView({ reachability: "online", on: true, brightness: 180 }) });
     const writes: { path: string; body: unknown }[] = [];

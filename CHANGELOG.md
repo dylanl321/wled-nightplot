@@ -7,6 +7,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- CONFIG-154: Segments Preview offers a stationary count-off pattern: dim strip with every tenth LED (10, 20, …) bright. It uses the restorable pixel Preview session, refuses strips beyond its 512-span / 2560-LED limit, and does not Save or Apply. Software checks are not Hardware Done.
+
 - CONFIG-153: Segments has a full-screen phone Locate remote with large previous/next LED controls, the current LED number, and Start/End Preview. Returning ends Preview through the existing serialized sender; an uncertain restore remains visible on Segments. It uses Cursor only and cannot edit, Save, or Apply Segments. Fixture checks are software-only, not Hardware Done.
 
 - CONFIG-152: The Light page shows its hostname independently of the device display name; Settings separates hostname and port from the editable WLED name. **Apply settings** writes only changed, fingerprinted Safe fields, so a name edit goes to the controller without resending unrelated boot or power settings. A matched cfg readback updates the enrolled Light title even when `/json/info` lags. Preview remains temporary; fixture checks are not Hardware Done.

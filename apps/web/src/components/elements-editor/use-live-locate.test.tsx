@@ -6,6 +6,8 @@ import { createElement, StrictMode, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { requestPath } from "@/test/fixtures";
 import {
+  COUNT_OFF_MAX_LEDS,
+  countOffFrame,
   holdMarksCursor,
   holdSpans,
   locateFrame,
@@ -16,6 +18,26 @@ import {
   useLiveLocate,
   type LocateFrame,
 } from "./use-live-locate";
+
+describe("count-off Preview", () => {
+  it("counts from one across the full strip, including a short final run", () => {
+    const picture = countOffFrame(21, "Garage");
+    expect(picture).toMatchObject({ pixels: true, start: 0, stop: 21 });
+    expect(picture?.spans).toEqual([
+      { start: 0, stop: 9, color: "#2c4e49" },
+      { start: 9, stop: 10, color: "#fff4dc" },
+      { start: 10, stop: 19, color: "#2c4e49" },
+      { start: 19, stop: 20, color: "#fff4dc" },
+      { start: 20, stop: 21, color: "#2c4e49" },
+    ]);
+    expect(countOffFrame(9, "Garage")?.spans).toEqual([{ start: 0, stop: 9, color: "#2c4e49" }]);
+  });
+
+  it("never silently truncates a pixel Preview past the 512-span cap", () => {
+    expect(countOffFrame(COUNT_OFF_MAX_LEDS, "Garage")?.spans).toHaveLength(512);
+    expect(countOffFrame(COUNT_OFF_MAX_LEDS + 1, "Garage")).toBeNull();
+  });
+});
 
 const frame: LocateFrame = { start: 4, stop: 5, color: "#fff4dc", caption: "Lighting LED 4" };
 
