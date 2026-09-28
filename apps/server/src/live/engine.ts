@@ -10,6 +10,7 @@ import {
   resolveLiveTarget,
   restoreSegmentsFromSnapshot,
   shouldRestoreOnEnd,
+  snapshotSegmentCount,
   type Element,
   type HostPort,
   type Light,
@@ -22,6 +23,8 @@ import {
   type WledSnapshot,
 } from "@nightplot/shared";
 import {
+  firstLocateWrite,
+  isLocateOverlayWrite,
   locateHopWrite,
   previewWrite,
   previewWriteLeavingOverlay,
@@ -171,7 +174,13 @@ export function createLiveEngine(deps: {
     if (!sameWrite) {
       const locateHop = painted != null || adHoc != null;
       const body = locateHop
-        ? locateHopWrite(picture, last)
+        ? isLocateOverlayWrite(last)
+          ? locateHopWrite(picture, last)
+          : firstLocateWrite(
+              picture,
+              // First restore snapshot — not a hop reread of the Preview paint.
+              snapshotSegmentCount({ segments: restore.segments }),
+            )
         : previewWriteLeavingOverlay(picture, last);
       const sent = await deps.write(dest, body);
       if (!sent) {
