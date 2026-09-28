@@ -248,7 +248,7 @@ button{font-family:inherit;cursor:pointer}
       <span style="align-self:flex-start;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#0c0d10;background:#d4a574;border-radius:4px;padding:2px 7px;font-weight:500;">2d</span>
       <h2 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Light · Edit ranges</h2>
       <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">PRIMARY JOB</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Drag an Element’s handles on the beads, or type numbers. Start is inclusive, stop exclusive, length is derived. Then Apply to the controller.</p></div>
-      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">HONESTY RULE</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Overlap is red on the beads and blocks Apply with the reason. Drift shows as a gap between the two rails. Legend keys follow that scene — dashed drift and the red error word only when this frame has that condition, same as the running app. Phone: a failed Apply stays on the failure.</p></div>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">HONESTY RULE</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Overlap is red on the beads and blocks Apply with the reason. Drift shows as a gap between the two rails. Legend keys follow that scene — dashed drift and the red error word only when this frame has that condition, same as the running app. Invert and past strip use the region label on <a href="#2di">2di</a> and <a href="#2dp">2dp</a> — not a hardcoded overlap. Phone: a failed Apply stays on the failure.</p></div>
     </aside>
     </sc-if>
     <div style="width:1280px;height:800px;flex:none;border:1px solid #262c37;border-radius:12px;overflow:hidden;background:#0c0d10;display:flex;box-shadow:0 30px 80px rgba(0,0,0,.45);">
@@ -311,6 +311,120 @@ button{font-family:inherit;cursor:pointer}
         <a href="#2d" style="font-size:13px;">Edit ranges as numbers</a>
       </div>
       <div style="flex:none;padding:12px 16px 28px;border-top:1px solid #1d2129;background:#0a0b0e;"><button style="width:100%;height:48px;background:transparent;color:#e07070;border:1px solid #e07070;border-radius:10px;font-size:15px;font-weight:600;">All Off</button></div>
+    </div>
+  </div>
+
+  <!-- 2di Edit ranges · invert -->
+  <div id="2di" data-screen-label="04b Light · Edit ranges · invert" style="display:flex;gap:40px;align-items:flex-start;">
+    <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+    <aside style="width:290px;flex:none;display:flex;flex-direction:column;gap:16px;">
+      <span style="align-self:flex-start;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#0c0d10;background:#d4a574;border-radius:4px;padding:2px 7px;font-weight:500;">2di</span>
+      <h2 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Light · Edit ranges · invert</h2>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">PRIMARY JOB</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Peak’s start is not before stop. Apply stays blocked. The bead legend red key is this region’s label — invert — the same word as the kind chip and the list row.</p></div>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">HONESTY RULE</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Segments unknown — no report to compare. Rows say no compare, not matches. There is no drift key. Beads stay unknown-grey; never a last colour. Preview is not Apply. This is invert only, not past strip.</p></div>
+    </aside>
+    </sc-if>
+    <div style="width:1280px;height:800px;flex:none;border:1px solid #262c37;border-radius:12px;overflow:hidden;background:#0c0d10;display:flex;box-shadow:0 30px 80px rgba(0,0,0,.45);">
+      <aside style="width:248px;flex:none;background:#0a0b0e;border-right:1px solid #1d2129;display:flex;flex-direction:column;">
+        <div style="height:64px;flex:none;display:flex;align-items:center;gap:10px;padding:0 20px;"><img src="web/public/logo-mark.svg" alt="" style="width:44px;height:12px;"><span style="font-family:Fraunces,serif;font-size:17px;color:#d4a574;">Nightplot</span></div>
+        <div style="padding:4px 12px;display:flex;flex-direction:column;gap:2px;">
+          <div style="display:flex;padding:9px 10px;"><span>All Lights</span><span style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9a9488;">3</span></div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;border-radius:6px;background:#151820;box-shadow:inset 2px 0 0 #d4a574;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span><span style="font-weight:500;">Eave front</span><span style="margin-left:auto;font-size:11px;color:#d4a574;">1 unsaved</span></div>{{ railEaveUnknown }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span><span>Porch rail</span></div>{{ railPorch }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#e07070;"></span><span>Garage</span></div>{{ railGarage }}</div>
+        </div>
+        <div style="margin-top:auto;padding:16px;border-top:1px solid #1d2129;display:flex;flex-direction:column;gap:8px;"><button style="height:44px;background:transparent;color:#e07070;border:1px solid #e07070;border-radius:8px;font-size:14px;font-weight:600;">All Off</button><span style="font-size:11px;color:#7d7870;text-align:center;">power unknown · 1 not answering</span></div>
+      </aside>
+      <main style="flex:1;min-width:0;padding:24px 32px;display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <div style="display:flex;align-items:center;gap:12px;"><h1 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Eave front</h1><span style="display:flex;align-items:center;gap:6px;font-size:12px;color:#7ee0d0;padding:3px 10px;border:1px solid #1f4a45;border-radius:20px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span>Online · unknown</span>
+            <div style="margin-left:auto;display:flex;gap:6px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#c9c3b8;border:1px solid #262c37;border-radius:5px;padding:3px 8px;">WLED</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#c9c3b8;border:1px solid #262c37;border-radius:5px;padding:3px 8px;">WS281x RGB</span></div></div>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#7d7870;">192.168.1.41 · 300 LEDs · segments unknown</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;"><div style="display:flex;padding:3px;background:#12141a;border:1px solid #262c37;border-radius:9px;"><a href="#2c" style="padding:6px 14px;color:#9a9488;">Inspect</a><span style="padding:6px 14px;border-radius:6px;background:#2f3542;font-weight:500;">Edit ranges</span><a href="#2e" style="padding:6px 14px;color:#9a9488;">Test live</a></div><span style="margin-left:auto;font-size:12px;color:#7d7870;">Segments unknown — no report to compare.</span></div>
+        <div style="padding:16px 20px 10px;background:#07080a;border:1px solid #1d2129;border-radius:14px;display:flex;flex-direction:column;gap:6px;">
+          {{ editInvertLegend }}
+          {{ editInvertStrip }}
+        </div>
+        <div style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px;">
+          <div style="display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid #d4a574;border-radius:12px;background:#15130f;">
+            <div style="display:flex;align-items:center;gap:10px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#e07070;">invert</span><div style="height:36px;display:flex;align-items:center;padding:0 10px;border:1px solid #3a4150;border-radius:7px;background:#07080a;width:180px;">Peak</div></div>
+            <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;font-family:'IBM Plex Mono',monospace;">
+              <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Sans',sans-serif;font-size:11px;color:#7d7870;">Start · first LED</span><div style="height:36px;display:flex;align-items:center;padding:0 10px;border:1px solid #3a4150;border-radius:7px;background:#07080a;">180</div></div>
+              <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Sans',sans-serif;font-size:11px;color:#e07070;">Stop · after last LED</span><div style="height:36px;display:flex;align-items:center;padding:0 10px;border:1px solid #e07070;border-radius:7px;background:#1a1113;color:#e07070;">120</div></div>
+              <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Sans',sans-serif;font-size:11px;color:#7d7870;">Length</span><div style="height:36px;display:flex;align-items:center;padding:0 10px;color:#9a9488;">—</div></div>
+            </div>
+            <span style="color:#e07070;font-size:13px;">Peak is inverted: start 180 is not before stop 120.</span>
+          </div>
+          <div style="display:flex;flex-direction:column;border:1px solid #1d2129;border-radius:12px;background:#0e1014;font-size:13px;">
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;padding:12px 14px;border-bottom:1px solid #1d2129;"><span>Left run</span><span style="font-family:'IBM Plex Mono',monospace;color:#9a9488;">0–120</span><span style="color:#d4a574;font-size:12px;">no compare</span></div>
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;padding:12px 14px;border-bottom:1px solid #1d2129;background:#151820;"><span style="color:#d4a574;">Peak</span><span style="font-family:'IBM Plex Mono',monospace;color:#e07070;">180–120</span><span style="color:#e07070;font-size:12px;">invert</span></div>
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;padding:12px 14px;border-bottom:1px solid #1d2129;"><span>Right run</span><span style="font-family:'IBM Plex Mono',monospace;color:#9a9488;">180–300</span><span style="color:#d4a574;font-size:12px;">no compare</span></div>
+            <div style="padding:12px 14px;"><a href="#2di">+ Element from free LEDs</a></div>
+          </div>
+        </div>
+        <div style="margin-top:auto;display:flex;align-items:center;gap:12px;padding:12px 16px;border:1px solid #262c37;border-radius:10px;background:#12141a;">
+          <span style="color:#d4a574;">1 unsaved change</span><span style="color:#7d7870;font-size:13px;">Apply writes to the controller, then reads it back.</span>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:10px;"><span style="color:#e07070;font-size:13px;">Fix the invert first</span><button style="height:38px;padding:0 14px;background:transparent;color:#ece7dc;border:1px solid #262c37;border-radius:8px;">Revert</button><button disabled style="height:38px;padding:0 20px;background:#1a1d24;color:#7d7870;border:1px solid #262c37;border-radius:8px;font-weight:600;cursor:not-allowed;">Apply</button></div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- 2dp Edit ranges · past strip -->
+  <div id="2dp" data-screen-label="04c Light · Edit ranges · past strip" style="display:flex;gap:40px;align-items:flex-start;">
+    <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+    <aside style="width:290px;flex:none;display:flex;flex-direction:column;gap:16px;">
+      <span style="align-self:flex-start;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#0c0d10;background:#d4a574;border-radius:4px;padding:2px 7px;font-weight:500;">2dp</span>
+      <h2 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Light · Edit ranges · past strip</h2>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">PRIMARY JOB</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Right run’s stop is past the strip. Apply stays blocked. The bead legend red key is this region’s label — past strip — the same word as the kind chip and the list row.</p></div>
+      <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#7d7870;">HONESTY RULE</span><p style="margin:0;line-height:1.55;color:#c9c3b8;text-wrap:pretty;">Segments unknown — no report to compare. Rows say no compare, not matches. There is no drift key. Beads stay unknown-grey; never a last colour. Preview is not Apply. This is past strip only, not invert and not overlap.</p></div>
+    </aside>
+    </sc-if>
+    <div style="width:1280px;height:800px;flex:none;border:1px solid #262c37;border-radius:12px;overflow:hidden;background:#0c0d10;display:flex;box-shadow:0 30px 80px rgba(0,0,0,.45);">
+      <aside style="width:248px;flex:none;background:#0a0b0e;border-right:1px solid #1d2129;display:flex;flex-direction:column;">
+        <div style="height:64px;flex:none;display:flex;align-items:center;gap:10px;padding:0 20px;"><img src="web/public/logo-mark.svg" alt="" style="width:44px;height:12px;"><span style="font-family:Fraunces,serif;font-size:17px;color:#d4a574;">Nightplot</span></div>
+        <div style="padding:4px 12px;display:flex;flex-direction:column;gap:2px;">
+          <div style="display:flex;padding:9px 10px;"><span>All Lights</span><span style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9a9488;">3</span></div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;border-radius:6px;background:#151820;box-shadow:inset 2px 0 0 #d4a574;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span><span style="font-weight:500;">Eave front</span><span style="margin-left:auto;font-size:11px;color:#d4a574;">1 unsaved</span></div>{{ railEaveUnknown }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span><span>Porch rail</span></div>{{ railPorch }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding:10px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:9px;background:#e07070;"></span><span>Garage</span></div>{{ railGarage }}</div>
+        </div>
+        <div style="margin-top:auto;padding:16px;border-top:1px solid #1d2129;display:flex;flex-direction:column;gap:8px;"><button style="height:44px;background:transparent;color:#e07070;border:1px solid #e07070;border-radius:8px;font-size:14px;font-weight:600;">All Off</button><span style="font-size:11px;color:#7d7870;text-align:center;">power unknown · 1 not answering</span></div>
+      </aside>
+      <main style="flex:1;min-width:0;padding:24px 32px;display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <div style="display:flex;align-items:center;gap:12px;"><h1 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.01em;">Eave front</h1><span style="display:flex;align-items:center;gap:6px;font-size:12px;color:#7ee0d0;padding:3px 10px;border:1px solid #1f4a45;border-radius:20px;"><span style="width:6px;height:6px;border-radius:9px;background:#7ee0d0;"></span>Online · unknown</span>
+            <div style="margin-left:auto;display:flex;gap:6px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#c9c3b8;border:1px solid #262c37;border-radius:5px;padding:3px 8px;">WLED</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#c9c3b8;border:1px solid #262c37;border-radius:5px;padding:3px 8px;">WS281x RGB</span></div></div>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#7d7870;">192.168.1.41 · 300 LEDs · segments unknown</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;"><div style="display:flex;padding:3px;background:#12141a;border:1px solid #262c37;border-radius:9px;"><a href="#2c" style="padding:6px 14px;color:#9a9488;">Inspect</a><span style="padding:6px 14px;border-radius:6px;background:#2f3542;font-weight:500;">Edit ranges</span><a href="#2e" style="padding:6px 14px;color:#9a9488;">Test live</a></div><span style="margin-left:auto;font-size:12px;color:#7d7870;">Segments unknown — no report to compare.</span></div>
+        <div style="padding:16px 20px 10px;background:#07080a;border:1px solid #1d2129;border-radius:14px;display:flex;flex-direction:column;gap:6px;">
+          {{ editPastLegend }}
+          {{ editPastStrip }}
+        </div>
+        <div style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px;">
+          <div style="display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid #d4a574;border-radius:12px;background:#15130f;">
+            <div style="display:flex;align-items:center;gap:10px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#e07070;">past strip</span><div style="height:36px;display:flex;align-items:center;padding:0 10px;border:1px solid #3a4150;border-radius:7px;background:#07080a;width:180px;">Right run</div></div>
+            <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;font-family:'IBM Plex Mono',monospace;">
+              <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Sans',sans-serif;font-size:11px;color:#7d7870;">Start · first LED</span><div style="height:36px;display:flex;align-items:center;padding:0 10px;border:1px solid #3a4150;border-radius:7px;background:#07080a;">180</div></div>
+              <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Sans',sans-serif;font-size:11px;color:#e07070;">Stop · after last LED</span><div style="height:36px;display:flex;align-items:center;padding:0 10px;border:1px solid #e07070;border-radius:7px;background:#1a1113;color:#e07070;">320</div></div>
+              <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'IBM Plex Sans',sans-serif;font-size:11px;color:#7d7870;">Length</span><div style="height:36px;display:flex;align-items:center;padding:0 10px;color:#9a9488;">140</div></div>
+            </div>
+            <span style="color:#e07070;font-size:13px;">Right run 180–320 runs past the strip (300 LEDs).</span>
+          </div>
+          <div style="display:flex;flex-direction:column;border:1px solid #1d2129;border-radius:12px;background:#0e1014;font-size:13px;">
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;padding:12px 14px;border-bottom:1px solid #1d2129;"><span>Left run</span><span style="font-family:'IBM Plex Mono',monospace;color:#9a9488;">0–120</span><span style="color:#d4a574;font-size:12px;">no compare</span></div>
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;padding:12px 14px;border-bottom:1px solid #1d2129;"><span>Peak</span><span style="font-family:'IBM Plex Mono',monospace;color:#9a9488;">120–180</span><span style="color:#d4a574;font-size:12px;">no compare</span></div>
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;padding:12px 14px;border-bottom:1px solid #1d2129;background:#151820;"><span style="color:#d4a574;">Right run</span><span style="font-family:'IBM Plex Mono',monospace;color:#e07070;">180–320</span><span style="color:#e07070;font-size:12px;">past strip</span></div>
+            <div style="padding:12px 14px;"><a href="#2dp">+ Element from free LEDs</a></div>
+          </div>
+        </div>
+        <div style="margin-top:auto;display:flex;align-items:center;gap:12px;padding:12px 16px;border:1px solid #262c37;border-radius:10px;background:#12141a;">
+          <span style="color:#d4a574;">1 unsaved change</span><span style="color:#7d7870;font-size:13px;">Apply writes to the controller, then reads it back.</span>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:10px;"><span style="color:#e07070;font-size:13px;">Fix the past strip first</span><button style="height:38px;padding:0 14px;background:transparent;color:#ece7dc;border:1px solid #262c37;border-radius:8px;">Revert</button><button disabled style="height:38px;padding:0 20px;background:#1a1d24;color:#7d7870;border:1px solid #262c37;border-radius:8px;font-weight:600;cursor:not-allowed;">Apply</button></div>
+        </div>
+      </main>
     </div>
   </div>
 
@@ -640,10 +754,15 @@ class Component extends DCLogic {
     const live = i => (i >= 120 && i < 180 ? pc : warm);
     const editDeclared = [{ label: 'Left run', start: 0, stop: 120 }, { label: 'Peak', start: 120, stop: 185, sel: true, error: true }, { label: 'Right run', start: 180, stop: 300 }];
     const editRegions = [{ kind: 'error', start: 180, stop: 185, label: 'overlap' }, { kind: 'drift', start: 290, stop: 300 }];
+    const invertDeclared = [{ label: 'Left run', start: 0, stop: 120 }, { label: 'Peak', start: 180, stop: 120, sel: true, error: true }, { label: 'Right run', start: 180, stop: 300 }];
+    const invertRegions = [{ kind: 'error', start: 120, stop: 180, label: 'invert' }];
+    const pastDeclared = [{ label: 'Left run', start: 0, stop: 120 }, { label: 'Peak', start: 120, stop: 180 }, { label: 'Right run', start: 180, stop: 320, sel: true, error: true }];
+    const pastRegions = [{ kind: 'error', start: 180, stop: 300, label: 'past strip' }];
     return {
       showAnnotations: this.props.showAnnotations ?? true,
       previewHex: pc.toUpperCase(), previewName: pname,
       railEave: mini('re', 40, () => warm, 4.8, { bri: 0.8 }), railEaveLive: mini('rel', 40, i => (i >= 16 && i < 24 ? pc : warm), 4.8),
+      railEaveUnknown: mini('reu', 40, () => 'unknown', 4.8),
       railPorch: mini('rp', 40, () => null, 4.8), railGarage: mini('rg', 40, () => 'unknown', 4.8),
       rackEave: this.strip({ id: 'ke', count: 300, perRow: 100, pitch: 6.8, gutter: 0, top: 20, bottom: 4, color: () => warm, bri: 0.8, declared: eave, fs: 9.5 }),
       rackPorch: this.strip({ id: 'kp', count: 150, perRow: 100, pitch: 6.8, gutter: 0, top: 20, bottom: 4, color: () => null, declared: [{ label: 'Steps', start: 0, stop: 40 }, { label: 'Rail', start: 40, stop: 150 }], fs: 9.5 }),
@@ -657,6 +776,12 @@ class Component extends DCLogic {
       editStrip: this.strip({ id: 'ed', count: 300, perRow: 100, pitch: 8.7, color: i => (i >= 290 ? null : warm), bri: 0.8, handles: true,
         declared: editDeclared, reported: rep, regions: editRegions }),
       editLegend: this.beadLegend({ declared: editDeclared, reported: rep, regions: editRegions }),
+      editInvertStrip: this.strip({ id: 'edi', count: 300, perRow: 100, pitch: 8.7, color: () => 'unknown', bri: 0.8, handles: true,
+        declared: invertDeclared, reported: [], regions: invertRegions }),
+      editInvertLegend: this.beadLegend({ declared: invertDeclared, reported: [], regions: invertRegions }),
+      editPastStrip: this.strip({ id: 'edps', count: 300, perRow: 100, pitch: 8.7, color: () => 'unknown', bri: 0.8, handles: true,
+        declared: pastDeclared, reported: [], regions: pastRegions }),
+      editPastLegend: this.beadLegend({ declared: pastDeclared, reported: [], regions: pastRegions }),
       editStripPhone: this.strip({ id: 'edp', count: 300, perRow: 60, pitch: 5.4, gutter: 18, top: 20, bottom: 14, color: i => (i >= 290 ? null : warm), bri: 0.8, declared: eave, reported: rep, regions: [{ kind: 'drift', start: 290, stop: 300 }], fs: 9 }),
       liveStrip: this.strip({ id: 'lv', count: 300, perRow: 100, pitch: 8.7, color: live, bri: 0.9, top: 30, bottom: 8,
         declared: [{ label: 'Left run', start: 0, stop: 120 }, { label: 'Peak', start: 120, stop: 180, sel: true }, { label: 'Right run', start: 180, stop: 300 }], regions: [{ kind: 'sel', start: 120, stop: 180 }] }),
