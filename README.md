@@ -27,7 +27,7 @@ GitHub: [`dylanl321/wled-nightplot`](https://github.com/dylanl321/wled-nightplot
 
 After a Safe display-name write, the rack title uses the `/json/cfg` name even when metal `/json/info` still lags until reboot.
 
-**Strip** sets WS281x RGB or SK6812 RGBW type, node count, and GPIO on an enrolled Light. Converting to SK6812 RGBW writes GRBW (`order` 0). A same-type length or GPIO Apply keeps the colour order already on the box, and Strip names that live order — including when an SK6812 bus is not GRBW. There is no colour-order picker. A shared catalog LED product fills that form from the SKU and its driver; this Light’s fields still override. Manage recipes on `/led-products`. Attaching a product stores `ledProductId` on the Light and does not write the controller. Apply writes reviewed `/json/cfg` bus fields, then re-reads cfg and the snapshot. A mismatch stays on the failure UI, titled with the write message — not a hardcoded Apply didn’t stick. A length-changing Apply clips or drops declared Elements that run past the new strip, and flags leftover coverage on grow — the UI does not claim they still match.
+**Strip** sets WS281x RGB or SK6812 RGBW type, node count, and GPIO on an enrolled Light. Converting to SK6812 RGBW writes GRBW (`order` 0). A same-type length or GPIO Apply keeps the colour order already on the box, and Strip names that live order — including when an SK6812 bus is not GRBW. There is no colour-order picker. A shared catalog LED product fills that form from the SKU and its driver; this Light’s fields still override. Manage recipes on `/led-products`. Catalog edit mutates the shared recipe only — it does not write WLED. Attaching a product stores `ledProductId` on the Light and does not write the controller. Attach is not Apply. Apply writes reviewed `/json/cfg` bus fields, then re-reads cfg and the snapshot. A mismatch stays on the failure UI, titled with the write message — not a hardcoded Apply didn’t stick. A length-changing Apply clips or drops declared Elements that run past the new strip, and flags leftover coverage on grow — the UI does not claim they still match.
 
 The LED product catalog is the shared type / IC recipe (SKU, driver, optional defaults). Length, GPIO, Element ranges, and field overrides live on that Light. Strip-assist plugins (a length helper first; a segment helper can plug in later) are modular help — they do not replace catalog attach. A length helper is not on Strip today. Preview is not Apply. Helper glow is not Hardware Done. The three rules: [docs/overview.md](docs/overview.md#shared-catalog-then-this-light).
 
@@ -112,7 +112,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | GET | `/api/led-products` | Nightplot LED product catalog (seeded SKUs + operator creates). Shared type / IC recipe. Does not write WLED. |
 | GET | `/api/led-products/:id` | One catalog row. 404 if missing. |
 | POST | `/api/led-products` | Create a product. 422 on unknown `driverId`, bad `formFactor`, or bad defaults. Does not write WLED. |
-| PATCH | `/api/led-products/:id` | Replace a catalog row (id stays). Same validation as POST. Does not write WLED. |
+| PATCH | `/api/led-products/:id` | Replace a catalog recipe (SKU / driver / defaults; id stays). Same validation as POST. Does not write WLED. Does not invent this Light’s length, GPIO, or ranges. Not Apply. |
 | GET | `/api/lights` | Enrolled Lights (live snapshot or grey + last-seen), declared Elements, unenrolled tray. Does not GET `/json/cfg`. |
 | GET | `/api/lights/:id` | Inspect payload: identity, declared Elements, reported segments, drift, live session. When `stripKind` is still the default and no LED product is attached, a live Inspect may persist a known `/json/cfg` bus type. |
 | GET | `/api/lights/:id/live` | Same Light plus current `/json/live` beads |
@@ -133,8 +133,13 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | GET | `/api/lights/:id/delete-checks` | Elements / live sessions / controller state. Unknown is not safe. |
 | DELETE | `/api/lights/:id` | 422 until every check is `ok`. Does not write the controller. |
 | GET | `/api/lights/:id/safe` | Fingerprinted Safe settings from `/json/cfg`. Empty fingerprint → refuse. |
+<<<<<<< HEAD
 | POST | `/api/lights/:id/safe` | `{ settings }` — write only understood fields, then reread. 422 if unsupported — refuse includes `safeWrite` (Safe settings failure panel, notice hidden). A matched display-name write patches the enrolled title from cfg even when `/json/info` still lags. |
 | PATCH | `/api/lights/:id/led-product` | `{ ledProductId }` — attach a shared catalog product or `null` for manual fields. Persists on the Light. Does not write WLED. Does not replace Strip Apply. |
+=======
+| POST | `/api/lights/:id/safe` | `{ settings }` — write only understood fields, then reread. 422 if unsupported — refuse includes `safeWrite` (write-failure UI, not notice-only). A matched display-name write patches the enrolled title from cfg even when `/json/info` still lags. |
+| PATCH | `/api/lights/:id/led-product` | `{ ledProductId }` — attach a shared catalog product or `null` for manual fields. Persists on the Light. Nightplot bookkeeping — not Apply, not a WLED write. |
+>>>>>>> 227ff40 (CONFIG-115: shared catalog vs this Light honesty paragraph)
 | GET | `/api/lights/:id/provision` | First-time strip bus from `/json/cfg` (`hw.led.ins[0]`). Empty / multi-bus / unsupported firmware → refuse. |
 | POST | `/api/lights/:id/provision` | `{ provision: { ledType, length, gpio } }` — `ws281x` or `sk6812-rgbw`. Writes reviewed cfg bus fields, then rereads cfg and snapshot. 200 only on match. 409 keeps the failure. 422 if unsupported — refuse includes `provisionWrite` (Strip failure panel, not notice-only). Unknown types are not written. A successful length change reconciles declared Elements (clip / drop / flag leftover coverage) and returns `provisionWrite.ranges`. |
 

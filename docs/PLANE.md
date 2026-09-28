@@ -20,7 +20,7 @@ Auth: Cloud Agent secret `PLANE_API_KEY` as header `X-API-Key`.
 
 CONFIG tickets are serial. R0 is skeleton only. Do not start the next slice in the same run.
 
-Filed tickets through CONFIG-50, plus CONFIG-52 (LED product catalog), CONFIG-53 (Strip attach), and CONFIG-113 (catalog manage UI). Do not invent unfiled numbers. Gaps and repo/ops are not the next R-slice; do not fold them into an R-ticket.
+Filed tickets through CONFIG-50, plus CONFIG-52 (LED product catalog), CONFIG-53 (Strip attach), CONFIG-113 (catalog manage UI), and CONFIG-115 (catalog vs per-Light docs). Do not invent unfiled numbers. Gaps and repo/ops are not the next R-slice; do not fold them into an R-ticket.
 
 | Issue | Title (as filed) |
 | --- | --- |
@@ -72,6 +72,7 @@ Gaps (not the next R-slice; do not fold into an R-ticket):
 | CONFIG-52 | LED product catalog — model + JSON store + list/create API |
 | CONFIG-53 | Strip: attach LED product to Light + fill provision draft |
 | CONFIG-113 | Catalog manage UI + shared recipe vs per-Light override clarity |
+| CONFIG-115 | Docs — shared LED/IC catalog vs per-Light specifics + strip-assist plugins |
 
 Repo / ops (not the next R-slice; do not fold into an R-ticket):
 
@@ -143,6 +144,7 @@ Repo / ops (not the next R-slice; do not fold into an R-ticket):
 | CONFIG-52 | `4ef696a0-77d4-4442-8018-2b5f8d71d68d` |
 | CONFIG-53 | `e86daa83-0f56-4ca2-b9e5-4ee932ba9283` |
 | CONFIG-113 | `5aa6f8a8-cee2-4dd4-b916-bfc8c233c094` |
+| CONFIG-115 | `e6d348a0-e60d-4b05-ae30-9cf3e81a13fc` |
 
 ## States
 

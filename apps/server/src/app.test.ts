@@ -2918,7 +2918,17 @@ describe("LED product catalog", () => {
 
   it("patches an existing product and refuses id change or unknown driver", async () => {
     const writeCfg = vi.fn(async () => true);
-    const { app } = testApp({ writeCfg });
+    const { app, store } = testApp({ writeCfg });
+
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.72" }),
+    });
+    expect(enroll.status).toBe(201);
+    const lightId = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const before = store.findById(lightId);
+    expect(before).toBeDefined();
 
     const created = await app.request("/api/led-products", {
       method: "POST",

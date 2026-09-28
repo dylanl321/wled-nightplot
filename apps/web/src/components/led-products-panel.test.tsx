@@ -34,6 +34,7 @@ describe("LED products catalog", () => {
     );
     expect(screen.getByText(new RegExp(LED_CATALOG_PER_LIGHT_COPY))).toBeTruthy();
     expect(screen.getAllByText(/not Hardware Done/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Create and edit write the shared recipe only/)).toBeTruthy();
     expect(screen.getByText(catalog[0]!.label)).toBeTruthy();
     expect(screen.getByRole("button", { name: "New LED product" })).toBeTruthy();
   });

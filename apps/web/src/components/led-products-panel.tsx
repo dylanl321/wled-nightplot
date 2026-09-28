@@ -178,8 +178,10 @@ export function LedProductsPanel({
         <p className="text-[13px] leading-5 text-[#c9c3b8]">
           <span className="font-semibold text-foreground">{LED_CATALOG_PER_LIGHT_HEADING}.</span>{" "}
           {LED_CATALOG_PER_LIGHT_COPY} Optional length and GPIO on a recipe are catalog
-          suggestions — they fill Strip; this Light’s fields still override. Form factor is
-          metadata — not written to WLED. A catalog row is not Hardware Done.
+          suggestions — they fill Strip; this Light’s fields still override. Create and edit
+          write the shared recipe only — not this Light’s length, GPIO, or ranges, not Apply,
+          not a WLED write. Form factor is metadata — not written to WLED. A catalog row is not
+          Hardware Done.
         </p>
       </div>
 
@@ -338,6 +340,10 @@ export function LedProductsPanel({
               {busy === "save" ? "Saving…" : editingId ? "Save recipe" : "Create recipe"}
             </Button>
           </div>
+          <p className="text-[12px] text-quiet">
+            Save recipe writes the catalog only. It is not Apply, not a WLED write, not Hardware
+            Done.
+          </p>
         </form>
       ) : (
         <div className="flex flex-col gap-3">
