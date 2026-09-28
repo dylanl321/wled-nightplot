@@ -117,6 +117,12 @@ export type LiveSession = {
   restore: LiveRestoreSnapshot;
   source: LiveSource;
   seenByYou: SeenByYou;
+  /**
+   * First-locate leftover clears when restore segment count is unknown.
+   * Soft overlay write may still have gone. Not clear-as-success.
+   * Inspect / Light refresh must keep the unknown leftover caption while set.
+   */
+  leftoverClears?: "unknown";
 };
 
 export type LiveRead = {
@@ -338,6 +344,24 @@ export function previewLocateCaption(input: {
 }): string {
   if (input.leftoverUnknown) return firstLocateUnknownCaption(input.source);
   return input.live ? fixtureCaption(input.source) : previewHopCaption(input.source);
+}
+
+/**
+ * Inspect / Light refresh caption. First-locate unknown leftover chrome
+ * wins over a live-read / fixture line while that Preview session is open.
+ * Does not invent leftover counts. Named-Element leftover-count chrome is
+ * out of scope. Preview is not Apply.
+ */
+export function decorateLiveCaption(input: {
+  live: LiveRead | null;
+  session: Pick<LiveSession, "source" | "leftoverClears"> | null | undefined;
+}): string | null {
+  if (input.session?.leftoverClears === "unknown") {
+    return firstLocateUnknownCaption(input.live?.source ?? input.session.source);
+  }
+  if (input.live) return fixtureCaption(input.live.source);
+  if (input.session) return fixtureCaption(input.session.source);
+  return null;
 }
 
 export function proofLadder(input: {

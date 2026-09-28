@@ -212,6 +212,7 @@ export function createLiveEngine(deps: {
     });
     const live = shouldReread ? await deps.readLive(dest, args.light.ledCount) : null;
     const source = live?.source ?? (updating ? openPreview.source : "controller");
+    const leftoverClears = leftoverUnknown ? ("unknown" as const) : undefined;
     const session: LiveSession = updating
       ? {
           ...openPreview,
@@ -219,6 +220,7 @@ export function createLiveEngine(deps: {
           color,
           brightness,
           source,
+          leftoverClears,
         }
       : {
           id: randomUUID(),
@@ -231,6 +233,7 @@ export function createLiveEngine(deps: {
           restore,
           source,
           seenByYou: null,
+          leftoverClears,
         };
     sessions.set(args.light.id, session);
     const reported = live

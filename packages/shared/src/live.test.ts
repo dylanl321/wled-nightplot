@@ -7,6 +7,7 @@ import {
   fixtureCaption,
   FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION,
   firstLocateUnknownCaption,
+  decorateLiveCaption,
   PREVIEW_HOP_UNREAD_CAPTION,
   parseHexColor,
   previewHopCaption,
@@ -124,6 +125,31 @@ describe("live readback", () => {
         leftoverUnknown: false,
       }),
     ).toBe(fixtureCaption("controller"));
+    expect(
+      decorateLiveCaption({
+        live: { source: "fixture", leds: ["#fff4dc"] },
+        session: { source: "fixture", leftoverClears: "unknown" },
+      }),
+    ).toBe(firstLocateUnknownCaption("fixture"));
+    expect(
+      decorateLiveCaption({
+        live: { source: "fixture", leds: ["#fff4dc"] },
+        session: { source: "fixture", leftoverClears: "unknown" },
+      }),
+    ).not.toBe(fixtureCaption("fixture"));
+    expect(
+      decorateLiveCaption({
+        live: { source: "fixture", leds: ["#fff4dc"] },
+        session: { source: "fixture" },
+      }),
+    ).toBe(fixtureCaption("fixture"));
+    expect(decorateLiveCaption({ live: { source: "fixture", leds: ["#fff4dc"] }, session: null })).toBe(
+      fixtureCaption("fixture"),
+    );
+    expect(decorateLiveCaption({ live: null, session: { source: "fixture" } })).toBe(
+      fixtureCaption("fixture"),
+    );
+    expect(decorateLiveCaption({ live: null, session: null })).toBeNull();
   });
 
   it("keeps unreachable beads unknown — never a last colour", () => {
