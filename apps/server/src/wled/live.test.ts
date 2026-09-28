@@ -15,7 +15,9 @@ import {
   restoreColField,
   restoreOnField,
   restoreSegField,
+  restoreWrite,
   restoreWriteFromSnapshot,
+  restoreWriteLeavingOverlay,
 } from "./live.ts";
 
 const known: WledSnapshot = {
@@ -536,6 +538,115 @@ describe("leaving locate overlay (CONFIG-136)", () => {
     const overlay = previewWrite(4, 5, lit, 180, 10);
     expect(previewWriteLeavingOverlay(overlay, undefined)).toEqual(overlay);
     expect(overlay.seg?.some((seg) => seg.stop === 0)).toBe(false);
+    expect(Math.max(...(overlay.seg ?? []).map((seg) => seg.id ?? -1))).toBe(1);
+  });
+});
+
+describe("End Preview restore after locate overlay (CONFIG-140)", () => {
+  const lit = "#fff4dc";
+
+  it("clears leftover overlay ids we authored when restore names un-id’d ranges", () => {
+    const overlay = previewWrite(4, 5, lit, 180, 10);
+    const restore = restoreWrite({
+      on: true,
+      brightness: 40,
+      color: "#ffa000",
+      segments: [{ start: 0, stop: 10, color: "#ffa000" }],
+    });
+    const write = restoreWriteLeavingOverlay(
+      {
+        on: true,
+        brightness: 40,
+        color: "#ffa000",
+        segments: [{ start: 0, stop: 10, color: "#ffa000" }],
+      },
+      overlay,
+    );
+    expect(overlay.seg?.map((seg) => seg.id)).toEqual([0, 1]);
+    expect(restore.seg).toEqual([{ start: 0, stop: 10, col: [[255, 160, 0]] }]);
+    expect(write.seg).toEqual([
+      { start: 0, stop: 10, col: [[255, 160, 0]] },
+      { id: 1, start: 0, stop: 0 },
+    ]);
+    expect(write.seg?.[0]).not.toHaveProperty("id");
+    expect(write.on).toBe(true);
+    expect(write.bri).toBe(40);
+  });
+
+  it("clears leftover hold overlay ids on restore, not the un-id’d restore slot", () => {
+    const overlay = previewWriteSpans(
+      [
+        { start: 0, stop: 4, color: "#d4a574" },
+        { start: 10, stop: 11, color: lit },
+      ],
+      180,
+      16,
+    );
+    const write = restoreWriteLeavingOverlay(
+      {
+        on: true,
+        brightness: 40,
+        color: "#ffa000",
+        segments: [{ start: 0, stop: 16, color: "#ffa000" }],
+      },
+      overlay,
+    );
+    expect(overlay.seg?.map((seg) => seg.id)).toEqual([0, 1, 2]);
+    expect(write.seg).toEqual([
+      { start: 0, stop: 16, col: [[255, 160, 0]] },
+      { id: 1, start: 0, stop: 0 },
+      { id: 2, start: 0, stop: 0 },
+    ]);
+  });
+
+  it("clears leftover overlay ids when restore omits ranges — no whole-strip invent", () => {
+    const overlay = previewWrite(4, 5, lit, 180, 10);
+    const write = restoreWriteLeavingOverlay(
+      { on: true, brightness: 40, color: "#ffa000", segments: null },
+      overlay,
+    );
+    expect(write.on).toBe(true);
+    expect(write.bri).toBe(40);
+    expect(write.seg).toEqual([{ id: 1, start: 0, stop: 0 }]);
+    expect(JSON.stringify(write)).not.toContain('"start":0,"stop":10');
+    expect(write.seg?.some((seg) => seg.start === 0 && seg.stop === 10)).toBe(false);
+  });
+
+  it("does not invent leftover ids when there is no previous overlay", () => {
+    const restore = {
+      on: true,
+      brightness: 40,
+      color: "#ffa000",
+      segments: [{ start: 0, stop: 10, color: "#ffa000" }],
+    };
+    const named = previewWrite(0, 10, "#4f7dff", 180);
+    expect(restoreWriteLeavingOverlay(restore, undefined)).toEqual(restoreWrite(restore));
+    expect(restoreWriteLeavingOverlay(restore, named)).toEqual(restoreWrite(restore));
+    expect(restoreWriteLeavingOverlay(restore, named).seg?.some((seg) => seg.stop === 0)).toBe(
+      false,
+    );
+  });
+
+  it("does not invent leftover ids from an unknown previous picture", () => {
+    const restore = {
+      on: true,
+      brightness: 40,
+      color: "#ffa000",
+      segments: [{ start: 0, stop: 10, color: "#ffa000" }],
+    };
+    expect(restoreWriteLeavingOverlay(restore, { on: true, bri: 180 })).toEqual(
+      restoreWrite(restore),
+    );
+  });
+
+  it("does not invent a first-locate leftover count from overlay size", () => {
+    const overlay = previewWrite(4, 5, lit, 180, 10);
+    const write = restoreWriteLeavingOverlay(
+      { on: true, brightness: 40, color: "#ffa000", segments: null },
+      overlay,
+    );
+    expect(write.seg?.map((seg) => seg.id)).toEqual([1]);
+    expect(write.seg?.some((seg) => seg.id === 2)).toBe(false);
     expect(Math.max(...(overlay.seg ?? []).map((seg) => seg.id ?? -1))).toBe(1);
   });
 });

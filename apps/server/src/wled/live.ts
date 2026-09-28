@@ -147,6 +147,25 @@ export function restoreWrite(
   };
 }
 
+/**
+ * End Preview restore after a locate overlay. Restore still writes known
+ * fields only — never invents on / bri / restore ranges / colour. Append
+ * `stop: 0` only for leftover overlay ids we authored on the last overlay
+ * picture (`id > 0` and still lit). Id 0 stays the un-id’d restore slot
+ * when restore names ranges. Unknown / empty restore still omits restore
+ * ranges; leftover overlay ids are still cleared so they do not stay the
+ * last overlay colour. Does not invent a leftover count. Preview is not Apply.
+ */
+export function restoreWriteLeavingOverlay(
+  restore: Pick<LiveRestoreSnapshot, "on" | "brightness" | "color" | "segments">,
+  previous: WledStateWrite | undefined,
+): WledStateWrite {
+  const desired = restoreWrite(restore);
+  const leftovers = leftoverOverlayClears(previous);
+  if (leftovers.length === 0) return desired;
+  return { ...desired, seg: [...(desired.seg ?? []), ...leftovers] };
+}
+
 export function restoreWriteFromSnapshot(snapshot: WledSnapshot): WledStateWrite {
   return restoreWrite({
     on: snapshot.on,
@@ -429,18 +448,24 @@ export function previewWriteLeavingOverlay(
   previous: WledStateWrite | undefined,
 ): WledStateWrite {
   const nextSegs = desired.seg;
-  const prevSegs = previous?.seg;
-  if (!nextSegs?.length || !prevSegs?.length) return desired;
+  if (!nextSegs?.length) return desired;
   if (nextSegs.some((seg) => seg.id != null)) return desired;
-  if (!prevSegs.every((seg) => seg.id != null)) return desired;
+  const leftovers = leftoverOverlayClears(previous);
+  if (leftovers.length === 0) return desired;
+  return { ...desired, seg: [...nextSegs, ...leftovers] };
+}
+
+/** Leftover overlay ids we authored (`id > 0`, still lit). Never invents a count. */
+function leftoverOverlayClears(previous: WledStateWrite | undefined): WledSegWrite[] {
+  const prevSegs = previous?.seg;
+  if (!prevSegs?.length || !prevSegs.every((seg) => seg.id != null)) return [];
   const leftovers: WledSegWrite[] = [];
   for (const seg of prevSegs) {
     if (seg.id != null && seg.id > 0 && seg.stop > seg.start) {
       leftovers.push({ id: seg.id, start: 0, stop: 0 });
     }
   }
-  if (leftovers.length === 0) return desired;
-  return { ...desired, seg: [...nextSegs, ...leftovers] };
+  return leftovers;
 }
 
 function hexToTriple(hex: string): [number, number, number] {

@@ -274,6 +274,46 @@ describe("fixture info/cfg name divergence", () => {
     expect(live.leds.every((led) => led === "4f7dff")).toBe(true);
   });
 
+  it("clears leftover overlay lit when End Preview restore includes leftover stop:0", async () => {
+    const box = createFixtureBox({ ledCount: 10, name: "WLED" });
+    const base = await listen(box);
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        on: true,
+        bri: 180,
+        tt: 0,
+        seg: [
+          { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+          { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+        ],
+      }),
+    });
+    const afterOverlay = (await (await fetch(`${base}/json/live`)).json()) as { leds: string[] };
+    expect(afterOverlay.leds[4]).toBe("fff4dc");
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        on: true,
+        bri: 40,
+        seg: [
+          { start: 0, stop: 3, col: [[255, 160, 0]] },
+          { id: 1, start: 0, stop: 0 },
+        ],
+      }),
+    });
+    const afterRestore = (await (await fetch(`${base}/json`)).json()) as {
+      state: { seg?: { id?: number; start: number; stop: number }[] };
+    };
+    const live = (await (await fetch(`${base}/json/live`)).json()) as { leds: string[] };
+    expect(afterRestore.state.seg?.some((seg) => seg.id === 1)).toBe(false);
+    expect(live.leds[0]).toBe("ffa000");
+    expect(live.leds[4]).toBe("000000");
+    expect(live.leds[4]).not.toBe("fff4dc");
+  });
+
   it("clears leftover controller segs when first locate includes leftover stop:0", async () => {
     const box = createFixtureBox({ ledCount: 10, name: "WLED" });
     const base = await listen(box);

@@ -1178,6 +1178,52 @@ describe("preview + blink", () => {
     expect(live.liveCaption).toMatch(/Not Hardware Done/);
   });
 
+  it("clears leftover locate overlay when End Preview restores after overlay", async () => {
+    const writes: import("./wled/live.ts").WledStateWrite[] = [];
+    const partial = {
+      ...snapshot,
+      segments: [{ start: 0, stop: 20 }],
+    };
+    const { app, box } = testApp({
+      probe: async () => ({ kind: "found" as const, snapshot: partial }),
+      write: async (_target, body) => {
+        writes.push(body);
+        return box.write(_target, body);
+      },
+    });
+    const id = await enroll(app);
+
+    const locate = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start: 40, stop: 41, color: "#fff4dc", brightness: 180 }),
+    });
+    expect(locate.status).toBe(200);
+    expect(box.leds[40]).toBe("#fff4dc");
+    expect(writes[0]?.seg).toEqual([
+      { id: 0, start: 0, stop: 60, col: [[0, 0, 0]] },
+      { id: 1, start: 40, stop: 41, col: [[255, 244, 220]] },
+    ]);
+    writes.length = 0;
+
+    const ended = await app.request(`/api/lights/${id}/preview/end`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(ended.status).toBe(200);
+    expect(((await ended.json()) as { restored: boolean }).restored).toBe(true);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.seg).toEqual([
+      { start: 0, stop: 20, col: [[255, 160, 0]] },
+      { id: 1, start: 0, stop: 0 },
+    ]);
+    expect(writes[0]?.seg?.[0]).not.toHaveProperty("id");
+    expect(box.leds[0]).toBe("#ffa000");
+    expect(box.leds[40]).toBe("#000000");
+    expect(box.leds[40]).not.toBe("#fff4dc");
+  });
+
   it("clears leftover controller segs on first locate when snapshot count is higher", async () => {
     const writes: import("./wled/live.ts").WledStateWrite[] = [];
     const three = {

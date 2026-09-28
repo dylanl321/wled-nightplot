@@ -307,7 +307,8 @@ describe("Preview session update", () => {
     if (ended.ok) expect(ended.restored).toBe(true);
     expect(writes[0]?.on).toBe(false);
     expect(writes[0]?.bri).toBe(40);
-    expect(writes[0]).not.toHaveProperty("seg");
+    expect(writes[0]?.seg).toEqual([{ id: 1, start: 0, stop: 0 }]);
+    expect(writes[0]?.seg?.some((seg) => seg.start === 0 && seg.stop === 10)).toBe(false);
   });
 
   it("skips the controller POST when the hop body matches the last write", async () => {
@@ -507,6 +508,67 @@ describe("Preview session update", () => {
       { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
       { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
     ]);
+    expect(writes[0]?.seg?.some((seg) => seg.stop === 0)).toBe(false);
+  });
+
+  it("clears leftover overlay ids when End Preview restores after locate", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    await engine.startPreview({
+      light,
+      live: {
+        ...infoOnly,
+        on: true,
+        brightness: 40,
+        segmentColor: "#ffa000",
+        segments: [{ start: 0, stop: 10 }],
+      },
+      elements: [],
+      range: { start: 4, stop: 5 },
+      color: "#fff4dc",
+      brightness: 180,
+    });
+    expect(writes[0]?.seg).toEqual([
+      { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+      { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+    ]);
+    writes.length = 0;
+
+    const ended = await engine.end(light.id, "complete");
+    expect(ended.ok).toBe(true);
+    if (!ended.ok) return;
+    expect(ended.restored).toBe(true);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.seg).toEqual([
+      { start: 0, stop: 10, col: [[255, 160, 0]] },
+      { id: 1, start: 0, stop: 0 },
+    ]);
+    expect(writes[0]?.seg?.[0]).not.toHaveProperty("id");
+    expect(writes[0]?.on).toBe(true);
+    expect(writes[0]?.bri).toBe(40);
+  });
+
+  it("does not invent leftover ids on End Preview when last write was not overlay", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    await engine.startPreview({
+      light,
+      live: {
+        ...infoOnly,
+        on: true,
+        brightness: 40,
+        segmentColor: "#ffa000",
+        segments: [{ start: 0, stop: 10 }],
+      },
+      elements: [{ id: "el-1", lightId: light.id, label: "Porch", start: 0, stop: 10 }],
+      elementId: "el-1",
+      color: "#4f7dff",
+    });
+    writes.length = 0;
+
+    const ended = await engine.end(light.id, "complete");
+    expect(ended.ok).toBe(true);
+    expect(writes[0]?.seg).toEqual([{ start: 0, stop: 10, col: [[255, 160, 0]] }]);
     expect(writes[0]?.seg?.some((seg) => seg.stop === 0)).toBe(false);
   });
 

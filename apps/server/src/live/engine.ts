@@ -30,7 +30,7 @@ import {
   previewWrite,
   previewWriteLeavingOverlay,
   previewWriteSpans,
-  restoreWrite,
+  restoreWriteLeavingOverlay,
   restoreWriteFromSnapshot,
   writeBodiesEqual,
   type ReadLiveFn,
@@ -255,7 +255,10 @@ export function createLiveEngine(deps: {
     const dest: HostPort = { hostname: light.hostname, port: light.port };
     let restored = false;
     if (shouldRestoreOnEnd(kind)) {
-      restored = await deps.write(dest, restoreWrite(session.restore));
+      restored = await deps.write(
+        dest,
+        restoreWriteLeavingOverlay(session.restore, lastWrites.get(lightId)),
+      );
     }
     const live = await deps.readLive(dest, light.ledCount);
     sessions.delete(lightId);
