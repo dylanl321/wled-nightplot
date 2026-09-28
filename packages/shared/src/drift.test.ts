@@ -67,6 +67,18 @@ describe("buildRangeDisplay", () => {
     expect(display.declared.every((rail) => rail.error)).toBe(true);
   });
 
+  it("names past strip when an inverted declared range starts past the strip", () => {
+    const declared = [{ id: "p", label: "Peak", start: 80, stop: 40 }];
+    const issues = validateDeclaredRanges(declared, 60);
+    const display = buildRangeDisplay(declared, [], issues);
+    expect(issues.map((issue) => issue.code)).toEqual(["invert", "over-ledCount"]);
+    expect(display.declared[0]?.error).toBe(true);
+    expect(display.notes.map((note) => note.text)).toEqual([
+      "Peak is inverted: start 80 is not before stop 40, and 80–40 runs past the strip (60 LEDs).",
+      "Peak 80–40 runs past the strip (60 LEDs).",
+    ]);
+  });
+
   it("flags a declared range that runs past the strip — not a match", () => {
     const declared = [{ id: "d", label: "Door", start: 0, stop: 60 }];
     const issues = validateDeclaredRanges(declared, 30);
