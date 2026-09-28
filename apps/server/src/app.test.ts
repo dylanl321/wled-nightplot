@@ -3,7 +3,11 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listStripPresets, provisionApplyBodyFromPreset } from "@nightplot/shared";
+import {
+  FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION,
+  listStripPresets,
+  provisionApplyBodyFromPreset,
+} from "@nightplot/shared";
 import { createApp, type AppDeps } from "./app.ts";
 import { ALL_OFF_PROBE_CONCURRENCY, FIND_PROBE_CONCURRENCY } from "./discovery/map-limit.ts";
 import { FileLedProductsStore } from "./store/led-products-store.ts";
@@ -1269,6 +1273,51 @@ describe("preview + blink", () => {
     expect(box.leds[40]).not.toBe("#ffa000");
     const live = (await locate.json()) as { liveCaption: string };
     expect(live.liveCaption).toMatch(/Not Hardware Done/);
+  });
+
+  it("captions first locate when restore segment count is unknown — does not invent leftover clears", async () => {
+    const writes: import("./wled/live.ts").WledStateWrite[] = [];
+    const infoOnly = {
+      ...snapshot,
+      on: true,
+      brightness: 40,
+      segmentColor: "#ffa000",
+      segments: null,
+    };
+    const { app, box } = testApp({
+      probe: async () => ({ kind: "found" as const, snapshot: infoOnly }),
+      write: async (target, body) => {
+        writes.push(body);
+        return box.write(target, body);
+      },
+    });
+    await box.write({ hostname: "192.168.1.72", port: 80 }, {
+      seg: [
+        { id: 0, start: 0, stop: 20, col: [[255, 160, 0]] },
+        { id: 1, start: 20, stop: 40, col: [[255, 160, 0]] },
+        { id: 2, start: 40, stop: 60, col: [[255, 160, 0]] },
+      ],
+    });
+    const id = await enroll(app);
+    writes.length = 0;
+
+    const locate = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start: 4, stop: 5, color: "#fff4dc", brightness: 180 }),
+    });
+    expect(locate.status).toBe(200);
+    expect(writes[0]?.seg).toEqual([
+      { id: 0, start: 0, stop: 60, col: [[0, 0, 0]] },
+      { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+    ]);
+    expect(writes[0]?.seg?.some((seg) => seg.stop === 0)).toBe(false);
+    const live = (await locate.json()) as { liveCaption: string; session: { kind: string } };
+    expect(live.session.kind).toBe("preview");
+    expect(live.liveCaption).toContain(FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION);
+    expect(live.liveCaption).toMatch(/Software-green from the fixture/);
+    expect(live.liveCaption).not.toMatch(/controller reported/);
+    expect(live.liveCaption).not.toMatch(/Applied/);
   });
 
   it("blinks then restores, and refuses both when offline", async () => {

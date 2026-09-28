@@ -5,7 +5,7 @@ import {
   countRangeMatches,
   fixtureCaption,
   parseHexColor,
-  previewHopCaption,
+  previewLocateCaption,
   previewRefuseReason,
   resolveLiveTarget,
   restoreSegmentsFromSnapshot,
@@ -82,6 +82,11 @@ export type LiveActionResult =
       wrote?: boolean;
       /** False when this hop skipped `/json/live`. Not a claimed report. */
       reread?: boolean;
+      /**
+       * First-locate leftover clears when restore segment count is unknown.
+       * Soft overlay write may still have gone. Not clear-as-success.
+       */
+      leftoverClears?: "unknown";
     }
   | { ok: false; status: 400 | 403 | 404 | 422; error: string; message: string };
 
@@ -172,9 +177,11 @@ export function createLiveEngine(deps: {
         );
     const picture = stabilizeLocateOverlayIds(authored, last);
     const sameWrite = last != null && writeBodiesEqual(last, picture);
+    const locateHop = painted != null || adHoc != null;
+    const leftoverUnknown =
+      locateHop && snapshotSegmentCount({ segments: restore.segments }) === null;
     let wrote = false;
     if (!sameWrite) {
-      const locateHop = painted != null || adHoc != null;
       const body = locateHop
         ? isLocateOverlayWrite(last)
           ? locateHopWrite(picture, last)
@@ -182,7 +189,7 @@ export function createLiveEngine(deps: {
               picture,
               // First restore snapshot — not a hop reread of the Preview paint.
               snapshotSegmentCount({ segments: restore.segments }),
-            )
+            ).body
         : previewWriteLeavingOverlay(picture, last);
       const sent = await deps.write(dest, body);
       if (!sent) {
@@ -198,7 +205,6 @@ export function createLiveEngine(deps: {
       lastWrites.set(args.light.id, picture);
       wrote = true;
     }
-    const locateHop = painted != null || adHoc != null;
     const shouldReread = shouldRereadPreview({
       updating,
       locateHop,
@@ -235,10 +241,15 @@ export function createLiveEngine(deps: {
       session,
       live,
       reported,
-      caption: live ? fixtureCaption(source) : previewHopCaption(source),
+      caption: previewLocateCaption({
+        source,
+        live,
+        leftoverUnknown,
+      }),
       updated: updating,
       wrote,
       reread: shouldReread,
+      leftoverClears: leftoverUnknown ? "unknown" : undefined,
     };
   }
 

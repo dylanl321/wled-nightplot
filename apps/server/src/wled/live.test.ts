@@ -447,35 +447,48 @@ describe("first locate leftover controller segs (CONFIG-137)", () => {
     const picture = overlayLocatePicture([{ start: 4, stop: 5, color: lit }], 180, 10);
     expect(picture.seg?.map((seg) => seg.id)).toEqual([0, 1]);
     const write = firstLocateWrite(picture, 3);
-    expect(write.seg).toEqual([
+    expect(write.ok).toBe(true);
+    if (!write.ok) throw new Error("known count must write leftover clears");
+    expect(write.body.seg).toEqual([
       { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
       { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
       { id: 2, start: 0, stop: 0 },
     ]);
   });
 
-  it("does not invent leftover ids when previous segment count is unknown", () => {
+  it("refuses leftover clears when previous segment count is unknown — soft picture only", () => {
     const picture = previewWrite(4, 5, lit, 180, 10);
-    expect(firstLocateWrite(picture, null)).toEqual(picture);
+    const refused = firstLocateWrite(picture, null);
+    expect(refused).toEqual({ ok: false, reason: "unknown-segment-count", body: picture });
+    expect(refused.body).toEqual(picture);
+    expect(refused.body.seg?.some((seg) => seg.stop === 0)).toBe(false);
     expect(picture.seg?.some((seg) => seg.stop === 0)).toBe(false);
   });
 
   it("writes no leftover stop:0 when previous count is known empty — distinct from unknown", () => {
     const picture = overlayLocatePicture([{ start: 4, stop: 5, color: lit }], 180, 10);
-    expect(firstLocateWrite(picture, 0)).toEqual(picture);
-    expect(firstLocateWrite(picture, 0).seg?.some((seg) => seg.stop === 0)).toBe(false);
+    const planned = firstLocateWrite(picture, 0);
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) throw new Error("known empty must write");
+    expect(planned.body).toEqual(picture);
+    expect(planned.body.seg?.some((seg) => seg.stop === 0)).toBe(false);
   });
 
   it("writes no leftover stop:0 when overlay already covers the known count", () => {
     const picture = overlayLocatePicture([{ start: 4, stop: 5, color: lit }], 180, 10);
     expect(picture.seg).toHaveLength(2);
-    expect(firstLocateWrite(picture, 2)).toEqual(picture);
+    const planned = firstLocateWrite(picture, 2);
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) throw new Error("covered count must write");
+    expect(planned.body).toEqual(picture);
   });
 
   it("clears several leftover ids from a known higher Apply count", () => {
     const picture = previewWriteSpans([{ start: 4, stop: 5, color: lit }], 180, 10);
     const write = firstLocateWrite(picture, 5);
-    expect(write.seg?.filter((seg) => seg.stop === 0).map((seg) => seg.id)).toEqual([2, 3, 4]);
+    expect(write.ok).toBe(true);
+    if (!write.ok) throw new Error("known higher count must write leftover clears");
+    expect(write.body.seg?.filter((seg) => seg.stop === 0).map((seg) => seg.id)).toEqual([2, 3, 4]);
   });
 
   it("does not treat a named-Element write as a locate overlay picture", () => {

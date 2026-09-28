@@ -29,6 +29,14 @@ export const FIXTURE_SOFTWARE_GREEN_CAPTION =
 export const PREVIEW_HOP_UNREAD_CAPTION =
   "Preview hop sent. Not read back — not Hardware Done.";
 
+/**
+ * First-locate leftover clears when the restore segment count is unknown.
+ * Soft overlay write may still go (`firstLocateWrite(null)`). This is not
+ * clear-as-success and not Apply. Never invent a leftover count.
+ */
+export const FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION =
+  "Segments unknown. Leftover controller segments were not cleared. Not treating leftover lights as this locate.";
+
 export function parseNightplotTag(tag: unknown): LiveSource {
   if (tag === "fixture") return "fixture";
   if (tag === "sim") return "sim";
@@ -307,6 +315,29 @@ export function fixtureCaption(source: LiveSource): string {
  */
 export function previewHopCaption(source: LiveSource): string {
   return softwareHonestyCaption(source) ?? PREVIEW_HOP_UNREAD_CAPTION;
+}
+
+/**
+ * First locate when restore `state.seg` length is unknown. Pairs the soft
+ * overlay write with refuse-clear-as-success chrome. Fixture / sim keep
+ * Quiet captions in front. Never “controller reported this” / Applied.
+ * Preview is not Apply.
+ */
+export function firstLocateUnknownCaption(source: LiveSource): string {
+  const software = softwareHonestyCaption(source);
+  return software
+    ? `${software} ${FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION}`
+    : FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION;
+}
+
+/** Locate hop caption. Unknown leftover count wins over a live-read claim. */
+export function previewLocateCaption(input: {
+  source: LiveSource;
+  live: LiveRead | null;
+  leftoverUnknown: boolean;
+}): string {
+  if (input.leftoverUnknown) return firstLocateUnknownCaption(input.source);
+  return input.live ? fixtureCaption(input.source) : previewHopCaption(input.source);
 }
 
 export function proofLadder(input: {
