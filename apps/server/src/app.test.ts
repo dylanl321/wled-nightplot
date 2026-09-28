@@ -1485,7 +1485,10 @@ describe("apply + re-address", () => {
     expect(body.apply.message).toMatch(/didn’t stick/);
     expect(body.apply.message).not.toMatch(/segments are unknown/);
     expect(body.apply.caption).toMatch(/reported no ranges/);
+    expect(body.apply.caption).toMatch(/until you look at the strip/);
     expect(body.apply.caption).not.toMatch(/these ranges/);
+    expect(body.apply.caption).not.toMatch(/\bthem\b/);
+    expect(body.apply.caption).not.toMatch(/until you see them/);
     expect(body.apply.caption).not.toMatch(/Ranges were not read/);
     expect(store.findById(id)?.lastSnapshot).toBeFalsy();
   });

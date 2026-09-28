@@ -955,6 +955,9 @@ describe("LightDetail ApplyFailed copy", () => {
 
     expect(await screen.findByText(/Apply didn’t stick/)).toBeTruthy();
     expect(screen.getByText(APPLY_EMPTY_READ_CAPTION)).toBeTruthy();
+    expect(APPLY_EMPTY_READ_CAPTION).toMatch(/until you look at the strip/);
+    expect(APPLY_EMPTY_READ_CAPTION).not.toMatch(/\bthem\b/);
+    expect(screen.queryByText(/until you see them on the strip/)).toBeNull();
     expect(screen.getByText(APPLY_ADOPT_EMPTY_REASON)).toBeTruthy();
     expect(screen.queryByText(/The controller reported these ranges/)).toBeNull();
     expect(screen.queryByText(APPLY_UNREAD_CAPTION)).toBeNull();

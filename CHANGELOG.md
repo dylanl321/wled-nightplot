@@ -28,6 +28,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Fixed
 
+- Known empty Apply reread caption no longer ends **until you see them on the strip**. There are no ranges to see. The suffix is **until you look at the strip**. Unread (`null`) keeps the CONFIG-90 suffix. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-108).
 - Safe settings refuse and write failure now use a `safeWrite` Sent / Read back panel, same as Strip `provisionWrite`. The write message is the panel title once — notice is hidden while that panel is up, so a refuse does not print two identical destructive lines. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-105).
 - Edit ranges bead legend dashed key no longer always shows **drift**. The key only appears when drift is present and compare is meaningful. A match or refused compare hides it. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-103).
 - `validateDeclaredRanges` names past strip (`over-ledCount`) when an inverted range’s start is already past the strip (80–40 on 60 LEDs). Invert-only in-strip ranges stay invert. Combined invert copy names past strip when both apply so Edit-ranges footer / Apply refuse are not invert-only. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-104).

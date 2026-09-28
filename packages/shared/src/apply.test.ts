@@ -171,7 +171,10 @@ describe("apply match", () => {
     expect(knownEmpty.status).toBe("mismatch");
     expect(knownEmpty.caption).toBe(APPLY_EMPTY_READ_CAPTION);
     expect(knownEmpty.caption).toMatch(/reported no ranges/);
+    expect(knownEmpty.caption).toMatch(/until you look at the strip/);
     expect(knownEmpty.caption).not.toMatch(/these ranges/);
+    expect(knownEmpty.caption).not.toMatch(/\bthem\b/);
+    expect(knownEmpty.caption).not.toMatch(/until you see them/);
     expect(knownEmpty.caption).not.toBe(APPLY_UNREAD_CAPTION);
     expect(adoptControllerRangesReason(knownEmpty)).toBe(APPLY_ADOPT_EMPTY_REASON);
   });
@@ -205,6 +208,7 @@ describe("apply match", () => {
     expect(emptyVsEmpty.read).toEqual([]);
     expect(emptyVsEmpty.caption).toBe(APPLY_EMPTY_READ_CAPTION);
     expect(emptyVsEmpty.caption).not.toMatch(/these ranges/);
+    expect(emptyVsEmpty.caption).not.toMatch(/\bthem\b/);
 
     const declaredVsEmpty = applyOutcome(
       [{ label: "Right run", start: 24, stop: 50 }],
@@ -218,6 +222,7 @@ describe("apply match", () => {
     expect(declaredVsEmpty.message).not.toBe(APPLY_UNKNOWN_SEGMENTS_MESSAGE);
     expect(declaredVsEmpty.caption).toBe(APPLY_EMPTY_READ_CAPTION);
     expect(declaredVsEmpty.caption).not.toMatch(/these ranges/);
+    expect(declaredVsEmpty.caption).not.toMatch(/\bthem\b/);
   });
 
   it("captions from the read, not the source — unread and known empty do not say these ranges", () => {
@@ -230,7 +235,10 @@ describe("apply match", () => {
     );
     expect(applyCaption("controller", [])).toBe(APPLY_EMPTY_READ_CAPTION);
     expect(applyCaption("controller", [])).toMatch(/reported no ranges/);
+    expect(applyCaption("controller", [])).toMatch(/until you look at the strip/);
     expect(applyCaption("controller", [])).not.toMatch(/these ranges/);
+    expect(applyCaption("controller", [])).not.toMatch(/\bthem\b/);
+    expect(applyCaption("controller", [])).not.toMatch(/until you see them/);
     expect(applyCaption("controller", [])).not.toBe(APPLY_UNREAD_CAPTION);
     expect(applyCaption("fixture", [])).toMatch(/Software-green from the fixture/);
     expect(applyCaption("fixture", [{ start: 0, stop: 24 }])).toMatch(
