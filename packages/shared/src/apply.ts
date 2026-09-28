@@ -86,6 +86,12 @@ export function applyRefuseReason(input: {
   issueMessage?: string | null;
   elementCount: number;
   busyKind?: LiveSessionKind | null;
+  /**
+   * Operator turned on Show on the real strip. Refuse immediately —
+   * do not wait for the first Preview hop to write `session.kind`.
+   * Preview is not Apply.
+   */
+  previewIntent?: boolean;
   /** Known `state.seg` length, or `null` when unknown — not zero. */
   segmentCount?: number | null;
   /** Live snapshot colour. Missing or non-hex refuses — never invent `#ffa000`. */
@@ -94,7 +100,7 @@ export function applyRefuseReason(input: {
   if (!input.reachable) {
     return "This Light hasn’t answered. Refresh or re-address it first.";
   }
-  if (input.busyKind === "preview") {
+  if (input.busyKind === "preview" || input.previewIntent) {
     return "End the Preview first. Preview is not Apply.";
   }
   if (input.busyKind === "blink") {

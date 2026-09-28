@@ -92,7 +92,7 @@ import {
   refusedRow,
   rowFromProbe,
 } from "./domain.ts";
-import { createLiveEngine } from "./live/engine.ts";
+import { createLiveEngine, previewDisplaySnapshot } from "./live/engine.ts";
 import { FileLedProductsStore } from "./store/led-products-store.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
 import type { ProbeFn } from "./wled/client.ts";
@@ -688,8 +688,19 @@ export function createApp(deps: AppDeps) {
     if (!stored) {
       return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
     }
-    const { light, live: snap } = await refreshOne(stored);
     const body = await readPreviewBody(c);
+    const existing = live.get(stored.id);
+    const updating = existing?.kind === "preview";
+    let light = stored;
+    let snap: WledSnapshot | null = null;
+    if (updating) {
+      // Do not refreshOne — that would snapshot the Preview paint.
+      snap = previewDisplaySnapshot(stored, existing.restore);
+    } else {
+      const refreshed = await refreshOne(stored);
+      light = refreshed.light;
+      snap = refreshed.live;
+    }
     const result = await live.startPreview({
       light,
       live: snap,
@@ -699,8 +710,24 @@ export function createApp(deps: AppDeps) {
       spans: body.spans,
       color: body.color,
       brightness: body.brightness,
+      reread: body.reread,
     });
     if (!result.ok) return c.json(result, result.status);
+    if (updating) {
+      const detail = lightDetail(
+        light,
+        snap,
+        deps.store.elementsFor(light.id),
+        attachedProduct(light),
+      );
+      return c.json({
+        ...detail,
+        session: result.session,
+        liveLeds: result.live?.leds ?? null,
+        liveCaption: result.caption,
+        liveMatch: result.reported,
+      });
+    }
     const detail = await decorateDetail(light, snap);
     return c.json({
       ...detail,
@@ -1542,6 +1569,7 @@ export function createApp(deps: AppDeps) {
         spans: null,
         color: undefined,
         brightness: undefined,
+        reread: undefined as boolean | undefined,
       };
     }
     const row = body as {
@@ -1551,6 +1579,7 @@ export function createApp(deps: AppDeps) {
       spans?: unknown;
       color?: unknown;
       brightness?: unknown;
+      reread?: unknown;
     };
     const spans = Array.isArray(row.spans)
       ? row.spans.flatMap((item) => {
@@ -1586,6 +1615,7 @@ export function createApp(deps: AppDeps) {
       spans: spans && spans.length > 0 ? spans.slice(0, 64) : null,
       color: typeof row.color === "string" ? parseHexColor(row.color) ?? undefined : undefined,
       brightness: typeof row.brightness === "number" ? row.brightness : undefined,
+      reread: typeof row.reread === "boolean" ? row.reread : undefined,
     };
   }
 

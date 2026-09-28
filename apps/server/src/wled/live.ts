@@ -14,6 +14,11 @@ export type WledStateWrite = {
   seg?: { id?: number; start: number; stop: number; col?: number[][] }[];
 };
 
+/** Stable compare for Preview hop short-circuit. Same body → no controller POST. */
+export function writeBodiesEqual(a: WledStateWrite, b: WledStateWrite): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 export type WriteStateFn = (target: HostPort, body: WledStateWrite) => Promise<boolean>;
 export type ReadLiveFn = (target: HostPort, ledCount: number) => Promise<LiveRead | null>;
 

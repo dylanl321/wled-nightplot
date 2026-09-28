@@ -518,6 +518,52 @@ describe("LightDetail Apply unknown colour", () => {
     );
     expect(screen.queryByText(/Colour is unknown/)).toBeNull();
   });
+
+  it("refuses Apply as soon as Show on the real strip is on — does not wait for the first hop", () => {
+    const initial = lightDetail({
+      light: lightView({
+        reachability: "online",
+        on: true,
+        brightness: 128,
+        bead: "#4f7dff",
+        segmentCount: 1,
+      }),
+      snapshotAt: "2026-09-26T20:00:00.000Z",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = requestPath(String(input));
+        if (path === `/api/lights/${initial.light.id}/preview/end`) {
+          return new Response(JSON.stringify({ ...initial, session: null }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        await new Promise(() => undefined);
+        return new Response(JSON.stringify(initial), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+    render(
+      <LightDetail
+        initial={initial}
+        mode="ranges"
+      />,
+    );
+
+    const apply = screen.getByRole("button", { name: "Apply" });
+    expect((apply as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show on the real strip" }));
+
+    expect((screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.getByText(/End the Preview first\. Preview is not Apply/)).toBeTruthy();
+  });
 });
 
 describe("LightDetail Elements after length change", () => {

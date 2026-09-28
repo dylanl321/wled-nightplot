@@ -5,7 +5,9 @@ import {
   blinkRefuseReason,
   countRangeMatches,
   fixtureCaption,
+  PREVIEW_HOP_UNREAD_CAPTION,
   parseHexColor,
+  previewHopCaption,
   parseLiveLeds,
   previewRefuseReason,
   proofLadder,
@@ -71,6 +73,10 @@ describe("live readback", () => {
     expect(sim?.source).toBe("sim");
     expect(fixtureCaption("sim")).toMatch(/software path only/i);
     expect(fixtureCaption("sim")).toMatch(/Not Hardware Done/);
+    expect(previewHopCaption("fixture")).toMatch(/Software-green from the fixture/);
+    expect(previewHopCaption("sim")).toMatch(/software path only/i);
+    expect(previewHopCaption("controller")).toBe(PREVIEW_HOP_UNREAD_CAPTION);
+    expect(previewHopCaption("controller")).not.toMatch(/controller reported/);
   });
 
   it("keeps unreachable beads unknown — never a last colour", () => {

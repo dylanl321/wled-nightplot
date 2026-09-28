@@ -5,6 +5,7 @@ import {
   countRangeMatches,
   fixtureCaption,
   parseHexColor,
+  previewHopCaption,
   previewRefuseReason,
   resolveLiveTarget,
   restoreSegmentsFromSnapshot,
@@ -25,8 +26,10 @@ import {
   previewWriteSpans,
   restoreWrite,
   restoreWriteFromSnapshot,
+  writeBodiesEqual,
   type ReadLiveFn,
   type WriteStateFn,
+  type WledStateWrite,
 } from "../wled/live.ts";
 
 export type LiveEngine = {
@@ -51,6 +54,12 @@ export type StartArgs = {
   spans?: { start: number; stop: number; color: string }[] | null;
   color?: string;
   brightness?: number;
+  /**
+   * Session update only. `true` still reads `/json/live`. `false` skips.
+   * Omitted: locate hops (range / spans) skip; a named Element / whole-strip
+   * Preview still reads. A skipped read is not strip proof. Preview is not Apply.
+   */
+  reread?: boolean;
 };
 
 export type LiveActionResult =
@@ -61,6 +70,12 @@ export type LiveActionResult =
       reported: { matched: number; total: number } | null;
       caption: string;
       restored?: boolean;
+      /** True when a Preview session already existed and paint was updated. */
+      updated?: boolean;
+      /** False when the hop body matched the last write — no controller POST. */
+      wrote?: boolean;
+      /** False when this hop skipped `/json/live`. Not a claimed report. */
+      reread?: boolean;
     }
   | { ok: false; status: 400 | 403 | 404 | 422; error: string; message: string };
 
@@ -70,6 +85,7 @@ export function createLiveEngine(deps: {
   findLight: (id: string) => Light | undefined;
 }): LiveEngine {
   const sessions = new Map<string, LiveSession>();
+  const lastWrites = new Map<string, WledStateWrite>();
 
   function busyKind(lightId: string): LiveSessionKind | null {
     return sessions.get(lightId)?.kind ?? null;
@@ -101,18 +117,23 @@ export function createLiveEngine(deps: {
             stop: painted[painted.length - 1]?.stop ?? args.light.ledCount,
           }
         : resolveLiveTarget(args.elements, args.light.ledCount, args.elementId);
+    const existing = sessions.get(args.light.id);
+    const openPreview = existing?.kind === "preview" ? existing : null;
+    const updating = kind === "preview" && openPreview != null;
     const color =
       kind === "blink"
         ? BLINK_COLOR
         : parseHexColor(args.color ?? "") ?? "#4f7dff";
-    const brightness = clampByte(args.brightness ?? args.live?.brightness ?? 180);
+    const brightness = clampByte(
+      args.brightness ?? (updating ? openPreview.brightness : args.live?.brightness) ?? 180,
+    );
     const reason =
       kind === "blink"
         ? blinkRefuseReason({ reachable, busyKind: busyKind(args.light.id) })
         : previewRefuseReason({
             reachable,
             hasTarget: target.stop > target.start,
-            busyKind: busyKind(args.light.id),
+            busyKind: updating ? null : busyKind(args.light.id),
           });
     if (reason) {
       const error = reason.includes("hasn’t answered")
@@ -122,7 +143,7 @@ export function createLiveEngine(deps: {
           : "no-target";
       return { ok: false, status: 422, error, message: reason };
     }
-    if (!args.live) {
+    if (!updating && !args.live) {
       return {
         ok: false,
         status: 422,
@@ -131,43 +152,61 @@ export function createLiveEngine(deps: {
       };
     }
 
-    const existing = sessions.get(args.light.id);
-    const restore = existing?.restore ?? restoreFrom(args.live);
+    const restore = updating ? openPreview.restore : (existing?.restore ?? restoreFrom(args.live!));
     const dest: HostPort = { hostname: args.light.hostname, port: args.light.port };
-    const sent = await deps.write(
-      dest,
-      painted
-        ? previewWriteSpans(painted, brightness, args.light.ledCount)
-        : previewWrite(
-            target.start,
-            target.stop,
-            color,
-            brightness,
-            kind === "preview" && adHoc ? args.light.ledCount : undefined,
-          ),
-    );
-    if (!sent) {
-      return {
-        ok: false,
-        status: 422,
-        error: "write-failed",
-        message: "The controller did not take the temporary look. Nothing else changed.",
-      };
+    const body: WledStateWrite = painted
+      ? previewWriteSpans(painted, brightness, args.light.ledCount)
+      : previewWrite(
+          target.start,
+          target.stop,
+          color,
+          brightness,
+          kind === "preview" && adHoc ? args.light.ledCount : undefined,
+        );
+    const last = lastWrites.get(args.light.id);
+    const sameWrite = last != null && writeBodiesEqual(last, body);
+    let wrote = false;
+    if (!sameWrite) {
+      const sent = await deps.write(dest, body);
+      if (!sent) {
+        return {
+          ok: false,
+          status: 422,
+          error: "write-failed",
+          message: "The controller did not take the temporary look. Nothing else changed.",
+        };
+      }
+      lastWrites.set(args.light.id, body);
+      wrote = true;
     }
-    const live = await deps.readLive(dest, args.light.ledCount);
-    const source = live?.source ?? "controller";
-    const session: LiveSession = {
-      id: randomUUID(),
-      kind,
-      lightId: args.light.id,
-      target,
-      color,
-      brightness,
-      startedAt: new Date().toISOString(),
-      restore,
-      source,
-      seenByYou: null,
-    };
+    const locateHop = painted != null || adHoc != null;
+    const shouldReread = shouldRereadPreview({
+      updating,
+      locateHop,
+      reread: args.reread,
+    });
+    const live = shouldReread ? await deps.readLive(dest, args.light.ledCount) : null;
+    const source = live?.source ?? (updating ? openPreview.source : "controller");
+    const session: LiveSession = updating
+      ? {
+          ...openPreview,
+          target,
+          color,
+          brightness,
+          source,
+        }
+      : {
+          id: randomUUID(),
+          kind,
+          lightId: args.light.id,
+          target,
+          color,
+          brightness,
+          startedAt: new Date().toISOString(),
+          restore,
+          source,
+          seenByYou: null,
+        };
     sessions.set(args.light.id, session);
     const reported = live
       ? countRangeMatches(live.leds, target.start, target.stop, color)
@@ -177,7 +216,10 @@ export function createLiveEngine(deps: {
       session,
       live,
       reported,
-      caption: fixtureCaption(source),
+      caption: live ? fixtureCaption(source) : previewHopCaption(source),
+      updated: updating,
+      wrote,
+      reread: shouldReread,
     };
   }
 
@@ -198,6 +240,7 @@ export function createLiveEngine(deps: {
     }
     const live = await deps.readLive(dest, light.ledCount);
     sessions.delete(lightId);
+    lastWrites.delete(lightId);
     return {
       ok: true,
       session: null,
@@ -288,4 +331,39 @@ function adHocRange(
   const stop = Math.max(0, Math.min(ledCount, range.stop));
   if (stop <= start) return null;
   return { start, stop };
+}
+
+/** Start always reads. Locate hops skip unless `reread: true`. Classic Preview still reads. */
+export function shouldRereadPreview(input: {
+  updating: boolean;
+  locateHop: boolean;
+  reread?: boolean;
+}): boolean {
+  if (!input.updating) return true;
+  if (input.reread === true) return true;
+  if (input.reread === false) return false;
+  return !input.locateHop;
+}
+
+/**
+ * Rails / beads for a Preview hop that must not re-probe.
+ * Built from the session restore — never a new snapshot of the Preview paint.
+ */
+export function previewDisplaySnapshot(
+  light: Light,
+  restore: LiveRestoreSnapshot,
+): WledSnapshot {
+  return {
+    name: light.name,
+    firmware: light.firmware ?? "",
+    mac: light.mac,
+    ledCount: light.ledCount,
+    rgbw: light.rgbw,
+    on: restore.on,
+    brightness: restore.brightness,
+    segmentColor: restore.color,
+    segments: restore.segments
+      ? restore.segments.map((seg) => ({ start: seg.start, stop: seg.stop }))
+      : null,
+  };
 }

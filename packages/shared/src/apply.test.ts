@@ -44,6 +44,15 @@ describe("apply refuse", () => {
         segmentCount: 1,
       }),
     ).toMatch(/Preview is not Apply/);
+    expect(
+      applyRefuseReason({
+        reachable: true,
+        elementCount: 2,
+        previewIntent: true,
+        segmentCount: 1,
+        segmentColor: "#4f7dff",
+      }),
+    ).toMatch(/Preview is not Apply/);
   });
 
   it("refuses leftover-segment clears when segment count is unknown — not zero", () => {

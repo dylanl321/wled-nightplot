@@ -22,6 +22,13 @@ export const SOFTWARE_PATH_ONLY_CAPTION = "Software path only. Not Hardware Done
 export const FIXTURE_SOFTWARE_GREEN_CAPTION =
   "Software-green from the fixture. Not Hardware Done.";
 
+/**
+ * Locate hop that did not re-read `/json/live`. Not Sent, not strip proof.
+ * Preview is not Apply.
+ */
+export const PREVIEW_HOP_UNREAD_CAPTION =
+  "Preview hop sent. Not read back — not Hardware Done.";
+
 export function parseNightplotTag(tag: unknown): LiveSource {
   if (tag === "fixture") return "fixture";
   if (tag === "sim") return "sim";
@@ -292,6 +299,14 @@ export function fixtureCaption(source: LiveSource): string {
     softwareHonestyCaption(source) ??
     "The controller reported this. A person still has to confirm — not Hardware Done."
   );
+}
+
+/**
+ * Caption when a Preview session hop skipped `/json/live`.
+ * Fixture / sim keep their Quiet captions. A controller hop does not claim a report.
+ */
+export function previewHopCaption(source: LiveSource): string {
+  return softwareHonestyCaption(source) ?? PREVIEW_HOP_UNREAD_CAPTION;
 }
 
 export function proofLadder(input: {
