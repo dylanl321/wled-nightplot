@@ -118,6 +118,7 @@ export function LightDetail({
   const selectedRangeIssues = issuesForElement(issues, selected?.id);
   const rangeErrorKey =
     rangeErrorLabel(selectedRangeIssues[0]?.code) ?? rangeErrorLabel(issues[0]?.code);
+  const rangeDriftKey = rangeDriftPresent(display);
   const firstIssue = issues[0] ?? null;
   const canSave = dirty && issues.length === 0 && busy === null;
   const applyReason = applyRefuseReason({
@@ -376,10 +377,15 @@ export function LightDetail({
           </span>
           {mode === "ranges" ? (
             <>
-              <span className="inline-flex items-center gap-1.5 text-primary">
-                <span className="h-2 w-3 rounded-[2px] border border-dashed border-primary" />
-                drift
-              </span>
+              {rangeDriftKey ? (
+                <span
+                  className="inline-flex items-center gap-1.5 text-primary"
+                  aria-label="Range drift key"
+                >
+                  <span className="h-2 w-3 rounded-[2px] border border-dashed border-primary" />
+                  drift
+                </span>
+              ) : null}
               {rangeErrorKey ? (
                 <span
                   className="inline-flex items-center gap-1.5 text-destructive"
@@ -997,6 +1003,18 @@ function rangeErrorLabel(
   if (code === "over-ledCount") return "past strip";
   if (code) return code;
   return undefined;
+}
+
+function rangeDriftPresent(display: {
+  declared: { differs: boolean }[];
+  reported: { differs: boolean }[];
+  regions: { kind: string }[];
+}): boolean {
+  return (
+    display.declared.some((rail) => rail.differs) ||
+    display.reported.some((rail) => rail.differs) ||
+    display.regions.some((region) => region.kind === "drift")
+  );
 }
 
 function selectedKind(

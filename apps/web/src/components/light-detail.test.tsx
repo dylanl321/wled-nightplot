@@ -578,6 +578,7 @@ describe("LightDetail selected Element kind chip", () => {
 
     expect(selectedKindChip().textContent).toBe("no compare");
     expect(screen.queryByLabelText("Range error key")).toBeNull();
+    expect(screen.queryByLabelText("Range drift key")).toBeNull();
     expect(screen.queryByText("overlap")).toBeNull();
   });
 
@@ -586,6 +587,7 @@ describe("LightDetail selected Element kind chip", () => {
 
     expect(selectedKindChip().textContent).toBe("no compare");
     expect(screen.queryByLabelText("Range error key")).toBeNull();
+    expect(screen.queryByLabelText("Range drift key")).toBeNull();
     expect(screen.queryByText("overlap")).toBeNull();
   });
 
@@ -614,6 +616,7 @@ describe("LightDetail selected Element kind chip", () => {
 
     expect(selectedKindChip().textContent).toBe("overlap");
     expect(rangeErrorKey().textContent).toBe("overlap");
+    expect(screen.queryByLabelText("Range drift key")).toBeNull();
   });
 
   it("says invert when the selected range is inverted — not overlap", () => {
@@ -641,6 +644,7 @@ describe("LightDetail selected Element kind chip", () => {
     expect(selectedKindChip().textContent).not.toBe("overlap");
     expect(rangeErrorKey().textContent).not.toBe("overlap");
     expect(screen.queryByText("overlap")).toBeNull();
+    expect(screen.queryByLabelText("Range drift key")).toBeNull();
   });
 
   it("names past strip when an inverted range starts past the strip", () => {
@@ -694,6 +698,7 @@ describe("LightDetail selected Element kind chip", () => {
     expect(selectedKindChip().textContent).not.toBe("overlap");
     expect(rangeErrorKey().textContent).not.toBe("overlap");
     expect(screen.queryByText("overlap")).toBeNull();
+    expect(screen.queryByLabelText("Range drift key")).toBeNull();
   });
 
   it("still says drift when a known report differs", () => {
@@ -731,6 +736,7 @@ describe("LightDetail selected Element kind chip", () => {
     );
 
     expect(selectedKindChip().textContent).toBe("drift");
+    expect(rangeDriftKey().textContent).toBe("drift");
     expect(screen.queryByLabelText("Range error key")).toBeNull();
     expect(screen.queryByText("overlap")).toBeNull();
   });
@@ -770,6 +776,77 @@ describe("LightDetail selected Element kind chip", () => {
     );
 
     expect(selectedKindChip().textContent).toBe("seg");
+    expect(screen.queryByLabelText("Range drift key")).toBeNull();
+    expect(screen.queryByLabelText("Range error key")).toBeNull();
+  });
+});
+
+describe("LightDetail bead legend", () => {
+  it("hides the dashed drift key when compare is refused", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: null,
+            brightness: null,
+            bead: "unknown",
+            segmentCount: null,
+            lastSeenAt: "2026-09-26T18:00:00.000Z",
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+          reported: [],
+        })}
+        mode="ranges"
+      />,
+    );
+
+    expect(screen.queryByLabelText("Range drift key")).toBeNull();
+    expect(screen.queryByLabelText("Range error key")).toBeNull();
+  });
+
+  it("hides the dashed drift key when no Element differs", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: true,
+            brightness: 128,
+            bead: "#ffa000",
+            segmentCount: 1,
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+          reported: [{ start: 0, stop: 60, differs: false }],
+        })}
+        mode="ranges"
+      />,
+    );
+
+    expect(selectedKindChip().textContent).toBe("seg");
+    expect(screen.queryByLabelText("Range drift key")).toBeNull();
+  });
+
+  it("shows the dashed drift key when a known report differs", () => {
+    render(
+      <LightDetail
+        initial={lightDetail({
+          light: lightView({
+            reachability: "online",
+            on: true,
+            brightness: 128,
+            bead: "#ffa000",
+            segmentCount: 0,
+          }),
+          snapshotAt: "2026-09-26T18:00:00.000Z",
+          reported: [],
+        })}
+        mode="ranges"
+      />,
+    );
+
+    expect(selectedKindChip().textContent).toBe("drift");
+    expect(rangeDriftKey().textContent).toBe("drift");
   });
 });
 
@@ -958,6 +1035,10 @@ function selectedKindChip(): HTMLElement {
 
 function rangeErrorKey(): HTMLElement {
   return screen.getByLabelText("Range error key");
+}
+
+function rangeDriftKey(): HTMLElement {
+  return screen.getByLabelText("Range drift key");
 }
 
 function applyRangesDetail(): LightDetailPayload {
