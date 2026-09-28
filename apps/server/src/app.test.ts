@@ -1031,6 +1031,51 @@ describe("preview + blink", () => {
     expect(box.leds[0]).toBe("#ffa000");
   });
 
+  it("does not re-probe or re-read live on a locate hop after Preview is open", async () => {
+    let probes = 0;
+    let liveReads = 0;
+    const { app, box } = testApp({
+      probe: async () => {
+        probes += 1;
+        return { kind: "found" as const, snapshot };
+      },
+      readLive: async () => {
+        liveReads += 1;
+        return { source: "fixture", leds: box.leds.slice() };
+      },
+    });
+    const id = await enroll(app);
+    const afterEnroll = probes;
+    await app.request(`/api/lights/${id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start: 2, stop: 4, color: "#fff4dc", brightness: 180 }),
+    });
+    expect(probes).toBeGreaterThan(afterEnroll);
+    const afterStart = { probes, liveReads };
+
+    const hop = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start: 5, stop: 6, color: "#4f7dff", brightness: 180 }),
+    });
+    expect(hop.status).toBe(200);
+    const body = (await hop.json()) as {
+      session: { kind: string; restore: { color: string | null } };
+      liveLeds: string[] | null;
+      liveCaption: string;
+      liveMatch: { matched: number; total: number } | null;
+    };
+    expect(body.session.kind).toBe("preview");
+    expect(body.liveLeds).toBeNull();
+    expect(body.liveMatch).toBeNull();
+    expect(body.liveCaption).toMatch(/Not Hardware Done/);
+    expect(body.liveCaption).not.toMatch(/controller reported/);
+    expect(probes).toBe(afterStart.probes);
+    expect(liveReads).toBe(afterStart.liveReads);
+    expect(box.leds[5]).toBe("#4f7dff");
+  });
+
   it("blinks then restores, and refuses both when offline", async () => {
     const { app, box } = testApp();
     const id = await enroll(app);

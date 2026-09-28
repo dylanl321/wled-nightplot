@@ -137,6 +137,7 @@ export function ElementsPanel({
     issueMessage: firstIssue?.message ?? null,
     elementCount: state.els.length,
     busyKind: detail.session?.kind ?? null,
+    previewIntent: live && !unreachable,
     segmentCount: light.segmentCount,
     segmentColor: typeof light.bead === "string" ? light.bead : null,
   });

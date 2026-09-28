@@ -35,16 +35,19 @@ const light: Light = {
   ledProductId: null,
 };
 
-function engineWithWrites(writes: WledStateWrite[]) {
+function engineWithWrites(writes: WledStateWrite[], reads: number[] = []) {
   return createLiveEngine({
     write: async (_target, body) => {
       writes.push(body);
       return true;
     },
-    readLive: async () => ({
-      source: "fixture",
-      leds: Array.from({ length: 10 }, () => "#4f7dff"),
-    }),
+    readLive: async () => {
+      reads.push(1);
+      return {
+        source: "fixture" as const,
+        leds: Array.from({ length: 10 }, () => "#4f7dff"),
+      };
+    },
     findLight: (id) => (id === light.id ? light : undefined),
   });
 }
@@ -246,5 +249,126 @@ describe("Preview restore honesty", () => {
       { id: 1, start: 2, stop: 4, col: [[255, 244, 220]] },
       { id: 2, start: 4, stop: 10, col: [[0, 0, 0]] },
     ]);
+  });
+});
+
+describe("Preview session update", () => {
+  it("keeps the first restore when a hop arrives with a different snapshot", async () => {
+    const writes: WledStateWrite[] = [];
+    const reads: number[] = [];
+    const engine = engineWithWrites(writes, reads);
+    const started = await engine.startPreview({
+      light,
+      live: { ...infoOnly, on: false, brightness: 40, segmentColor: "#ffa000" },
+      elements: [],
+      range: { start: 1, stop: 2 },
+      color: "#fff4dc",
+      brightness: 180,
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    expect(started.updated).toBe(false);
+    expect(started.wrote).toBe(true);
+    expect(started.reread).toBe(true);
+    expect(reads).toHaveLength(1);
+    const sessionId = started.session?.id;
+    writes.length = 0;
+    reads.length = 0;
+
+    const hopped = await engine.startPreview({
+      light,
+      live: { ...infoOnly, on: true, brightness: 255, segmentColor: "#3dff7a", segments: [{ start: 0, stop: 10 }] },
+      elements: [],
+      range: { start: 4, stop: 5 },
+      color: "#4f7dff",
+      brightness: 200,
+    });
+    expect(hopped.ok).toBe(true);
+    if (!hopped.ok) return;
+    expect(hopped.updated).toBe(true);
+    expect(hopped.wrote).toBe(true);
+    expect(hopped.reread).toBe(false);
+    expect(hopped.live).toBeNull();
+    expect(hopped.reported).toBeNull();
+    expect(hopped.session?.id).toBe(sessionId);
+    expect(hopped.session?.restore).toEqual({
+      on: false,
+      brightness: 40,
+      color: "#ffa000",
+      segments: null,
+    });
+    expect(reads).toHaveLength(0);
+    expect(writes).toHaveLength(1);
+    writes.length = 0;
+
+    const ended = await engine.end(light.id, "complete");
+    expect(ended.ok).toBe(true);
+    if (ended.ok) expect(ended.restored).toBe(true);
+    expect(writes[0]?.on).toBe(false);
+    expect(writes[0]?.bri).toBe(40);
+    expect(writes[0]).not.toHaveProperty("seg");
+  });
+
+  it("skips the controller POST when the hop body matches the last write", async () => {
+    const writes: WledStateWrite[] = [];
+    const reads: number[] = [];
+    const engine = engineWithWrites(writes, reads);
+    const first = await engine.startPreview({
+      light,
+      live: { ...infoOnly, on: true, brightness: 40 },
+      elements: [],
+      range: { start: 2, stop: 4 },
+      color: "#fff4dc",
+      brightness: 180,
+    });
+    expect(first.ok).toBe(true);
+    expect(writes).toHaveLength(1);
+    writes.length = 0;
+    reads.length = 0;
+
+    const again = await engine.startPreview({
+      light,
+      live: { ...infoOnly, on: true, brightness: 40 },
+      elements: [],
+      range: { start: 2, stop: 4 },
+      color: "#fff4dc",
+      brightness: 180,
+    });
+    expect(again.ok).toBe(true);
+    if (!again.ok) return;
+    expect(again.updated).toBe(true);
+    expect(again.wrote).toBe(false);
+    expect(again.reread).toBe(false);
+    expect(writes).toHaveLength(0);
+    expect(reads).toHaveLength(0);
+  });
+
+  it("still reads /json/live on a locate hop when reread is true", async () => {
+    const writes: WledStateWrite[] = [];
+    const reads: number[] = [];
+    const engine = engineWithWrites(writes, reads);
+    await engine.startPreview({
+      light,
+      live: { ...infoOnly, on: true, brightness: 40 },
+      elements: [],
+      range: { start: 1, stop: 2 },
+      color: "#fff4dc",
+    });
+    reads.length = 0;
+
+    const hopped = await engine.startPreview({
+      light,
+      live: infoOnly,
+      elements: [],
+      range: { start: 5, stop: 6 },
+      color: "#4f7dff",
+      reread: true,
+    });
+    expect(hopped.ok).toBe(true);
+    if (!hopped.ok) return;
+    expect(hopped.updated).toBe(true);
+    expect(hopped.reread).toBe(true);
+    expect(hopped.live).not.toBeNull();
+    expect(reads).toHaveLength(1);
   });
 });
