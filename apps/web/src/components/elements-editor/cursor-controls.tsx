@@ -7,11 +7,12 @@ import { gaps } from "./ops";
 import type { EditorAction, EditorState } from "./use-editor-state";
 
 export function CursorControls({
-  state, dispatch, live, blocked, onPreview, onScanning,
+  state, dispatch, live, paused = false, blocked, onPreview, onScanning,
 }: {
   state: EditorState;
   dispatch: (action: EditorAction) => void;
   live: boolean;
+  paused?: boolean;
   blocked: boolean;
   onPreview: () => void;
   onScanning?: (direction: 1 | -1 | null) => void;
@@ -23,8 +24,8 @@ export function CursorControls({
   const cursor = state.cursor ?? 0;
   const hasStrip = state.ledCount > 0;
   const atEnd = direction === 1 ? cursor >= state.ledCount - 1 : cursor <= 0;
-  const scanning = running && live && !blocked && !atEnd && state.focus.kind === "cursor";
-  if (running && (!live || blocked || atEnd || state.focus.kind !== "cursor")) setRunning(false);
+  const scanning = running && live && !paused && !blocked && !atEnd && state.focus.kind === "cursor";
+  if (running && (!live || paused || blocked || atEnd || state.focus.kind !== "cursor")) setRunning(false);
   const free = gaps(state.els, state.ledCount);
   const previousGap = [...free].reverse().find((range) => range.start < cursor);
   const nextGap = free.find((range) => range.start > cursor);

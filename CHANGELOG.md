@@ -7,6 +7,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- CONFIG-153: Segments has a full-screen phone Locate remote with large previous/next LED controls, the current LED number, and Start/End Preview. Returning ends Preview through the existing serialized sender; an uncertain restore remains visible on Segments. It uses Cursor only and cannot edit, Save, or Apply Segments. Fixture checks are software-only, not Hardware Done.
+
 - CONFIG-152: The Light page shows its hostname independently of the device display name; Settings separates hostname and port from the editable WLED name. **Apply settings** writes only changed, fingerprinted Safe fields, so a name edit goes to the controller without resending unrelated boot or power settings. A matched cfg readback updates the enrolled Light title even when `/json/info` lags. Preview remains temporary; fixture checks are not Hardware Done.
 
 - Preview refusals now distinguish frozen controller pixels and active playlists from incomplete state. A known refusal carries **Nothing was sent** through to the UI without an unconfirmed-write claim. **Recover Preview…** offers deliberate clearing when frozen pixels have no restore snapshot, explains the loss, rechecks the controller before writing and confirms the readback. Saved Segments stay unchanged and Preview stays off; recovery respects active sessions and All Off. Mismatch copy groups several page Segments under one controller range instead of repeating that range for each Segment.

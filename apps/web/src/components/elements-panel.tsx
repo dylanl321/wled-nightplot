@@ -32,6 +32,7 @@ import {
 } from "@/components/elements-editor/ops";
 import { KeysBar } from "@/components/elements-editor/keys-bar";
 import { EditorPopover } from "@/components/elements-editor/popover";
+import { PhoneRemote } from "@/components/elements-editor/phone-remote";
 import { PreviewRecovery } from "@/components/elements-editor/preview-recovery";
 import { StripEditor } from "@/components/elements-editor/strip-editor";
 import {
@@ -80,6 +81,7 @@ export function ElementsPanel({
   const [apply, setApply] = useState<ApplyResult | null>(null);
   const [live, setLive] = useState(false);
   const [locateMode, setLocateMode] = useState<LocateMode>("hold");
+  const [remoteOpen, setRemoteOpen] = useState(false);
   const [backgroundPercent, setBackgroundPercent] = useState(35);
   const [hues, setHues] = useState<Record<string, string>>({});
   const unreachable = light.reachability === "no-answer";
@@ -248,8 +250,34 @@ export function ElementsPanel({
     setLive((current) => !current);
   }
 
+  function openRemote() {
+    dispatch({ type: "cursor-set", index: state.cursor ?? 0 });
+    setLocateMode("cursor");
+    setRemoteOpen(true);
+  }
+
+  function closeRemote() {
+    // Keep this editor mounted: its Preview sender finishes any in-flight hop,
+    // then ends and reports a failed restore on the Segments page if needed.
+    setLive(false);
+    setRemoteOpen(false);
+  }
+
   return (
     <div className="flex flex-col gap-4">
+      {remoteOpen ? <PhoneRemote
+        lightName={light.name}
+        ledCount={light.ledCount}
+        cursor={state.cursor ?? 0}
+        live={live && !unreachable}
+        blocked={unreachable || frozenPreview || busy === "recover"}
+        stopping={locate.stopping}
+        error={locate.error?.message ?? null}
+        onStep={(delta) => dispatch({ type: "cursor-step", delta })}
+        onPreview={() => setLive(true)}
+        onEnd={() => setLive(false)}
+        onClose={closeRemote}
+      /> : null}
       {frozenPreview ? <PreviewRecovery
         lightId={light.id}
         lightName={light.name}
@@ -323,6 +351,9 @@ export function ElementsPanel({
           <span className={cn("inline-flex h-7 min-w-[74px] items-center justify-center rounded-md px-2.5 font-mono text-[14px] font-medium", read.hot ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground")}>{read.chip}</span>
           <span className="min-w-0 flex-1 text-[13px] text-[#c9c3b8]">{read.text}</span>
           <div className="ml-auto flex flex-wrap items-center gap-3 text-[12px]">
+            <Button type="button" variant="outline" className="h-[34px] px-3 text-[13px]" onClick={openRemote} disabled={unreachable || frozenPreview || busy !== null}>
+              Phone remote
+            </Button>
             <Switch on={live && !unreachable} label="Light on strip" tone="online" disabled={unreachable || (frozenPreview && !live) || busy === "recover"} title={frozenPreview ? "Recover the frozen LEDs before starting Preview." : liveReason ?? undefined} onClick={toggleLive} />
             {live && !unreachable ? <EditorPopover label={locateMode === "hold" ? `Segments ${backgroundPercent}% · cursor bright` : "Cursor only"} className="border-[#1f4a45] text-online">
               <div role="radiogroup" aria-label="Preview lighting" className="flex flex-col gap-3">
@@ -360,7 +391,7 @@ export function ElementsPanel({
         />
         </div>
         <KeysBar state={state} hues={hues} live={live && !unreachable && !locate.error && !locate.stopping} spacingMm={light.spacingMm} />
-        <CursorControls state={state} dispatch={dispatch} live={live} blocked={unreachable || frozenPreview || busy === "recover" || Boolean(locate.error) || locate.stopping} onPreview={() => setLive(true)} onScanning={setScanning} />
+        <CursorControls state={state} dispatch={dispatch} live={live} paused={remoteOpen} blocked={unreachable || frozenPreview || busy === "recover" || Boolean(locate.error) || locate.stopping} onPreview={() => setLive(true)} onScanning={setScanning} />
         <StripZoom ledCount={Math.max(light.ledCount, 1)} elements={state.els} hues={hues} issueWord={wordFor} focus={zoom.focus} edge={zoom.edge} caption={zoom.caption} />
       </div>
 

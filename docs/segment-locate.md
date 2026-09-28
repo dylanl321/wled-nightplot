@@ -64,7 +64,16 @@ options: **Cursor only**, or **Segments stay lit** with a bright cursor.
 0–100%. It does not change saved colors or overall controller brightness.
 The focused node stays bright, including while an edge or Segment moves.
 
-Use the cursor’s LED number or −/+ buttons to move it. **‹ Edge / Edge ›** and
+Use the cursor’s LED number or −/+ buttons to move it. **Phone remote** on the
+Segments strip opens a full-screen view with large previous/next LED buttons
+and the current zero-based LED number. Start Preview there to light that cursor
+on the strip; End Preview requests restoration of the previous look. Returning
+to Segments also ends Preview through the same sender, after any in-flight hop.
+If restoration cannot be confirmed, the Segments page says so; reload the Light
+or use All Off. The remote does not edit, Save, or Apply Segments. It uses
+Cursor only; the separate fill-and-cursor decision is not part of this mode.
+
+Use **‹ Edge / Edge ›** and
 **‹ Free / Free ›** jump to boundaries and unused runs. **Home / End** jump to
 the strip ends. Choose the scan direction and 1, 3, 5, or 10 LEDs/s, then press
 **Scan**; **Pause** holds the cursor. **Space** toggles scanning when not typing

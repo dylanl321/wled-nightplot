@@ -12,7 +12,7 @@ import {
   type ApplyResult,
   type LightDetail as LightDetailPayload,
 } from "@nightplot/shared";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { LightDetail } from "@/components/light-detail";
 import {
@@ -24,6 +24,54 @@ import {
 } from "@/test/fixtures";
 
 describe("Segments Preview recovery", () => {
+  it("uses the existing Preview sender for the phone remote and ends it on return", async () => {
+    const initial = lightDetail({ light: lightView({ reachability: "online", on: true, brightness: 180 }) });
+    const writes: { path: string; body: unknown }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      if (init?.method === "POST") writes.push({ path, body: JSON.parse(String(init.body)) });
+      return new Response(JSON.stringify(initial));
+    }));
+
+    render(<LightDetail initial={initial} tab="elements" />);
+    fireEvent.click(screen.getByRole("button", { name: "Phone remote" }));
+    const remote = screen.getByRole("dialog", { name: "Garage phone remote" });
+    fireEvent.click(within(remote).getByRole("button", { name: "Next LED" }));
+    fireEvent.click(within(remote).getByRole("button", { name: "Start Preview" }));
+    await waitFor(() => expect(writes.some((write) => write.path.endsWith("/preview") &&
+      (write.body as { start?: number }).start === 1)).toBe(true));
+    fireEvent.click(within(remote).getByRole("button", { name: "Next LED" }));
+    await waitFor(() => expect(writes.some((write) => write.path.endsWith("/preview") &&
+      (write.body as { start?: number }).start === 2)).toBe(true));
+
+    fireEvent.click(within(remote).getByRole("button", { name: "End Preview & return" }));
+    expect(screen.queryByRole("dialog", { name: "Garage phone remote" })).toBeNull();
+    await waitFor(() => expect(writes.filter((write) => write.path.endsWith("/preview/end"))).toHaveLength(1));
+    expect(writes.every((write) => !write.path.endsWith("/apply"))).toBe(true);
+  });
+
+  it("waits for an in-flight remote hop before ending Preview on return", async () => {
+    const initial = lightDetail({ light: lightView({ reachability: "online", on: true, brightness: 180 }) });
+    let release!: () => void;
+    const inFlight = new Promise<void>((resolve) => { release = resolve; });
+    const paths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = requestPath(String(input));
+      paths.push(path);
+      if (path.endsWith("/preview")) await inFlight;
+      return new Response(JSON.stringify(initial));
+    }));
+
+    render(<LightDetail initial={initial} tab="elements" />);
+    fireEvent.click(screen.getByRole("button", { name: "Phone remote" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Start Preview" }));
+    await waitFor(() => expect(paths.some((path) => path.endsWith("/preview"))).toBe(true));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "End Preview & return" }));
+    expect(paths.filter((path) => path.endsWith("/preview/end"))).toHaveLength(0);
+    await act(async () => { release(); await inFlight; });
+    await waitFor(() => expect(paths.filter((path) => path.endsWith("/preview/end"))).toHaveLength(1));
+  });
+
   it("offers recovery before Preview and only clears after confirmation, leaving Preview off", async () => {
     const initial = { ...initialDetail(), frozenPreview: true };
     const writes: { path: string; body: unknown }[] = [];
