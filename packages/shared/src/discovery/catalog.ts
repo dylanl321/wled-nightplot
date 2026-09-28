@@ -6,7 +6,7 @@ const mechanisms: readonly DiscoveryMechanism[] = [
     label: "mDNS",
     implementation: "registered",
     notes:
-      "Looks for _wled._tcp on the link. Port comes from the SRV record. An A/AAAA without a service port is listed as needs host:port — never a silent :80. Empty is honest when the network hides mDNS.",
+      "Looks for _wled._tcp on the link. Port comes from that service's SRV record. Other mDNS services are ignored. An SRV with no usable port is listed as needs host:port — never a silent :80. Empty is honest when the network hides mDNS.",
   },
   {
     id: "ssdp",

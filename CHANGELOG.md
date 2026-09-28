@@ -26,6 +26,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Fixed
 
+- Find sends mDNS and SSDP on each non-loopback IPv4 except `169.254.0.0/16`, so a controller on Wi-Fi answers when another adapter wins the multicast route. mDNS rows are only `_wled._tcp` SRV records. Other services heard on the link are not probed.
 - Known empty Apply reread (`apply.read` `[]`) caption no longer says **The controller reported these ranges**. It says **reported no ranges**, same honesty as adopt-empty. Unread (`null`) stays CONFIG-90 unread caption. A known non-empty reread still says these ranges. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-98).
 - Safe settings `buildSafeWrite` refuse 422 now includes `safeWrite`, same as `safeRefuseReason`. The refuse body can drive the write-failure UI — not a notice-only line that can be mistaken for a lesser miss. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-93).
 - Edit ranges bead legend red key no longer hardcodes **overlap**. Invert and past strip use the same words as the selected kind chip and list row. The key only appears when invert, past strip, or overlap is present. True overlap still says overlap. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-92).

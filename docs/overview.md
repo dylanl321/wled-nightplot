@@ -15,7 +15,7 @@ It is early software. There is no authentication and no TLS. A fixture report is
 
 ## Flow
 
-1. **Find** — mDNS, SSDP, typed address, optional `NIGHTPLOT_DISCOVERY_TARGETS`. Public IPs refused before HTTP. If Find fails to load, enrolled Lights stay listed — that is not a claim the configure server is down. Retry Find Lights or type an address.
+1. **Find** — mDNS, SSDP, typed address, optional `NIGHTPLOT_DISCOVERY_TARGETS`. mDNS and SSDP are sent on each IPv4 that is not loopback and not `169.254.0.0/16`. mDNS rows are `_wled._tcp` answers. Public IPs refused before HTTP. If Find fails to load, enrolled Lights stay listed — that is not a claim the configure server is down. Retry Find Lights or type an address.
 2. **Enroll** — fails closed without a WLED snapshot. Persists in `data/lights.json`.
 3. **Strip** — first-time type / length / GPIO via `/json/cfg` (`provision`). Mapped types are WS281x RGB and SK6812 RGBW. Converting a bus to SK6812 RGBW writes GRBW (WLED `order` 0). A length or GPIO Apply that keeps the same type leaves the colour order already on the box, and Strip names that live order — including when an SK6812 bus is not GRBW. A catalog LED product fills the form from that SKU and its driver; fields still override. Attach persists `ledProductId` on the Light and does not write WLED. Unknown types and unsupported firmware are refused — a write-build refuse 422 includes `provisionWrite` so Strip shows the failure panel. There is no colour-order picker.
 4. **Elements** — declare ranges. Save writes Nightplot only. Apply writes the controller, then re-reads. 200 only on match. Unknown pre-apply segment count refuses leftover-segment clears — nothing is written.

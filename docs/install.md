@@ -8,7 +8,7 @@ Run Nightplot Configure on the machine in front of you with Node and pnpm. Docke
 - [pnpm](https://pnpm.io) (root `packageManager` is `pnpm@10.33.3`)
 - A browser on the same machine as the app
 
-Find (mDNS / SSDP) needs a LAN that actually carries those packets. Typed address and `NIGHTPLOT_DISCOVERY_TARGETS` do not.
+Find (mDNS / SSDP) needs a LAN that actually carries those packets. The queries go out on each IPv4 that is not loopback and not `169.254.0.0/16`. mDNS rows are `_wled._tcp` answers. Typed address and `NIGHTPLOT_DISCOVERY_TARGETS` do not need multicast.
 
 ```bash
 pnpm install

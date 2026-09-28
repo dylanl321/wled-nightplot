@@ -104,16 +104,25 @@ describe("mDNS records", () => {
     ).toEqual([{ hostname: "wled.local", port: null }]);
   });
 
-  it("lists an unpaired A/AAAA as needs a typed port", () => {
+  it("ignores other services and bare addresses on the same link", () => {
     expect(
       resolveMdnsRecords([
+        {
+          name: "desk._http._tcp.local",
+          type: "SRV",
+          data: { target: "desk.local", port: 3100 },
+        },
+        { name: "desk.local", type: "A", data: "10.0.3.241" },
+        { name: "desk.local", type: "AAAA", data: "fe80::205:cdff:fef2:32a0" },
         { name: "wled.local", type: "A", data: "10.0.0.20" },
-        { name: "wled.local", type: "AAAA", data: "fd00::20" },
+        {
+          name: "Dig-Quad-V3._wled._tcp.local",
+          type: "SRV",
+          data: { target: "Dig-Quad-V3.local", port: 80 },
+        },
+        { name: "Dig-Quad-V3.local", type: "A", data: "10.0.0.85" },
       ]),
-    ).toEqual([
-      { hostname: "10.0.0.20", port: null },
-      { hostname: "fd00::20", port: null },
-    ]);
+    ).toEqual([{ hostname: "10.0.0.85", port: 80 }]);
   });
 
   it("keeps an advertised SRV :80 when that is what the service said", () => {

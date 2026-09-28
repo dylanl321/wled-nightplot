@@ -74,19 +74,22 @@ export function parseSsdpAdvertisement(
 }
 
 /**
- * Pair SRV service ports with A/AAAA addresses from the same browse.
- * An address record with no service port stays port-unset — never a silent :80.
+ * Pair `_wled._tcp` SRV ports with A/AAAA addresses from the same browse.
+ * Other services on the link are ignored. A `_wled._tcp` SRV with no usable
+ * port stays port-unset — never a silent :80. A bare address with no
+ * `_wled._tcp` SRV is not a candidate.
  */
 export function resolveMdnsRecords(records: MdnsRecordInput[]): DiscoveryHint[] {
-  const srvs: { name: string; target: string; port: number | null }[] = [];
+  const srvs: { target: string; port: number | null }[] = [];
   const addrs: { name: string; ip: string }[] = [];
 
   for (const rec of records) {
     if (rec.type === "SRV" && rec.data && typeof rec.data === "object") {
+      const name = dnsName(String(rec.name ?? ""));
+      if (!isWledTcpService(name)) continue;
       const data = rec.data as { target?: unknown; port?: unknown };
       if (typeof data.target === "string" && data.target.trim()) {
         srvs.push({
-          name: dnsName(String(rec.name ?? "")),
           target: dnsName(data.target),
           port: validPort(data.port),
         });
@@ -105,13 +108,11 @@ export function resolveMdnsRecords(records: MdnsRecordInput[]): DiscoveryHint[] 
   }
 
   const out: DiscoveryHint[] = [];
-  const usedAddr = new Set<string>();
 
   for (const srv of srvs) {
     const matched = addrs.filter((addr) => addr.name === srv.target);
     if (matched.length) {
       for (const addr of matched) {
-        usedAddr.add(`${addr.name}|${addr.ip}`);
         out.push({ hostname: addr.ip, port: srv.port });
       }
     } else if (srv.target) {
@@ -119,12 +120,11 @@ export function resolveMdnsRecords(records: MdnsRecordInput[]): DiscoveryHint[] 
     }
   }
 
-  for (const addr of addrs) {
-    if (usedAddr.has(`${addr.name}|${addr.ip}`)) continue;
-    out.push({ hostname: addr.ip, port: null });
-  }
-
   return dedupeHints(out);
+}
+
+function isWledTcpService(name: string): boolean {
+  return name.endsWith("._wled._tcp.local");
 }
 
 function dedupeHints(rows: DiscoveryHint[]): DiscoveryHint[] {
