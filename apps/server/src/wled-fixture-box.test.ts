@@ -113,7 +113,7 @@ describe("fixture info/cfg name divergence", () => {
     expect(box.kind).toBe("sim");
   });
 
-  it("omits state.seg when unknown-reread is on", async () => {
+  it("omits state.seg on reread after a state write when unknown-reread is on", async () => {
     const box = createFixtureBox({ kind: "sim" });
     const base = await listen(box);
     await fetch(`${base}/nightplot/unknown-reread`, {
@@ -121,11 +121,20 @@ describe("fixture info/cfg name divergence", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ on: true }),
     });
-    const json = (await (await fetch(`${base}/json`)).json()) as {
+    const before = (await (await fetch(`${base}/json`)).json()) as {
+      state: { seg?: unknown };
+    };
+    expect(before.state.seg).toBeDefined();
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seg: [{ start: 0, stop: 24, col: [[255, 160, 0]] }] }),
+    });
+    const after = (await (await fetch(`${base}/json`)).json()) as {
       state: { seg?: unknown; on: boolean };
     };
-    expect(json.state.on).toBe(true);
-    expect(json.state.seg).toBeUndefined();
+    expect(after.state.on).toBe(true);
+    expect(after.state.seg).toBeUndefined();
   });
 
   it("leaves the bus stale when busMismatch is on", async () => {

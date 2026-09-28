@@ -94,6 +94,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
   let infoCountLag = options.infoCountLag ?? false;
   let infoNameLag = options.infoNameLag ?? false;
   let unknownReread = options.unknownReread ?? false;
+  let hideSegAfterWrite = false;
   let refuseState = options.refuseState ?? false;
 
   function resizeStrip(nextCount: number) {
@@ -189,6 +190,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       last.stop = Math.max(last.start + 1, last.stop - 10);
     }
     if (segs.length) state.seg = segs;
+    if (unknownReread) hideSegAfterWrite = true;
   }
 
   function liveLeds(): string[] {
@@ -197,7 +199,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
   }
 
   function reportedState() {
-    if (unknownReread) return { on: state.on, bri: state.bri };
+    if (unknownReread && hideSegAfterWrite) return { on: state.on, bri: state.bri };
     return state;
   }
 
@@ -252,7 +254,10 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     if (url === "/nightplot/unknown-reread") {
       if (req.method === "POST" || req.method === "PUT") {
         readJson(req, (body) => {
-          if (typeof body.on === "boolean") unknownReread = body.on;
+          if (typeof body.on === "boolean") {
+            unknownReread = body.on;
+            if (!unknownReread) hideSegAfterWrite = false;
+          }
           res.end(JSON.stringify({ unknownReread, nightplot: kind }));
         });
         return;
@@ -357,6 +362,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     paintDdp,
     setUnknownReread(on: boolean) {
       unknownReread = on;
+      if (!on) hideSegAfterWrite = false;
     },
     setRefuseState(on: boolean) {
       refuseState = on;
