@@ -189,13 +189,28 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
         col,
       });
     }
-    const named = incoming.length > 0 && incoming.every((row) => row.id != null);
+    // Honor leftover `stop: 0` even when the rest of the write is un-id’d
+    // (named-Element Preview after locate overlay). Unpaint that range so
+    // leftover lit pieces do not stay the last overlay colour.
+    const paints: typeof incoming = [];
+    for (const row of incoming) {
+      if (row.id != null && row.stop <= row.start) {
+        const found = state.seg.find((seg, index) => (seg.id ?? index) === row.id);
+        if (found) {
+          paint(pixels, found.start, found.stop, [0, 0, 0]);
+          state.seg = state.seg.filter((seg, index) => (seg.id ?? index) !== row.id);
+        }
+        continue;
+      }
+      paints.push(row);
+    }
+    const named = paints.length > 0 && paints.every((row) => row.id != null);
     if (named) {
       const byId = new Map<number, Seg>();
       state.seg.forEach((seg, index) => {
         byId.set(seg.id ?? index, { ...seg, id: seg.id ?? index });
       });
-      for (const row of incoming) {
+      for (const row of paints) {
         const id = row.id!;
         if (row.stop <= row.start) {
           byId.delete(id);
@@ -217,7 +232,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       }
     } else {
       const segs: Seg[] = [];
-      for (const row of incoming) {
+      for (const row of paints) {
         if (row.stop <= row.start) continue;
         const col = row.col;
         if (!col) {

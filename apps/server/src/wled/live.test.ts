@@ -6,6 +6,7 @@ import {
   locateLitPieces,
   overlayLocatePicture,
   previewWrite,
+  previewWriteLeavingOverlay,
   previewWriteSpans,
   restoreBriField,
   restoreColField,
@@ -353,5 +354,61 @@ describe("locate write shape (CONFIG-126)", () => {
     const next = previewWrite(4, 5, lit, 180, 10);
     expect(first.seg).toEqual([{ id: 0, start: 0, stop: 10, col: [[212, 165, 116]] }]);
     expect(locateHopWrite(next, first)).toEqual(next);
+  });
+});
+
+describe("leaving locate overlay (CONFIG-136)", () => {
+  const lit = "#fff4dc";
+
+  it("previewWrite without ledCount stays one un-id’d segment — no leftover invent", () => {
+    const write = previewWrite(24, 50, "#4f7dff", 180);
+    expect(write.seg).toEqual([{ start: 24, stop: 50, col: [[79, 125, 255]] }]);
+    expect(write.seg?.[0]).not.toHaveProperty("id");
+    expect(write.seg?.some((seg) => seg.stop === 0)).toBe(false);
+  });
+
+  it("clears leftover overlay ids we authored when Preview names an Element", () => {
+    const overlay = previewWrite(4, 5, lit, 180, 10);
+    const named = previewWrite(0, 10, "#4f7dff", 180);
+    const write = previewWriteLeavingOverlay(named, overlay);
+    expect(overlay.seg?.map((seg) => seg.id)).toEqual([0, 1]);
+    expect(write.seg).toEqual([
+      { start: 0, stop: 10, col: [[79, 125, 255]] },
+      { id: 1, start: 0, stop: 0 },
+    ]);
+    expect(write.seg?.[0]).not.toHaveProperty("id");
+    expect(write.seg?.map((seg) => seg.id).filter((id) => id != null)).toEqual([1]);
+  });
+
+  it("clears leftover hold overlay ids, not the un-id’d Preview slot", () => {
+    const overlay = previewWriteSpans(
+      [
+        { start: 0, stop: 4, color: "#d4a574" },
+        { start: 10, stop: 11, color: lit },
+      ],
+      180,
+      16,
+    );
+    const named = previewWrite(0, 16, "#4f7dff", 180);
+    const write = previewWriteLeavingOverlay(named, overlay);
+    expect(overlay.seg?.map((seg) => seg.id)).toEqual([0, 1, 2]);
+    expect(write.seg).toEqual([
+      { start: 0, stop: 16, col: [[79, 125, 255]] },
+      { id: 1, start: 0, stop: 0 },
+      { id: 2, start: 0, stop: 0 },
+    ]);
+  });
+
+  it("does not invent leftover ids when there is no previous overlay", () => {
+    const named = previewWrite(0, 10, "#4f7dff", 180);
+    expect(previewWriteLeavingOverlay(named, undefined)).toEqual(named);
+    expect(previewWriteLeavingOverlay(named, named)).toEqual(named);
+  });
+
+  it("does not invent a first-locate leftover count from an overlay picture", () => {
+    const overlay = previewWrite(4, 5, lit, 180, 10);
+    expect(previewWriteLeavingOverlay(overlay, undefined)).toEqual(overlay);
+    expect(overlay.seg?.some((seg) => seg.stop === 0)).toBe(false);
+    expect(Math.max(...(overlay.seg ?? []).map((seg) => seg.id ?? -1))).toBe(1);
   });
 });
