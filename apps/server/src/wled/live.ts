@@ -149,15 +149,14 @@ export function restoreWrite(
 
 /**
  * End Preview restore after a locate overlay. Restore still writes known
- * fields only — never invents on / bri / restore ranges / colour. Append
- * `stop: 0` only for leftover overlay ids we authored on the last overlay
- * picture (`id > 0` and still lit). Id 0 stays the un-id’d restore slot
- * when restore names ranges. Unknown / empty restore still omits restore
- * ranges; leftover overlay ids are still cleared so they do not stay the
- * last overlay colour. Does not invent a leftover count. A multi-range
- * unnamed restore plus leftover `id: 1` `stop: 0` in the same array is
- * the write WLED (`id | it`) and the fixture apply in order — the leftover
- * can drop the second range. Preview is not Apply.
+ * fields only — never invents on / bri / restore ranges / colour. Leftover
+ * overlay `stop: 0` posts first for ids we authored (`id > 0` and still
+ * lit). Restore ranges then take explicit ids `0…n` so WLED `id | it`
+ * cannot infer a later unnamed range onto leftover `id: 1`. Id 0 is the
+ * first restore slot when restore names ranges. Unknown / empty restore
+ * still omits restore ranges; leftover overlay ids are still cleared so
+ * they do not stay the last overlay colour. Does not invent a leftover
+ * count. Preview is not Apply.
  */
 export function restoreWriteLeavingOverlay(
   restore: Pick<LiveRestoreSnapshot, "on" | "brightness" | "color" | "segments">,
@@ -166,7 +165,8 @@ export function restoreWriteLeavingOverlay(
   const desired = restoreWrite(restore);
   const leftovers = leftoverOverlayClears(previous);
   if (leftovers.length === 0) return desired;
-  return { ...desired, seg: [...(desired.seg ?? []), ...leftovers] };
+  const named = (desired.seg ?? []).map((seg, id) => ({ ...seg, id }));
+  return { ...desired, seg: [...leftovers, ...named] };
 }
 
 export function restoreWriteFromSnapshot(snapshot: WledSnapshot): WledStateWrite {

@@ -578,12 +578,49 @@ describe("Preview session update", () => {
     expect(ended.restored).toBe(true);
     expect(writes).toHaveLength(1);
     expect(writes[0]?.seg).toEqual([
-      { start: 0, stop: 10, col: [[255, 160, 0]] },
       { id: 1, start: 0, stop: 0 },
+      { id: 0, start: 0, stop: 10, col: [[255, 160, 0]] },
     ]);
-    expect(writes[0]?.seg?.[0]).not.toHaveProperty("id");
     expect(writes[0]?.on).toBe(true);
     expect(writes[0]?.bri).toBe(40);
+  });
+
+  it("keeps both restore ranges on End Preview after locate (leftover id:1 first)", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    await engine.startPreview({
+      light,
+      live: {
+        ...infoOnly,
+        on: true,
+        brightness: 40,
+        segmentColor: "#ffa000",
+        segments: [
+          { start: 0, stop: 3 },
+          { start: 3, stop: 7 },
+        ],
+      },
+      elements: [],
+      range: { start: 4, stop: 5 },
+      color: "#fff4dc",
+      brightness: 180,
+    });
+    expect(writes[0]?.seg).toEqual([
+      { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+      { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+    ]);
+    writes.length = 0;
+
+    const ended = await engine.end(light.id, "complete");
+    expect(ended.ok).toBe(true);
+    if (!ended.ok) return;
+    expect(ended.restored).toBe(true);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.seg).toEqual([
+      { id: 1, start: 0, stop: 0 },
+      { id: 0, start: 0, stop: 3, col: [[255, 160, 0]] },
+      { id: 1, start: 3, stop: 7, col: [[255, 160, 0]] },
+    ]);
   });
 
   it("does not invent leftover ids on End Preview when last write was not overlay", async () => {

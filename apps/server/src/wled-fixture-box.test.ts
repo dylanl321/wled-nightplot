@@ -4,6 +4,7 @@ import { createFixtureBox } from "./wled-fixture-box.ts";
 import {
   locateHopWrite,
   overlayLocatePicture,
+  restoreWriteLeavingOverlay,
   stabilizeLocateOverlayIds,
 } from "./wled/live.ts";
 
@@ -422,6 +423,73 @@ describe("fixture info/cfg name divergence", () => {
     expect(live.leds[2]).toBe("ffa000");
     expect(live.leds[3]).not.toBe("ffa000");
     expect(live.leds[4]).not.toBe("fff4dc");
+  });
+
+  it("keeps both restore ranges when End Preview posts leftover-first named restore (CONFIG-146)", async () => {
+    const box = createFixtureBox({ ledCount: 10, name: "WLED" });
+    const base = await listen(box);
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        on: true,
+        bri: 180,
+        tt: 0,
+        seg: [
+          { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+          { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+        ],
+      }),
+    });
+    const write = restoreWriteLeavingOverlay(
+      {
+        on: true,
+        brightness: 40,
+        color: "#ffa000",
+        segments: [
+          { start: 0, stop: 3, color: "#ffa000" },
+          { start: 3, stop: 7, color: "#ffa000" },
+        ],
+      },
+      {
+        on: true,
+        bri: 180,
+        tt: 0,
+        seg: [
+          { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+          { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+        ],
+      },
+    );
+    expect(write.seg).toEqual([
+      { id: 1, start: 0, stop: 0 },
+      { id: 0, start: 0, stop: 3, col: [[255, 160, 0]] },
+      { id: 1, start: 3, stop: 7, col: [[255, 160, 0]] },
+    ]);
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(write),
+    });
+    const after = (await (await fetch(`${base}/json`)).json()) as {
+      state: { seg?: { id?: number; start: number; stop: number }[] };
+    };
+    const live = (await (await fetch(`${base}/json/live`)).json()) as { leds: string[] };
+    expect(after.state.seg).toEqual([
+      { id: 0, start: 0, stop: 3, col: [[255, 160, 0]] },
+      { id: 1, start: 3, stop: 7, col: [[255, 160, 0]] },
+    ]);
+    expect(live.leds.slice(0, 7)).toEqual([
+      "ffa000",
+      "ffa000",
+      "ffa000",
+      "ffa000",
+      "ffa000",
+      "ffa000",
+      "ffa000",
+    ]);
+    expect(live.leds[4]).not.toBe("fff4dc");
+    expect(live.leds[7]).not.toBe("ffa000");
   });
 
   it("clears leftover overlay lit when End Preview restore includes leftover stop:0", async () => {
