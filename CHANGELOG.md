@@ -7,6 +7,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- CONFIG-179: Root dev, demo, test, typecheck and helper scripts now invoke pinned pnpm through Corepack. `corepack pnpm dev` no longer requires a separate bare `pnpm` shim in the launching shell. The packageManager pin is unchanged.
+
 - CONFIG-178: macOS Find also uses system Bonjour DNS-SD to browse `_wled._tcp`, resolve the advertised SRV port and IPv4, and feed the existing Light probe when raw UDP multicast misses. An unreachable Node API process now names its LAN-access failure instead of a generic probe failure. Unresolved or unreachable services are not shown as addable; Windows/Linux paths and typed hosts are unchanged. A browse result is not hardware validation.
 
 - CONFIG-155: Segments Preview can find an LED at a physical spot by lighting half the remaining strip and asking whether that spot is lit. Each confirmed answer halves the range until one zero-based LED remains; Start over and Leave search do not edit Segments. End Preview restores and All Off cancels. Software checks are not Hardware Done.

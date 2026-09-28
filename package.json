@@ -5,14 +5,14 @@
   "description": "Nightplot Configure — the configure spine for Lights and Elements.",
   "packageManager": "pnpm@10.33.3",
   "scripts": {
-    "dev": "concurrently -k -n web,api -c \"#d4a574,#7ee0d0\" \"pnpm --filter @nightplot/web dev\" \"pnpm --filter @nightplot/server dev\"",
-    "dev:demo": "NIGHTPLOT_DISCOVERY_TARGETS=127.0.0.1:48210 concurrently -k -n web,api,wled -c \"#d4a574,#7ee0d0,#ffa000\" \"pnpm --filter @nightplot/web dev\" \"pnpm --filter @nightplot/server dev\" \"pnpm --filter @nightplot/server fixture\"",
-    "typecheck": "pnpm -r --if-present typecheck",
-    "test": "pnpm -r --if-present test",
-    "lint": "pnpm --filter @nightplot/web lint",
-    "proto": "pnpm dlx serve docs/ui -p 43182",
-    "fixture": "pnpm --filter @nightplot/server fixture",
-    "sim": "pnpm --filter @nightplot/server sim"
+    "dev": "concurrently -k -n web,api -c \"#d4a574,#7ee0d0\" \"corepack pnpm --filter @nightplot/web dev\" \"corepack pnpm --filter @nightplot/server dev\"",
+    "dev:demo": "NIGHTPLOT_DISCOVERY_TARGETS=127.0.0.1:48210 concurrently -k -n web,api,wled -c \"#d4a574,#7ee0d0,#ffa000\" \"corepack pnpm --filter @nightplot/web dev\" \"corepack pnpm --filter @nightplot/server dev\" \"corepack pnpm --filter @nightplot/server fixture\"",
+    "typecheck": "corepack pnpm -r --if-present typecheck",
+    "test": "node --test scripts/root-scripts.test.mjs && corepack pnpm -r --if-present test",
+    "lint": "corepack pnpm --filter @nightplot/web lint",
+    "proto": "corepack pnpm dlx serve docs/ui -p 43182",
+    "fixture": "corepack pnpm --filter @nightplot/server fixture",
+    "sim": "corepack pnpm --filter @nightplot/server sim"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

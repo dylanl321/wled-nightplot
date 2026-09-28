@@ -5,7 +5,7 @@ Run Nightplot Configure on the machine in front of you with Node and pnpm. Docke
 ## Needs
 
 - Node 20+
-- [pnpm](https://pnpm.io) (root `packageManager` is `pnpm@10.33.3`)
+- Corepack (uses the root `packageManager` pin, `pnpm@10.33.3`; a separate pnpm shim is not needed)
 - A browser on the same machine as the app
 
 Find (mDNS / SSDP) needs a LAN that actually carries those packets. The queries go out on each IPv4 that is not loopback and not `169.254.0.0/16`. mDNS rows are `_wled._tcp` answers. Typed address and `NIGHTPLOT_DISCOVERY_TARGETS` do not need multicast.
@@ -14,16 +14,16 @@ If Bonjour lists a WLED but Find says **The API process cannot reach** its addre
 If the switch is already on but Node still reports a network-unreachable error from one launcher (for example, iTerm), try starting Nightplot from normal Terminal instead. On the tested Mac, iTerm-launched Node could not reach the LAN even with iTerm enabled, while Terminal-launched Nightplot found and probed five WLED Lights. This is a launcher-specific macOS access condition, not a reason to treat an unprobed Bonjour service as addable.
 
 ```bash
-pnpm install
-pnpm dev
+corepack pnpm install
+corepack pnpm dev
 ```
 
 - App: [http://127.0.0.1:43180](http://127.0.0.1:43180)
 - API: [http://127.0.0.1:43181](http://127.0.0.1:43181)
 
 ```bash
-pnpm typecheck
-pnpm test
+corepack pnpm typecheck
+corepack pnpm test
 ```
 
 ## Env
