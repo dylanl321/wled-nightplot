@@ -25,6 +25,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Changed
 
+- `docs/PLANE.md` series and issue-id tables refreshed from live Plane: 131 filed CONFIG issues (sequence 1–133). Live-locate family CONFIG-124–128 is listed. CONFIG-129 and CONFIG-130 are not filed. Do not invent unfiled numbers (CONFIG-133).
 - The Elements drift banner names each difference once: the range on this page, and the ranges the controller still has. **Show on the real strip** has **Cursor only** (one target, rest unlit) and **Elements stay lit** (every Element keeps its colour, and the LED under the cursor is the bright one). Preview is not Apply.
 - Elements is a strip editor: drag, resize, cut, and combine ranges on the Light. Free runs and a LED selection create Elements. Colour on the strip is display-only and is not saved. **Show on the real strip** is Preview — the hovered LED, the LED selection, or the one selected Element, with the rest of the strip unlit. `POST /api/lights/:id/preview` accepts `{ start, stop, color }` for that locate and blacks every other LED; naming an Element still paints one segment, and Blink keeps that path. Save and Save & Apply stay refused while a range is inverted, overlapping, or past the strip. Unreachable beads stay grey. Preview is not Apply.
 - The Configure shell is a 56px top bar (Lights, LED products, All Off). A Light has Elements and Settings. Lights are cards with a found banner. `GET /api/lights` includes each Light’s declared ranges from the list’s existing range display. Preview is not Apply.
