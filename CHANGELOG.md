@@ -26,6 +26,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Fixed
 
+- Edit ranges bead legend dashed key no longer always shows **drift**. The key only appears when drift is present and compare is meaningful. A match or refused compare hides it. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-103).
 - `validateDeclaredRanges` names past strip (`over-ledCount`) when an inverted range’s start is already past the strip (80–40 on 60 LEDs). Invert-only in-strip ranges stay invert. Combined invert copy names past strip when both apply so Edit-ranges footer / Apply refuse are not invert-only. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-104).
 - Find sends mDNS and SSDP on each non-loopback IPv4 except `169.254.0.0/16`, so a controller on Wi-Fi answers when another adapter wins the multicast route. mDNS rows are only `_wled._tcp` SRV records. Other services heard on the link are not probed.
 - Known empty Apply reread (`apply.read` `[]`) caption no longer says **The controller reported these ranges**. It says **reported no ranges**, same honesty as adopt-empty. Unread (`null`) stays CONFIG-90 unread caption. A known non-empty reread still says these ranges. Preview is not Apply. Fixture software-green is not Hardware Done (CONFIG-98).
