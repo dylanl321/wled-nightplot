@@ -234,6 +234,111 @@ describe("fixture info/cfg name divergence", () => {
     expect(liveLeave.leds[6]).toBe("000000");
   });
 
+  it("retains leftover overlay ids when unnamed Preview omits leftover stop:0", async () => {
+    const box = createFixtureBox({ ledCount: 10, name: "WLED" });
+    const base = await listen(box);
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        on: true,
+        bri: 180,
+        tt: 0,
+        seg: [
+          { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+          { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+        ],
+      }),
+    });
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        on: true,
+        bri: 180,
+        seg: [{ start: 0, stop: 10, col: [[79, 125, 255]] }],
+      }),
+    });
+    const after = (await (await fetch(`${base}/json`)).json()) as {
+      state: { seg?: { id?: number; start: number; stop: number }[] };
+    };
+    const live = (await (await fetch(`${base}/json/live`)).json()) as { leds: string[] };
+    expect(after.state.seg?.find((seg) => seg.id === 1)).toMatchObject({
+      id: 1,
+      start: 4,
+      stop: 5,
+    });
+    expect(live.leds[0]).toBe("4f7dff");
+    expect(live.leds[4]).toBe("fff4dc");
+    expect(live.leds[4]).not.toBe("4f7dff");
+  });
+
+  it("retains leftover hold overlay ids after unnamed Preview without leftover stop:0", async () => {
+    const box = createFixtureBox({ ledCount: 16, name: "WLED" });
+    const base = await listen(box);
+    const parked = overlayLocatePicture(
+      [
+        { start: 0, stop: 4, color: "#d4a574" },
+        { start: 10, stop: 14, color: "#7ee0d0" },
+      ],
+      180,
+      16,
+    );
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(parked),
+    });
+    expect(parked.seg?.map((seg) => seg.id)).toEqual([0, 1, 2]);
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        on: true,
+        bri: 180,
+        seg: [{ start: 0, stop: 16, col: [[79, 125, 255]] }],
+      }),
+    });
+    const after = (await (await fetch(`${base}/json`)).json()) as {
+      state: { seg?: { id?: number; start: number; stop: number }[] };
+    };
+    const live = (await (await fetch(`${base}/json/live`)).json()) as { leds: string[] };
+    expect(after.state.seg?.find((seg) => seg.id === 1)).toMatchObject({
+      id: 1,
+      start: 0,
+      stop: 4,
+    });
+    expect(after.state.seg?.find((seg) => seg.id === 2)).toMatchObject({
+      id: 2,
+      start: 10,
+      stop: 14,
+    });
+    expect(live.leds[0]).toBe("d4a574");
+    expect(live.leds[10]).toBe("7ee0d0");
+    expect(live.leds[4]).toBe("4f7dff");
+    expect(live.leds[0]).not.toBe("4f7dff");
+  });
+
+  it("does not invent leftover overlay ids on an unnamed Preview with no overlay", async () => {
+    const box = createFixtureBox({ ledCount: 10, name: "WLED" });
+    const base = await listen(box);
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        on: true,
+        bri: 180,
+        seg: [{ start: 0, stop: 10, col: [[79, 125, 255]] }],
+      }),
+    });
+    const after = (await (await fetch(`${base}/json`)).json()) as {
+      state: { seg?: { id?: number; start: number; stop: number }[] };
+    };
+    const live = (await (await fetch(`${base}/json/live`)).json()) as { leds: string[] };
+    expect(after.state.seg?.some((seg) => seg.id != null && seg.id > 0)).toBe(false);
+    expect(live.leds.every((led) => led === "4f7dff")).toBe(true);
+  });
+
   it("clears leftover overlay lit when named-Element Preview includes leftover stop:0", async () => {
     const box = createFixtureBox({ ledCount: 10, name: "WLED" });
     const base = await listen(box);

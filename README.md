@@ -78,7 +78,7 @@ Full build / run / multicast caveats: [docs/deploy.md](docs/deploy.md).
 pnpm dev:demo
 ```
 
-or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light on **Elements** to edit ranges on the strip, **Show on the real strip** (Preview, not Apply), then Save or Apply, or **Settings** for strip hardware, the small Safe set, network facts, and Remove. **All Off** is on the top bar (thumb bar below `lg`). **Remove {name}** on Settings runs three checks and refuses until they complete. The fixture is a software stub for development, not a verified real strip.
+or type `127.0.0.1:48210` on Add a Light and **Check and add**. Open the Light on **Elements** to edit ranges on the strip, **Show on the real strip** (Preview, not Apply), then Save or Apply, or **Settings** for strip hardware, the small Safe set, network facts, and Remove. **All Off** is on the top bar (thumb bar below `lg`). **Remove {name}** on Settings runs three checks and refuses until they complete. The fixture is a software stub for development, not a verified real strip. Unnamed Preview keeps leftover overlay ids the way WLED does; leftover pixels stay until leftover `stop: 0`. That is still a fixture stand-in, not metal.
 
 `pnpm sim` is a separate **external process** (`127.0.0.1:48211`, DDP UDP `4048`) for the enroll → provision → Apply → live/DDP lane. Type `127.0.0.1:48211` on Add a Light. Quiet caption is **software path only**. That is not Hardware Done. Three Done layers stay distinct: fixture → sim/e2e → metal (human benches). `pnpm test` spawns the sim.
 
