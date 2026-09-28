@@ -96,19 +96,61 @@ function holdFrame(input: {
       caption: "Preview on · no Elements to keep lit",
     };
   }
-  const hover = input.hoverIndex != null && !input.dragging;
+  const marked = holdMarksCursor(input);
   return {
-    start: spans[0]?.start ?? 0,
-    stop: spans[spans.length - 1]?.stop ?? input.ledCount,
+    start: Math.min(...spans.map((span) => span.start)),
+    stop: Math.max(...spans.map((span) => span.stop)),
     color: spans[0]?.color ?? LOCATE_LIT,
     spans,
-    caption: hover
+    caption: marked
       ? `LED ${input.hoverIndex} is the bright one. Elements stay lit on ${input.lightName}.`
       : `Elements stay lit on ${input.lightName}.`,
   };
 }
 
-/** Elements keep their colours. The LED under the cursor is the bright locate colour. */
+function holdHoverIndex(input: {
+  ledCount: number;
+  hoverIndex: number | null;
+  dragging: boolean;
+}): number | null {
+  if (input.hoverIndex == null || input.dragging) return null;
+  if (input.hoverIndex < 0 || input.hoverIndex >= input.ledCount) return null;
+  return input.hoverIndex;
+}
+
+function clippedElementRange(
+  element: Element,
+  ledCount: number,
+): { start: number; stop: number } | null {
+  const start = Math.max(0, Math.min(ledCount, element.start));
+  const stop = Math.max(0, Math.min(ledCount, element.stop));
+  if (stop <= start) return null;
+  return { start, stop };
+}
+
+function holdCoversIndex(input: { ledCount: number; elements: Element[] }, index: number): boolean {
+  return input.elements.some((element) => {
+    const range = clippedElementRange(element, input.ledCount);
+    return range != null && index >= range.start && index < range.stop;
+  });
+}
+
+/** True when Hold marks the hover LED — only a gap, never a punch through an Element. */
+export function holdMarksCursor(input: {
+  ledCount: number;
+  hoverIndex: number | null;
+  dragging: boolean;
+  elements: Element[];
+}): boolean {
+  const index = holdHoverIndex(input);
+  return index != null && !holdCoversIndex(input, index);
+}
+
+/**
+ * Elements keep their colours as whole ranges. Punching the hover LED into an
+ * Element splits that range on every mousemove and is a flash source.
+ * The cursor is the bright locate colour only when it sits in a gap.
+ */
 export function holdSpans(input: {
   ledCount: number;
   hoverIndex: number | null;
@@ -116,25 +158,15 @@ export function holdSpans(input: {
   elements: Element[];
   hues: Record<string, string>;
 }): LocateSpan[] {
-  const index = input.hoverIndex != null && !input.dragging ? input.hoverIndex : null;
+  const index = holdHoverIndex(input);
   const spans: LocateSpan[] = [];
-  let punched = false;
   const ordered = [...input.elements].sort((a, b) => a.start - b.start);
   for (const element of ordered) {
-    const start = Math.max(0, Math.min(input.ledCount, element.start));
-    const stop = Math.max(0, Math.min(input.ledCount, element.stop));
-    if (stop <= start) continue;
-    const color = input.hues[element.id] ?? "#d4a574";
-    if (index != null && index >= start && index < stop) {
-      if (start < index) spans.push({ start, stop: index, color });
-      spans.push({ start: index, stop: index + 1, color: LOCATE_LIT });
-      if (index + 1 < stop) spans.push({ start: index + 1, stop, color });
-      punched = true;
-    } else {
-      spans.push({ start, stop, color });
-    }
+    const range = clippedElementRange(element, input.ledCount);
+    if (!range) continue;
+    spans.push({ start: range.start, stop: range.stop, color: input.hues[element.id] ?? "#d4a574" });
   }
-  if (index != null && !punched && index >= 0 && index < input.ledCount) {
+  if (index != null && !holdCoversIndex(input, index)) {
     spans.push({ start: index, stop: index + 1, color: LOCATE_LIT });
   }
   return spans;
