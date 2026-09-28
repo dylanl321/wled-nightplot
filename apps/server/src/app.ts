@@ -16,9 +16,13 @@ import {
   buildDeleteChecks,
   canDelete,
   catalogSnapshot,
+  LED_CATALOG_DELETE_CAPTION,
+  LED_CATALOG_DELETE_CLEARED,
+  ledProductDeleteImpact,
   parseLedProductAttach,
   parseLedProductInput,
   resolveLedProductAttach,
+  unknownLedProductDeleteImpact,
   deleteRefuseReason,
   decideProbeAddress,
   displayHost,
@@ -120,6 +124,12 @@ export function createApp(deps: AppDeps) {
     findLight: (id) => deps.store.findById(id),
   });
 
+  function catalogDeleteFromStore(productId: string) {
+    const raw = deps.store.tryLoadRaw();
+    if (!raw.ok) return unknownLedProductDeleteImpact();
+    return ledProductDeleteImpact(raw.lights, productId);
+  }
+
   app.use(
     "*",
     cors({
@@ -138,6 +148,24 @@ export function createApp(deps: AppDeps) {
   app.get("/api/catalogs", (c) => c.json(catalogSnapshot(products.list())));
 
   app.get("/api/led-products", (c) => c.json({ products: products.list() }));
+
+  app.get("/api/led-products/:id/delete-checks", (c) => {
+    const product = products.findById(c.req.param("id"));
+    if (!product) {
+      return c.json(
+        { error: "not_found", message: "That LED product is not in the catalog." },
+        404,
+      );
+    }
+    const impact = catalogDeleteFromStore(product.id);
+    return c.json({
+      productId: product.id,
+      checks: impact.checks,
+      attached: impact.count.known ? impact.count.count : null,
+      lights: impact.count.known ? impact.count.lights : [],
+      caption: LED_CATALOG_DELETE_CAPTION,
+    });
+  });
 
   app.get("/api/led-products/:id", (c) => {
     const product = products.findById(c.req.param("id"));
@@ -209,6 +237,45 @@ export function createApp(deps: AppDeps) {
       );
     }
     return c.json({ product: updated });
+  });
+
+  app.delete("/api/led-products/:id", (c) => {
+    const existing = products.findById(c.req.param("id"));
+    if (!existing) {
+      return c.json(
+        { error: "not_found", message: "That LED product is not in the catalog." },
+        404,
+      );
+    }
+    const impact = catalogDeleteFromStore(existing.id);
+    if (!impact.decision.ok) {
+      const status = impact.decision.error === "in_use" ? 409 : 422;
+      return c.json(
+        {
+          error: impact.decision.error,
+          message: impact.decision.message,
+          attached: impact.decision.attached,
+          lights: impact.decision.lights,
+          checks: impact.checks,
+          caption: LED_CATALOG_DELETE_CAPTION,
+        },
+        status,
+      );
+    }
+    const removed = products.remove(existing.id);
+    if (!removed) {
+      return c.json(
+        { error: "not_found", message: "That LED product is not in the catalog." },
+        404,
+      );
+    }
+    return c.json({
+      deleted: true,
+      product: removed,
+      attached: 0,
+      message: LED_CATALOG_DELETE_CLEARED,
+      caption: LED_CATALOG_DELETE_CAPTION,
+    });
   });
 
   app.get("/api/lights", async (c) => {

@@ -25,7 +25,7 @@ First members. Home directories are the registration point.
 | Strip / driver | WS281x, SK6812 RGBW | `packages/shared/src/strip/` | `ws281xStrip` + `sk6812RgbwStrip` — both `wired: false`. Pixels go through WLED, not a local driver |
 | Discovery | mDNS / SSDP / address probe | `packages/shared/src/discovery/` | `implementation: "registered"`. Empty results are honest |
 
-`GET /api/catalogs` returns `catalogSnapshot()` (`packages/shared/src/catalog.ts`). `CURRENT_SLICE` is `"R6"`. Named strip presets live in `packages/shared/src/strip/presets.ts` (`stripPresets` on that payload) and seed the LED product catalog. Operator LED products (`LedProduct`) live in `packages/shared/src/strip/products.ts` and on that payload as `ledProducts`. `GET`/`POST`/`PATCH /api/led-products` manage the catalog (`FileLedProductsStore.update` on edit). `PATCH /api/lights/:id/led-product` attaches one to a Light (`ledProductId`). That is Nightplot bookkeeping, not a WLED write.
+`GET /api/catalogs` returns `catalogSnapshot()` (`packages/shared/src/catalog.ts`). `CURRENT_SLICE` is `"R6"`. Named strip presets live in `packages/shared/src/strip/presets.ts` (`stripPresets` on that payload) and seed the LED product catalog. Operator LED products (`LedProduct`) live in `packages/shared/src/strip/products.ts` and on that payload as `ledProducts`. `GET`/`POST`/`PATCH`/`DELETE /api/led-products` manage the catalog (`FileLedProductsStore.update` / `remove`). `DELETE /api/led-products/:id` refuses while any Light still attaches that `ledProductId`. Unknown or partial attach counts are not zero and are not safe. `PATCH /api/lights/:id/led-product` attaches one to a Light (`ledProductId`). That is Nightplot bookkeeping, not a WLED write.
 
 `registered` means the slot exists. It is not proof hardware passed. `ControllerDescriptor.implementation` / `wired` / `capabilities` stay honest (`packages/shared/src/controller/types.ts`).
 
@@ -41,7 +41,7 @@ The seams above register controller, strip-driver, and discovery members. Operat
 
 Controller and discovery catalogs stay their own seams (`packages/shared/src/controller/`, `packages/shared/src/discovery/`). They do not replace the LED product catalog.
 
-Attach (`PATCH /api/lights/:id/led-product`) stores the catalog id on the Light. That is not Apply. Catalog edit (`PATCH /api/led-products/:id`) mutates the shared recipe only — it does not write WLED. Strip Apply (`POST /api/lights/:id/provision`) writes that Light’s type / length / GPIO. Helpers that suggest a length — or later a segment — are Strip-assist plugins: they do not own the catalog and they do not replace attach. No assist plugin is registered today. Preview is not Apply. Helper glow is not Hardware Done.
+Attach (`PATCH /api/lights/:id/led-product`) stores the catalog id on the Light. That is not Apply. Catalog edit (`PATCH /api/led-products/:id`) mutates the shared recipe only — it does not write WLED. Catalog delete (`DELETE /api/led-products/:id`) removes the recipe only when no Light attaches it; unknown or partial refs refuse, and there is no override. That is not Apply and not Hardware Done. Strip Apply (`POST /api/lights/:id/provision`) writes that Light’s type / length / GPIO. Helpers that suggest a length — or later a segment — are Strip-assist plugins: they do not own the catalog and they do not replace attach. No assist plugin is registered today. Preview is not Apply. Helper glow is not Hardware Done.
 
 Routes and API: [README.md](../README.md#ui) / [README.md](../README.md#api).
 

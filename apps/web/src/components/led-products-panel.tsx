@@ -2,6 +2,7 @@
 
 import {
   LED_CATALOG_ATTACH_COPY,
+  LED_CATALOG_DELETE_COPY,
   LED_CATALOG_PER_LIGHT_COPY,
   LED_CATALOG_PER_LIGHT_HEADING,
   LED_CATALOG_SHARED_COPY,
@@ -12,6 +13,7 @@ import {
   type LedProduct,
 } from "@nightplot/shared";
 import { useState } from "react";
+import { CatalogDelete } from "@/components/catalog-delete";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { fetchJson, patchJson, postJson } from "@/lib/api";
@@ -164,6 +166,15 @@ export function LedProductsPanel({
     setEditingId(null);
   }
 
+  function recipeRemoved(id: string) {
+    setProducts((current) => current.filter((row) => row.id !== id));
+    if (editingId === id) {
+      setForm(null);
+      setEditingId(null);
+    }
+    setNotice(null);
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-[720px] flex-1 flex-col gap-6 px-5 py-8 sm:px-8">
       <div className="flex flex-col gap-1">
@@ -181,7 +192,7 @@ export function LedProductsPanel({
           suggestions — they fill Strip; this Light’s fields still override. Create and edit
           write the shared recipe only — not this Light’s length, GPIO, or ranges, not Apply,
           not a WLED write. Form factor is metadata — not written to WLED. A catalog row is not
-          Hardware Done.
+          Hardware Done. {LED_CATALOG_DELETE_COPY}
         </p>
       </div>
 
@@ -369,31 +380,38 @@ export function LedProductsPanel({
               {products.map((product) => (
                 <li
                   key={product.id}
-                  className="flex flex-col gap-2 rounded-xl border border-border bg-card px-[18px] py-4 sm:flex-row sm:items-start"
+                  className="flex flex-col gap-3 rounded-xl border border-border bg-card px-[18px] py-4"
                 >
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <span className="text-base font-medium">{product.label}</span>
-                    <span className="font-mono text-[11px] text-quiet">{product.id}</span>
-                    <span className="text-[13px] leading-5 text-[#c9c3b8]">
-                      {driverLabel(product.driverId)} · {formFactorLabel(product.formFactor)}
-                      {product.defaultLength != null
-                        ? ` · suggested ${product.defaultLength} nodes`
-                        : ""}
-                      {product.defaultGpio != null ? ` · GPIO ${product.defaultGpio}` : ""}
-                    </span>
-                    {product.notes ? (
-                      <span className="text-[12px] leading-5 text-quiet">{product.notes}</span>
-                    ) : null}
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <span className="text-base font-medium">{product.label}</span>
+                      <span className="font-mono text-[11px] text-quiet">{product.id}</span>
+                      <span className="text-[13px] leading-5 text-[#c9c3b8]">
+                        {driverLabel(product.driverId)} · {formFactorLabel(product.formFactor)}
+                        {product.defaultLength != null
+                          ? ` · suggested ${product.defaultLength} nodes`
+                          : ""}
+                        {product.defaultGpio != null ? ` · GPIO ${product.defaultGpio}` : ""}
+                      </span>
+                      {product.notes ? (
+                        <span className="text-[12px] leading-5 text-quiet">{product.notes}</span>
+                      ) : null}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="sm:ml-auto"
+                      onClick={() => startEdit(product)}
+                      disabled={busy !== null}
+                    >
+                      Edit
+                    </Button>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="sm:ml-auto"
-                    onClick={() => startEdit(product)}
-                    disabled={busy !== null}
-                  >
-                    Edit
-                  </Button>
+                  <CatalogDelete
+                    productId={product.id}
+                    label={product.label}
+                    onDeleted={recipeRemoved}
+                  />
                 </li>
               ))}
             </ul>

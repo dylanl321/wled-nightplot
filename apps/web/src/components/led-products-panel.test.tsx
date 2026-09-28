@@ -35,8 +35,12 @@ describe("LED products catalog", () => {
     expect(screen.getByText(new RegExp(LED_CATALOG_PER_LIGHT_COPY))).toBeTruthy();
     expect(screen.getAllByText(/not Hardware Done/).length).toBeGreaterThan(0);
     expect(screen.getByText(/Create and edit write the shared recipe only/)).toBeTruthy();
+    expect(
+      screen.getByText((content) => content.includes("Unknown or partial attach counts refuse")),
+    ).toBeTruthy();
     expect(screen.getByText(catalog[0]!.label)).toBeTruthy();
     expect(screen.getByRole("button", { name: "New LED product" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Remove recipe" }).length).toBe(catalog.length);
   });
 
   it("creates a recipe via POST and does not write WLED", async () => {

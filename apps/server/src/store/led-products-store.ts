@@ -12,11 +12,11 @@ type FileShape = {
 };
 
 /**
- * JSON catalog of operator LED products (CONFIG-52 / CONFIG-113).
+ * JSON catalog of operator LED products (CONFIG-52 / CONFIG-113 / CONFIG-118).
  *
  * Mirrors FileLightsStore: atomic write, versioned file, env-overridable path.
  * First boot with a missing or empty file seeds from STRIP_PRESETS so the
- * catalog is not vacant. list / create / update. Does not write WLED.
+ * catalog is not vacant. list / create / update / remove. Does not write WLED.
  */
 export class FileLedProductsStore {
   constructor(private readonly filePath: string) {}
@@ -40,6 +40,14 @@ export class FileLedProductsStore {
     if (!products.some((row) => row.id === product.id)) return undefined;
     this.write(products.map((row) => (row.id === product.id ? product : row)));
     return product;
+  }
+
+  remove(id: string): LedProduct | undefined {
+    const products = this.read();
+    const found = products.find((row) => row.id === id);
+    if (!found) return undefined;
+    this.write(products.filter((row) => row.id !== id));
+    return found;
   }
 
   private read(): LedProduct[] {
