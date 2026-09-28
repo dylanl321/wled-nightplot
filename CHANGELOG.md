@@ -40,6 +40,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ### Fixed
 
+- End Preview restore after a locate overlay now `stop: 0`s leftover overlay ids we authored. Restore still writes known fields only — it does not invent a leftover count or restore ranges. Named-Element / Blink switch leftover clears stay CONFIG-136. Preview is not Apply. tip/sim/e2e is not Hardware Done (CONFIG-140).
 - Locate overlay hops reuse previous overlay ids when start/stop/col match, so a gap cursor between Elements does not remap later lit ids (Door 10–14 stays id 2, not 3). Hop packing posts only the cursor — it does not rewrite an unchanged Element. This is hop packing, not a stored Element→seg identity. First pictures stay 0…n. Preview is not Apply. tip/sim/e2e is not Hardware Done (CONFIG-138).
 - First locate Preview write now `stop: 0`s leftover controller segments above overlay ids when the snapshot count is known and higher (same leftover-id class as Apply’s known-count clears). `overlayLocatePicture` still builds 0…n; later hops still only clear leftovers vs the prior locate picture. Unknown segment count does not invent leftover ids. Preview is not Apply. tip/sim/e2e is not Hardware Done (CONFIG-137).
 - Leaving locate overlay for a named-Element or Blink Preview now clears leftover overlay ids we authored (`stop: 0`). `previewWrite` without `ledCount` still posts one un-id’d segment. It does not invent a first-locate leftover count. Preview is not Apply. tip/sim/e2e is not Hardware Done (CONFIG-136).
