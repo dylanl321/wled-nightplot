@@ -9,7 +9,7 @@ This is early software. Paths below are the real tree on `main`.
 | Path | Package | Role |
 | --- | --- | --- |
 | `apps/web` | `@nightplot/web` | Quiet-utility Next.js shell. Routes: `/`, `/discover`, `/led-products`, `/lights/[id]` |
-| `apps/server` | `@nightplot/server` | Hono API, Discover, JSON store, WLED I/O, fixture |
+| `apps/server` | `@nightplot/server` | Hono API, Discover, JSON store, WLED I/O, fixture, headless sim |
 | `packages/shared` | `@nightplot/shared` | Types, catalogs, LAN guard, parse, range / live / safe / provision |
 | `docs/ui/` | — | v2 prototype (visual source of truth) |
 
@@ -81,7 +81,8 @@ Strip Apply (`buildProvisionWrite`) writes WLED `order: 0` (GRBW on SK6812 RGBW;
 | Find collect | `createCollector` | `apps/server/src/discovery/collect.ts` |
 | Find probe bound | `FIND_PROBE_CONCURRENCY` (4) | `apps/server/src/discovery/map-limit.ts` |
 | All Off Light bound | `ALL_OFF_PROBE_CONCURRENCY` (4), `mapLimitSettled` | `apps/server/src/discovery/map-limit.ts` |
-| Fixture | `createFixtureBox` | `apps/server/src/wled-fixture-box.ts` |
+| Fixture | `createFixtureBox` (`kind: "fixture"`) | `apps/server/src/wled-fixture-box.ts` — in-process / `pnpm fixture` |
+| Sim / e2e | `pnpm sim` / `spawnWledSim` | `apps/server/src/wled-sim.ts`, `wled-sim-spawn.ts`, `wled-ddp.ts` — external process, DDP UDP. Quiet caption **software path only** |
 
 `GET /health` returns `{ ok, service: "nightplot-configure", slice: CURRENT_SLICE }`.
 
@@ -104,6 +105,18 @@ Find must use an advertised port (SSDP `LOCATION` in `apps/server/src/discovery/
 | Docker / compose / GHCR | Image + compose for local/LAN run. See [deploy.md](deploy.md). No auth or TLS |
 | Local strip driver | Catalog members registered (WS281x, SK6812 RGBW); `wired: false` |
 | Auth / public bind | Not present. Defaults loopback. Containers bind `0.0.0.0` for published ports — LAN publish, not a public-internet deploy |
-| Hardware Done | Not claimed. The fixture is a software stub for development |
+| Hardware Done | Not claimed. Three layers stay distinct: fixture (in-process) → sim/e2e (external process) → metal (human benches). Fixture software-green and sim **software path only** are not Hardware Done |
 
 API routes: [README.md](../README.md#api). UI routes: [README.md](../README.md#ui).
+
+## Three Done layers
+
+These are not the same proof.
+
+| Layer | Process | Caption | What it can claim |
+| --- | --- | --- | --- |
+| Fixture | In-process `createFixtureBox` / `pnpm fixture` | Software-green from the fixture | Route and honesty unit tests passed |
+| Sim / e2e | External `pnpm sim` / CI spawn | Software path only | Enroll → provision → Apply → live/DDP against HTTP+/DDP |
+| Metal | Real WLED + strip (CONFIG-26) | Human benches | Hardware Done — only this layer |
+
+Fixture software-green is not strip lit. Sim software path only is not strip lit. Preview is not Apply. `13rac1/wled-sim` is not in this tree.

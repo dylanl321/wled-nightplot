@@ -103,6 +103,40 @@ describe("fixture info/cfg name divergence", () => {
     expect(box.ledCount).toBe(120);
   });
 
+  it("tags sim /json/live as software path, not fixture", async () => {
+    const box = createFixtureBox({ kind: "sim", name: "WLED-sim" });
+    const base = await listen(box);
+    const live = (await (await fetch(`${base}/json/live`)).json()) as { nightplot: string };
+    const info = (await (await fetch(`${base}/json/info`)).json()) as { nightplot: string };
+    expect(live.nightplot).toBe("sim");
+    expect(info.nightplot).toBe("sim");
+    expect(box.kind).toBe("sim");
+  });
+
+  it("omits state.seg on reread after a state write when unknown-reread is on", async () => {
+    const box = createFixtureBox({ kind: "sim" });
+    const base = await listen(box);
+    await fetch(`${base}/nightplot/unknown-reread`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ on: true }),
+    });
+    const before = (await (await fetch(`${base}/json`)).json()) as {
+      state: { seg?: unknown };
+    };
+    expect(before.state.seg).toBeDefined();
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seg: [{ start: 0, stop: 24, col: [[255, 160, 0]] }] }),
+    });
+    const after = (await (await fetch(`${base}/json`)).json()) as {
+      state: { seg?: unknown; on: boolean };
+    };
+    expect(after.state.on).toBe(true);
+    expect(after.state.seg).toBeUndefined();
+  });
+
   it("leaves the bus stale when busMismatch is on", async () => {
     const box = createFixtureBox({ ledCount: 60, busMismatch: true });
     box.applyCfg({

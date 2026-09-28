@@ -23,6 +23,8 @@ import {
   decideProbeAddress,
   displayHost,
   fixtureCaption,
+  foldHonestySource,
+  honestySource,
   manageCaption,
   normalizeHostKey,
   parseHexColor,
@@ -59,6 +61,7 @@ import {
   type LightView,
   type LightsPayload,
   type LiveEndKind,
+  type LiveSource,
   type ReaddressStep,
   type ProvisionRead,
   type SafeRead,
@@ -474,7 +477,7 @@ export function createApp(deps: AppDeps) {
       );
     }
     const liveRead = await live.read({ ...light, reachability: "online" });
-    const source = liveRead?.source === "fixture" ? "fixture" : "controller";
+    const source = honestySource(liveRead?.source);
     const read = reread.snapshot.segments;
     const next = lightFromSnapshot(dest, reread.snapshot, nowIso(), light);
     if (read === null) {
@@ -1090,12 +1093,12 @@ export function createApp(deps: AppDeps) {
 
   async function allOffOneLight(
     stored: Light,
-    noteFixture: () => void,
+    noteFixture: (source?: LiveSource | null) => void,
   ): Promise<AllOffRow> {
     const dest: HostPort = { hostname: stored.hostname, port: stored.port };
     const { light, live: snap, elapsedMs } = await refreshOne(stored);
     const liveRead = snap ? await live.read(light) : null;
-    if (liveRead?.source === "fixture") noteFixture();
+    noteFixture(liveRead?.source);
     if (light.reachability !== "online" || !snap) {
       return allOffUnknownRow(light, elapsedMs);
     }
@@ -1152,12 +1155,12 @@ export function createApp(deps: AppDeps) {
         name: owner?.name ?? session.target.label,
       });
     }
-    let sawFixture = false;
+    let honesty: LiveSource = "controller";
     // FileLightsStore.replace is a sync read-modify-write, so overlapping Light
     // jobs do not drop a sibling update. Do not invent success across Lights.
     const settled = await mapLimitSettled(targets, ALL_OFF_PROBE_CONCURRENCY, (stored) =>
-      allOffOneLight(stored, () => {
-        sawFixture = true;
+      allOffOneLight(stored, (source) => {
+        honesty = foldHonestySource(honesty, source);
       }),
     );
     const rows: AllOffRow[] = settled.map((result, index) => {
@@ -1178,7 +1181,7 @@ export function createApp(deps: AppDeps) {
       rows,
       failedIds,
       message: allOffSummary(rows, cancelled),
-      caption: manageCaption(sawFixture ? "fixture" : "controller"),
+      caption: manageCaption(honesty),
     };
   }
 
@@ -1188,7 +1191,7 @@ export function createApp(deps: AppDeps) {
     raw: unknown,
   ): Promise<ProvisionRead> {
     const liveRead = await live.read(light);
-    const source = liveRead?.source === "fixture" ? "fixture" : "controller";
+    const source = honestySource(liveRead?.source);
     if (raw === null) {
       return parseWledProvision(null, firmware, source);
     }
@@ -1216,7 +1219,7 @@ export function createApp(deps: AppDeps) {
     const dest: HostPort = { hostname: light.hostname, port: light.port };
     const raw = await deps.readCfg(dest);
     const liveRead = await live.read(light);
-    const source = liveRead?.source === "fixture" ? "fixture" : "controller";
+    const source = honestySource(liveRead?.source);
     if (raw === null) {
       return parseWledCfg(null, firmware, source);
     }
@@ -1255,7 +1258,7 @@ export function createApp(deps: AppDeps) {
     const liveRead = snap ? await live.read(light) : null;
     return {
       checks,
-      caption: manageCaption(liveRead?.source === "fixture" ? "fixture" : "controller"),
+      caption: manageCaption(honestySource(liveRead?.source)),
       light: (await decorateDetail(light, snap, elements, elapsedMs)).light,
     };
   }

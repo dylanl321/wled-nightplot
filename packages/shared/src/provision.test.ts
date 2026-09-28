@@ -48,6 +48,7 @@ describe("parseWledProvision", () => {
     });
     expect(read.caption).toMatch(/Not Hardware Done/);
     expect(read.refuse).toBeNull();
+    expect(parseWledProvision(cfg, "WLED 0.15.4", "sim").caption).toMatch(/software path only/i);
   });
 
   it("refuses a config with no ins list", () => {

@@ -20,6 +20,7 @@ A Light is one enrolled controller + one strip. An Element is a contiguous inclu
 - Delete is a check that runs, not an “I understand” override on unknown.
 - A registered catalog member is a slot in the table. It is not proof hardware passed. A stub endpoint must say it sent nothing.
 - The local fixture is a software stub for development. A green readback there is not Hardware Done.
+- A headless sim/e2e lane is a software path only. It is not Hardware Done. Metal benches stay human.
 
 ## Fail closed
 

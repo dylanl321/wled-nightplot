@@ -26,6 +26,8 @@ describe("all-off copy", () => {
     expect(text).toMatch(/1 of 2 off/);
     expect(text).toMatch(/ended without restoring/);
     expect(manageCaption("fixture")).toMatch(/Not Hardware Done/);
+    expect(manageCaption("sim")).toMatch(/software path only/i);
+    expect(manageCaption("sim")).toMatch(/Not Hardware Done/);
     expect(allOffRowLabel("unknown")).toBe("Still unknown");
     expect(
       allOffRetryLabel([

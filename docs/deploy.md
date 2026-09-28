@@ -46,7 +46,7 @@ Pass-through only:
 - `NIGHTPLOT_DISCOVERY_TARGETS` — typed Find extras (`host` or `host:port`)
 - `NIGHTPLOT_CORS_ORIGINS` — extra API CORS origins (see below)
 
-Open `http://127.0.0.1:43180`. Typed address enroll still works from the container (the API probes the LAN). Preview is temporary; Apply persists. A fixture report is a development stub, not a verified real strip.
+Open `http://127.0.0.1:43180`. Typed address enroll still works from the container (the API probes the LAN). Preview is temporary; Apply persists. A fixture report is a development stub, not a verified real strip. A sim enroll is software path only — not Hardware Done.
 
 `docker compose config` must validate this file.
 

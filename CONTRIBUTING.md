@@ -16,7 +16,7 @@ pnpm dev
 - App: `http://127.0.0.1:43180`
 - API: `http://127.0.0.1:43181`
 
-Without a box on the LAN: `pnpm fixture` (`127.0.0.1:48210`) or `pnpm dev:demo`. The fixture is a software stub for development, not a verified real strip.
+Without a box on the LAN: `pnpm fixture` (`127.0.0.1:48210`) or `pnpm dev:demo`. The fixture is a software stub for development, not a verified real strip. `pnpm sim` is a separate **external-process** WLED-shaped node (`127.0.0.1:48211`, DDP `4048`) for the enroll → provision → Apply → live/DDP lane. Sim Quiet caption is **software path only**. Neither layer is Hardware Done. Metal benches stay human.
 
 v2 prototype: `pnpm proto` → `http://127.0.0.1:43182`. See [docs/ui/README.md](docs/ui/README.md).
 

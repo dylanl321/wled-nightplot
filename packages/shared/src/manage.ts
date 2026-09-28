@@ -1,3 +1,5 @@
+import { softwareHonestyCaption, type LiveSource } from "./live.ts";
+
 export type AllOffRowStatus = "off" | "already-off" | "failed" | "unknown";
 
 export type AllOffRow = {
@@ -33,11 +35,11 @@ export type DeleteCheck = {
   detail: string;
 };
 
-export function manageCaption(source: "fixture" | "controller"): string {
-  if (source === "fixture") {
-    return "Software-green from the fixture. Not Hardware Done.";
-  }
-  return "Each Light is listed by what it reported. Not Hardware Done.";
+export function manageCaption(source: LiveSource): string {
+  return (
+    softwareHonestyCaption(source) ??
+    "Each Light is listed by what it reported. Not Hardware Done."
+  );
 }
 
 /**
