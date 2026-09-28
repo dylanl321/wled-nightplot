@@ -221,7 +221,9 @@ export function locateLitPieces(spans: PreviewSpan[], ledCount: number): Preview
  * Segment 0 is the whole-strip black underlay when anything is unlit.
  * Lit pieces are 1… — no black-gap tiles, so a cursor hop does not
  * rewrite a three-piece black|lit|black table. Adjacent same-colour
- * merge stays. Ids are 0…n for that picture; we do not invent extras.
+ * merge stays. Ids are 0…n for that picture. First locate leftover
+ * controller ids use `firstLocateWrite` from a known snapshot count —
+ * not invented here.
  */
 export function overlayLocatePicture(
   spans: PreviewSpan[],
@@ -292,6 +294,38 @@ export function locateHopWrite(
 }
 
 /**
+ * Last POST was a locate overlay picture (ids 0…n). Hops compare against that
+ * picture. A named-Element / Blink write is un-id’d — not overlay.
+ */
+export function isLocateOverlayWrite(write: WledStateWrite | undefined): boolean {
+  const segs = write?.seg;
+  return Boolean(segs?.length && segs.every((seg) => seg.id != null));
+}
+
+/**
+ * First locate open: `stop: 0` leftover controller ids above the overlay
+ * picture when `previousSegmentCount` is known and higher. Same leftover-id
+ * class as Apply’s known-count clears — not leftover vs a prior locate
+ * picture (`locateHopWrite`). Unknown (`null`) is not zero: no leftover
+ * invent. Known empty is no leftover clears. Overlay ids stay 0…n; we do
+ * not invent a stable segment identity. Preview is not Apply.
+ */
+export function firstLocateWrite(
+  picture: WledStateWrite,
+  previousSegmentCount: number | null,
+): WledStateWrite {
+  const segs = picture.seg;
+  if (!segs?.length || previousSegmentCount === null) return picture;
+  const overlayCount = overlayAuthoredIdCount(segs);
+  if (previousSegmentCount <= overlayCount) return picture;
+  const leftovers: WledSegWrite[] = [];
+  for (let id = overlayCount; id < previousSegmentCount; id += 1) {
+    leftovers.push({ id, start: 0, stop: 0 });
+  }
+  return { ...picture, seg: [...segs, ...leftovers] };
+}
+
+/**
  * Paint several spans. Locate uses the overlay picture (underlay + lit
  * pieces). Adjacent same-colour merge stays. Preview is not Apply.
  */
@@ -321,8 +355,9 @@ export function previewWrite(
  * Named-Element / Blink Preview posts one un-id’d segment. WLED keeps leftover
  * overlay ids (underlay 0 + lit 1…) unless they are cleared. Append `stop: 0`
  * only for leftover ids we authored on the last overlay picture — never invent
- * a first-locate leftover count (CONFIG-137). Id 0 stays the un-id’d Preview
- * slot. Preview is not Apply.
+ * a first-locate leftover count. First locate leftover controller ids are
+ * `firstLocateWrite` from a known snapshot count (CONFIG-137). Id 0 stays
+ * the un-id’d Preview slot. Preview is not Apply.
  */
 export function previewWriteLeavingOverlay(
   desired: WledStateWrite,
@@ -354,6 +389,12 @@ function hexToTriple(hex: string): [number, number, number] {
 
 function isBlackTriple(rgb: [number, number, number]): boolean {
   return rgb[0] === 0 && rgb[1] === 0 && rgb[2] === 0;
+}
+
+function overlayAuthoredIdCount(segs: WledSegWrite[]): number {
+  const ids = segs.map((seg) => seg.id).filter((id): id is number => id != null);
+  if (ids.length === 0) return segs.length;
+  return Math.max(...ids) + 1;
 }
 
 function segsEqual(a: WledSegWrite, b: WledSegWrite): boolean {

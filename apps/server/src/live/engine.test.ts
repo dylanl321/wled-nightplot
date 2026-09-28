@@ -409,6 +409,107 @@ describe("Preview session update", () => {
     expect(writes[0]).not.toHaveProperty("bri");
   });
 
+  it("clears leftover controller segs on first locate when snapshot count is known and higher", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    const started = await engine.startPreview({
+      light,
+      live: {
+        ...infoOnly,
+        on: true,
+        brightness: 40,
+        segmentColor: "#ffa000",
+        segments: [
+          { start: 0, stop: 4 },
+          { start: 4, stop: 7 },
+          { start: 7, stop: 10 },
+        ],
+      },
+      elements: [],
+      range: { start: 4, stop: 5 },
+      color: "#fff4dc",
+      brightness: 180,
+    });
+    expect(started.ok).toBe(true);
+    expect(writes[0]?.seg).toEqual([
+      { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+      { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+      { id: 2, start: 0, stop: 0 },
+    ]);
+    writes.length = 0;
+
+    const hopped = await engine.startPreview({
+      light,
+      live: infoOnly,
+      elements: [],
+      range: { start: 5, stop: 6 },
+      color: "#fff4dc",
+      brightness: 180,
+    });
+    expect(hopped.ok).toBe(true);
+    if (!hopped.ok) return;
+    expect(writes[0]?.seg).toEqual([{ id: 1, start: 5, stop: 6, col: [[255, 244, 220]] }]);
+    expect(writes[0]?.seg?.some((seg) => seg.stop === 0)).toBe(false);
+  });
+
+  it("uses the first restore segment count when locate opens after a named-Element Preview", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    await engine.startPreview({
+      light,
+      live: {
+        ...infoOnly,
+        on: true,
+        brightness: 40,
+        segmentColor: "#ffa000",
+        segments: [
+          { start: 0, stop: 4 },
+          { start: 4, stop: 7 },
+          { start: 7, stop: 10 },
+        ],
+      },
+      elements: [{ id: "el-1", lightId: light.id, label: "Porch", start: 0, stop: 10 }],
+      elementId: "el-1",
+      color: "#4f7dff",
+    });
+    expect(writes[0]?.seg).toEqual([{ start: 0, stop: 10, col: [[79, 125, 255]] }]);
+    writes.length = 0;
+
+    const locate = await engine.startPreview({
+      light,
+      live: { ...infoOnly, on: true, brightness: 255, segments: [{ start: 0, stop: 10 }] },
+      elements: [],
+      range: { start: 4, stop: 5 },
+      color: "#fff4dc",
+      brightness: 180,
+    });
+    expect(locate.ok).toBe(true);
+    expect(writes[0]?.seg).toEqual([
+      { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+      { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+      { id: 2, start: 0, stop: 0 },
+    ]);
+  });
+
+  it("does not invent first-locate leftover ids when snapshot segments are unknown", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    const started = await engine.startPreview({
+      light,
+      live: { ...infoOnly, on: true, brightness: 40 },
+      elements: [],
+      range: { start: 4, stop: 5 },
+      color: "#fff4dc",
+      brightness: 180,
+    });
+    expect(started.ok).toBe(true);
+    expect(writes[0]?.seg).toEqual([
+      { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+      { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+    ]);
+    expect(writes[0]?.seg?.some((seg) => seg.stop === 0)).toBe(false);
+  });
+
   it("clears leftover overlay ids when Preview names an Element after locate", async () => {
     const writes: WledStateWrite[] = [];
     const engine = engineWithWrites(writes);

@@ -210,6 +210,51 @@ describe("fixture info/cfg name divergence", () => {
     expect(live.leds.every((led) => led === "4f7dff")).toBe(true);
   });
 
+  it("clears leftover controller segs when first locate includes leftover stop:0", async () => {
+    const box = createFixtureBox({ ledCount: 10, name: "WLED" });
+    const base = await listen(box);
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        on: true,
+        bri: 140,
+        seg: [
+          { id: 0, start: 0, stop: 3, col: [[255, 160, 0]] },
+          { id: 1, start: 3, stop: 7, col: [[255, 160, 0]] },
+          { id: 2, start: 7, stop: 10, col: [[255, 160, 0]] },
+        ],
+      }),
+    });
+    const afterApply = (await (await fetch(`${base}/json/live`)).json()) as { leds: string[] };
+    expect(afterApply.leds[7]).toBe("ffa000");
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        on: true,
+        bri: 180,
+        tt: 0,
+        seg: [
+          { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+          { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+          { id: 2, start: 0, stop: 0 },
+        ],
+      }),
+    });
+    const afterLocate = (await (await fetch(`${base}/json`)).json()) as {
+      state: { seg?: { id?: number; start: number; stop: number }[] };
+    };
+    const live = (await (await fetch(`${base}/json/live`)).json()) as { leds: string[] };
+    expect(afterLocate.state.seg?.some((seg) => seg.id === 2 && seg.stop > seg.start)).toBe(
+      false,
+    );
+    expect(live.leds[4]).toBe("fff4dc");
+    expect(live.leds[7]).toBe("000000");
+    expect(live.leds[9]).toBe("000000");
+    expect(live.leds[7]).not.toBe("ffa000");
+  });
+
   it("leaves the bus stale when busMismatch is on", async () => {
     const box = createFixtureBox({ ledCount: 60, busMismatch: true });
     box.applyCfg({

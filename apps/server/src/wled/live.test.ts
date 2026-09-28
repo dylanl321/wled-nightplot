@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { WledSnapshot } from "@nightplot/shared";
 import {
   applyRangesWrite,
+  firstLocateWrite,
+  isLocateOverlayWrite,
   locateHopWrite,
   locateLitPieces,
   overlayLocatePicture,
@@ -354,6 +356,52 @@ describe("locate write shape (CONFIG-126)", () => {
     const next = previewWrite(4, 5, lit, 180, 10);
     expect(first.seg).toEqual([{ id: 0, start: 0, stop: 10, col: [[212, 165, 116]] }]);
     expect(locateHopWrite(next, first)).toEqual(next);
+  });
+});
+
+describe("first locate leftover controller segs (CONFIG-137)", () => {
+  const lit = "#fff4dc";
+
+  it("appends stop:0 leftover clears when snapshot count is known and higher", () => {
+    const picture = overlayLocatePicture([{ start: 4, stop: 5, color: lit }], 180, 10);
+    expect(picture.seg?.map((seg) => seg.id)).toEqual([0, 1]);
+    const write = firstLocateWrite(picture, 3);
+    expect(write.seg).toEqual([
+      { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+      { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+      { id: 2, start: 0, stop: 0 },
+    ]);
+  });
+
+  it("does not invent leftover ids when previous segment count is unknown", () => {
+    const picture = previewWrite(4, 5, lit, 180, 10);
+    expect(firstLocateWrite(picture, null)).toEqual(picture);
+    expect(picture.seg?.some((seg) => seg.stop === 0)).toBe(false);
+  });
+
+  it("writes no leftover stop:0 when previous count is known empty — distinct from unknown", () => {
+    const picture = overlayLocatePicture([{ start: 4, stop: 5, color: lit }], 180, 10);
+    expect(firstLocateWrite(picture, 0)).toEqual(picture);
+    expect(firstLocateWrite(picture, 0).seg?.some((seg) => seg.stop === 0)).toBe(false);
+  });
+
+  it("writes no leftover stop:0 when overlay already covers the known count", () => {
+    const picture = overlayLocatePicture([{ start: 4, stop: 5, color: lit }], 180, 10);
+    expect(picture.seg).toHaveLength(2);
+    expect(firstLocateWrite(picture, 2)).toEqual(picture);
+  });
+
+  it("clears several leftover ids from a known higher Apply count", () => {
+    const picture = previewWriteSpans([{ start: 4, stop: 5, color: lit }], 180, 10);
+    const write = firstLocateWrite(picture, 5);
+    expect(write.seg?.filter((seg) => seg.stop === 0).map((seg) => seg.id)).toEqual([2, 3, 4]);
+  });
+
+  it("does not treat a named-Element write as a locate overlay picture", () => {
+    const named = previewWrite(0, 10, "#4f7dff", 180);
+    expect(isLocateOverlayWrite(named)).toBe(false);
+    expect(isLocateOverlayWrite(previewWrite(4, 5, lit, 180, 10))).toBe(true);
+    expect(isLocateOverlayWrite(undefined)).toBe(false);
   });
 });
 
