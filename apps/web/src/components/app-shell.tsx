@@ -9,7 +9,7 @@ type AppShellProps = {
   children: ReactNode;
   lights?: LightView[];
   lightCount: number;
-  nav: "lights" | "discover" | "light";
+  nav: "lights" | "discover" | "light" | "catalog";
   activeLightId?: string;
   sessions?: LiveHint[];
 };
@@ -88,6 +88,9 @@ export function AppShell({
           })}
           <NavLink href="/discover" active={nav === "discover"}>
             + Add a Light
+          </NavLink>
+          <NavLink href="/led-products" active={nav === "catalog"}>
+            LED products
           </NavLink>
         </nav>
         <div className="max-h-[55%] overflow-y-auto border-t border-border p-4">

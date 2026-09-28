@@ -53,4 +53,40 @@ describe("FileLedProductsStore", () => {
     expect(ids).toContain("only-this");
     expect(ids.filter((id) => id === "only-this")).toHaveLength(1);
   });
+
+  it("updates an existing row and leaves a missing id untouched", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-led-"));
+    const file = join(dir, "led-products.json");
+    const store = new FileLedProductsStore(file);
+    const created = store.create({
+      id: "eave-cob",
+      label: "Eave COB",
+      notes: "",
+      formFactor: "cob",
+      driverId: "ws281x",
+      defaultLength: 120,
+    });
+
+    const updated = store.update({
+      ...created,
+      label: "Eave COB revised",
+      defaultLength: 150,
+    });
+    expect(updated?.label).toBe("Eave COB revised");
+    expect(store.findById("eave-cob")?.defaultLength).toBe(150);
+
+    expect(
+      store.update({
+        id: "no-such-sku",
+        label: "Missing",
+        notes: "",
+        formFactor: "discrete",
+        driverId: "ws281x",
+      }),
+    ).toBeUndefined();
+    expect(store.findById("eave-cob")?.label).toBe("Eave COB revised");
+
+    const restarted = new FileLedProductsStore(file);
+    expect(restarted.findById("eave-cob")).toEqual(updated);
+  });
 });

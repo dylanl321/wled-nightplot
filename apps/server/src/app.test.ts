@@ -2915,6 +2915,88 @@ describe("LED product catalog", () => {
     );
     expect(writeCfg).not.toHaveBeenCalled();
   });
+
+  it("patches an existing product and refuses id change or unknown driver", async () => {
+    const writeCfg = vi.fn(async () => true);
+    const { app } = testApp({ writeCfg });
+
+    const created = await app.request("/api/led-products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "eave-cob",
+        label: "Eave COB",
+        formFactor: "cob",
+        driverId: "ws281x",
+        defaultLength: 120,
+      }),
+    });
+    expect(created.status).toBe(201);
+
+    const patched = await app.request("/api/led-products/eave-cob", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        product: {
+          label: "Eave COB revised",
+          formFactor: "cob",
+          driverId: "ws281x",
+          defaultLength: 150,
+          notes: "Shared recipe. Not written to WLED.",
+        },
+      }),
+    });
+    expect(patched.status).toBe(200);
+    const patchedBody = (await patched.json()) as {
+      product: { id: string; label: string; defaultLength?: number };
+    };
+    expect(patchedBody.product).toMatchObject({
+      id: "eave-cob",
+      label: "Eave COB revised",
+      defaultLength: 150,
+    });
+    expect(writeCfg).not.toHaveBeenCalled();
+
+    const listed = await app.request("/api/led-products/eave-cob");
+    expect(((await listed.json()) as { product: { label: string } }).product.label).toBe(
+      "Eave COB revised",
+    );
+
+    const idChange = await app.request("/api/led-products/eave-cob", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "other-slug",
+        label: "Eave COB",
+        formFactor: "cob",
+        driverId: "ws281x",
+      }),
+    });
+    expect(idChange.status).toBe(400);
+
+    const unknownDriver = await app.request("/api/led-products/eave-cob", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        label: "Eave COB",
+        formFactor: "cob",
+        driverId: "apa102",
+      }),
+    });
+    expect(unknownDriver.status).toBe(422);
+
+    const missing = await app.request("/api/led-products/no-such-sku", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        label: "Missing",
+        formFactor: "discrete",
+        driverId: "ws281x",
+      }),
+    });
+    expect(missing.status).toBe(404);
+    expect(writeCfg).not.toHaveBeenCalled();
+  });
 });
 
 describe("LED product attach", () => {

@@ -46,6 +46,9 @@ export function LightsHome({
           <Button asChild variant="outline" size="lg" className="sm:min-w-[160px]">
             <Link href="/discover#address">Type an address</Link>
           </Button>
+          <Button asChild variant="outline" size="lg" className="sm:min-w-[160px]">
+            <Link href="/led-products">LED products</Link>
+          </Button>
         </div>
         <UnenrolledTray rows={unenrolled} />
       </div>
@@ -77,9 +80,14 @@ function Header({ title, subtitle }: { title: string; subtitle: string }) {
         <h1 className="text-[26px] font-semibold tracking-[-0.01em]">{title}</h1>
         <p className="text-muted-foreground">{subtitle}</p>
       </div>
-      <Button asChild className="mt-3 sm:ml-auto sm:mt-0">
-        <Link href="/discover">Find Lights</Link>
-      </Button>
+      <div className="mt-3 flex flex-col gap-2 sm:ml-auto sm:mt-0 sm:flex-row">
+        <Button asChild variant="outline">
+          <Link href="/led-products">LED products</Link>
+        </Button>
+        <Button asChild>
+          <Link href="/discover">Find Lights</Link>
+        </Button>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,10 @@
 import type { LightDetail as LightDetailPayload, ProvisionRead } from "@nightplot/shared";
 import {
+  LED_CATALOG_ATTACH_COPY,
+  LED_CATALOG_PER_LIGHT_COPY,
+  LED_CATALOG_PER_LIGHT_HEADING,
+  LED_CATALOG_SHARED_COPY,
+  LED_CATALOG_SHARED_HEADING,
   provisionApplyBodyFromProduct,
   seedLedProductsFromPresets,
   stripColorOrderCopy,
@@ -77,6 +82,34 @@ describe("Strip provision", () => {
     render(<LightDetail initial={payload()} mode="inspect" />);
     expect(screen.getByRole("button", { name: "Strip" })).toBeTruthy();
     expect(screen.getByRole("button", { name: /type, length, GPIO/ })).toBeTruthy();
+  });
+
+  it("names shared catalog vs this Light and links to LED products", async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const path = requestPath(String(input));
+      if (path.endsWith("/provision")) {
+        return new Response(JSON.stringify(payload()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ message: "unexpected path" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
+
+    expect(await screen.findByText(LED_CATALOG_SHARED_HEADING)).toBeTruthy();
+    expect(screen.getByText(LED_CATALOG_SHARED_COPY)).toBeTruthy();
+    expect(screen.getByText(LED_CATALOG_ATTACH_COPY)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: LED_CATALOG_PER_LIGHT_HEADING })).toBeTruthy();
+    expect(screen.getByText(LED_CATALOG_PER_LIGHT_COPY)).toBeTruthy();
+    const manage = screen.getByRole("link", { name: "Manage LED products" });
+    expect(manage.getAttribute("href")).toBe("/led-products");
+    expect(screen.getByRole("button", { name: "Manual fields" })).toBeTruthy();
   });
 
   it("keeps a write→reread mismatch on the failure UI", async () => {

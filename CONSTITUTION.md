@@ -47,4 +47,4 @@ Work the CONFIG series in order. R6 is Safe settings (the small `WledSafeSetting
 
 ## Persistence
 
-Enrolled Lights and declared Elements persist in `data/lights.json` (`FileLightsStore`). Operator LED products persist in `data/led-products.json` (`FileLedProductsStore`). The LED product catalog is the shared type / IC recipe. Length, GPIO, Element ranges, and field overrides live on the Light. Strip-assist helpers do not replace catalog attach.
+Enrolled Lights and declared Elements persist in `data/lights.json` (`FileLightsStore`). Operator LED products persist in `data/led-products.json` (`FileLedProductsStore` list / create / update). The LED product catalog is the shared type / IC recipe. Length, GPIO, Element ranges, and field overrides live on the Light. Catalog edit mutates the recipe only — it does not write WLED. Strip-assist helpers do not replace catalog attach. Attach is not Apply. A catalog row is not Hardware Done.

@@ -3,6 +3,11 @@ import { getStrip } from "./catalog.ts";
 import { defaultStripPreset, STRIP_PRESETS } from "./presets.ts";
 import {
   inheritLedProductFields,
+  LED_CATALOG_ATTACH_COPY,
+  LED_CATALOG_PER_LIGHT_COPY,
+  LED_CATALOG_PER_LIGHT_HEADING,
+  LED_CATALOG_SHARED_COPY,
+  LED_CATALOG_SHARED_HEADING,
   parseLedProductAttach,
   parseLedProductInput,
   provisionApplyBodyFromProduct,
@@ -234,6 +239,17 @@ describe("LED product attach + draft fill", () => {
         driverId: "apa102",
       }),
     ).toMatchObject({ ok: false, error: "unknown_driver" });
+  });
+
+  it("names shared catalog vs this Light and keeps attach as bookkeeping", () => {
+    expect(LED_CATALOG_SHARED_HEADING).toBe("Shared catalog");
+    expect(LED_CATALOG_PER_LIGHT_HEADING).toBe("This Light");
+    expect(LED_CATALOG_SHARED_COPY).toMatch(/LED type and IC recipe/i);
+    expect(LED_CATALOG_PER_LIGHT_COPY).toMatch(/Length, GPIO, ranges/);
+    expect(LED_CATALOG_PER_LIGHT_COPY).toMatch(/this Light/i);
+    expect(LED_CATALOG_ATTACH_COPY).toMatch(/not Apply/);
+    expect(LED_CATALOG_ATTACH_COPY).toMatch(/not a WLED write/);
+    expect(LED_CATALOG_ATTACH_COPY).toMatch(/not Hardware Done/);
   });
 
   it("parses attach null and a catalog id; unknown ids fail closed", () => {
