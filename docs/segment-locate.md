@@ -1,40 +1,76 @@
-# Locate and create Segments
+# Edit and locate Segments
 
-Open a Light’s **Segments** tab. **Show on the real strip** enables temporary
-Preview. **Segments stay lit** keeps every declared Segment visible with a
-bright cursor inside Segments and in unused ranges.
+Open a Light’s **Segments** tab. The strip card brings together the current
+focus, temporary Preview, keyboard hints, cursor controls and Zoom.
 
-**Background brightness** controls the other Segment LEDs from 0–100%. It
-starts at **35%**. Lower it to make the cursor easier to follow. The cursor
-keeps its Preview color and overall brightness; the slider does not change
-saved Segment colors or Apply settings.
+## Click a node, then use the arrows
 
-The cursor stays at its position when the mouse leaves the strip. Use the
-position slider, LED number, or ±1 buttons to move it. **Previous/Next edge**
-and **Previous/Next unused range** jump to useful places.
+**Select (V)** gives the arrows one visible target:
 
-For hands-free movement, choose **Forward** or **Backward**, select 1, 3, 5,
-or 10 LEDs/s, and press **Auto-scan**. Auto-scan enables Preview if needed.
-**Pause scan** holds the current LED. Scanning stops at the strip end and
-pauses when the tab is hidden, Preview ends or fails, or All Off runs.
-It does not resume automatically after returning to the tab.
+- Click a Segment’s first or last LED to grab its **start** or **stop** edge.
+  A one-LED Segment selects its stop edge.
+- Click inside a Segment to shift the whole Segment between its neighbours.
+- Click a free LED to anchor a selection. Arrows grow or shrink its other end.
+- Shift-click Segments to select several for **Combine into one** or **Delete all**.
+  The arrows then move the cursor.
 
-With the browser focused, press **L** to locate, then **←/→** to step one LED,
-or **Shift + ←/→** to step ten. **Home/End** jump to the strip ends.
-Keyboard shortcuts do not intercept typing in form controls. Focus the Locate
-panel and press **Space** to scan or pause. The mouse can be outside the strip
-or browser window while scanning; these are not system-wide keyboard shortcuts.
+**← / →** moves the focus one LED; **Shift** moves ten. **Tab** cycles the
+Segment, its start edge and its stop edge; **Shift + Tab** reverses the cycle.
+**Esc** closes options first, then steps from an edge to its Segment, then
+clears the selection. The keys bar names the focus and its available actions.
 
-To create a Segment:
+Touching Segments share a boundary. Moving that edge resizes both Segments,
+keeping at least one LED in each. Hold **Alt / ⌥** while pressing an arrow or
+dragging to leave the neighbour in place. A whole Segment cannot shift through
+its neighbour; grab the shared edge instead. Consecutive arrows on the same
+target within 1.2 seconds form one Undo step. Clicking an edge without dragging
+does not resize it.
+
+Hover shows a separate, faint marker and does not move the clicked cursor.
+**Locate (L)** follows the pointer without editing ranges. Zoom follows the
+focused cursor, or the cut boundary when using **Cut (C)**. Keyboard shortcuts
+leave typing in inputs alone. Toolbar button clicks do not disable arrow keys.
+The **Shortcuts** popover lists the available keys.
+
+## Create and change Segments
+
+**Pick LEDs (R)** selects across existing Segments. Drag and release to open
+selection options, or click and use arrows before pressing **Enter** for options.
+**N** creates a Segment from the selected LEDs. A single click never opens the
+options menu automatically.
+
+You can also mark a range:
 
 1. Move the cursor to its first LED and press **Mark start** (or **[**).
 2. Move to its last LED and press **Mark end** (or **]**).
-3. Review the selected LEDs and press **Create Segment**.
+3. Review the selection options and choose **New Segment**.
 
 Both marked LEDs are included, even when marking backward. The saved range
-still uses an exclusive stop: LEDs 3–7 become `[3, 8)`. If the selection uses
-existing Segments, the panel names them before creation. **Undo** reverses the
-draft change. Save/Apply retain their existing meanings.
+still uses an exclusive stop: LEDs 3–7 become `[3, 8)`. Options name any
+existing Segments that creation will take LEDs from. **Undo** reverses the draft
+change. Save stores the draft; Apply persists the ranges to the controller.
+
+The list shows each Segment’s range, count, calculated length (when its LED
+product defines spacing), and range check. Its **Free** footer offers **+ Add**
+for unused runs. The Inspector holds name and range fields, **Duplicate**,
+**Split in half**, **Cut at cursor**, and **Delete**. Its range stepper buttons
+grab the corresponding edge and use the same shared-boundary behavior as arrows.
+
+## Cursor and Preview
+
+**Light on strip** enables temporary Preview. Its summary opens the lighting
+options: **Cursor only**, or **Segments stay lit** with a bright cursor.
+**Segment brightness** starts at **35%** and controls other Segment LEDs from
+0–100%. It does not change saved colors or overall controller brightness.
+The focused node stays bright, including while an edge or Segment moves.
+
+Use the cursor’s LED number or −/+ buttons to move it. **‹ Edge / Edge ›** and
+**‹ Free / Free ›** jump to boundaries and unused runs. **Home / End** jump to
+the strip ends. Choose the scan direction and 1, 3, 5, or 10 LEDs/s, then press
+**Scan**; **Pause** holds the cursor. **Space** toggles scanning when not typing
+or activating a button. Scan enables Preview if needed and stops at the strip
+end. It pauses when the tab is hidden, Preview ends or fails, All Off runs, or
+a Segment or LED selection takes focus. It does not restart automatically.
 
 ## Preview and restoration
 
@@ -60,6 +96,7 @@ All Off deliberately cancels without restoring.
 storage and API fields, `Element` TypeScript types, legacy links, and saved
 custom labels remain compatible.
 
-Validation uses reducer/UI tests, server tests and the HTTP fixture. Fixture
-readback is software evidence, not proof a physical strip lit or met a latency
-target. Desktop/mobile visual checks and physical timing still need validation.
+Validation covers shared boundaries, focus, drag thresholds, undo, selection options,
+scan controls and Preview recovery with automated tests, plus desktop/mobile
+browser checks using mocked controller responses. These are software checks;
+they do not prove a physical strip lit or met a latency target.

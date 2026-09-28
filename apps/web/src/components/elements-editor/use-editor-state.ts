@@ -9,6 +9,9 @@ import {
   drawnRange,
   duplicateElement,
   edgeHit,
+  edgeAt,
+  bounds,
+  clamp,
   elementAt,
   elementsEqual,
   extendInto,
@@ -21,8 +24,9 @@ import {
   mergeCheck,
   nudgeElement,
   type NudgeEdge,
-  resizedStart,
-  resizedStop,
+  moveEdge,
+  neighbourAt,
+  snapTo,
   shiftedRange,
   splitElement,
   type Range,
@@ -30,12 +34,22 @@ import {
 
 export type Tool = "select" | "range" | "split" | "locate";
 
+export type Focus =
+  | { kind: "cursor" }
+  | { kind: "sel" }
+  | { kind: "seg"; id: string }
+  | { kind: "edge"; id: string; which: "start" | "end" };
+
 export type Drag =
-  | { kind: "move"; id: string; anchor: number; orig: Element; pre: Element[] }
-  | { kind: "start" | "end"; id: string; orig: Element; pre: Element[] }
+  | { kind: "move"; id: string; anchor: number; orig: Element; pre: Element[]; x0: number; moved: boolean }
+  | { kind: "start" | "end"; id: string; orig: Element; pre: Element[]; x0: number; moved: boolean }
   | { kind: "draw"; anchor: number; moved: boolean; free: boolean };
 
 export type EditorState = {
+  focus: Focus;
+  menuOpen: boolean;
+  keyMoved: boolean;
+  lastNudge: { key: string; at: number } | null;
   els: Element[];
   saved: Element[];
   sel: string[];
@@ -55,6 +69,11 @@ export type EditorState = {
 };
 
 export type EditorAction =
+  | { type: "arrow"; delta: number; alt?: boolean; at?: number }
+  | { type: "focus-set"; id: string; what: "seg" | "start" | "end" }
+  | { type: "focus-cycle"; back?: boolean }
+  | { type: "menu-toggle" }
+  | { type: "cut-cursor" }
   | { type: "cursor-set"; index: number }
   | { type: "cursor-step"; delta: number }
   | { type: "mark-start" }
@@ -63,7 +82,7 @@ export type EditorAction =
   | { type: "snap" }
   | { type: "hover"; hover: Hit | null }
   | { type: "down"; hit: Hit; shift: boolean }
-  | { type: "move"; hit: Hit }
+  | { type: "move"; hit: Hit; alt?: boolean }
   | { type: "up" }
   | { type: "leave" }
   | { type: "undo" }
@@ -107,6 +126,12 @@ function commit(
     els,
     drag: null,
     draftRange: null,
+    menuOpen: false,
+    lastNudge: null,
+    ...(extra.sel ? {
+      focus: extra.sel.length === 1 ? { kind: "seg" as const, id: extra.sel[0]! } : { kind: "cursor" as const },
+      cursor: els.find((el) => el.id === extra.sel?.[0])?.start ?? state.cursor,
+    } : {}),
     ...extra,
   };
 }
@@ -120,30 +145,48 @@ function one(state: EditorState): Element | null {
   return state.els.find((element) => element.id === state.sel[0]) ?? null;
 }
 
-function applyDrag(state: EditorState, hit: Hit): EditorState {
+function blockedEdge(
+  el: Element, which: "start" | "end", els: Element[], outward: boolean, detach: boolean,
+): string {
+  const nb = neighbourAt(el, which, els);
+  return nb && outward
+    ? detach ? `Up against ${nb.label}. Let go of Alt / ⌥ to move the shared edge.`
+      : `${nb.label} can't get shorter than 1 LED`
+    : `${el.label} can't get shorter than 1 LED, or the strip ends here`;
+}
+
+function blockedShift(el: Element, els: Element[], count: number, delta: number): string {
+  const limits = bounds(el, els, count);
+  const stripEnd = delta < 0 ? limits.lo === 0 : limits.hi === count;
+  return stripEnd ? `${el.label} reaches the strip ${delta < 0 ? "start" : "end"}.`
+    : `${el.label} is touching the Segment ${delta < 0 ? "before" : "after"}. Tab to grab an edge instead.`;
+}
+
+function applyDrag(state: EditorState, hit: Hit, alt = false): EditorState {
   const drag = state.drag;
   if (!drag) return { ...state, hover: hit };
-  if (drag.kind === "start") {
+  if (drag.kind !== "draw" && !drag.moved && Math.abs(hit.x - drag.x0) < 4) return state;
+  if (drag.kind === "start" || drag.kind === "end") {
+    const target = snapTo(hit.b, state.snap);
+    const result = moveEdge(drag.pre, drag.id, drag.kind, target, alt, state.ledCount);
+    const current = state.els.find((el) => el.id === drag.id);
+    const value = drag.kind === "start" ? current?.start : current?.stop;
     return {
-      ...state,
-      hover: hit,
-      els: withElement(state, drag.id, {
-        start: resizedStart(drag.orig, hit.b, state.els, state.ledCount, state.snap),
-      }),
-    };
-  }
-  if (drag.kind === "end") {
-    return {
-      ...state,
-      hover: hit,
-      els: withElement(state, drag.id, {
-        stop: resizedStop(drag.orig, hit.b, state.els, state.ledCount, state.snap),
-      }),
+      ...state, hover: hit, els: result.els,
+      cursor: drag.kind === "start" ? result.value : result.value - 1,
+      drag: { ...drag, moved: true }, keyMoved: false,
+      toast: value === result.value && target !== value
+        ? blockedEdge(drag.orig, drag.kind, drag.pre, drag.kind === "start" ? target < result.value : target > result.value, alt)
+        : null,
     };
   }
   if (drag.kind === "move") {
-    const next = shiftedRange(drag.orig, drag.anchor, hit.idx, state.els, state.ledCount, state.snap);
-    return { ...state, hover: hit, els: withElement(state, drag.id, next) };
+    const next = shiftedRange(drag.orig, drag.anchor, hit.idx, drag.pre, state.ledCount, state.snap);
+    const delta = hit.idx - drag.anchor;
+    const blocked = next.start === drag.orig.start && snapTo(drag.orig.start + delta, state.snap) !== drag.orig.start;
+    return { ...state, hover: hit, els: withElement(state, drag.id, next),
+      cursor: drag.anchor + next.start - drag.orig.start, drag: { ...drag, moved: true }, keyMoved: false,
+      toast: blocked ? blockedShift(drag.orig, drag.pre, state.ledCount, delta) : null };
   }
   if (drag.kind !== "draw") return { ...state, hover: hit };
   const gap = drag.free ? gapAt(drag.anchor, state.els, state.ledCount) : { lo: 0, hi: state.ledCount };
@@ -151,6 +194,7 @@ function applyDrag(state: EditorState, hit: Hit): EditorState {
     ...state,
     hover: hit,
     draftRange: drawnRange(drag.anchor, hit.idx, gap),
+    cursor: clamp(hit.idx, gap.lo, gap.hi - 1),
     drag: { kind: "draw", anchor: drag.anchor, free: drag.free, moved: drag.moved || hit.idx !== drag.anchor },
   };
 }
@@ -175,13 +219,17 @@ export function initialEditorState(
   lightId: string,
 ): EditorState {
   return {
+    focus: elements[0] ? { kind: "seg", id: elements[0].id } : { kind: "cursor" },
+    menuOpen: false,
+    keyMoved: false,
+    lastNudge: null,
     els: elements,
     saved: elements,
     sel: elements[0] ? [elements[0].id] : [],
     ledSel: null,
     mode: "select",
     hover: null,
-    cursor: null,
+    cursor: ledCount > 0 ? clamp(elements[0]?.start ?? 0, 0, ledCount - 1) : null,
     markedStart: null,
     drag: null,
     draftRange: null,
@@ -195,18 +243,82 @@ export function initialEditorState(
 }
 
 export function editorReducer(state: EditorState, action: EditorAction): EditorState {
+  // Only consecutive arrows share an undo step. Pointer motion and toast expiry don't split it.
+  if (!["arrow", "hover", "leave", "toast-clear"].includes(action.type)) state = { ...state, lastNudge: null };
   switch (action.type) {
+    case "menu-toggle":
+      return state.ledSel ? { ...state, menuOpen: !state.menuOpen } : state;
+    case "focus-set": {
+      const el = state.els.find((item) => item.id === action.id);
+      if (!el) return state;
+      return { ...state, sel: [el.id], ledSel: null, menuOpen: false, keyMoved: true,
+        mode: "select",
+        focus: action.what === "seg" ? { kind: "seg", id: el.id } : { kind: "edge", id: el.id, which: action.what },
+        cursor: action.what === "end" ? el.stop - 1 : el.start };
+    }
+    case "focus-cycle": {
+      const focus = state.focus;
+      if (focus.kind === "cursor") {
+        const el = state.cursor === null ? null : elementAt(state.cursor, state.els);
+        return el ? editorReducer(state, { type: "focus-set", id: el.id, what: "seg" }) : state;
+      }
+      if (focus.kind === "sel") return state;
+      const cycle = ["seg", "start", "end"] as const;
+      const index = focus.kind === "seg" ? 0 : focus.which === "start" ? 1 : 2;
+      return editorReducer(state, { type: "focus-set", id: focus.id, what: cycle[(index + (action.back ? 2 : 1)) % 3]! });
+    }
+    case "arrow": {
+      if (state.drag || !Number.isFinite(action.delta) || state.ledCount < 1) return state;
+      const base = { ...state, menuOpen: false, keyMoved: true, toast: null };
+      const focus = state.focus;
+      if (focus.kind === "cursor") return { ...base, cursor: clamp((state.cursor ?? 0) + action.delta, 0, state.ledCount - 1) };
+      if (focus.kind === "sel" && state.ledSel) {
+        const range = state.ledSel;
+        const head = range.start < range.anchor ? range.start : range.stop - 1;
+        const limits = state.mode === "range" || elementAt(range.anchor, state.els)
+          ? { lo: 0, hi: state.ledCount } : gapAt(range.anchor, state.els, state.ledCount);
+        const cursor = clamp(head + action.delta, limits.lo, limits.hi - 1);
+        return { ...base, cursor, ledSel: extendLed(range, cursor, limits) };
+      }
+      if (!("id" in focus)) return base;
+      const el = state.els.find((item) => item.id === focus.id);
+      if (!el) return { ...base, focus: { kind: "cursor" } };
+      let els: Element[], cursor: number, toast: string | null = null;
+      if (focus.kind === "edge") {
+        const old = focus.which === "start" ? el.start : el.stop;
+        const result = moveEdge(state.els, el.id, focus.which, old + action.delta, Boolean(action.alt), state.ledCount);
+        els = result.els;
+        cursor = focus.which === "start" ? result.value : result.value - 1;
+        if (result.value === old) {
+          const outward = focus.which === "start" ? action.delta < 0 : action.delta > 0;
+          toast = blockedEdge(el, focus.which, state.els, outward, Boolean(action.alt));
+        }
+      } else {
+        const next = nudgeElement(el, state.els, state.ledCount, action.delta);
+        els = withElement(state, el.id, next);
+        cursor = clamp((state.cursor ?? el.start) + next.start - el.start, next.start, next.stop - 1);
+        if (next.start === el.start) {
+          toast = blockedShift(el, state.els, state.ledCount, action.delta);
+        }
+      }
+      if (rangesEqual(els, state.els)) return { ...base, cursor, toast };
+      const key = focus.kind + el.id + (focus.kind === "edge" ? focus.which + (action.alt ? "a" : "") : "");
+      const at = action.at ?? Date.now();
+      const coalesce = state.lastNudge?.key === key && at - state.lastNudge.at < 1200;
+      return { ...base, els, cursor, toast, fut: [],
+        hist: coalesce ? state.hist : [...state.hist, state.els].slice(-HISTORY), lastNudge: { key, at } };
+    }
     case "cursor-set":
     case "cursor-step": {
       if (state.ledCount < 1) return state;
       const requested = action.type === "cursor-set" ? action.index : (state.cursor ?? 0) + action.delta;
       if (!Number.isFinite(requested)) return state;
       const cursor = Math.max(0, Math.min(state.ledCount - 1, Math.round(requested)));
-      return { ...state, cursor, hover: null, mode: "locate" };
+      return { ...state, cursor, hover: null, focus: { kind: "cursor" }, menuOpen: false, keyMoved: true };
     }
     case "mark-start":
       return state.cursor === null ? state : {
-        ...state, markedStart: state.cursor, ledSel: null, mode: "locate",
+        ...state, markedStart: state.cursor, ledSel: null, focus: { kind: "cursor" }, menuOpen: false,
         toast: `Start marked at LED ${state.cursor}. Move to the last LED, then Mark end.`,
       };
     case "mark-end": {
@@ -218,24 +330,25 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
           stop: Math.max(state.markedStart, state.cursor) + 1,
           anchor: state.markedStart,
         },
-        sel: [], mode: "locate", markedStart: null, toast: null,
+        sel: [], focus: { kind: "sel" }, menuOpen: true, keyMoved: true, markedStart: null, toast: null,
       };
     }
     case "tool": {
-      if (action.mode === "range") return { ...state, mode: "range", sel: [] };
-      if (action.mode === "split") return { ...state, mode: "split", ledSel: null };
-      return { ...state, mode: "select" };
+      return { ...state, mode: action.mode, menuOpen: false,
+        ...(action.mode !== "select" ? { focus: { kind: "cursor" as const }, ledSel: null, sel: [] } : {}) };
     }
     case "snap":
       return { ...state, snap: !state.snap };
     case "hover":
       return state.drag ? state : {
-        ...state, hover: action.hover, cursor: action.hover?.idx ?? state.cursor,
+        ...state, hover: action.hover, keyMoved: false,
+        cursor: state.mode === "locate" ? action.hover?.idx ?? state.cursor : state.cursor,
       };
     case "leave":
       return state.drag ? state : { ...state, hover: null };
     case "down": {
       const hit = action.hit;
+      state = { ...state, menuOpen: false, keyMoved: false, hover: hit, cursor: hit.idx };
       if (state.mode === "locate") return { ...state, hover: hit, cursor: hit.idx };
       if (state.mode === "split") {
         const found = elementAt(hit.idx, state.els);
@@ -253,58 +366,64 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
           return {
             ...state,
             sel: [],
+            focus: { kind: "sel" },
             ledSel: extendLed(state.ledSel, hit.idx, { lo: 0, hi: state.ledCount }),
           };
         }
         return {
           ...state,
           sel: [],
+          focus: { kind: "sel" },
           ledSel: null,
           drag: { kind: "draw", anchor: hit.idx, moved: false, free: false },
           draftRange: { start: hit.idx, stop: hit.idx + 1 },
         };
       }
       const selected = state.sel.length === 1 ? (state.els.find((element) => element.id === state.sel[0]) ?? null) : null;
-      const edge = edgeHit(hit, selected, state.ledCount);
-      if (edge && selected) {
+      const found = elementAt(hit.idx, state.els);
+      if (found && action.shift) {
+        const sel = state.sel.includes(found.id) ? state.sel.filter((id) => id !== found.id) : [...state.sel, found.id];
+        return { ...state, sel, ledSel: null, focus: { kind: "cursor" } };
+      }
+      const ledEdge = found ? edgeAt(hit.idx, found) : null;
+      const edge = ledEdge ?? edgeHit(hit, selected, state.ledCount);
+      const edgeEl = ledEdge ? found : selected;
+      if (edge && edgeEl) {
         return {
           ...state,
-          ledSel: null,
-          drag: { kind: edge, id: selected.id, orig: { ...selected }, pre: state.els },
+          ledSel: null, sel: [edgeEl.id], focus: { kind: "edge", id: edgeEl.id, which: edge },
+          cursor: edge === "start" ? edgeEl.start : edgeEl.stop - 1,
+          drag: { kind: edge, id: edgeEl.id, orig: { ...edgeEl }, pre: state.els, x0: hit.x, moved: false },
         };
       }
-      const found = elementAt(hit.idx, state.els);
       if (found) {
-        if (action.shift) {
-          const sel = state.sel.includes(found.id)
-            ? state.sel.filter((id) => id !== found.id)
-            : [...state.sel, found.id];
-          return { ...state, ledSel: null, sel };
-        }
         return {
           ...state,
           sel: [found.id],
+          focus: { kind: "seg", id: found.id },
           ledSel: null,
-          drag: { kind: "move", id: found.id, anchor: hit.idx, orig: { ...found }, pre: state.els },
+          drag: { kind: "move", id: found.id, anchor: hit.idx, orig: { ...found }, pre: state.els, x0: hit.x, moved: false },
         };
       }
       if (action.shift && state.ledSel) {
         return {
           ...state,
           sel: [],
+          focus: { kind: "sel" },
           ledSel: extendLed(state.ledSel, hit.idx, gapAt(state.ledSel.anchor, state.els, state.ledCount)),
         };
       }
       return {
         ...state,
         sel: [],
+        focus: { kind: "sel" },
         ledSel: null,
         drag: { kind: "draw", anchor: hit.idx, moved: false, free: true },
         draftRange: { start: hit.idx, stop: hit.idx + 1 },
       };
     }
     case "move":
-      return applyDrag(state, action.hit);
+      return applyDrag(state, action.hit, action.alt);
     case "up": {
       const drag = state.drag;
       if (!drag) return state;
@@ -319,6 +438,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
           draftRange: null,
           sel: [],
           ledSel: { ...range, anchor: drag.anchor },
+          focus: { kind: "sel" }, menuOpen: drag.moved,
         };
       }
       const changed = !rangesEqual(drag.pre, state.els);
@@ -339,6 +459,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         sel: state.sel.filter((id) => prev.some((element) => element.id === id)),
         drag: null,
         draftRange: null,
+        ...restoreFocus(state, prev),
       };
     }
     case "redo": {
@@ -350,6 +471,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         fut: state.fut.slice(1),
         hist: [...state.hist, state.els].slice(-HISTORY),
         sel: state.sel.filter((id) => next.some((element) => element.id === id)),
+        ...restoreFocus(state, next),
       };
     }
     case "revert":
@@ -385,10 +507,12 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       }
       return commit(state, result.elements, { sel: [result.id], ledSel: null });
     }
+    case "cut-cursor":
     case "split-half": {
       const element = one(state);
       if (!element || element.stop - element.start < 2) return state;
-      const boundary = element.start + Math.floor((element.stop - element.start) / 2);
+      const boundary = action.type === "cut-cursor" ? state.cursor ?? element.start
+        : element.start + Math.floor((element.stop - element.start) / 2);
       const next = splitElement(state.els, element.id, boundary, nextId);
       if (!next) return state;
       return commit(state, next, {
@@ -453,12 +577,18 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       const ids = state.els
         .filter((element) => element.start < range.stop && element.stop > range.start)
         .map((element) => element.id);
-      return { ...state, sel: ids, ledSel: null };
+      return { ...state, sel: ids, ledSel: null, menuOpen: false,
+        focus: ids.length === 1 ? { kind: "seg", id: ids[0]! } : { kind: "cursor" },
+        cursor: state.els.find((el) => el.id === ids[0])?.start ?? state.cursor };
     }
     case "clear-led":
-      return { ...state, ledSel: null };
-    case "escape":
-      return { ...state, sel: [], ledSel: null, markedStart: null, mode: "select", drag: null, draftRange: null };
+      return { ...state, ledSel: null, menuOpen: false, focus: { kind: "cursor" } };
+    case "escape": {
+      if (state.menuOpen) return { ...state, menuOpen: false };
+      if (state.focus.kind === "edge") return { ...state, focus: { kind: "seg", id: state.focus.id } };
+      return { ...state, sel: [], ledSel: null, markedStart: null, mode: "select", drag: null,
+        draftRange: null, menuOpen: false, focus: { kind: "cursor" } };
+    }
     case "add-gap": {
       const made = fillGap(state.els, { start: action.start, stop: action.stop }, state.lightId, nextId);
       return commit(state, made.elements, { sel: [made.id], ledSel: null });
@@ -471,7 +601,9 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
           ? state.sel.filter((id) => id !== action.id)
           : [...state.sel, action.id]
         : [action.id];
-      return { ...state, sel, ledSel: null };
+      return { ...state, sel, ledSel: null, menuOpen: false, mode: "select", keyMoved: true,
+        focus: action.shift ? { kind: "cursor" } : { kind: "seg", id: action.id },
+        cursor: state.els.find((el) => el.id === action.id)?.start ?? state.cursor };
     }
     case "replace":
       return commit(state, action.elements, {
@@ -497,6 +629,8 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
           draftRange: adopt ? null : state.draftRange,
           hist: adopt ? [] : state.hist,
           fut: adopt ? [] : state.fut,
+          ...restoreFocus(state, action.next, action.ledCount),
+          ...(adopt && state.focus.kind === "sel" ? { focus: { kind: "cursor" as const } } : {}),
         };
       }
       return { ...state, saved: action.next, ledCount: action.ledCount };
@@ -504,6 +638,18 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     default:
       return state;
   }
+}
+
+function restoreFocus(state: EditorState, els: Element[], count = state.ledCount): Partial<EditorState> {
+  const focus = state.focus;
+  const el = "id" in focus ? els.find((item) => item.id === focus.id) : null;
+  return {
+    focus: "id" in focus && !el ? { kind: "cursor" } : focus,
+    cursor: count < 1 ? null : clamp(el && focus.kind === "edge"
+      ? focus.which === "start" ? el.start : el.stop - 1
+      : el && focus.kind === "seg" ? clamp(state.cursor ?? el.start, el.start, el.stop - 1) : state.cursor ?? 0, 0, count - 1),
+    lastNudge: null, menuOpen: false,
+  };
 }
 
 export function useEditorState(elements: Element[], ledCount: number, lightId: string) {
@@ -532,24 +678,31 @@ export function useEditorState(elements: Element[], ledCount: number, lightId: s
       if (event.defaultPrevented) return;
       const target = event.target;
       if (target instanceof HTMLElement && (
-        ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName) || target.isContentEditable
+        ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable
       )) {
         return;
       }
       const key = event.key.toLowerCase();
+      if (target instanceof HTMLElement && target.closest("button") && (key === "enter" || key === " ")) return;
       if ((event.metaKey || event.ctrlKey) && key === "z") {
         event.preventDefault();
         dispatch({ type: event.shiftKey ? "redo" : "undo" });
         return;
       }
       if (event.metaKey || event.ctrlKey) return;
-      if (key === "l") dispatch({ type: "cursor-set", index: state.cursor ?? 0 });
-      else if (state.mode === "locate" && ["arrowleft", "arrowright", "home", "end", "[", "]"].includes(key)) {
+      if (key === "l") dispatch({ type: "tool", mode: "locate" });
+      else if (["home", "end", "[", "]"].includes(key)) {
         event.preventDefault();
         if (key === "[") dispatch({ type: "mark-start" });
         else if (key === "]") dispatch({ type: "mark-end" });
         else if (key === "home" || key === "end") dispatch({ type: "cursor-set", index: key === "home" ? 0 : state.ledCount - 1 });
-        else dispatch({ type: "cursor-step", delta: (key === "arrowleft" ? -1 : 1) * (event.shiftKey ? 10 : 1) });
+      }
+      else if (key === "tab" && !(target instanceof HTMLElement && target.closest("a, [role='dialog']"))) {
+        if (state.focus.kind === "seg" || state.focus.kind === "edge" ||
+          (state.focus.kind === "cursor" && state.cursor !== null && elementAt(state.cursor, state.els))) {
+          event.preventDefault();
+          dispatch({ type: "focus-cycle", back: event.shiftKey });
+        }
       }
       else if (key === "v") dispatch({ type: "tool", mode: "select" });
       else if (key === "r") {
@@ -559,7 +712,7 @@ export function useEditorState(elements: Element[], ledCount: number, lightId: s
       } else if (key === "n" || key === "enter") {
         if (state.ledSel) {
           event.preventDefault();
-          dispatch({ type: "new-from-sel" });
+          dispatch({ type: key === "n" ? "new-from-sel" : "menu-toggle" });
         }
       } else if (key === "d") dispatch({ type: "duplicate" });
       else if (key === "s") dispatch({ type: "split-half" });
@@ -571,17 +724,12 @@ export function useEditorState(elements: Element[], ledCount: number, lightId: s
         dispatch({ type: "escape" });
       } else if (key === "arrowleft" || key === "arrowright") {
         event.preventDefault();
-        const delta = key === "arrowleft" ? -1 : 1;
-        if (event.altKey) {
-          dispatch({ type: "nudge", delta, which: event.shiftKey ? "start" : "end" });
-        } else {
-          dispatch({ type: "nudge", delta: delta * (event.shiftKey ? 10 : 1) });
-        }
+        dispatch({ type: "arrow", delta: (key === "arrowleft" ? -1 : 1) * (event.shiftKey ? 10 : 1), alt: event.altKey });
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [state.mode, state.ledSel, state.cursor, state.ledCount]);
+  }, [state.mode, state.ledSel, state.cursor, state.ledCount, state.focus, state.els]);
 
   useEffect(() => {
     if (!state.toast) return;

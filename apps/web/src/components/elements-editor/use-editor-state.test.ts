@@ -9,6 +9,150 @@ function door(start = 10, stop = 20): Element {
 }
 
 describe("editor reducer", () => {
+  function hit(index: number) {
+    const row = Math.floor(index / 100);
+    return hitFromSvg(boundaryX(index, row) + 4.6, beadCenterY(row), 100);
+  }
+  function click(index: number, state = initialEditorState([door()], 100, "l")) {
+    return editorReducer(editorReducer(state, { type: "down", hit: hit(index), shift: false }), { type: "up" });
+  }
+
+  it("focuses an edge LED and moves the boundary and cursor together", () => {
+    let state = click(19);
+    expect(state.focus).toEqual({ kind: "edge", id: "a", which: "end" });
+    expect(state.els).toEqual([door()]);
+    state = editorReducer(state, { type: "arrow", delta: 1 });
+    expect(state.els[0]?.stop).toBe(21);
+    expect(state.cursor).toBe(20);
+    expect(state.menuOpen).toBe(false);
+  });
+
+  it("shifts a body and grows or shrinks a free selection from its anchor", () => {
+    let state = editorReducer(click(15), { type: "arrow", delta: 3 });
+    expect(state.els[0]).toMatchObject({ start: 13, stop: 23 });
+    expect(state.cursor).toBe(18);
+    state = click(30, state);
+    expect(state.menuOpen).toBe(false);
+    state = editorReducer(state, { type: "arrow", delta: 3 });
+    expect(state.ledSel).toEqual({ start: 30, stop: 34, anchor: 30 });
+    state = editorReducer(state, { type: "arrow", delta: -5 });
+    expect(state.ledSel).toEqual({ start: 28, stop: 31, anchor: 30 });
+    expect(state.cursor).toBe(28);
+  });
+
+  it("cycles focus in both directions and escapes one level at a time", () => {
+    let state = click(15);
+    state = editorReducer(state, { type: "focus-cycle" });
+    expect(state.focus).toEqual({ kind: "edge", id: "a", which: "start" });
+    state = editorReducer(state, { type: "focus-cycle" });
+    expect(state.focus).toEqual({ kind: "edge", id: "a", which: "end" });
+    state = editorReducer(state, { type: "focus-cycle" });
+    expect(state.focus.kind).toBe("seg");
+    state = editorReducer(state, { type: "focus-cycle", back: true });
+    expect(state.focus).toEqual({ kind: "edge", id: "a", which: "end" });
+    state = editorReducer(state, { type: "escape" });
+    expect(state.focus.kind).toBe("seg");
+    state = editorReducer(state, { type: "escape" });
+    expect(state.focus.kind).toBe("cursor");
+    expect(state.sel).toEqual([]);
+  });
+
+  it("coalesces consecutive arrows, but splits undo at a new target, edit, or timeout", () => {
+    let state = click(19);
+    for (let i = 0; i < 5; i++) state = editorReducer(state, { type: "arrow", delta: 1, at: 100 + i * 100 });
+    expect(state.hist).toHaveLength(1);
+    expect(editorReducer(state, { type: "undo" }).els).toEqual([door()]);
+    state = editorReducer(state, { type: "arrow", delta: 1, at: 1800 });
+    expect(state.hist).toHaveLength(2);
+    state = editorReducer(state, { type: "focus-set", id: "a", what: "start" });
+    state = editorReducer(state, { type: "arrow", delta: 1, at: 1900 });
+    expect(state.hist).toHaveLength(3);
+    state = editorReducer(state, { type: "label", value: "Renamed" });
+    state = editorReducer(state, { type: "arrow", delta: 1, at: 2000 });
+    expect(state.hist).toHaveLength(5);
+  });
+
+  it("keeps edge clicks under the drag threshold unchanged", () => {
+    let state = initialEditorState([door()], 100, "l");
+    const down = hit(19);
+    state = editorReducer(state, { type: "down", hit: down, shift: false });
+    state = editorReducer(state, { type: "move", hit: { ...down, x: down.x + 3, b: 21 } });
+    state = editorReducer(state, { type: "up" });
+    expect(state.els).toEqual([door()]);
+    expect(state.hist).toHaveLength(0);
+  });
+
+  it("uses the same shared-edge operation for drags and Alt detaching", () => {
+    let state = initialEditorState([door(), { ...door(20, 30), id: "b", label: "Eave" }], 100, "l");
+    state = editorReducer(state, { type: "down", hit: hit(19), shift: false });
+    state = editorReducer(state, { type: "move", hit: { ...hit(24), b: 24 } });
+    expect(state.els.map((el) => [el.start, el.stop])).toEqual([[10, 24], [24, 30]]);
+    expect(state.cursor).toBe(23);
+    state = editorReducer(state, { type: "move", hit: { ...hit(17), b: 17 }, alt: true });
+    expect(state.els.map((el) => [el.start, el.stop])).toEqual([[10, 17], [20, 30]]);
+    state = editorReducer(state, { type: "up" });
+    expect(state.hist).toHaveLength(1);
+  });
+
+  it("opens options on drag release and Enter, and Escape closes before clearing", () => {
+    let state = click(30);
+    expect(state.menuOpen).toBe(false);
+    state = editorReducer(state, { type: "menu-toggle" });
+    expect(state.menuOpen).toBe(true);
+    state = editorReducer(state, { type: "escape" });
+    expect(state.ledSel).not.toBeNull();
+    expect(state.menuOpen).toBe(false);
+    state = editorReducer(state, { type: "down", hit: hit(30), shift: false });
+    state = editorReducer(state, { type: "move", hit: hit(35) });
+    state = editorReducer(state, { type: "up" });
+    expect(state.menuOpen).toBe(true);
+    expect(state.ledSel).toMatchObject({ start: 30, stop: 36 });
+  });
+
+  it("keeps hover separate from focus unless Locate is active", () => {
+    let state = click(15);
+    state = editorReducer(state, { type: "hover", hover: hit(70) });
+    expect(state.cursor).toBe(15);
+    state = editorReducer(state, { type: "tool", mode: "locate" });
+    state = editorReducer(state, { type: "hover", hover: hit(70) });
+    expect(state.cursor).toBe(70);
+    expect(state.focus.kind).toBe("cursor");
+    expect(state.els).toEqual([door()]);
+  });
+
+  it("supports arrows after a button click, Enter options, Tab, and Shift stepping", () => {
+    const { result } = renderHook(() => useEditorState([door()], 100, "l"));
+    const button = document.createElement("button");
+    document.body.appendChild(button);
+    act(() => {
+      button.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, shiftKey: true }));
+    });
+    expect(result.current.state.els[0]).toMatchObject({ start: 20, stop: 30 });
+    act(() => button.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true })));
+    expect(result.current.state.focus).toMatchObject({ kind: "edge", which: "start" });
+    button.remove();
+  });
+
+  it("explains blocked shared edges without creating an undo step", () => {
+    let state = click(19, initialEditorState([door(), { ...door(20, 21), id: "b", label: "Gable" }], 100, "l"));
+    state = editorReducer(state, { type: "arrow", delta: 1 });
+    expect(state.toast).toBe("Gable can't get shorter than 1 LED");
+    expect(state.hist).toHaveLength(0);
+    state = editorReducer(state, { type: "arrow", delta: 1, alt: true });
+    expect(state.toast).toContain("Let go of Alt / ⌥");
+    expect(state.hist).toHaveLength(0);
+  });
+
+  it("falls back when undo removes the focused Segment and clamps the cursor on a length change", () => {
+    let state = click(35);
+    state = editorReducer(state, { type: "new-from-sel" });
+    expect(state.focus.kind).toBe("seg");
+    state = editorReducer(state, { type: "undo" });
+    expect(state.focus.kind).toBe("cursor");
+    state = editorReducer(state, { type: "server", previous: state.saved, next: [door(0, 5)], ledCount: 5, lengthChanged: true });
+    expect(state.cursor).toBe(4);
+  });
+
   it("keeps the cursor after leaving and locates without changing ranges", () => {
     let state = initialEditorState([door()], 30, "l");
     state = editorReducer(state, { type: "cursor-set", index: 12 });

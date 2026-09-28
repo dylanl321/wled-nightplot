@@ -10,6 +10,9 @@ import {
   drawnRange,
   duplicateElement,
   edgeHit,
+  edgeAt,
+  neighbourAt,
+  moveEdge,
   extendOk,
   gapAt,
   gaps,
@@ -33,6 +36,38 @@ function ids(): () => string {
 }
 
 describe("element editor ops", () => {
+  it("recognizes boundary LEDs and prefers the end of a one-LED Segment", () => {
+    expect(edgeAt(10, el("a", 10, 20))).toBe("start");
+    expect(edgeAt(19, el("a", 10, 20))).toBe("end");
+    expect(edgeAt(15, el("a", 10, 20))).toBeNull();
+    expect(edgeAt(10, el("a", 10, 11))).toBe("end");
+  });
+
+  it("moves shared edges in both directions and leaves at least one LED on either side", () => {
+    const els = [el("a", 0, 10), el("b", 10, 20)];
+    expect(neighbourAt(els[0]!, "end", els)?.id).toBe("b");
+    const right = moveEdge(els, "a", "end", 99, false, 30);
+    expect(right.value).toBe(19);
+    expect(right.els.map(({ start, stop }) => [start, stop])).toEqual([[0, 19], [19, 20]]);
+    const left = moveEdge(els, "b", "start", -99, false, 30);
+    expect(left.value).toBe(1);
+    expect(left.els.map(({ start, stop }) => [start, stop])).toEqual([[0, 1], [1, 20]]);
+    expect(els).toEqual([el("a", 0, 10), el("b", 10, 20)]);
+  });
+
+  it("detaches without moving the neighbour and clamps at neighbours and strip ends", () => {
+    const els = [el("a", 0, 10), el("b", 10, 20)];
+    expect(moveEdge(els, "a", "end", 11, true, 30).value).toBe(10);
+    const detached = moveEdge(els, "a", "end", 8, true, 30);
+    expect(detached.els[1]).toEqual(els[1]);
+    expect(detached.nb).toBeNull();
+    expect(detached.value).toBe(8);
+    expect(moveEdge(els, "a", "start", -1, false, 30).value).toBe(0);
+    expect(moveEdge(els, "b", "end", 99, false, 30).value).toBe(30);
+    expect(moveEdge(els, "b", "start", 8, true, 30).value).toBe(10);
+    expect(moveEdge([el("a", 0, 1), el("b", 1, 2)], "a", "end", 2, false, 2).value).toBe(1);
+  });
+
   it("splits a range into per-row pieces", () => {
     expect(pieces(90, 130)).toEqual([
       { r: 0, a: 90, b: 100 },

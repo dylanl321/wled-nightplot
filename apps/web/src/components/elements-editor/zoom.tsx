@@ -3,7 +3,7 @@
 import type { Element } from "@nightplot/shared";
 import type { IssueWord } from "./ops";
 
-const BEADS = 25;
+const BEADS = 31;
 const PITCH = 34;
 
 export function StripZoom({
@@ -24,15 +24,15 @@ export function StripZoom({
   caption: string;
 }) {
   const width = BEADS * PITCH;
-  const first = Math.round(focus) - 12;
-  const cy = 40;
+  const first = Math.round(focus) - 15;
+  const cy = 34;
   return (
-    <div className="flex flex-col gap-2.5 rounded-[14px] border border-border bg-card px-4 py-3.5">
+    <div className="flex flex-col gap-2.5 rounded-b-[14px] border-t border-border bg-[#0a0b0e] px-5 pt-2.5 pb-3.5">
       <div className="flex items-center gap-2.5 text-[12px] text-muted-foreground">
         <span className="text-[13px] font-medium text-foreground">Zoom</span>
         <span>{caption}</span>
       </div>
-      <svg viewBox={`0 0 ${width} 92`} width="100%" role="img" aria-label="Zoomed LEDs" style={{ display: "block", height: "auto" }}>
+      <svg viewBox={`0 0 ${width} 72`} width="100%" role="img" aria-label="Zoomed LEDs" style={{ display: "block", height: "auto" }}>
         <rect x="0" y={cy - 7} width={width} height="14" rx="2" fill="#171a21" stroke="#2a2e38" strokeWidth="0.8" />
         {Array.from({ length: BEADS }, (_, offset) => {
           const index = first + offset;
@@ -53,7 +53,7 @@ export function StripZoom({
               ) : null}
               <text
                 x={x + PITCH / 2}
-                y="78"
+                y="67"
                 fontSize="11"
                 textAnchor="middle"
                 fill={focused ? "#ece7dc" : "#9a9488"}

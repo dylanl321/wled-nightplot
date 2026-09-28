@@ -1,16 +1,16 @@
-import { useReducer, useState } from "react";
+import { useState } from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CursorControls } from "./cursor-controls";
-import { editorReducer, initialEditorState } from "./use-editor-state";
+import { useEditorState } from "./use-editor-state";
 
 function Harness() {
-  const [state, dispatch] = useReducer(editorReducer, initialEditorState([], 12, "l"));
+  const { state, dispatch } = useEditorState([], 12, "l");
   const [live, setLive] = useState(false);
-  return <CursorControls state={state} dispatch={dispatch} live={live} blocked={false} onPreview={() => setLive(true)} />;
+  return <><CursorControls state={state} dispatch={dispatch} live={live} blocked={false} onPreview={() => setLive(true)} /><output aria-label="Selected LEDs">{state.ledSel ? `${state.ledSel.start}â€“${state.ledSel.stop}` : "none"}</output></>;
 }
 
-function cursor() { return (screen.getByRole("slider", { name: "Strip cursor" }) as HTMLInputElement).value; }
+function cursor() { return (screen.getByRole("textbox", { name: "Cursor LED" }) as HTMLInputElement).value; }
 async function tick(ms = 334) { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); }
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -19,7 +19,7 @@ describe("cursor navigation", () => {
   it("scans without hover, pauses, changes direction and stops at the end", async () => {
     vi.useFakeTimers();
     render(<Harness />);
-    fireEvent.click(screen.getByRole("button", { name: "Auto-scan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Scan" }));
     await tick();
     expect(cursor()).toBe("1");
     fireEvent.mouseLeave(screen.getByRole("region"));
@@ -28,20 +28,20 @@ describe("cursor navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Pause scan" }));
     await tick(1000);
     expect(cursor()).toBe("2");
-    fireEvent.change(screen.getByLabelText("Scan direction"), { target: { value: "-1" } });
-    fireEvent.change(screen.getByLabelText("Scan speed"), { target: { value: "10" } });
-    fireEvent.click(screen.getByRole("button", { name: "Auto-scan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Scan direction: forward" }));
+    fireEvent.click(screen.getByRole("button", { name: "10 LEDs/s" }));
+    fireEvent.click(screen.getByRole("button", { name: "Scan" }));
     await tick(100);
     expect(cursor()).toBe("1");
     await tick(100);
     expect(cursor()).toBe("0");
-    expect((screen.getByRole("button", { name: "Auto-scan" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Scan" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("pauses on tab hiding and targeted All Off without automatically restarting", async () => {
     vi.useFakeTimers();
     render(<Harness />);
-    fireEvent.click(screen.getByRole("button", { name: "Auto-scan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Scan" }));
     await tick();
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
     fireEvent(document, new Event("visibilitychange"));
@@ -51,7 +51,7 @@ describe("cursor navigation", () => {
     fireEvent(document, new Event("visibilitychange"));
     await tick();
     expect(cursor()).toBe("1");
-    fireEvent.click(screen.getByRole("button", { name: "Auto-scan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Scan" }));
     fireEvent(window, new CustomEvent("nightplot:all-off", { detail: { lightIds: ["other"] } }));
     await tick();
     expect(cursor()).toBe("2");
@@ -68,7 +68,6 @@ describe("cursor navigation", () => {
     fireEvent.keyDown(panel, { key: "[" });
     fireEvent.keyDown(panel, { key: "ArrowLeft" });
     fireEvent.keyDown(panel, { key: "]" });
-    expect(screen.getByText(/Selected LEDs 9–10/)).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Create Segment" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByLabelText("Selected LEDs").textContent).toBe("9â€“11");
   });
 });

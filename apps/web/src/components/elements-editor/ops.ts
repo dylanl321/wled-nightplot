@@ -144,6 +144,41 @@ export function elementAt(index: number, elements: readonly Element[]): Element 
   return elements.find((element) => index >= element.start && index < element.stop) ?? null;
 }
 
+export function edgeAt(index: number, element: Element): "start" | "end" | null {
+  if (element.stop <= element.start) return null;
+  if (index === element.stop - 1) return "end";
+  return index === element.start ? "start" : null;
+}
+
+export function neighbourAt(
+  element: Element, which: "start" | "end", elements: readonly Element[],
+): Element | null {
+  return elements.find((other) => other.id !== element.id && other.stop > other.start &&
+    (which === "start" ? other.stop === element.start : other.start === element.stop)) ?? null;
+}
+
+/** Shared boundaries remain touching; Alt detaches and uses ordinary free-space bounds. */
+export function moveEdge(
+  elements: readonly Element[], id: string, which: "start" | "end",
+  target: number, detach: boolean, ledCount: number,
+): { els: Element[]; value: number; nb: Element | null } {
+  const element = elements.find((item) => item.id === id);
+  if (!element) return { els: [...elements], value: target, nb: null };
+  const nb = detach ? null : neighbourAt(element, which, elements);
+  const { lo, hi } = bounds(element, elements, ledCount);
+  const value = which === "start"
+    ? clamp(target, nb ? Math.max(0, nb.start + 1) : lo, Math.min(ledCount, element.stop - 1))
+    : clamp(target, Math.max(0, element.start + 1), nb ? Math.min(ledCount, nb.stop - 1) : hi);
+  return {
+    value, nb,
+    els: elements.map((item) => item.id === id
+      ? { ...item, [which === "start" ? "start" : "stop"]: value }
+      : item.id === nb?.id
+        ? { ...item, [which === "start" ? "stop" : "start"]: value }
+        : item),
+  };
+}
+
 export function hits(elements: readonly Element[], range: Range): Element[] {
   return elements.filter((element) => element.start < range.stop && element.stop > range.start);
 }

@@ -7,6 +7,8 @@ import {
   boundaryX,
   clientToSvg,
   edgeHit,
+  edgeAt,
+  neighbourAt,
   elementAt,
   LOCATE_OFF,
   pieces,
@@ -79,7 +81,7 @@ export function StripEditor({
     state.sel.length === 1 ? (state.els.find((element) => element.id === state.sel[0]) ?? null) : null;
   const cursor = stripCursor(state, count);
   const menu =
-    state.ledSel && !state.drag
+    state.menuOpen && state.ledSel && !state.drag
       ? selectionFacts(state.els, state.ledSel)
       : null;
 
@@ -118,16 +120,18 @@ export function StripEditor({
           if (event.button !== 0) return;
           const hit = atEvent(event);
           if (!hit) return;
+          if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
           event.currentTarget.setPointerCapture(event.pointerId);
           dispatch({ type: "down", hit, shift: event.shiftKey });
         }}
         onPointerMove={(event) => {
           const hit = atEvent(event);
           if (!hit) return;
-          if (state.drag) dispatch({ type: "move", hit });
+          if (state.drag) dispatch({ type: "move", hit, alt: event.altKey });
           else dispatch({ type: "hover", hover: hit });
         }}
         onPointerUp={() => dispatch({ type: "up" })}
+        onPointerCancel={() => dispatch({ type: "up" })}
         onPointerLeave={() => dispatch({ type: "leave" })}
       >
         <defs>
@@ -277,20 +281,27 @@ export function StripEditor({
               const row = Math.floor((edge === "end" ? Math.max(boundary - 1, selected.start) : boundary) / STRIP.per);
               const x = boundaryX(boundary, row);
               const y = beadCenterY(row);
-              const active = state.drag && state.drag.kind === edge;
+              const active = state.focus.kind === "edge" && state.focus.id === selected.id && state.focus.which === edge;
+              const shared = active && neighbourAt(selected, edge, state.els);
               const hue = issueWord(selected.id) ? "#e07070" : (hues[selected.id] ?? "#d4a574");
               return (
+                <g key={edge}>
                 <rect
-                  key={edge}
-                  x={x - 3}
-                  y={y - 14}
-                  width="6"
-                  height="28"
+                  x={x - (active ? 4 : 3)}
+                  y={y - (active ? 17 : 14)}
+                  width={active ? 8 : 6}
+                  height={active ? 34 : 28}
                   rx="3"
                   fill={active ? "#ece7dc" : hue}
                   stroke="#0c0d10"
                   strokeWidth="1.5"
                 />
+                {active || state.focus.kind === "seg" ? <>
+                  {(active || edge === "start") ? <text x={x - 9} y={y + 4.5} textAnchor="middle" fill={active ? "#ece7dc" : hue} fontSize="14" fontWeight="700">‹</text> : null}
+                  {(active || edge === "end") ? <text x={x + 9} y={y + 4.5} textAnchor="middle" fill={active ? "#ece7dc" : hue} fontSize="14" fontWeight="700">›</text> : null}
+                </> : null}
+                {shared ? <text x={x + 10} y={y - 20} fill="#ece7dc" fontSize="9.5" fontWeight="600">shared</text> : null}
+                </g>
               );
             })
           : null}
@@ -363,7 +374,14 @@ export function StripEditor({
             </g>
           );
         })}
-        {state.hover ? <Playhead state={state} count={count} /> : null}
+        {state.cursor !== null ? <Playhead index={state.cursor} count={count} /> : null}
+        {state.hover && !state.keyMoved && !state.drag && state.mode !== "locate" && state.mode !== "split" && (state.cursor === null || Math.abs(state.hover.idx - state.cursor) > 4)
+          ? <Playhead index={state.hover.idx} count={count} ghost /> : null}
+        {state.hover && state.mode === "split" && !state.drag ? <Playhead index={state.hover.b} count={count} cut /> : null}
+        {state.markedStart !== null ? (() => {
+          const row = Math.floor(state.markedStart / STRIP.per), x = boundaryX(state.markedStart, row), y = beadCenterY(row);
+          return <g><path d={`M${x} ${y + 15}V${y - 20}l10 4-10 4`} fill="#d4a574" stroke="#d4a574" /><text x={x + 13} y={y - 13} fill="#d4a574" fontSize="10">start</text></g>;
+        })() : null}
       </svg>
       {menu && state.ledSel && menuStyle ? (
         <LedMenu
@@ -379,58 +397,16 @@ export function StripEditor({
   );
 }
 
-function Playhead({ state, count }: { state: EditorState; count: number }) {
-  const hover = state.hover;
-  if (!hover) return null;
-  const cutting = state.mode === "split" || state.drag?.kind === "start" || state.drag?.kind === "end";
-  const drag = state.drag;
-  const dragEl = drag && drag.kind !== "draw" ? state.els.find((element) => element.id === drag.id) : null;
-  const value =
-    state.drag?.kind === "start" && dragEl
-      ? dragEl.start
-      : state.drag?.kind === "end" && dragEl
-        ? dragEl.stop
-        : cutting
-          ? hover.b
-          : hover.idx;
-  const row = cutting
-    ? Math.floor(((state.drag?.kind === "end" ? value - 1 : value) as number) / STRIP.per)
-    : hover.r;
-  const safeRow = Math.max(0, Math.min(row, Math.ceil(count / STRIP.per) - 1));
-  const x = cutting ? boundaryX(value, safeRow) : boundaryX(hover.idx, hover.r) + STRIP.pitch / 2;
-  const top = rowTop(safeRow);
-  const text = `${state.mode === "split" && !state.drag ? "cut " : ""}${value}`;
-  const width = 10 + text.length * 6.2;
-  const cut = state.mode === "split" && !state.drag;
-  return (
-    <g>
-      <line
-        x1={x}
-        y1={top + 16}
-        x2={x}
-        y2={top + 62}
-        stroke={cut ? "#e07070" : "#ece7dc"}
-        strokeOpacity="0.7"
-        strokeWidth="1"
-        strokeDasharray={cutting ? "3 2" : undefined}
-      />
-      {cutting ? null : (
-        <circle cx={x} cy={beadCenterY(hover.r)} r={STRIP.pitch * 0.62} fill="none" stroke="#ece7dc" strokeWidth="1.2" />
-      )}
-      <rect x={x - width / 2} y={top + 64} width={width} height="14" rx="7" fill={cut ? "#e07070" : "#ece7dc"} />
-      <text
-        x={x}
-        y={top + 74.5}
-        fontSize="10"
-        textAnchor="middle"
-        fill="#0c0d10"
-        fontFamily="IBM Plex Mono, monospace"
-        fontWeight="500"
-      >
-        {text}
-      </text>
-    </g>
-  );
+function Playhead({ index, count, ghost = false, cut = false }: { index: number; count: number; ghost?: boolean; cut?: boolean }) {
+  const row = Math.max(0, Math.min(Math.floor(index / STRIP.per), Math.ceil(count / STRIP.per) - 1));
+  const x = boundaryX(index, row) + (cut ? 0 : STRIP.pitch / 2);
+  const top = rowTop(row), text = `${cut ? "cut " : ""}${index}`, width = 10 + text.length * 6.2;
+  return <g data-testid={cut ? "cut-marker" : ghost ? "hover-marker" : "cursor-marker"}>
+    <line x1={x} y1={top + 16} x2={x} y2={top + 62} stroke={cut ? "#e07070" : "#ece7dc"} strokeOpacity={ghost ? 0.28 : 0.7} strokeWidth="1" strokeDasharray={cut ? "3 2" : undefined} />
+    {!cut ? <circle cx={x} cy={beadCenterY(row)} r={STRIP.pitch * 0.68} fill="none" stroke="#ece7dc" strokeOpacity={ghost ? 0.4 : 1} strokeWidth="1.2" /> : null}
+    <rect x={x - width / 2} y={top + 64} width={width} height="14" rx="7" fill={cut ? "#e07070" : ghost ? "#2f3542" : "#ece7dc"} />
+    <text x={x} y={top + 74.5} fontSize="10" textAnchor="middle" fill={ghost ? "#ece7dc" : "#0c0d10"} fontFamily="IBM Plex Mono, monospace" fontWeight="500">{text}</text>
+  </g>;
 }
 
 function LedMenu({
@@ -545,7 +521,9 @@ function stripCursor(state: EditorState, ledCount: number): string {
   const selected =
     state.sel.length === 1 ? (state.els.find((element) => element.id === state.sel[0]) ?? null) : null;
   if (edgeHit(state.hover, selected, ledCount)) return "ew-resize";
-  if (elementAt(state.hover.idx, state.els)) return "grab";
+  const found = elementAt(state.hover.idx, state.els);
+  if (found && edgeAt(state.hover.idx, found)) return "ew-resize";
+  if (found) return "grab";
   return "crosshair";
 }
 

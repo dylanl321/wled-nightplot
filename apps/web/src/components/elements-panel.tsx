@@ -22,15 +22,16 @@ import { ElementInspector } from "@/components/elements-editor/inspector";
 import { CursorControls } from "@/components/elements-editor/cursor-controls";
 import {
   assignHues,
-  beadCenterY,
-  boundaryX,
   elementAt,
   gapAt,
+  gaps,
+  edgeAt,
   issueWord,
   ordinal,
-  STRIP,
   type IssueWord,
 } from "@/components/elements-editor/ops";
+import { KeysBar } from "@/components/elements-editor/keys-bar";
+import { EditorPopover } from "@/components/elements-editor/popover";
 import { StripEditor } from "@/components/elements-editor/strip-editor";
 import {
   useEditorState,
@@ -81,14 +82,7 @@ export function ElementsPanel({
   const [backgroundPercent, setBackgroundPercent] = useState(35);
   const [hues, setHues] = useState<Record<string, string>>({});
   const unreachable = light.reachability === "no-answer";
-  const cursorRow = Math.floor((state.cursor ?? 0) / STRIP.per);
-  const viewState: EditorState = state.hover || state.cursor === null ? state : {
-    ...state,
-    hover: {
-      idx: state.cursor, b: state.cursor, r: cursorRow,
-      x: boundaryX(state.cursor, cursorRow) + STRIP.pitch / 2, y: beadCenterY(cursorRow),
-    },
-  };
+  const [scanning, setScanning] = useState<1 | -1 | null>(null);
 
   useEffect(() => {
     setHues(readHues(light.id));
@@ -133,8 +127,8 @@ export function ElementsPanel({
     enabled: live && !unreachable,
     lightName: light.name,
     ledCount: light.ledCount,
-    hoverIndex: viewState.hover?.idx ?? null,
-    dragging: state.drag !== null,
+    hoverIndex: locateMode === "cursor" && state.focus.kind === "sel" ? null : state.cursor,
+    dragging: state.drag?.kind === "draw",
     drawing: drawingRange(state),
     ledSel: state.ledSel,
     element: one,
@@ -175,8 +169,8 @@ export function ElementsPanel({
   const showDrift =
     !applyFailed && !segmentsUnknown && !unreachable && rangeDriftPresent(display);
   const bannerOwnsReason = segmentsUnknown || (unreachable && !applyFailed && !showDrift);
-  const read = describe(viewState);
-  const zoom = zoomFocus(viewState, one);
+  const read = describe(state, light.spacingMm, scanning);
+  const zoom = zoomFocus(state);
   const wordFor = (id: string): IssueWord | undefined =>
     issueWord(issues.find((issue) => issue.elementId === id || issue.otherId === id)?.code);
   const issuesFor = (id: string): RangeIssue[] =>
@@ -294,32 +288,7 @@ export function ElementsPanel({
         </div>
       ) : null}
 
-      <EditorToolbar
-        state={state}
-        dispatch={dispatch}
-        live={live && !unreachable}
-        liveDisabled={unreachable}
-        liveReason={liveReason}
-        locateMode={locateMode}
-        onLocateMode={setLocateMode}
-        onLive={toggleLive}
-      />
-
-      <CursorControls state={state} dispatch={dispatch} live={live}
-        blocked={unreachable || Boolean(locate.error) || locate.stopping}
-        onPreview={() => setLive(true)} />
-
-      {locateMode === "hold" ? (
-        <label className="flex flex-wrap items-center gap-3 text-[13px]">
-          <span>Background brightness</span>
-          <input type="range" min={0} max={100} step={5} value={backgroundPercent}
-            aria-label="Background brightness" aria-valuetext={`${backgroundPercent}%`}
-            onChange={(event) => setBackgroundPercent(Number(event.target.value))}
-            className="min-w-36 flex-1 accent-[#d4a574]" />
-          <output className="w-10 font-mono">{backgroundPercent}%</output>
-          <span className="text-muted-foreground">Preview only · cursor stays bright</span>
-        </label>
-      ) : null}
+      <EditorToolbar state={state} dispatch={dispatch} />
 
       {locate.error ? (
         <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/50 px-4 py-3 text-[13px]">
@@ -332,36 +301,37 @@ export function ElementsPanel({
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-3 rounded-[14px] border border-border bg-card px-5 pt-3.5 pb-3">
-        <div className="flex min-h-7 items-center gap-3">
-          <span
-            className={cn(
-              "inline-flex h-7 min-w-[74px] items-center justify-center rounded-md px-2.5 font-mono text-[14px] font-medium",
-              read.hot ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground",
-            )}
-          >
-            {read.chip}
-          </span>
-          <span className="text-[14px] text-[#c9c3b8]">{read.text}</span>
-          <span className={cn("ml-auto text-[12px]", live && !unreachable && !locate.error && !locate.stopping ? "text-online" : "text-muted-foreground")}>
-            {locate.stopping
-              ? "Ending Preview…"
-              : locate.error
-              ? "Preview not confirmed"
-              : live && !unreachable
-              ? (frame?.caption ?? "Preview on · pick something to light")
-              : "Off · the strip keeps its look"}
-            {live && !locate.error && !locate.stopping && detail.session?.kind === "preview" && detail.liveCaption ? (
-              <span className="mt-0.5 block">{detail.liveCaption}</span>
-            ) : null}
-          </span>
+      <div className="rounded-[14px] border border-border bg-card">
+        <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3">
+          <span className={cn("inline-flex h-7 min-w-[74px] items-center justify-center rounded-md px-2.5 font-mono text-[14px] font-medium", read.hot ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground")}>{read.chip}</span>
+          <span className="min-w-0 flex-1 text-[13px] text-[#c9c3b8]">{read.text}</span>
+          <div className="ml-auto flex flex-wrap items-center gap-3 text-[12px]">
+            <Switch on={live && !unreachable} label="Light on strip" tone="online" disabled={unreachable} title={liveReason ?? undefined} onClick={toggleLive} />
+            {live && !unreachable ? <EditorPopover label={locateMode === "hold" ? `Segments ${backgroundPercent}% · cursor bright` : "Cursor only"} className="border-[#1f4a45] text-online">
+              <div role="radiogroup" aria-label="Preview lighting" className="flex flex-col gap-3">
+                {(["cursor", "hold"] as const).map((mode) => <label key={mode} className="flex items-start gap-2 text-[13px]">
+                  <input type="radio" name={`preview-mode-${light.id}`} checked={locateMode === mode} onChange={() => setLocateMode(mode)} className="mt-1 accent-[#7ee0d0]" />
+                  <span>{mode === "cursor" ? "Cursor only" : "Segments stay lit"}<span className="mt-0.5 block text-[12px] text-muted-foreground">{mode === "cursor" ? "Only the cursor or selection lights." : "Every Segment glows in its colour."}</span></span>
+                </label>)}
+              </div>
+              {locateMode === "hold" ? <label className="mt-4 flex flex-wrap items-center gap-2 text-[12px]">
+                <span className="flex-1">Segment brightness</span><output className="font-mono">{backgroundPercent}%</output>
+                <input type="range" min={0} max={100} step={5} value={backgroundPercent} aria-label="Segment brightness" aria-valuetext={`${backgroundPercent}%`} onChange={(event) => setBackgroundPercent(Number(event.target.value))} className="w-full accent-[#d4a574]" />
+              </label> : null}
+              <p className="mt-3 border-t border-border pt-3 text-[12px] leading-relaxed text-muted-foreground">This is a Preview. Nothing is saved, and turning it off restores the previous look.</p>
+            </EditorPopover> : null}
+          </div>
+          {locate.stopping || locate.error || (live && detail.liveCaption) ? <p role="status" className="basis-full text-[12px] text-muted-foreground">
+            {locate.stopping ? "Ending Preview…" : locate.error ? "Preview not confirmed" : detail.liveCaption}
+          </p> : null}
         </div>
+        <div className="px-5 pt-4 pb-2">
         <StripEditor
           svgId={`light-${light.id}`}
           label={`${light.name} strip, ${light.ledCount} LEDs, ${light.stripBead === "rgbw" ? "RGBW" : "RGB"}`}
           ledCount={light.ledCount}
           rgbw={light.stripBead === "rgbw"}
-          state={viewState}
+          state={state}
           hues={hues}
           issueWord={wordFor}
           resting={() => locate.error || locate.stopping ? "unknown" : displayBead(light)}
@@ -371,27 +341,20 @@ export function ElementsPanel({
           onLive={toggleLive}
           dispatch={dispatch}
         />
+        </div>
+        <KeysBar state={state} hues={hues} live={live && !unreachable && !locate.error && !locate.stopping} spacingMm={light.spacingMm} />
+        <CursorControls state={state} dispatch={dispatch} live={live} blocked={unreachable || Boolean(locate.error) || locate.stopping} onPreview={() => setLive(true)} onScanning={setScanning} />
+        <StripZoom ledCount={Math.max(light.ledCount, 1)} elements={state.els} hues={hues} issueWord={wordFor} focus={zoom.focus} edge={zoom.edge} caption={zoom.caption} />
       </div>
 
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-        <StripZoom
-          ledCount={Math.max(light.ledCount, 1)}
-          elements={state.els}
-          hues={hues}
-          issueWord={wordFor}
-          focus={zoom.focus}
-          edge={zoom.edge}
-          caption={zoom.caption}
-        />
-        <ElementInspector state={state} hues={hues} issuesFor={issuesFor} dispatch={dispatch} />
-      </div>
-
-      <div className="overflow-hidden rounded-[14px] border border-border bg-[#0e1014]">
-        <div className="grid grid-cols-[18px_minmax(0,1.4fr)_120px_70px_minmax(0,1fr)] gap-3.5 border-b border-border px-[18px] py-2.5 text-[12px] text-muted-foreground">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,340px),1fr))] items-start gap-3.5">
+      <div className="min-w-0 overflow-x-auto rounded-[14px] border border-border bg-[#0e1014]">
+        <div className="grid min-w-[310px] grid-cols-[10px_minmax(70px,1fr)_64px_34px_44px_44px] sm:grid-cols-[14px_minmax(0,1fr)_84px_44px_60px_56px] gap-1 border-b border-border px-3 sm:gap-2 sm:px-[18px] py-2.5 text-[12px] text-muted-foreground">
           <span />
           <span>Segment</span>
           <span>LEDs</span>
           <span>Count</span>
+          <span>Length</span>
           <span>Check</span>
         </div>
         {state.els.length === 0 ? (
@@ -410,22 +373,22 @@ export function ElementsPanel({
                   key={element.id}
                   type="button"
                   onClick={(event) => dispatch({ type: "select-row", id: element.id, shift: event.shiftKey })}
-                  className="grid w-full grid-cols-[18px_minmax(0,1.4fr)_120px_70px_minmax(0,1fr)] items-center gap-3.5 border-b border-border px-[18px] py-3 text-left"
+                  className="grid w-full min-w-[310px] grid-cols-[10px_minmax(70px,1fr)_64px_34px_44px_44px] sm:grid-cols-[14px_minmax(0,1fr)_84px_44px_60px_56px] items-center gap-1 border-b border-border px-3 sm:gap-2 sm:px-[18px] py-3 text-left"
                   style={{
                     background: selected ? "#12141a" : "transparent",
                     boxShadow: selected ? `inset 2px 0 0 ${hue}` : "none",
                   }}
                 >
                   <span className="size-2.5 rounded-[3px]" style={{ background: hue }} />
-                  <span className="text-[15px] font-medium">{element.label}</span>
+                  <span className="min-w-0 text-[13px] font-medium [overflow-wrap:anywhere]">{element.label}</span>
                   <span
                     className={cn("font-mono text-[13px]", word ? "text-destructive" : "text-[#c9c3b8]")}
                     title={length ? PHYSICAL_LENGTH_CAPTION : undefined}
                   >
                     {element.start}–{element.stop}
-                    {length ? ` · ${length}` : ""}
                   </span>
-                  <span className="font-mono text-[13px] text-muted-foreground">{count || "—"}</span>
+                  <span className="font-mono text-[12px] text-muted-foreground">{count || "—"}</span>
+                  <span className="font-mono text-[12px] text-muted-foreground" title={length ? PHYSICAL_LENGTH_CAPTION : undefined}>{length ?? "—"}</span>
                   <span className={cn("text-[13px]", word ? "text-destructive" : "text-muted-foreground")}>
                     {selected ? (
                       <span className="sr-only" aria-label="Segment kind">
@@ -438,16 +401,16 @@ export function ElementsPanel({
               );
             })
         )}
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-[12px]">
+          <span className="text-muted-foreground">Free</span>
+          {gaps(state.els, light.ledCount).map((run) => <button type="button" key={run.start} className="rounded-md border border-dashed border-[#3a4150] px-2 py-1" onClick={() => dispatch({ type: "add-gap", start: run.start, stop: run.stop })}>
+            <span className="font-mono">{run.start}–{run.stop} · {run.stop - run.start}</span><span className="ml-1.5 text-primary">+ Add</span>
+          </button>)}
+          {gaps(state.els, light.ledCount).length === 0 ? <span className="text-muted-foreground">Every LED is in a Segment.</span> : null}
+        </div>
       </div>
 
-      <div className="flex flex-wrap gap-x-5 gap-y-2 text-[12px] text-muted-foreground">
-        <Hint keys="drag body">shift</Hint>
-        <Hint keys="drag edge">resize</Hint>
-        <Hint keys="drag free LEDs">select → options</Hint>
-        <Hint keys="R">pick LEDs across Segments</Hint>
-        <Hint keys="N">new Segment from selection</Hint>
-        <Hint keys="← →">nudge 1 · ⇧ 10</Hint>
-        <Hint keys="⌘Z">undo</Hint>
+        <ElementInspector state={state} hues={hues} issuesFor={issuesFor} dispatch={dispatch} spacingMm={light.spacingMm} />
       </div>
 
       {notice ? <p className="text-[13px] text-destructive">{notice}</p> : null}
@@ -495,133 +458,44 @@ export function ElementsPanel({
   );
 }
 
-function EditorToolbar({
-  state,
-  dispatch,
-  live,
-  liveDisabled,
-  liveReason,
-  locateMode,
-  onLocateMode,
-  onLive,
-}: {
-  state: EditorState;
-  dispatch: (action: EditorAction) => void;
-  live: boolean;
-  liveDisabled: boolean;
-  liveReason: string | null;
-  locateMode: LocateMode;
-  onLocateMode: (mode: LocateMode) => void;
-  onLive: () => void;
-}) {
-  const one = state.sel.length === 1 ? state.els.find((element) => element.id === state.sel[0]) : null;
-  const mergeOk = state.sel.length > 1 && mergeReady(state);
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="flex rounded-[9px] border border-input bg-[#12141a] p-[3px] text-[13px]">
-        <ToolButton active={state.mode === "locate"} hint="L" onClick={() => dispatch({ type: "cursor-set", index: state.cursor ?? 0 })}>
-          Locate
-        </ToolButton>
-        <ToolButton active={state.mode === "select"} hint="V" onClick={() => dispatch({ type: "tool", mode: "select" })}>
-          Select
-        </ToolButton>
-        <ToolButton active={state.mode === "range"} hint="R" onClick={() => dispatch({ type: "tool", mode: "range" })}>
-          Pick LEDs
-        </ToolButton>
-        <ToolButton active={state.mode === "split"} hint="C" onClick={() => dispatch({ type: "tool", mode: "split" })}>
-          Cut
-        </ToolButton>
-      </div>
-      <span className="mx-1 h-6 w-px bg-input" />
-      <ActionButton hint="D" disabled={!one} onClick={() => dispatch({ type: "duplicate" })}>
-        Duplicate
-      </ActionButton>
-      <ActionButton
-        hint="S"
-        disabled={!one || one.stop - one.start < 2}
-        onClick={() => dispatch({ type: "split-half" })}
-      >
-        Split in half
-      </ActionButton>
-      <ActionButton hint="M" disabled={!mergeOk} onClick={() => dispatch({ type: "merge" })}>
-        Combine
-      </ActionButton>
-      <ActionButton
-        hint="⌫"
-        disabled={state.sel.length === 0 && !state.ledSel}
-        className="text-destructive"
-        onClick={() => dispatch({ type: state.ledSel ? "remove-from" : "delete" })}
-      >
-        Delete
-      </ActionButton>
-      <span className="mx-1 h-6 w-px bg-input" />
-      <button
-        type="button"
-        disabled={state.hist.length === 0}
-        onClick={() => dispatch({ type: "undo" })}
-        className="h-[34px] px-2.5 text-[13px] text-[#c9c3b8] disabled:opacity-40"
-      >
-        Undo
-      </button>
-      <button
-        type="button"
-        disabled={state.fut.length === 0}
-        onClick={() => dispatch({ type: "redo" })}
-        className="h-[34px] px-2.5 text-[13px] text-[#c9c3b8] disabled:opacity-40"
-      >
-        Redo
-      </button>
-      <div className="ml-auto flex items-center gap-4 text-[13px] text-[#c9c3b8]">
-        <Switch on={state.snap} label="Snap to 5" tone="primary" onClick={() => dispatch({ type: "snap" })} />
-        {!liveDisabled ? (
-          <div className="flex rounded-md border border-input p-0.5 text-[12px]" role="group" aria-label="What Show lights">
-            <button
-              type="button"
-              aria-pressed={locateMode === "cursor"}
-              onClick={() => onLocateMode("cursor")}
-              className={cn(
-                "rounded px-2 py-1",
-                locateMode === "cursor" ? "bg-[#2f3542] text-foreground" : "text-muted-foreground",
-              )}
-            >
-              Cursor only
-            </button>
-            <button
-              type="button"
-              aria-pressed={locateMode === "hold"}
-              onClick={() => onLocateMode("hold")}
-              className={cn(
-                "rounded px-2 py-1",
-                locateMode === "hold" ? "bg-[#2f3542] text-foreground" : "text-muted-foreground",
-              )}
-            >
-              Segments stay lit
-            </button>
-          </div>
-        ) : null}
-        <Switch
-          on={live}
-          label="Show on the real strip"
-          tone="online"
-          disabled={liveDisabled}
-          title={liveReason ?? undefined}
-          onClick={onLive}
-        />
-      </div>
-      {liveReason ? <p className="basis-full text-[12px] text-destructive">{liveReason}</p> : null}
+function EditorToolbar({ state, dispatch }: { state: EditorState; dispatch: (action: EditorAction) => void }) {
+  const hints = {
+    locate: "The cursor follows the pointer. Nothing is edited.",
+    select: "Click a Segment to shift it, or its first or last LED to grab that edge. Then use ← →.",
+    range: "Click or drag any LEDs, even inside Segments. ← → grows the selection.",
+    split: "Click inside a Segment to split it.",
+  };
+  return <div className="flex flex-wrap items-center gap-2.5">
+    <div className="flex rounded-[9px] border border-input bg-[#12141a] p-[3px] text-[13px]">
+      <ToolButton active={state.mode === "locate"} hint="L" onClick={() => dispatch({ type: "tool", mode: "locate" })}>Locate</ToolButton>
+      <ToolButton active={state.mode === "select"} hint="V" onClick={() => dispatch({ type: "tool", mode: "select" })}>Select</ToolButton>
+      <ToolButton active={state.mode === "range"} hint="R" onClick={() => dispatch({ type: "tool", mode: "range" })}>Pick LEDs</ToolButton>
+      <ToolButton active={state.mode === "split"} hint="C" onClick={() => dispatch({ type: "tool", mode: "split" })}>Cut</ToolButton>
     </div>
-  );
-}
-
-function mergeReady(state: EditorState): boolean {
-  if (state.sel.length < 2) return false;
-  const chosen = state.els.filter((element) => state.sel.includes(element.id));
-  if (chosen.length < 2) return false;
-  const start = Math.min(...chosen.map((element) => element.start));
-  const stop = Math.max(...chosen.map((element) => element.stop));
-  return !state.els.some(
-    (element) => !state.sel.includes(element.id) && element.start < stop && element.stop > start,
-  );
+    <span title={hints[state.mode]} className="min-w-48 flex-1 text-[12px] text-muted-foreground lg:truncate">{hints[state.mode]}</span>
+    <div className="ml-auto flex items-center gap-3 text-[12px]">
+      <button type="button" disabled={!state.hist.length} onClick={() => dispatch({ type: "undo" })} className="h-[30px] disabled:opacity-40">Undo</button>
+      <button type="button" disabled={!state.fut.length} onClick={() => dispatch({ type: "redo" })} className="h-[30px] disabled:opacity-40">Redo</button>
+      <span className="h-5 w-px bg-input" />
+      <Switch on={state.snap} label="Snap to 5" tone="primary" onClick={() => dispatch({ type: "snap" })} />
+      <EditorPopover label="Shortcuts">
+        <div className="flex flex-col gap-2 text-[12px]">
+          <Hint keys="L / V / R / C">Locate / Select / Pick LEDs / Cut</Hint>
+          <Hint keys="← →">move the focus · Shift moves 10</Hint>
+          <Hint keys="Tab / Shift Tab">cycle Segment and edges</Hint>
+          <Hint keys="Alt / ⌥">detach a shared edge</Hint>
+          <Hint keys="[ / ]">mark start / end</Hint>
+          <Hint keys="N / Enter">new Segment / selection options</Hint>
+          <Hint keys="D / S / M">duplicate / split in half / combine</Hint>
+          <Hint keys="Space">scan / pause</Hint>
+          <Hint keys="Home / End">strip start / end</Hint>
+          <Hint keys="⌫ / Delete">delete selection</Hint>
+          <Hint keys="Ctrl / ⌘ Z">undo · Shift to redo</Hint>
+          <Hint keys="Esc">close options / step back / clear</Hint>
+        </div>
+      </EditorPopover>
+    </div>
+  </div>;
 }
 
 function ToolButton({
@@ -639,38 +513,10 @@ function ToolButton({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={cn(
-        "inline-flex items-center gap-2 rounded-md px-3 py-1.5 font-medium",
+        "inline-flex items-center gap-2 rounded-md px-2.5 py-1.5 font-medium",
         active ? "bg-[#2f3542] text-foreground" : "text-muted-foreground",
-      )}
-    >
-      {children}
-      <span className="font-mono text-[11px] font-normal text-muted-foreground">{hint}</span>
-    </button>
-  );
-}
-
-function ActionButton({
-  hint,
-  disabled,
-  className,
-  onClick,
-  children,
-}: {
-  hint: string;
-  disabled?: boolean;
-  className?: string;
-  onClick: () => void;
-  children: string;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        "inline-flex h-[34px] items-center gap-2 rounded-lg border border-input px-3 text-[13px] font-semibold disabled:opacity-40",
-        className,
       )}
     >
       {children}
@@ -727,7 +573,7 @@ function Hint({ keys, children }: { keys: string; children: string }) {
   );
 }
 
-function describe(state: EditorState): { chip: string; text: string; hot: boolean } {
+function describe(state: EditorState, spacingMm: number | null, scanning: 1 | -1 | null): { chip: string; text: string; hot: boolean } {
   const drag = state.drag;
   const dragEl = drag && "id" in drag ? state.els.find((element) => element.id === drag.id) : null;
   if (drag && dragEl && drag.kind !== "draw") {
@@ -766,60 +612,37 @@ function describe(state: EditorState): { chip: string; text: string; hot: boolea
         : "Point inside a Segment to cut it",
     };
   }
-  if (state.hover) {
+  const lengthOf = (count: number) => { const length = formatNodeLength(count, spacingMm); return length ? ` · ${length}` : ""; };
+  if (state.hover && !state.keyMoved) {
     const found = elementAt(state.hover.idx, state.els);
-    if (found) {
-      return {
-        chip: `LED ${state.hover.idx}`,
-        hot: false,
-        text: `${found.label} · ${ordinal(state.hover.idx - found.start + 1)} of ${found.stop - found.start} · row ${state.hover.r + 1}, position ${(state.hover.idx % 100) + 1}`,
-      };
-    }
-    const gap = gapAt(state.hover.idx, state.els, state.ledCount);
-    return {
-      chip: `LED ${state.hover.idx}`,
-      hot: false,
-      text: `Free · run ${gap.lo}–${gap.hi} (${gap.hi - gap.lo} LEDs)${state.ledSel ? ` · shift-click to extend to ${state.hover.idx}` : " · drag to select LEDs"}`,
-    };
+    const edge = found ? edgeAt(state.hover.idx, found) : null;
+    return { chip: `LED ${state.hover.idx}`, hot: false,
+      text: found ? `${found.label} · ${ordinal(state.hover.idx - found.start + 1)} of ${found.stop - found.start}${state.mode === "locate" ? "" : edge ? ` · click to grab its ${edge === "start" ? "start" : "stop"} edge` : " · click to select"}`
+        : `Free · run ${gapAt(state.hover.idx, state.els, state.ledCount).lo}–${gapAt(state.hover.idx, state.els, state.ledCount).hi}${state.mode === "locate" ? "" : " · click, then ← → to grow a selection"}` };
   }
-  if (state.ledSel) {
-    const count = state.ledSel.stop - state.ledSel.start;
-    return {
-      chip: `${count} LED${count === 1 ? "" : "s"}`,
-      hot: true,
-      text: `${state.ledSel.start}–${state.ledSel.stop} selected · shift-click to extend · Esc to clear`,
-    };
-  }
-  return {
-    chip: "—",
-    hot: false,
-    text: "Hover the strip to read an LED. Drag across free LEDs to add a Segment.",
+  const focus = state.focus;
+  const el = "id" in focus ? state.els.find((item) => item.id === focus.id) : null;
+  if (el && focus.kind === "edge") return {
+    chip: `${focus.which === "start" ? "start" : "stop"} ${focus.which === "start" ? el.start : el.stop}`, hot: true,
+    text: `${el.label} ${el.start}–${el.stop} · ${el.stop - el.start} LEDs${lengthOf(el.stop - el.start)} · ${focus.which === "start" ? `first LED is ${el.start}` : `last LED is ${el.stop - 1}`}`,
   };
+  if (el && focus.kind === "seg") return { chip: `${el.start}–${el.stop}`, hot: false, text: `${el.label} · ${el.stop - el.start} LEDs${lengthOf(el.stop - el.start)}` };
+  if (state.ledSel && focus.kind === "sel") {
+    const range = state.ledSel, count = range.stop - range.start;
+    return { chip: `${count} LEDs`, hot: true, text: `${range.start}–${range.stop} selected${lengthOf(count)} · Enter for options` };
+  }
+  const cursor = state.cursor ?? 0;
+  const here = elementAt(cursor, state.els);
+  const gap = gapAt(cursor, state.els, state.ledCount);
+  return { chip: `LED ${cursor}`, hot: false, text: `${scanning ? `Scanning ${scanning === 1 ? "forward" : "back"} · ` : ""}${here
+    ? `${here.label} · ${ordinal(cursor - here.start + 1)} of ${here.stop - here.start}${lengthOf(cursor - here.start)}${spacingMm ? " in" : ""}`
+    : `Free · run ${gap.lo}–${gap.hi} (${gap.hi - gap.lo} LEDs)`}` };
 }
 
-function zoomFocus(
-  state: EditorState,
-  one: Element | null,
-): { focus: number; edge: boolean; caption: string } {
-  const drag = state.drag;
-  const dragEl = drag && drag.kind !== "draw" ? state.els.find((element) => element.id === drag.id) : null;
-  if (state.drag && dragEl && (state.drag.kind === "start" || state.drag.kind === "end")) {
-    const focus = state.drag.kind === "start" ? dragEl.start : dragEl.stop;
-    return { focus, edge: true, caption: `${state.drag.kind === "start" ? "start" : "stop"} edge at ${focus}` };
-  }
-  if (state.hover) {
-    const focus = state.mode === "split" ? state.hover.b : state.hover.idx;
-    return {
-      focus,
-      edge: state.mode === "split",
-      caption: state.mode === "split" ? `cut at ${focus}` : `around LED ${focus}`,
-    };
-  }
-  if (state.ledSel) {
-    return { focus: state.ledSel.start, edge: true, caption: `selection start at ${state.ledSel.start}` };
-  }
-  if (one) return { focus: one.start, edge: true, caption: `${one.label} start edge at ${one.start}` };
-  return { focus: 0, edge: false, caption: "around LED 0" };
+function zoomFocus(state: EditorState): { focus: number; edge: boolean; caption: string } {
+  if (state.mode === "split" && state.hover) return { focus: state.hover.b, edge: true, caption: `cut at ${state.hover.b}` };
+  const cursor = state.cursor ?? 0;
+  return { focus: cursor, edge: false, caption: `around LED ${cursor}` };
 }
 
 function payload(elements: Element[]) {

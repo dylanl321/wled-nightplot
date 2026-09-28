@@ -1,9 +1,9 @@
 "use client";
 
-import type { Element } from "@nightplot/shared";
+import { formatNodeLength, type Element } from "@nightplot/shared";
 import type { RangeIssue } from "@nightplot/shared";
 import { Input } from "@/components/ui/input";
-import { bounds, gaps, issueSentence, mergeCheck, parseIndex } from "./ops";
+import { bounds, issueSentence, mergeCheck, parseIndex } from "./ops";
 import type { EditorAction, EditorState } from "./use-editor-state";
 
 export function ElementInspector({
@@ -11,7 +11,9 @@ export function ElementInspector({
   hues,
   issuesFor,
   dispatch,
+  spacingMm,
 }: {
+  spacingMm?: number | null;
   state: EditorState;
   hues: Record<string, string>;
   issuesFor: (id: string) => RangeIssue[];
@@ -20,12 +22,13 @@ export function ElementInspector({
   const selected =
     state.sel.length === 1 ? (state.els.find((element) => element.id === state.sel[0]) ?? null) : null;
   const check = mergeCheck(state.els, state.sel);
-  const runs = gaps(state.els, state.ledCount);
   return (
     <div className="flex flex-col gap-3 rounded-[14px] border border-border bg-[#0e1014] p-4">
       {selected ? (
         <OneElement
           element={selected}
+          cursor={state.cursor}
+          spacingMm={spacingMm}
           hue={hues[selected.id] ?? "#9a9488"}
           issues={issuesFor(selected.id)}
           ledCount={state.ledCount}
@@ -55,43 +58,26 @@ export function ElementInspector({
           >
             Combine into one
           </button>
+          <button type="button" className="self-end text-[13px] text-destructive" onClick={() => dispatch({ type: "delete" })}>Delete all</button>
         </div>
       ) : null}
       {state.sel.length === 0 ? (
         <div className="flex flex-col gap-2">
           <span className="text-[15px] font-medium">Nothing selected</span>
           <p className="text-[13px] leading-relaxed text-muted-foreground">
-            Click a Segment to select it. Drag across LEDs to select them, then choose New Segment. Use Pick LEDs (R) to select across existing Segments.
+            Click a Segment to shift it or its first or last LED to grab an edge. To add one, mark its first LED with [ and its last with ], then choose New Segment. Pick LEDs (R) selects across existing Segments.
           </p>
         </div>
       ) : null}
-      <div className="flex flex-col gap-1.5 border-t border-border pt-3">
-        <span className="text-[12px] text-muted-foreground">Free LEDs</span>
-        <div className="flex flex-wrap gap-1.5">
-          {runs.map((run) => (
-            <button
-              key={`${run.start}-${run.stop}`}
-              type="button"
-              onClick={() => dispatch({ type: "add-gap", start: run.start, stop: run.stop })}
-              className="inline-flex items-baseline gap-1.5 rounded-md border border-dashed border-[#3a4150] px-2 py-1"
-            >
-              <span className="font-mono text-[12px] text-[#c9c3b8]">
-                {run.start}–{run.stop} · {run.stop - run.start}
-              </span>
-              <span className="text-[12px] text-primary">+ Add</span>
-            </button>
-          ))}
-          {runs.length === 0 ? (
-            <span className="text-[13px] text-muted-foreground">Every LED is in a Segment.</span>
-          ) : null}
-        </div>
-      </div>
+
     </div>
   );
 }
 
 function OneElement({
   element,
+  cursor,
+  spacingMm,
   hue,
   issues,
   ledCount,
@@ -99,6 +85,8 @@ function OneElement({
   dispatch,
 }: {
   element: Element;
+  cursor: number | null;
+  spacingMm?: number | null;
   hue: string;
   issues: RangeIssue[];
   ledCount: number;
@@ -106,6 +94,12 @@ function OneElement({
   dispatch: (action: EditorAction) => void;
 }) {
   const { lo, hi } = bounds(element, elements, ledCount);
+  const count = Math.max(0, element.stop - element.start);
+  const length = formatNodeLength(count, spacingMm ?? null);
+  function nudge(which: "start" | "end", delta: number) {
+    dispatch({ type: "focus-set", id: element.id, what: which });
+    dispatch({ type: "arrow", delta });
+  }
   const word = issues[0]?.code;
   const before =
     element.start > lo ? `${element.start - lo} free before` : "touches the Segment before";
@@ -128,15 +122,15 @@ function OneElement({
           className="h-[34px] flex-1 font-sans text-[15px] font-medium"
         />
       </div>
-      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_70px] gap-2.5">
+      <div className="grid grid-cols-2 gap-2.5">
         <Stepper
           label="Start · first LED"
           value={element.start}
           ariaLabel="Start, first LED, inclusive"
           invalid={startBad}
           onChange={(value) => dispatch({ type: "start", value })}
-          onMinus={() => dispatch({ type: "nudge", delta: -1, which: "start" })}
-          onPlus={() => dispatch({ type: "nudge", delta: 1, which: "start" })}
+          onMinus={() => nudge("start", -1)}
+          onPlus={() => nudge("start", 1)}
         />
         <Stepper
           label="Stop · after last LED"
@@ -145,17 +139,13 @@ function OneElement({
           invalid={stopBad}
           labelClass={stopBad ? "text-destructive" : undefined}
           onChange={(value) => dispatch({ type: "stop", value })}
-          onMinus={() => dispatch({ type: "nudge", delta: -1, which: "end" })}
-          onPlus={() => dispatch({ type: "nudge", delta: 1, which: "end" })}
+          onMinus={() => nudge("end", -1)}
+          onPlus={() => nudge("end", 1)}
         />
-        <label className="flex min-w-0 flex-col gap-1.5">
-          <span className="text-[12px] text-muted-foreground">Length</span>
-          <span className="flex h-[34px] items-center font-mono text-[13px] text-[#c9c3b8]">
-            {element.stop > element.start ? element.stop - element.start : "—"}
-          </span>
-        </label>
+
       </div>
-      <div className="flex gap-3.5 text-[12px] text-muted-foreground">
+      <div className="flex flex-wrap gap-3.5 text-[12px] text-muted-foreground">
+        <span className="font-mono text-foreground">{count} LEDs{length ? ` · ${length}` : ""}</span>
         <span>{before}</span>
         <span>{after}</span>
       </div>
@@ -165,6 +155,12 @@ function OneElement({
           {issue.message}
         </p>
       ))}
+      <div className="flex flex-wrap items-center gap-1.5 border-t border-border pt-3 text-[12px]">
+        <button type="button" className="h-[30px] rounded-md border border-input px-2" onClick={() => dispatch({ type: "duplicate" })}>Duplicate <span className="text-muted-foreground">D</span></button>
+        <button type="button" className="h-[30px] rounded-md border border-input px-2 disabled:opacity-40" disabled={count < 2} onClick={() => dispatch({ type: "split-half" })}>Split in half <span className="text-muted-foreground">S</span></button>
+        <button type="button" className="h-[30px] rounded-md border border-input px-2 disabled:opacity-40" disabled={cursor === null || cursor <= element.start || cursor >= element.stop} onClick={() => dispatch({ type: "cut-cursor" })}>Cut at cursor {cursor ?? "—"}</button>
+        <button type="button" className="ml-auto h-[30px] px-2 text-destructive" onClick={() => dispatch({ type: "delete" })}>Delete <span className="text-muted-foreground">⌫</span></button>
+      </div>
     </>
   );
 }
@@ -194,7 +190,7 @@ function Stepper({
       <span
         className={`flex h-[34px] min-w-0 overflow-hidden rounded-md border bg-[#07080a] ${invalid ? "border-destructive" : "border-input"}`}
       >
-        <button type="button" onClick={onMinus} className="w-7 border-r border-border text-muted-foreground">
+        <button type="button" onClick={onMinus} aria-label={`Decrease ${label}`} className="w-7 border-r border-border text-muted-foreground">
           −
         </button>
         <input
@@ -205,7 +201,7 @@ function Stepper({
           onChange={(event) => onChange(parseIndex(event.target.value, value))}
           className="min-w-0 flex-1 border-none bg-transparent text-center font-mono text-[13px] outline-none"
         />
-        <button type="button" onClick={onPlus} className="w-7 border-l border-border text-muted-foreground">
+        <button type="button" onClick={onPlus} aria-label={`Increase ${label}`} className="w-7 border-l border-border text-muted-foreground">
           +
         </button>
       </span>

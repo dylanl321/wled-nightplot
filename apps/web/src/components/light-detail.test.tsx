@@ -47,10 +47,13 @@ describe("Segments Preview recovery", () => {
       return new Response(JSON.stringify(initial), { status: 200 });
     }));
     render(<LightDetail initial={initial} tab="elements" />);
-    const slider = screen.getByRole("slider", { name: "Background brightness" });
+    const cursor = screen.getByRole("textbox", { name: "Cursor LED" });
+    fireEvent.change(cursor, { target: { value: "4" } });
+    fireEvent.blur(cursor);
+    fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
+    fireEvent.click(screen.getByRole("button", { name: /Segments 35%/ }));
+    const slider = screen.getByRole("slider", { name: "Segment brightness" });
     expect((slider as HTMLInputElement).value).toBe("35");
-    fireEvent.change(screen.getByRole("slider", { name: "Strip cursor" }), { target: { value: "4" } });
-    fireEvent.click(screen.getByRole("button", { name: "Show on the real strip" }));
     await waitFor(() => expect(bodies.length).toBeGreaterThan(0));
     expect(bodies.at(-1)).toMatchObject({ pixels: true, brightness: 180 });
     expect(bodies.at(-1)?.spans).toContainEqual({ start: 4, stop: 5, color: "#fff4dc" });
@@ -75,7 +78,7 @@ describe("Segments Preview recovery", () => {
       return new Response(JSON.stringify(initial), { status: 200 });
     }));
     render(<LightDetail initial={initial} tab="elements" />);
-    fireEvent.click(screen.getByRole("button", { name: "Show on the real strip" }));
+    fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
 
     expect((await screen.findByRole("alert")).textContent).toContain("Preview paused");
     expect(screen.getByText("Preview not confirmed")).toBeTruthy();
@@ -97,9 +100,9 @@ describe("Segments Preview recovery", () => {
       return new Response(JSON.stringify({ ...initial, restored: true }), { status: 200 });
     }));
     render(<LightDetail initial={initial} tab="elements" />);
-    fireEvent.click(screen.getByRole("button", { name: "Show on the real strip" }));
+    fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
     await waitFor(() => expect(paths.some((path) => path.endsWith("/preview"))).toBe(true));
-    fireEvent.click(screen.getByRole("button", { name: "Show on the real strip" }));
+    fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
     expect(screen.getByText("Ending Preview…")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled).toBe(true);
     await act(async () => { finishEnd(); });
@@ -183,7 +186,7 @@ describe("LightDetail reported rails", () => {
     render(<LightDetail initial={initial} mode="ranges" />);
     expect(screen.getByText(/60 LEDs · 1 m · WS281x RGB/)).toBeTruthy();
     expect(screen.getByText(PHYSICAL_LENGTH_CAPTION)).toBeTruthy();
-    expect(screen.getByText(/0–60 · 1 m/)).toBeTruthy();
+    expect(screen.getByText("1 m", { exact: true })).toBeTruthy();
   });
 
   it("keeps mapping reported rails after a successful Preview", async () => {
@@ -244,7 +247,7 @@ describe("LightDetail reported rails", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<LightDetail initial={initial} mode="live" />);
-    fireEvent.click(screen.getByRole("button", { name: "Show on the real strip" }));
+    fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
 
     expect(await screen.findByText(/Software-green from the fixture/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
@@ -607,7 +610,7 @@ describe("LightDetail Apply unknown colour", () => {
     expect(screen.queryByText(/Colour is unknown/)).toBeNull();
   });
 
-  it("refuses Apply as soon as Show on the real strip is on — does not wait for the first hop", () => {
+  it("refuses Apply as soon as Light on strip is on — does not wait for the first hop", () => {
     const initial = lightDetail({
       light: lightView({
         reachability: "online",
@@ -645,7 +648,7 @@ describe("LightDetail Apply unknown colour", () => {
     const apply = screen.getByRole("button", { name: "Apply" });
     expect((apply as HTMLButtonElement).disabled).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "Show on the real strip" }));
+    fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
 
     expect((screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled).toBe(
       true,
@@ -733,7 +736,7 @@ describe("LightDetail Apply unknown colour", () => {
     );
     render(<LightDetail initial={initial} mode="ranges" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Show on the real strip" }));
+    fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
 
     expect(await screen.findByText(FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION, { exact: false })).toBeTruthy();
     expect(screen.getByText(/Leftover controller segments were not cleared/)).toBeTruthy();
@@ -839,10 +842,10 @@ describe("LightDetail selected Segment kind chip", () => {
     expect(screen.queryByText("seg")).toBeNull();
   });
 
-  it("disables Show on the real strip when the Light has not answered", () => {
+  it("disables Light on strip when the Light has not answered", () => {
     render(<LightDetail initial={lightDetail()} mode="ranges" />);
 
-    const show = screen.getByRole("button", { name: "Show on the real strip" });
+    const show = screen.getByRole("button", { name: "Light on strip" });
     expect((show as HTMLButtonElement).disabled).toBe(true);
     expect(show.getAttribute("title")).toMatch(/hasn’t answered/);
     expect(screen.getAllByText(/hasn’t answered/).length).toBeGreaterThan(0);

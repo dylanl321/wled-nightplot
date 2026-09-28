@@ -1,19 +1,20 @@
 "use client";
 
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { gaps, selectionFacts } from "./ops";
+import { gaps } from "./ops";
 import type { EditorAction, EditorState } from "./use-editor-state";
 
 export function CursorControls({
-  state, dispatch, live, blocked, onPreview,
+  state, dispatch, live, blocked, onPreview, onScanning,
 }: {
   state: EditorState;
   dispatch: (action: EditorAction) => void;
   live: boolean;
   blocked: boolean;
   onPreview: () => void;
+  onScanning?: (direction: 1 | -1 | null) => void;
 }) {
   const [running, setRunning] = useState(false);
   const [direction, setDirection] = useState<1 | -1>(1);
@@ -22,8 +23,8 @@ export function CursorControls({
   const cursor = state.cursor ?? 0;
   const hasStrip = state.ledCount > 0;
   const atEnd = direction === 1 ? cursor >= state.ledCount - 1 : cursor <= 0;
-  const scanning = running && live && !blocked && !atEnd;
-  if (running && (!live || blocked || atEnd)) setRunning(false);
+  const scanning = running && live && !blocked && !atEnd && state.focus.kind === "cursor";
+  if (running && (!live || blocked || atEnd || state.focus.kind !== "cursor")) setRunning(false);
   const free = gaps(state.els, state.ledCount);
   const previousGap = [...free].reverse().find((range) => range.start < cursor);
   const nextGap = free.find((range) => range.start > cursor);
@@ -31,7 +32,7 @@ export function CursorControls({
     .filter((index) => index >= 0 && index < state.ledCount).sort((a, b) => a - b);
   const previousEdge = [...boundaries].reverse().find((index) => index < cursor);
   const nextEdge = boundaries.find((index) => index > cursor);
-  const selected = state.ledSel ? selectionFacts(state.els, state.ledSel) : null;
+  useEffect(() => { onScanning?.(scanning ? direction : null); }, [scanning, direction, onScanning]);
 
   useEffect(() => {
     if (!scanning) return;
@@ -70,87 +71,53 @@ export function CursorControls({
     setRunning(true);
   }
 
-  function onKey(event: KeyboardEvent<HTMLElement>) {
-    const target = event.target as HTMLElement;
-    if (["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(target.tagName)) return;
-    const key = event.key;
-    if (["ArrowLeft", "ArrowRight", "Home", "End", " ", "[", "]"].includes(key)) {
-      event.preventDefault();
-      if (key === " ") toggleScan();
-      else if (key === "[" || key === "]") {
-        setRunning(false);
-        dispatch({ type: key === "[" ? "mark-start" : "mark-end" });
-      } else go(key === "Home" ? 0 : key === "End" ? state.ledCount - 1
-        : cursor + (key === "ArrowLeft" ? -1 : 1) * (event.shiftKey ? 10 : 1));
+  useEffect(() => {
+    function onKey(event: globalThis.KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || target?.closest("input, select, textarea, button, [contenteditable=true]")) return;
+      if (event.key === " ") { event.preventDefault(); toggleScan(); }
+      else if (event.key === "[" || event.key === "]") setRunning(false);
     }
-  }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
+  const button = "h-[30px] rounded-md border border-input px-2 text-[12px] text-[#c9c3b8] disabled:opacity-40";
   return (
-    <section aria-label="Locate and create Segments" tabIndex={0} onKeyDown={onKey}
-      className="flex flex-col gap-3 rounded-xl border border-input bg-card p-4 outline-offset-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="mr-2 text-[15px] font-medium">Locate</h2>
-        <Button variant="outline" onClick={() => go(cursor - 1)} disabled={!hasStrip || cursor === 0} aria-label="Previous LED">−1</Button>
-        <label className="flex items-center gap-2 text-[13px]">
-          LED
-          <Input aria-label="Cursor LED" inputMode="numeric" className="w-24"
-            value={positionText ?? cursor}
-            onChange={(event) => setPositionText(event.target.value)}
-            onBlur={() => {
-              if (positionText !== null && /^\d+$/.test(positionText)) go(Number(positionText));
-              else setPositionText(null);
-            }}
-            onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
-          />
-        </label>
-        <Button variant="outline" onClick={() => go(cursor + 1)} disabled={!hasStrip || cursor >= state.ledCount - 1} aria-label="Next LED">+1</Button>
-        <span className="text-[12px] text-muted-foreground">of {Math.max(0, state.ledCount - 1)}</span>
-        <label className="ml-auto text-[13px]">
-          Direction{" "}
-          <select aria-label="Scan direction" value={direction}
-            onChange={(event) => { setRunning(false); setDirection(Number(event.target.value) as 1 | -1); }}
-            className="rounded border border-input bg-card p-2">
-            <option value={1}>Forward</option><option value={-1}>Backward</option>
-          </select>
-        </label>
-        <label className="text-[13px]">
-          Speed{" "}
-          <select aria-label="Scan speed" value={speed} onChange={(event) => setSpeed(Number(event.target.value))}
-            className="rounded border border-input bg-card p-2">
-            {[1, 3, 5, 10].map((value) => <option key={value} value={value}>{value} LEDs/s</option>)}
-          </select>
-        </label>
-        <Button onClick={toggleScan} disabled={blocked || !hasStrip || (!scanning && atEnd)}>
-          {scanning ? "Pause scan" : "Auto-scan"}
+    <section aria-label="Locate and create Segments" className="flex flex-wrap items-center gap-2 border-t border-border px-5 py-2.5 text-[12px]">
+      <span className="text-muted-foreground">Cursor</span>
+      <div className="flex h-[30px] overflow-hidden rounded-md border border-input">
+        <button type="button" onClick={() => go(cursor - 1)} disabled={!hasStrip || cursor === 0} aria-label="Previous LED" className="w-7 border-r border-border disabled:opacity-40">−</button>
+        <Input aria-label="Cursor LED" inputMode="numeric" className="h-full w-14 rounded-none border-0 p-0 text-center font-mono text-[12px]"
+          value={positionText ?? cursor} onChange={(event) => setPositionText(event.target.value)}
+          onBlur={() => { if (positionText !== null && /^\d+$/.test(positionText)) go(Number(positionText)); else setPositionText(null); }}
+          onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
+        <button type="button" onClick={() => go(cursor + 1)} disabled={!hasStrip || cursor >= state.ledCount - 1} aria-label="Next LED" className="w-7 border-l border-border disabled:opacity-40">+</button>
+      </div>
+      <span className="mr-1 font-mono text-muted-foreground">of {Math.max(0, state.ledCount - 1)}</span>
+      <div className="flex" role="group" aria-label="Edge navigation">
+        <button type="button" className={`${button} rounded-r-none`} aria-label="Previous edge" disabled={previousEdge === undefined} onClick={() => go(previousEdge!)}>‹ Edge</button>
+        <button type="button" className={`${button} rounded-l-none border-l-0`} aria-label="Next edge" disabled={nextEdge === undefined} onClick={() => go(nextEdge!)}>Edge ›</button>
+      </div>
+      <div className="flex" role="group" aria-label="Free LED navigation">
+        <button type="button" className={`${button} rounded-r-none`} aria-label="Previous free range" disabled={!previousGap} onClick={() => go(previousGap!.start)}>‹ Free</button>
+        <button type="button" className={`${button} rounded-l-none border-l-0`} aria-label="Next free range" disabled={!nextGap} onClick={() => go(nextGap!.start)}>Free ›</button>
+      </div>
+      <button type="button" className={button} style={state.markedStart !== null ? { color: "#d4a574", borderColor: "#d4a574" } : undefined} disabled={!hasStrip} onClick={() => { go(cursor); dispatch({ type: "mark-start" }); }}>
+        {state.markedStart !== null ? `Start at ${state.markedStart}` : "[ Mark start"}
+      </button>
+      <button type="button" className={button} disabled={state.markedStart === null} onClick={() => { setRunning(false); dispatch({ type: "mark-end" }); }}>Mark end ]</button>
+      <div className="ml-auto flex items-center gap-2">
+        <button type="button" className={`${button} w-[30px] px-0`} aria-label={`Scan direction: ${direction === 1 ? "forward" : "backward"}`} onClick={() => { setRunning(false); setDirection(direction === 1 ? -1 : 1); }}>{direction === 1 ? "→" : "←"}</button>
+        <div className="flex rounded-md border border-input p-0.5" role="group" aria-label="Scan speed">
+          {[1, 3, 5, 10].map((value) => <button type="button" key={value} aria-label={`${value} LEDs/s`} aria-pressed={value === speed} onClick={() => setSpeed(value)} className={`h-6 min-w-6 rounded px-1.5 font-mono text-[11px] ${speed === value ? "bg-[#2f3542] text-foreground" : "text-muted-foreground"}`}>{value}</button>)}
+        </div>
+        <span className="text-muted-foreground">LEDs/s</span>
+        <Button onClick={toggleScan} disabled={blocked || !hasStrip || (!scanning && atEnd)} aria-label={scanning ? "Pause scan" : "Scan"}
+          className={`h-[30px] gap-2 border border-[#1f4a45] px-3 text-[12px] ${scanning ? "bg-online text-[#0c0d10]" : "bg-transparent text-online hover:bg-online/10"}`}>
+          {scanning ? "Pause" : "Scan"}<span className="font-mono text-[10px] font-normal">Space</span>
         </Button>
       </div>
-      <input type="range" min={0} max={Math.max(0, state.ledCount - 1)} value={cursor}
-        aria-label="Strip cursor" disabled={!hasStrip} onChange={(event) => go(Number(event.target.value))}
-        className="w-full accent-[#d4a574]" />
-      <div className="flex flex-wrap gap-2">
-        <Button variant="outline" disabled={previousEdge === undefined} onClick={() => go(previousEdge!)}>Previous edge</Button>
-        <Button variant="outline" disabled={nextEdge === undefined} onClick={() => go(nextEdge!)}>Next edge</Button>
-        <Button variant="outline" disabled={!previousGap} onClick={() => go(previousGap!.start)}>Previous unused range</Button>
-        <Button variant="outline" disabled={!nextGap} onClick={() => go(nextGap!.start)}>Next unused range</Button>
-        <Button variant="outline" disabled={!hasStrip} onClick={() => {
-          go(cursor); dispatch({ type: "mark-start" });
-        }}>Mark start</Button>
-        <Button variant="outline" disabled={state.markedStart === null} onClick={() => {
-          setRunning(false); dispatch({ type: "mark-end" });
-        }}>Mark end</Button>
-        <Button disabled={!state.ledSel} onClick={() => {
-          setRunning(false); dispatch({ type: "new-from-sel" });
-        }}>{selected?.hit.length ? "Create Segment from selection" : "Create Segment"}</Button>
-      </div>
-      {state.markedStart !== null ? <p className="text-[13px] text-primary">Start marked at LED {state.markedStart}. Mark the last LED to include.</p> : null}
-      {state.ledSel ? <p className="text-[13px] text-primary">
-        Selected LEDs {state.ledSel.start}–{state.ledSel.stop - 1} · {state.ledSel.stop - state.ledSel.start} LEDs.
-        {selected?.hit.length ? ` Creating a Segment takes these LEDs from ${selected.hit.map((segment) => segment.label).join(", ")}. Undo reverses it.` : " This range is unused."}
-      </p> : null}
-      <p className="text-[12px] text-muted-foreground">
-        The cursor stays when the mouse leaves. Press L to locate, then ← / → to step (Shift: 10), [ / ] to mark.
-        Focus this panel and press Space to scan or pause. Scanning stops at the strip end and pauses when the tab is hidden.
-      </p>
     </section>
   );
 }
