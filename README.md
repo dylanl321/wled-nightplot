@@ -22,7 +22,7 @@ GitHub: [`dylanl321/wled-nightplot`](https://github.com/dylanl321/wled-nightplot
 - Preview is temporary. Apply is what persists on the controller. Ending Preview writes power, brightness, colour, and ranges only when the last snapshot knew them — an info-only report (info answered, state skipped or hung) does not invent on, brightness 128, `#ffa000`, or a whole-strip segment. Apply refuses when colour is unknown — it does not write `#ffa000`.
 - All Off cancels without restoring the previous look.
 - **Remove this Light** runs checks (Elements, live sessions, controller state). Unknown is not safe; there is no “I understand” override.
-- Safe settings and first-time Strip provision write only understood, fingerprinted fields. Unsupported firmware is refused — nothing is written. A `buildSafeWrite` refuse 422 includes `safeWrite`. Safe settings shows that as the write-failure panel (Sent / Read back) and hides the notice while it is up — not two identical destructive lines.
+- Safe settings and first-time Strip provision write only understood, fingerprinted fields. Unsupported firmware is refused — nothing is written. A `buildSafeWrite` refuse 422 includes `safeWrite`. Safe settings shows that as the write-failure panel (Sent / Read back) and hides the notice while it is up — not two identical destructive lines. A GET/load refuse uses the form banner once — not a second notice and not a doubled caption.
 - The local WLED-shaped fixture is a software stub for development. A green readback there is not proof that a real strip passed.
 
 After a Safe display-name write, the rack title uses the `/json/cfg` name even when metal `/json/info` still lags until reboot.
@@ -147,7 +147,7 @@ Enrolled Lights and declared Elements persist in `data/lights.json` (override wi
 | `/discover` | Find / type an address / add. A Find load miss still lists enrolled Lights; it does not claim the configure server is down. Retry Find Lights or type an address. |
 | `/lights/:id` | Inspect — identity + StripBeads + declared vs reported + Delete checks. A detail load miss still lists enrolled Lights; it does not claim the configure server is down. |
 | `/lights/:id?mode=strip` | Strip — attach a shared catalog recipe or set this Light’s WS281x / SK6812 RGBW plus length / GPIO; this Light’s fields still override. Attach is bookkeeping, not Apply. Apply writes `/json/cfg` then re-reads. Mismatch or refuse stays, titled with the write message (`provisionWrite` on 409 / 422). |
-| `/lights/:id?mode=safe` | Safe settings — name, boot, transition, current limit; refuse if unsupported. Refuse 422 includes `safeWrite`. The write-failure panel shows Sent / Read back; notice is hidden while that panel is up. A rename updates the title from `/json/cfg` without waiting for reboot. |
+| `/lights/:id?mode=safe` | Safe settings — name, boot, transition, current limit; refuse if unsupported. Refuse 422 includes `safeWrite`. The write-failure panel shows Sent / Read back; notice is hidden while that panel is up. A GET/load refuse uses the form banner once. A rename updates the title from `/json/cfg` without waiting for reboot. |
 | `/lights/:id?mode=ranges` | Edit ranges — draft save, Apply write+reread, failed Apply stays |
 | `/lights/:id?mode=live` | Test live — Preview / Blink, proof ladder, `/json/live` beads |
 

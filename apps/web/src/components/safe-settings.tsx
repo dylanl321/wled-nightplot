@@ -46,7 +46,7 @@ export function SafeSettingsPanel({
         if (cancelled) return;
         setRead(payload.safe);
         setDraft({ ...payload.safe.settings });
-        setNotice(payload.safe.refuse);
+        setNotice(null);
       })
       .catch((caught: unknown) => {
         if (cancelled) return;
@@ -254,7 +254,9 @@ export function SafeSettingsPanel({
         <p className="text-[13px] text-primary">{result.message}</p>
       ) : null}
       {notice && !failed ? <p className="text-[13px] text-destructive">{notice}</p> : null}
-      {!failed ? <p className="text-[12px] text-primary">{read.caption}</p> : null}
+      {!failed && !read.refuse && !unreachable ? (
+        <p className="text-[12px] text-primary">{read.caption}</p>
+      ) : null}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
         <Button
@@ -262,7 +264,7 @@ export function SafeSettingsPanel({
           onClick={() => {
             setDraft({ ...read.settings });
             setResult(null);
-            setNotice(read.refuse);
+            setNotice(null);
           }}
           disabled={busy !== null}
         >
