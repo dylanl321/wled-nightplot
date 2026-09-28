@@ -7,6 +7,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- Preview locate now sends immediately and follows continuous movement at up to 20 requests per second, with one request in flight and only the latest pending position. Moving no longer restarts a 220 ms settle timer. Failed, timed-out, or incomplete responses pause Preview and show **Retry Preview**; uncertain writes are not replayed automatically. Within one editor, toggle-off/unmount waits for the in-flight request before End Preview, and a rapid restart waits for that end to finish. Apply remains disabled during cleanup. This is a client-side repair; hardware timing, transport changes, and cross-tab/server cancellation remain separate work.
+
 ### Added
 
 - Find starts while Nightplot is open. The shell posts `POST /api/discover` on load and about once a minute while the tab is visible, and pauses while the tab is hidden. Lights and Add a Light show the new rows. **Find Lights** runs that scan again. A scan still refuses public addresses and still will not invent a port.

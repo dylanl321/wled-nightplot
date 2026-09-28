@@ -25,6 +25,14 @@ It is early software. There is no authentication and no TLS. A fixture report is
 
 The catalog slice id is `R6` (`CURRENT_SLICE` in `packages/shared/src/catalog.ts`). Strip provision, named presets (seeds), LED product attach, and range reconcile sit on that same flow.
 
+## Following the strip with Preview
+
+**Show on the real strip** sends the first position immediately and follows movement at up to 20 updates per second. It waits for each request to finish and then sends only the latest position. Moving continuously does not postpone the next update; stopping leaves the final position selected. Controller and network response time still determine how quickly the physical strip follows.
+
+If a request fails, times out, or returns an incomplete response, Preview pauses. The strip drawing becomes grey and **Retry Preview** sends the current position only when you choose it. A missing acknowledgement does not mean nothing reached the controller. Turning Preview off waits for the pending request and then ends it; Apply stays disabled until cleanup completes. An unconfirmed end is shown explicitly. Reload the Light to inspect its state, or use All Off.
+
+This client-side ordering covers one open editor. Coordination across tabs, server-side cancellation, complete restoration, and hardware response measurements are separate work; see the [refinement intake](refinement-intake.md).
+
 ## Shared catalog, then this Light
 
 Enroll the controller first. Then attach a shared LED product and set what belongs to that Light. Manage recipes on [`/led-products`](../README.md#ui). Attach them on [Strip](../README.md#ui) (`/lights/:id?mode=strip`).

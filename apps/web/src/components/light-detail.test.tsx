@@ -12,7 +12,7 @@ import {
   type ApplyResult,
   type LightDetail as LightDetailPayload,
 } from "@nightplot/shared";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { LightDetail } from "@/components/light-detail";
 import {
@@ -22,6 +22,65 @@ import {
   lightView,
   requestPath,
 } from "@/test/fixtures";
+
+describe("Elements Preview recovery", () => {
+  function initialDetail() {
+    return lightDetail({
+      light: lightView({
+        reachability: "online",
+        on: true,
+        brightness: 180,
+        bead: "#ffa000",
+        segmentCount: 1,
+      }),
+    });
+  }
+
+  it("shows a failed Preview, clears its live claim, and offers explicit retry", async () => {
+    const initial = initialDetail();
+    let attempts = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = requestPath(String(input));
+      if (path.endsWith("/preview") && ++attempts === 1) {
+        return new Response(JSON.stringify({ message: "Controller did not take the temporary look." }), { status: 422 });
+      }
+      return new Response(JSON.stringify(initial), { status: 200 });
+    }));
+    render(<LightDetail initial={initial} tab="elements" />);
+    fireEvent.click(screen.getByRole("button", { name: "Show on the real strip" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Preview paused");
+    expect(screen.getByText("Preview not confirmed")).toBeTruthy();
+    expect(screen.queryByText(/Lighting .* on Garage/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry Preview" }));
+    await waitFor(() => expect(attempts).toBe(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("keeps Apply disabled after toggling off until End Preview completes", async () => {
+    const initial = initialDetail();
+    let finishEnd!: () => void;
+    const endGate = new Promise<void>((resolve) => { finishEnd = resolve; });
+    const paths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = requestPath(String(input));
+      paths.push(path);
+      if (path.endsWith("/preview/end")) await endGate;
+      return new Response(JSON.stringify({ ...initial, restored: true }), { status: 200 });
+    }));
+    render(<LightDetail initial={initial} tab="elements" />);
+    fireEvent.click(screen.getByRole("button", { name: "Show on the real strip" }));
+    await waitFor(() => expect(paths.some((path) => path.endsWith("/preview"))).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Show on the real strip" }));
+    expect(screen.getByText("Ending Preview…")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => { finishEnd(); });
+    await waitFor(() => {
+      expect((screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled).toBe(false);
+    });
+    expect(screen.queryByText("Ending Preview…")).toBeNull();
+  });
+});
 
 describe("LightDetail Refresh", () => {
   it("Refresh probes this Light only — never the enrolled list", async () => {

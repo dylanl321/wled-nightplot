@@ -2,16 +2,17 @@
 
 import type { LightDetail } from "@nightplot/shared";
 import { act, renderHook } from "@testing-library/react";
+import { createElement, StrictMode, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { requestPath } from "@/test/fixtures";
 import {
   holdMarksCursor,
   holdSpans,
-  locateDebounceMs,
   locateFrame,
   locatePayloadKey,
-  LOCATE_HOLD_MS,
-  LOCATE_MOVE_MS,
+  LOCATE_INTERVAL_MS,
+  LOCATE_BOUNDARY_TIMEOUT_MS,
+  LOCATE_HOP_TIMEOUT_MS,
   useLiveLocate,
   type LocateFrame,
 } from "./use-live-locate";
@@ -24,6 +25,23 @@ function led(index: number, caption = `Lighting LED ${index}`): LocateFrame {
 
 function detail() {
   return { light: { id: "light-1" }, elements: [] } as unknown as LightDetail;
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+function response(status = 200, body: unknown = detail()) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function input(frame = led(1), enabled = true, lightId = "light-1") {
+  return { enabled, lightId, ledCount: 60, frame, brightness: 180, onDetail: vi.fn() };
 }
 
 async function finish(unmount: () => void) {
@@ -76,15 +94,6 @@ describe("locatePayloadKey", () => {
     };
     expect(locatePayloadKey(spans, 180)).not.toBe(locatePayloadKey(led(4), 180));
     expect(locatePayloadKey(led(4), 180)).not.toBe(locatePayloadKey(led(4), 200));
-  });
-});
-
-describe("locateDebounceMs", () => {
-  it("stays short on a hold, and lengthens only while hover/drag is bursting", () => {
-    expect(locateDebounceMs({ moving: false, msSinceLastSchedule: 20 })).toBe(LOCATE_HOLD_MS);
-    expect(locateDebounceMs({ moving: true, msSinceLastSchedule: null })).toBe(LOCATE_HOLD_MS);
-    expect(locateDebounceMs({ moving: true, msSinceLastSchedule: 40 })).toBe(LOCATE_MOVE_MS);
-    expect(locateDebounceMs({ moving: true, msSinceLastSchedule: 400 })).toBe(LOCATE_HOLD_MS);
   });
 });
 
@@ -201,6 +210,285 @@ describe("useLiveLocate", () => {
     vi.unstubAllGlobals();
   });
 
+  it("sends immediately and every 50 ms during an uninterrupted sweep, then settles", async () => {
+    vi.useFakeTimers();
+    const bodies: unknown[] = [];
+    const sentAt: number[] = [];
+    stubPreview({ bodies, gate: async () => { sentAt.push(Date.now()); } });
+    const started = Date.now();
+    const { rerender, unmount } = renderHook((next) => useLiveLocate(next), {
+      initialProps: input(led(0)),
+    });
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(bodies).toHaveLength(1);
+    for (let index = 1; index <= 20; index++) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+      rerender(input(led(index)));
+    }
+    expect(bodies).toHaveLength(5); // Updates arrived before movement stopped.
+    expect(sentAt.map((time) => time - started)).toEqual([0, 50, 100, 150, 200]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(LOCATE_INTERVAL_MS); });
+    expect(bodies.at(-1)).toMatchObject({ start: 20, stop: 21 });
+    expect(bodies).toHaveLength(6);
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(bodies).toHaveLength(6);
+    await finish(unmount);
+  });
+
+  it("keeps the minimum interval when a request finishes before the next deadline", async () => {
+    vi.useFakeTimers();
+    const gate = deferred();
+    const bodies: unknown[] = [];
+    stubPreview({ bodies, gate: () => bodies.length === 1 ? gate.promise : Promise.resolve() });
+    const { rerender, unmount } = renderHook((next) => useLiveLocate(next), {
+      initialProps: input(),
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    rerender(input(led(2)));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20);
+      gate.resolve();
+    });
+    expect(bodies).toHaveLength(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(29); });
+    expect(bodies).toHaveLength(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(bodies).toHaveLength(2);
+    await finish(unmount);
+  });
+
+  it("cancels an unsent deadline when the cursor returns to the acknowledged position", async () => {
+    vi.useFakeTimers();
+    const bodies: unknown[] = [];
+    stubPreview({ bodies });
+    const { rerender, unmount } = renderHook((next) => useLiveLocate(next), { initialProps: input() });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    rerender(input(led(2)));
+    rerender(input(led(1)));
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    expect(bodies).toHaveLength(1);
+    await finish(unmount);
+  });
+
+  it.each(["http", "network", "incomplete"] as const)(
+    "pauses after a %s failure and sends only the latest frame on explicit retry",
+    async (failure) => {
+      vi.useFakeTimers();
+      const bodies: unknown[] = [];
+      vi.stubGlobal("fetch", vi.fn(async (path: string, init: RequestInit) => {
+        if (path.endsWith("/preview/end")) return response();
+        bodies.push(JSON.parse(String(init.body)));
+        if (bodies.length === 1) {
+          if (failure === "network") throw new TypeError("Failed to fetch");
+          if (failure === "incomplete") return response(200, {});
+          return response(422, { message: "Controller did not take the temporary look." });
+        }
+        return response();
+      }));
+      const { result, rerender, unmount } = renderHook((next) => useLiveLocate(next), {
+        initialProps: input(),
+      });
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(result.current.error?.kind).toBe("frame");
+      rerender(input(led(9)));
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(bodies).toHaveLength(1);
+      act(() => result.current.retry());
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(bodies).toHaveLength(2);
+      expect(bodies.at(-1)).toMatchObject({ start: 9 });
+      expect(result.current.error).toBeNull();
+      await finish(unmount);
+    },
+  );
+
+  it("does not deduplicate a failed frame when retrying the same position", async () => {
+    vi.useFakeTimers();
+    let posts = 0;
+    vi.stubGlobal("fetch", vi.fn(async (path: string) => {
+      if (path.endsWith("/preview/end")) return response();
+      return ++posts === 1 ? response(422, { message: "Write failed." }) : response();
+    }));
+    const { result, unmount } = renderHook(() => useLiveLocate(input()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    act(() => result.current.retry());
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    expect(posts).toBe(2);
+    expect(result.current.error).toBeNull();
+    await finish(unmount);
+  });
+
+  it("aborts a hung opening request, pauses, and does not automatically replay it", async () => {
+    vi.useFakeTimers();
+    let posts = 0;
+    let aborted = false;
+    vi.stubGlobal("fetch", vi.fn((path: string, init: RequestInit) => {
+      if (path.endsWith("/preview/end")) return Promise.resolve(response());
+      posts++;
+      return new Promise<Response>((_, reject) => {
+        init.signal?.addEventListener("abort", () => {
+          aborted = true;
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+    }));
+    const { result, rerender, unmount } = renderHook((next) => useLiveLocate(next), {
+      initialProps: input(),
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(LOCATE_BOUNDARY_TIMEOUT_MS); });
+    expect(aborted).toBe(true);
+    expect(result.current.error?.message).toContain("did not respond in time");
+    rerender(input(led(12)));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(posts).toBe(1);
+    await finish(unmount);
+  });
+
+  it("ends once after an in-flight frame before restarting on a rapid off/on toggle", async () => {
+    vi.useFakeTimers();
+    const frameGate = deferred();
+    const endGate = deferred();
+    const paths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (path: string) => {
+      paths.push(path);
+      if (paths.length === 1) await frameGate.promise;
+      if (path.endsWith("/preview/end")) await endGate.promise;
+      return response();
+    }));
+    const { result, rerender, unmount } = renderHook((next) => useLiveLocate(next), {
+      initialProps: input(),
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    rerender(input(led(2), false));
+    expect(result.current.stopping).toBe(true);
+    rerender(input(led(3), true));
+    expect(paths).toEqual(["/api/lights/light-1/preview"]);
+    await act(async () => { frameGate.resolve(); });
+    expect(paths).toEqual(["/api/lights/light-1/preview", "/api/lights/light-1/preview/end"]);
+    await act(async () => {
+      endGate.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(paths).toEqual([
+      "/api/lights/light-1/preview",
+      "/api/lights/light-1/preview/end",
+      "/api/lights/light-1/preview",
+    ]);
+    expect(result.current.stopping).toBe(false);
+    await finish(unmount);
+  });
+
+  it("uses the shorter timeout for a hung hop after the opening frame succeeds", async () => {
+    vi.useFakeTimers();
+    let posts = 0;
+    vi.stubGlobal("fetch", vi.fn((path: string, init: RequestInit) => {
+      if (path.endsWith("/preview/end") || ++posts === 1) return Promise.resolve(response());
+      return new Promise<Response>((_, reject) => {
+        init.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+      });
+    }));
+    const { result, rerender, unmount } = renderHook((next) => useLiveLocate(next), {
+      initialProps: input(),
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    rerender(input(led(2)));
+    await act(async () => { await vi.advanceTimersByTimeAsync(LOCATE_INTERVAL_MS); });
+    expect(posts).toBe(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(LOCATE_HOP_TIMEOUT_MS - 1); });
+    expect(result.current.error).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(result.current.error?.kind).toBe("frame");
+    await finish(unmount);
+  });
+
+  it("cancels a first frame if disabled before its timer runs", async () => {
+    vi.useFakeTimers();
+    const paths: string[] = [];
+    stubPreview({ paths, bodies: [] });
+    const { rerender, unmount } = renderHook((next) => useLiveLocate(next), { initialProps: input() });
+    rerender(input(led(1), false));
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    expect(paths).toEqual([]);
+    await finish(unmount);
+  });
+
+  it("waits for an in-flight frame before a single unmount cleanup and ignores its result", async () => {
+    vi.useFakeTimers();
+    const gate = deferred();
+    const paths: string[] = [];
+    const onDetail = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(async (path: string) => {
+      paths.push(path);
+      if (path.endsWith("/preview")) await gate.promise;
+      return response();
+    }));
+    const { unmount } = renderHook(() => useLiveLocate({ ...input(), onDetail }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    unmount();
+    expect(paths).toEqual(["/api/lights/light-1/preview"]);
+    await act(async () => { gate.resolve(); });
+    expect(paths).toEqual(["/api/lights/light-1/preview", "/api/lights/light-1/preview/end"]);
+    expect(onDetail).not.toHaveBeenCalled();
+  });
+
+  it("finishes an old Light without applying its delayed response to a new Light", async () => {
+    vi.useFakeTimers();
+    const gate = deferred();
+    const paths: string[] = [];
+    const onOld = vi.fn();
+    const onNew = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(async (path: string) => {
+      paths.push(path);
+      if (path === "/api/lights/light-1/preview") await gate.promise;
+      return response();
+    }));
+    const { rerender, unmount } = renderHook((next) => useLiveLocate(next), {
+      initialProps: { ...input(), onDetail: onOld },
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    rerender({ ...input(led(5), true, "light-2"), onDetail: onNew });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(onNew).toHaveBeenCalledTimes(1);
+    await act(async () => { gate.resolve(); });
+    expect(onOld).not.toHaveBeenCalled();
+    expect(onNew).toHaveBeenCalledTimes(1);
+    expect(paths.filter((path) => path === "/api/lights/light-1/preview/end")).toHaveLength(1);
+    await finish(unmount);
+  });
+
+  it("does not reopen automatically if End Preview cannot restore the previous look", async () => {
+    vi.useFakeTimers();
+    const paths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (path: string) => {
+      paths.push(path);
+      return response(200, path.endsWith("/preview/end") ? { ...detail(), restored: false } : detail());
+    }));
+    const { result, rerender, unmount } = renderHook((next) => useLiveLocate(next), {
+      initialProps: input(),
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    rerender(input(led(1), false));
+    rerender(input(led(2), true));
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    expect(result.current.error?.kind).toBe("end");
+    expect(result.current.stopping).toBe(false);
+    expect(paths.filter((path) => path.endsWith("/preview"))).toHaveLength(1);
+    await finish(unmount);
+  });
+
+  it("does not send an abandoned opening request during Strict Mode effect replay", async () => {
+    vi.useFakeTimers();
+    const bodies: unknown[] = [];
+    stubPreview({ bodies });
+    const { unmount } = renderHook(() => useLiveLocate(input()), {
+      wrapper: ({ children }: { children: ReactNode }) => createElement(StrictMode, null, children),
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(bodies).toHaveLength(1);
+    await finish(unmount);
+  });
+
   it("posts the locate range, and ends Preview when the hook unmounts", async () => {
     vi.useFakeTimers();
     const paths: string[] = [];
@@ -219,7 +507,7 @@ describe("useLiveLocate", () => {
     );
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(LOCATE_HOLD_MS);
+      await vi.advanceTimersByTimeAsync(LOCATE_INTERVAL_MS);
     });
     expect(paths.some((path) => path === "/api/lights/light-1/preview")).toBe(true);
     expect(bodies[0]).toMatchObject({ start: 4, stop: 5, color: "#fff4dc", brightness: 180 });
@@ -252,14 +540,13 @@ describe("useLiveLocate", () => {
           ledCount: 60,
           frame: next,
           brightness: 180,
-          moving: true,
           onDetail: () => undefined,
         }),
       { initialProps: { next: led(1) } },
     );
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(LOCATE_HOLD_MS);
+      await vi.advanceTimersByTimeAsync(LOCATE_INTERVAL_MS);
     });
     expect(bodies).toHaveLength(1);
     expect(bodies[0]).toMatchObject({ start: 1, stop: 2 });
@@ -268,7 +555,7 @@ describe("useLiveLocate", () => {
     rerender({ next: led(3) });
     rerender({ next: led(7) });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(LOCATE_MOVE_MS);
+      await vi.advanceTimersByTimeAsync(LOCATE_INTERVAL_MS);
     });
     expect(bodies).toHaveLength(1);
 
@@ -276,6 +563,7 @@ describe("useLiveLocate", () => {
       release();
       await Promise.resolve();
       await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
     });
     expect(bodies).toHaveLength(2);
     expect(bodies[1]).toMatchObject({ start: 7, stop: 8, color: "#fff4dc" });
@@ -301,19 +589,19 @@ describe("useLiveLocate", () => {
     );
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(LOCATE_HOLD_MS);
+      await vi.advanceTimersByTimeAsync(LOCATE_INTERVAL_MS);
     });
     expect(bodies).toHaveLength(1);
 
     rerender({ next: led(4, "Lighting LED 4 on Eave") });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(LOCATE_HOLD_MS);
+      await vi.advanceTimersByTimeAsync(LOCATE_INTERVAL_MS);
     });
     expect(bodies).toHaveLength(1);
 
     rerender({ next: led(5) });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(LOCATE_HOLD_MS);
+      await vi.advanceTimersByTimeAsync(LOCATE_INTERVAL_MS);
     });
     expect(bodies).toHaveLength(2);
     expect(bodies[1]).toMatchObject({ start: 5, stop: 6 });
@@ -342,56 +630,20 @@ describe("useLiveLocate", () => {
     );
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(LOCATE_HOLD_MS);
+      await vi.advanceTimersByTimeAsync(LOCATE_INTERVAL_MS);
     });
     expect(bodies).toHaveLength(1);
     expect(details).toHaveLength(1);
 
     rerender({ next: led(2) });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(LOCATE_HOLD_MS);
+      await vi.advanceTimersByTimeAsync(LOCATE_INTERVAL_MS);
     });
     expect(bodies).toHaveLength(2);
     expect(details).toHaveLength(1);
 
     await finish(unmount);
-    expect(details).toHaveLength(2);
-  });
-
-  it("uses the longer settle while hover hops keep arriving", async () => {
-    vi.useFakeTimers();
-    const bodies: unknown[] = [];
-    stubPreview({ bodies });
-
-    const { rerender, unmount } = renderHook(
-      ({ next }: { next: LocateFrame }) =>
-        useLiveLocate({
-          enabled: true,
-          lightId: "light-1",
-          ledCount: 60,
-          frame: next,
-          brightness: 180,
-          moving: true,
-          onDetail: () => undefined,
-        }),
-      { initialProps: { next: led(1) } },
-    );
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(40);
-    });
-    rerender({ next: led(2) });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(LOCATE_HOLD_MS);
-    });
-    expect(bodies).toHaveLength(0);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(LOCATE_MOVE_MS);
-    });
-    expect(bodies).toHaveLength(1);
-    expect(bodies[0]).toMatchObject({ start: 2, stop: 3 });
-    await finish(unmount);
+    expect(details).toHaveLength(1);
   });
 
   it("hold sweep across one Element posts the same spans once", async () => {
@@ -407,14 +659,13 @@ describe("useLiveLocate", () => {
           ledCount: 20,
           frame: next,
           brightness: 180,
-          moving: true,
           onDetail: () => undefined,
         }),
       { initialProps: { next: locateHold(1) } },
     );
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(LOCATE_HOLD_MS);
+      await vi.advanceTimersByTimeAsync(LOCATE_INTERVAL_MS);
     });
     expect(bodies).toHaveLength(1);
     expect(bodies[0]).toEqual({
@@ -428,13 +679,13 @@ describe("useLiveLocate", () => {
     rerender({ next: locateHold(4) });
     rerender({ next: locateHold(7) });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(LOCATE_MOVE_MS);
+      await vi.advanceTimersByTimeAsync(LOCATE_INTERVAL_MS);
     });
     expect(bodies).toHaveLength(1);
 
     rerender({ next: locateHold(9) });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(LOCATE_MOVE_MS);
+      await vi.advanceTimersByTimeAsync(LOCATE_INTERVAL_MS);
     });
     expect(bodies).toHaveLength(2);
     expect(bodies[1]).toEqual({

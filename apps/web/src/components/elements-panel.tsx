@@ -121,13 +121,12 @@ export function ElementsPanel({
     elements: state.els,
     hues,
   });
-  useLiveLocate({
+  const locate = useLiveLocate({
     enabled: live && !unreachable,
     lightId: light.id,
     ledCount: light.ledCount,
     frame,
     brightness: light.brightness,
-    moving: state.hover != null || state.drag != null,
     onDetail,
   });
 
@@ -137,7 +136,7 @@ export function ElementsPanel({
     issueMessage: firstIssue?.message ?? null,
     elementCount: state.els.length,
     busyKind: detail.session?.kind ?? null,
-    previewIntent: live && !unreachable,
+    previewIntent: (live && !unreachable) || locate.stopping || locate.error?.kind === "end",
     segmentCount: light.segmentCount,
     segmentColor: typeof light.bead === "string" ? light.bead : null,
   });
@@ -283,6 +282,17 @@ export function ElementsPanel({
         onLive={toggleLive}
       />
 
+      {locate.error ? (
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/50 px-4 py-3 text-[13px]">
+          <p className="flex-1 text-destructive">{locate.error.message}</p>
+          {live && !unreachable && locate.error.kind === "frame" && !locate.stopping ? (
+            <Button variant="outline" className="h-9 text-[13px]" onClick={locate.retry}>
+              Retry Preview
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="flex flex-col gap-3 rounded-[14px] border border-border bg-card px-5 pt-3.5 pb-3">
         <div className="flex min-h-7 items-center gap-3">
           <span
@@ -294,11 +304,15 @@ export function ElementsPanel({
             {read.chip}
           </span>
           <span className="text-[14px] text-[#c9c3b8]">{read.text}</span>
-          <span className={cn("ml-auto text-[12px]", live && !unreachable ? "text-online" : "text-muted-foreground")}>
-            {live && !unreachable
+          <span className={cn("ml-auto text-[12px]", live && !unreachable && !locate.error && !locate.stopping ? "text-online" : "text-muted-foreground")}>
+            {locate.stopping
+              ? "Ending Preview…"
+              : locate.error
+              ? "Preview not confirmed"
+              : live && !unreachable
               ? (frame?.caption ?? "Preview on · pick something to light")
               : "Off · the strip keeps its look"}
-            {live && detail.session?.kind === "preview" && detail.liveCaption ? (
+            {live && !locate.error && !locate.stopping && detail.session?.kind === "preview" && detail.liveCaption ? (
               <span className="mt-0.5 block">{detail.liveCaption}</span>
             ) : null}
           </span>
@@ -311,8 +325,8 @@ export function ElementsPanel({
           state={state}
           hues={hues}
           issueWord={wordFor}
-          resting={() => displayBead(light)}
-          live={live && !unreachable}
+          resting={() => locate.error || locate.stopping ? "unknown" : displayBead(light)}
+          live={live && !unreachable && !locate.error && !locate.stopping}
           frame={frame}
           liveLabel={live ? "Stop lighting" : "Light on strip"}
           onLive={toggleLive}

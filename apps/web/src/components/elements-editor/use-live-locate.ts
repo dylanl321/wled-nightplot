@@ -1,8 +1,8 @@
 "use client";
 
 import type { Element, LightDetail } from "@nightplot/shared";
-import { useEffect, useRef } from "react";
-import { postJson } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { fetchJson } from "@/lib/api";
 import type { Drag, EditorState } from "./use-editor-state";
 import { LOCATE_LIT, LOCATE_OFF, type Range } from "./ops";
 
@@ -178,12 +178,11 @@ export function drawingRange(state: EditorState): Range | null {
   return state.draftRange;
 }
 
-/** First hop / intentional hold. Short enough that a parked LED does not feel sticky. */
-export const LOCATE_HOLD_MS = 80;
-/** Hover or drag while frames keep changing. Trailing settle; latest frame wins. */
-export const LOCATE_MOVE_MS = 220;
-/** Two schedules closer than this count as a sweep, not a hold. */
-export const LOCATE_BURST_GAP_MS = 140;
+/** Send immediately, then at most once per 50 ms. Movement never postpones a send. */
+export const LOCATE_INTERVAL_MS = 50;
+/** Opening/closing may probe and reread; hops normally require only one controller write. */
+export const LOCATE_BOUNDARY_TIMEOUT_MS = 15_000;
+export const LOCATE_HOP_TIMEOUT_MS = 5_000;
 
 /** Preview body identity — start/stop/color or spans, plus brightness. Caption is not sent. */
 export function locatePayloadKey(frame: LocateFrame, brightness: number | null): string {
@@ -193,17 +192,6 @@ export function locatePayloadKey(frame: LocateFrame, brightness: number | null):
   return `${painted}@${brightness ?? ""}`;
 }
 
-export function locateDebounceMs(input: {
-  moving: boolean;
-  msSinceLastSchedule: number | null;
-}): number {
-  if (!input.moving) return LOCATE_HOLD_MS;
-  if (input.msSinceLastSchedule != null && input.msSinceLastSchedule < LOCATE_BURST_GAP_MS) {
-    return LOCATE_MOVE_MS;
-  }
-  return LOCATE_HOLD_MS;
-}
-
 export function locatePreviewBody(frame: LocateFrame, brightness: number | null) {
   const painted = frame.spans
     ? { spans: frame.spans }
@@ -211,124 +199,226 @@ export function locatePreviewBody(frame: LocateFrame, brightness: number | null)
   return brightness != null ? { ...painted, brightness } : painted;
 }
 
-export function useLiveLocate(input: {
+type LocateInput = {
   enabled: boolean;
   lightId: string;
   ledCount: number;
   frame: LocateFrame | null;
   brightness: number | null;
-  /** Hover or drag — stronger trailing settle than a parked hold. */
-  moving?: boolean;
   onDetail: (detail: LightDetail) => void;
-}) {
-  const onDetail = useRef(input.onDetail);
-  onDetail.current = input.onDetail;
-  const enabled = useRef(input.enabled);
-  enabled.current = input.enabled;
-  const brightness = useRef(input.brightness);
-  brightness.current = input.brightness;
-  const lightId = useRef(input.lightId);
-  lightId.current = input.lightId;
-  const desired = useRef<LocateFrame | null>(null);
-  const lastSentKey = useRef<string | null>(null);
-  const hopDetailApplied = useRef(false);
-  const open = useRef(false);
-  const flight = useRef<Promise<void> | null>(null);
-  const disposed = useRef(false);
-  const lastScheduleAt = useRef<number | null>(null);
-  const flush = useRef<() => Promise<void>>(async () => undefined);
+};
 
-  flush.current = async function runFlush() {
-    if (flight.current) return;
-    const next = desired.current;
-    if (!enabled.current || disposed.current || !next) return;
-    const key = locatePayloadKey(next, brightness.current);
-    if (key === lastSentKey.current) return;
+type LocateStatus = {
+  error: { kind: "frame" | "end"; message: string } | null;
+  stopping: boolean;
+};
 
-    const run = (async () => {
-      if (!enabled.current || disposed.current) return;
-      open.current = true;
-      const res = await postJson<LightDetail>(
-        `/api/lights/${lightId.current}/preview`,
-        locatePreviewBody(next, brightness.current),
-      );
-      lastSentKey.current = key;
-      if (disposed.current || !enabled.current) {
-        open.current = false;
-        lastSentKey.current = null;
-        hopDetailApplied.current = false;
-        await endPreview(lightId.current, onDetail.current);
-        return;
-      }
-      // First hop only. Later hops omit LightDetail so beads do not chase /json/live.
-      if (res.ok && !hopDetailApplied.current) {
-        hopDetailApplied.current = true;
-        onDetail.current(res.data);
-      }
-    })();
+const IDLE: LocateStatus = { error: null, stopping: false };
 
-    flight.current = run;
-    try {
-      await run;
-    } finally {
-      flight.current = null;
-      const latest = desired.current;
-      if (
-        !disposed.current &&
-        enabled.current &&
-        latest &&
-        locatePayloadKey(latest, brightness.current) !== lastSentKey.current
-      ) {
-        await flush.current();
-      }
-    }
-  };
+export function useLiveLocate(input: LocateInput) {
+  const latest = useRef(input);
+  const sender = useRef<ReturnType<typeof createLocateSender> | null>(null);
+  const [reported, setReported] = useState({ lightId: input.lightId, status: IDLE });
 
   useEffect(() => {
-    disposed.current = false;
+    latest.current = input;
+  });
+  useEffect(() => {
+    const current = createLocateSender(
+      input.lightId,
+      (detail) => latest.current.onDetail(detail),
+      (status) => setReported({ lightId: input.lightId, status }),
+    );
+    sender.current = current;
     return () => {
-      disposed.current = true;
-      if (open.current) void endPreview(input.lightId, onDetail.current);
-      open.current = false;
-      lastSentKey.current = null;
-      hopDetailApplied.current = false;
-      desired.current = null;
+      sender.current = null;
+      current.dispose();
     };
   }, [input.lightId]);
-
   const payloadKey = input.frame ? locatePayloadKey(input.frame, input.brightness) : "";
-  const moving = Boolean(input.moving);
-
   useEffect(() => {
-    desired.current = input.frame;
-    if (!input.enabled || !input.frame) {
-      lastSentKey.current = null;
-      hopDetailApplied.current = false;
-      lastScheduleAt.current = null;
-      if (open.current) {
-        open.current = false;
-        void endPreview(input.lightId, onDetail.current);
-      }
-      return;
-    }
-    if (flight.current) {
-      // Latest-wins: desired already replaced. Do not queue superseded hops.
-      return;
-    }
-    const now = Date.now();
-    const delay = locateDebounceMs({
-      moving,
-      msSinceLastSchedule: lastScheduleAt.current == null ? null : now - lastScheduleAt.current,
-    });
-    lastScheduleAt.current = now;
-    const timer = window.setTimeout(() => {
-      void flush.current();
-    }, delay);
-    return () => window.clearTimeout(timer);
-  }, [input.enabled, input.lightId, payloadKey, moving]);
+    sender.current?.update(latest.current);
+  }, [input.enabled, input.lightId, payloadKey]);
+
+  const status = reported.lightId === input.lightId ? reported.status : IDLE;
+  return { ...status, retry: () => sender.current?.retry() };
 }
 
-async function endPreview(lightId: string, onDetail: (detail: LightDetail) => void) {
-  const res = await postJson<LightDetail>(`/api/lights/${lightId}/preview/end`, {});
-  if (res.ok) onDetail(res.data);
+/**
+ * One sender owns one Light for its whole lifetime. A toggle-off is an end
+ * barrier: finish the current request, end once, then allow a new Preview.
+ * Server-wide ownership and cancellation across tabs are a separate concern.
+ */
+function createLocateSender(
+  lightId: string,
+  onDetail: (detail: LightDetail) => void,
+  onStatus: (status: LocateStatus) => void,
+) {
+  let enabled = false;
+  let disposed = false;
+  let desired: { frame: LocateFrame; brightness: number | null } | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let flight = false;
+  let open = false;
+  let mustEnd = false;
+  let firstAcknowledged = false;
+  let lastAcknowledged: string | null = null;
+  let lastStarted: number | null = null;
+  let status = IDLE;
+
+  function publish(next: LocateStatus) {
+    status = next;
+    if (!disposed) onStatus(next);
+  }
+
+  function clearTimer() {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+  }
+
+  function schedule() {
+    if (flight) return;
+    if (mustEnd) {
+      void end();
+      return;
+    }
+    if (disposed || !enabled || !desired || status.error) return;
+    if (locatePayloadKey(desired.frame, desired.brightness) === lastAcknowledged) {
+      clearTimer();
+      return;
+    }
+    if (timer !== null) return; // Keep the deadline, replace only the desired frame.
+    const wait = lastStarted === null ? 0 : Math.max(0, LOCATE_INTERVAL_MS - (Date.now() - lastStarted));
+    timer = setTimeout(() => void send(), wait);
+  }
+
+  async function send() {
+    timer = null;
+    if (flight || disposed || !enabled || !desired || mustEnd || status.error) return;
+    const next = desired;
+    const key = locatePayloadKey(next.frame, next.brightness);
+    if (key === lastAcknowledged) return;
+    flight = true;
+    open = true; // A lost response does not prove the server sent nothing.
+    lastStarted = Date.now();
+    try {
+      const detail = await requestLocate(
+        `/api/lights/${lightId}/preview`,
+        locatePreviewBody(next.frame, next.brightness),
+        firstAcknowledged ? LOCATE_HOP_TIMEOUT_MS : LOCATE_BOUNDARY_TIMEOUT_MS,
+      );
+      lastAcknowledged = key;
+      if (!disposed && enabled && !mustEnd && !firstAcknowledged) {
+        firstAcknowledged = true;
+        onDetail(detail);
+      }
+    } catch (error) {
+      lastAcknowledged = null;
+      publish({
+        ...status,
+        error: {
+          kind: "frame",
+          message: `Preview paused. ${errorMessage(error)} The last write is not confirmed.`,
+        },
+      });
+    } finally {
+      flight = false;
+      schedule();
+    }
+  }
+
+  async function end() {
+    flight = true;
+    try {
+      const detail = await requestLocate(
+        `/api/lights/${lightId}/preview/end`,
+        {},
+        LOCATE_BOUNDARY_TIMEOUT_MS,
+      );
+      if ((detail as LightDetail & { restored?: boolean }).restored === false) {
+        throw new Error("The previous look could not be restored.");
+      }
+      if (!disposed) onDetail(detail);
+      publish(IDLE);
+    } catch (error) {
+      // 404 means there is no session to end (e.g. a rejected first frame).
+      if (error instanceof Error && "status" in error && error.status === 404) {
+        publish(IDLE);
+      } else {
+        publish({
+          stopping: false,
+          error: {
+            kind: "end",
+            message: `End Preview is not confirmed. ${errorMessage(error)} Reload this Light or use All Off.`,
+          },
+        });
+      }
+    } finally {
+      open = false;
+      mustEnd = false;
+      firstAcknowledged = false;
+      lastAcknowledged = null;
+      lastStarted = null;
+      flight = false;
+      schedule();
+    }
+  }
+
+  return {
+    update(input: LocateInput) {
+      desired = input.frame ? { frame: input.frame, brightness: input.brightness } : null;
+      const active = input.enabled && desired !== null;
+      if (!active) {
+        enabled = false;
+        clearTimer();
+        if (open) {
+          mustEnd = true;
+          publish({ ...status, stopping: true });
+        }
+      } else {
+        enabled = true;
+      }
+      schedule();
+    },
+    retry() {
+      if (disposed || !enabled || status.error?.kind !== "frame" || mustEnd) return;
+      // Explicit retry only; the failed frame was never acknowledged.
+      publish(IDLE);
+      schedule();
+    },
+    dispose() {
+      disposed = true;
+      enabled = false;
+      desired = null;
+      clearTimer();
+      if (open) mustEnd = true;
+      schedule();
+    },
+  };
+}
+
+async function requestLocate(path: string, body: unknown, timeoutMs: number): Promise<LightDetail> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const detail = await fetchJson<LightDetail>(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!detail.light || !Array.isArray(detail.elements)) {
+      throw new Error("The server returned an incomplete response.");
+    }
+    return detail;
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error("The server did not respond in time.");
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "The request could not be completed.";
 }
