@@ -73,6 +73,16 @@ describe("probeFailedReason", () => {
 });
 
 describe("probeWled probe-failed copy", () => {
+  it("names an unreachable API process without claiming that WLED answered", async () => {
+    const outcome = await probeWled(
+      { hostname: "10.0.1.31", port: 80 },
+      async () => { throw new Error("fetch failed", { cause: Object.assign(new Error("no route"), { code: "EHOSTUNREACH" }) }); },
+    );
+    expect(outcome).toEqual({
+      kind: "probe-failed",
+      reason: "The API process cannot reach 10.0.1.31 on this network. Check the LAN route and, on macOS, Local Network access for the app running Nightplot. Nothing was added.",
+    });
+  });
   it("does not say in 3 s when fetch refuses immediately", async () => {
     const started = Date.now();
     const outcome = await probeWled(

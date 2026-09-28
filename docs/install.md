@@ -9,6 +9,8 @@ Run Nightplot Configure on the machine in front of you with Node and pnpm. Docke
 - A browser on the same machine as the app
 
 Find (mDNS / SSDP) needs a LAN that actually carries those packets. The queries go out on each IPv4 that is not loopback and not `169.254.0.0/16`. mDNS rows are `_wled._tcp` answers. Typed address and `NIGHTPLOT_DISCOVERY_TARGETS` do not need multicast.
+On macOS, Find also browses `_wled._tcp` through the system Bonjour service and resolves its advertised SRV port and LAN IPv4. This helps when raw Node multicast cannot send on the Mac; it does not bypass LAN permissions or prove a Light answered. If the system browse cannot resolve an address, type the controller’s `host:port` instead.
+If Bonjour lists a WLED but Find says **The API process cannot reach** its address, check **System Settings → Privacy & Security → Local Network** for the app that launched Nightplot (such as Terminal or Codex), allow LAN access, and restart Nightplot. A working `curl` in a different app does not prove the Node API process has that access. Find will keep the row rejected until its own WLED probe answers.
 
 ```bash
 pnpm install

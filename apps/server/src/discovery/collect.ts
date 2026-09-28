@@ -1,6 +1,7 @@
 import { createSocket, type Socket } from "node:dgram";
 import { networkInterfaces } from "node:os";
 import { parseHostPort, type DiscoverVia } from "@nightplot/shared";
+import { collectBonjour } from "./bonjour.ts";
 import {
   discoverySendAddresses,
   forEachAdapter,
@@ -60,11 +61,12 @@ export function createCollector(options: {
       interfaces: networkInterfaces(),
       primary,
     });
-    const [mdns, ssdp] = await Promise.all([
+    const [mdns, ssdp, bonjour] = await Promise.all([
       collectMdns(options.mdnsMs ?? 1500, addresses),
       collectSsdp(options.ssdpMs ?? 1500, addresses),
+      process.platform === "darwin" && !pin ? collectBonjour(options.mdnsMs ?? 1500) : Promise.resolve([]),
     ]);
-    found.push(...mdns, ...ssdp);
+    found.push(...mdns, ...ssdp, ...bonjour);
     return dedupe(found);
   };
 }

@@ -31,6 +31,10 @@ export function probeFailedReason(hostname: string, elapsedMs: number): string {
   return `${hostname} didn’t return a snapshot in ${seconds} s.`;
 }
 
+export function unreachableProbeReason(hostname: string): string {
+  return `The API process cannot reach ${hostname} on this network. Check the LAN route and, on macOS, Local Network access for the app running Nightplot. Nothing was added.`;
+}
+
 export function createWledProbe(fetchFn: typeof fetch = fetch): ProbeFn {
   return (target) => probeWled(target, fetchFn);
 }
@@ -59,6 +63,9 @@ export async function probeWled(
 
     const info = await getJson(fetchFn, `${base}/json/info`, timeoutMs);
     if (!info.ok) {
+      if (combined.unreachable || info.unreachable) {
+        return { kind: "probe-failed", reason: unreachableProbeReason(target.hostname) };
+      }
       return failed();
     }
     const infoOnly = parseWledPayload({ info: info.body });
@@ -92,7 +99,7 @@ async function getJson(
   fetchFn: typeof fetch,
   url: string,
   timeoutMs: number,
-): Promise<{ ok: true; body: unknown } | { ok: false }> {
+): Promise<{ ok: true; body: unknown } | { ok: false; unreachable?: boolean }> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {
@@ -103,8 +110,9 @@ async function getJson(
     if (!res.ok) return { ok: false };
     const body: unknown = await res.json();
     return { ok: true, body };
-  } catch {
-    return { ok: false };
+  } catch (error) {
+    const cause = error instanceof Error && "cause" in error ? error.cause : error;
+    return { ok: false, unreachable: cause instanceof Error && "code" in cause && cause.code === "EHOSTUNREACH" };
   } finally {
     clearTimeout(timer);
   }
