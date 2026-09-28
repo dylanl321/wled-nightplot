@@ -112,6 +112,69 @@ describe("Strip provision", () => {
     expect(screen.getByRole("button", { name: "Manual fields" })).toBeTruthy();
   });
 
+  it("shows a load-path refuse once — banner, not a doubled notice", async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      if (path.endsWith("/provision") && init?.method !== "POST") {
+        return new Response(
+          JSON.stringify(
+            payload({
+              provision: {
+                ...provision,
+                fingerprint: { ...provision.fingerprint, writable: false, fields: [] },
+                refuse: CFG_REFUSE_MESSAGE,
+              },
+            }),
+          ),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ message: "unexpected path" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
+
+    const lines = await screen.findAllByText(CFG_REFUSE_MESSAGE);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.tagName).toBe("P");
+    expect(lines[0]?.className).toMatch(/font-semibold/);
+    expect(screen.getAllByText(/Not Hardware Done/)).toHaveLength(1);
+    expect(screen.queryByText("Sent")).toBeNull();
+    expect(screen.queryByText("Read back")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Revert" }));
+    expect(screen.getAllByText(CFG_REFUSE_MESSAGE)).toHaveLength(1);
+    expect(screen.getAllByText(/Not Hardware Done/)).toHaveLength(1);
+  });
+
+  it("shows a successful load caption once — no refuse notice", async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const path = requestPath(String(input));
+      if (path.endsWith("/provision")) {
+        return new Response(JSON.stringify(payload()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ message: "unexpected path" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
+
+    expect(await screen.findByRole("button", { name: "Apply" })).toBeTruthy();
+    expect(screen.getAllByText(/Not Hardware Done/)).toHaveLength(1);
+    expect(screen.queryByText(CFG_REFUSE_MESSAGE)).toBeNull();
+    expect(screen.queryByText("Sent")).toBeNull();
+  });
+
   it("keeps a write→reread mismatch on the failure UI", async () => {
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = requestPath(String(input));
