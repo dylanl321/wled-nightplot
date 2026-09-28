@@ -73,6 +73,17 @@ would exceed the 512-span Preview limit, so the option is disabled rather than
 showing an incomplete count. End Preview restores the previous look; All Off
 cancels without restoring. No count-off colour or range is saved or Applied.
 
+**Find an LED · halve the strip** helps locate the LED at a physical spot
+(for example, a corner). With Preview on, it lights the lower-index half of
+the remaining range. Look at *that spot* and choose **Lit at my spot** if an
+LED there is lit, or **Not lit at my spot** if it is dark. Each answer keeps
+the corresponding half and lights half again, until one zero-based LED remains.
+For five LEDs, the first check lights LEDs 0–2; a Lit answer checks 0–1 next,
+and a Not lit answer checks 3. **Start over** returns to the whole strip;
+**Leave search** returns to Cursor only. Answer only after Preview confirms
+the latest check. If Preview pauses, Retry or end it instead of guessing.
+This is temporary lighting, not an edit to Segments or the length helper.
+
 Use the cursor’s LED number or −/+ buttons to move it. **Phone remote** on the
 Segments strip opens a full-screen view with large previous/next LED buttons
 and the current zero-based LED number. Start Preview there to light that cursor

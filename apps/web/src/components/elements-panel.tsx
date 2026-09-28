@@ -45,6 +45,8 @@ import {
   COUNT_OFF_MAX_LEDS,
   drawingRange,
   locateFrame,
+  locatePayloadKey,
+  searchStep,
   useLiveLocate,
   type LocateMode,
 } from "@/components/elements-editor/use-live-locate";
@@ -82,6 +84,7 @@ export function ElementsPanel({
   const [apply, setApply] = useState<ApplyResult | null>(null);
   const [live, setLive] = useState(false);
   const [locateMode, setLocateMode] = useState<LocateMode>("hold");
+  const [searchRange, setSearchRange] = useState<{ start: number; stop: number } | null>(null);
   const [remoteOpen, setRemoteOpen] = useState(false);
   const [backgroundPercent, setBackgroundPercent] = useState(35);
   const [hues, setHues] = useState<Record<string, string>>({});
@@ -110,7 +113,11 @@ export function ElementsPanel({
   useEffect(() => {
     function stop(event: Event) {
       const ids = (event as CustomEvent<{ lightIds?: string[] }>).detail?.lightIds;
-      if (!ids?.length || ids.includes(light.id)) setLive(false);
+      if (!ids?.length || ids.includes(light.id)) {
+        setLive(false);
+        setSearchRange(null);
+        setLocateMode("cursor");
+      }
     }
     window.addEventListener("nightplot:all-off", stop);
     return () => window.removeEventListener("nightplot:all-off", stop);
@@ -142,6 +149,7 @@ export function ElementsPanel({
     elements: state.els,
     hues,
     backgroundPercent,
+    searchRange,
   });
   const locate = useLiveLocate({
     enabled: live && !unreachable,
@@ -151,6 +159,8 @@ export function ElementsPanel({
     brightness: light.brightness,
     onDetail,
   });
+  const searchReady = frame !== null && locate.acknowledgedKey === locatePayloadKey(frame, light.brightness)
+    && !locate.error && !locate.stopping;
   const frozenPreview = detail.frozenPreview === true || (!recoveryNotice && locate.error?.code === "pixel-preview-frozen");
 
   const firstIssue = issues[0] ?? null;
@@ -248,11 +258,16 @@ export function ElementsPanel({
   function toggleLive() {
     if (unreachable || (frozenPreview && !live) || busy === "recover") return;
     setRecoveryNotice(null);
+    if (live) {
+      setSearchRange(null);
+      setLocateMode("cursor");
+    }
     setLive((current) => !current);
   }
 
   function openRemote() {
     dispatch({ type: "cursor-set", index: state.cursor ?? 0 });
+    setSearchRange(null);
     setLocateMode("cursor");
     setRemoteOpen(true);
   }
@@ -356,11 +371,14 @@ export function ElementsPanel({
               Phone remote
             </Button>
             <Switch on={live && !unreachable} label="Light on strip" tone="online" disabled={unreachable || (frozenPreview && !live) || busy === "recover"} title={frozenPreview ? "Recover the frozen LEDs before starting Preview." : liveReason ?? undefined} onClick={toggleLive} />
-            {live && !unreachable ? <EditorPopover label={locateMode === "hold" ? `Segments ${backgroundPercent}% · cursor bright` : locateMode === "count" ? "Count off · every 10th LED" : "Cursor only"} className="border-[#1f4a45] text-online">
+            {live && !unreachable ? <EditorPopover label={locateMode === "hold" ? `Segments ${backgroundPercent}% · cursor bright` : locateMode === "count" ? "Count off · every 10th LED" : locateMode === "search" ? "Find an LED · halve the strip" : "Cursor only"} className="border-[#1f4a45] text-online">
               <div role="radiogroup" aria-label="Preview lighting" className="flex flex-col gap-3">
-                {(["cursor", "hold", "count"] as const).map((mode) => <label key={mode} className="flex items-start gap-2 text-[13px]">
-                  <input type="radio" name={`preview-mode-${light.id}`} checked={locateMode === mode} disabled={mode === "count" && light.ledCount > COUNT_OFF_MAX_LEDS} onChange={() => setLocateMode(mode)} className="mt-1 accent-[#7ee0d0]" />
-                  <span>{mode === "cursor" ? "Cursor only" : mode === "hold" ? "Segments stay lit" : "Count off · every 10th LED"}<span className="mt-0.5 block text-[12px] text-muted-foreground">{mode === "cursor" ? "Only the cursor or selection lights." : mode === "hold" ? "Every Segment glows in its colour." : light.ledCount > COUNT_OFF_MAX_LEDS ? `Count off supports up to ${COUNT_OFF_MAX_LEDS} LEDs; this strip has ${light.ledCount}.` : "Count 10, 20, 30… from the first LED. Every tenth is bright; the rest glow dimly."}</span></span>
+                {(["cursor", "hold", "count", "search"] as const).map((mode) => <label key={mode} className="flex items-start gap-2 text-[13px]">
+                  <input type="radio" name={`preview-mode-${light.id}`} checked={locateMode === mode} disabled={mode === "count" && light.ledCount > COUNT_OFF_MAX_LEDS} onChange={() => {
+                    setSearchRange(mode === "search" ? { start: 0, stop: light.ledCount } : null);
+                    setLocateMode(mode);
+                  }} className="mt-1 accent-[#7ee0d0]" />
+                  <span>{mode === "cursor" ? "Cursor only" : mode === "hold" ? "Segments stay lit" : mode === "count" ? "Count off · every 10th LED" : "Find an LED · halve the strip"}<span className="mt-0.5 block text-[12px] text-muted-foreground">{mode === "cursor" ? "Only the cursor or selection lights." : mode === "hold" ? "Every Segment glows in its colour." : mode === "search" ? "At your physical spot, say if it lights up; each answer halves the search." : light.ledCount > COUNT_OFF_MAX_LEDS ? `Count off supports up to ${COUNT_OFF_MAX_LEDS} LEDs; this strip has ${light.ledCount}.` : "Count 10, 20, 30… from the first LED. Every tenth is bright; the rest glow dimly."}</span></span>
                 </label>)}
               </div>
               {locateMode === "hold" ? <label className="mt-4 flex flex-wrap items-center gap-2 text-[12px]">
@@ -374,6 +392,22 @@ export function ElementsPanel({
             {locate.stopping ? "Ending Preview…" : locate.error ? locate.error.notSent ? "Preview paused" : "Preview not confirmed" : detail.liveCaption}
           </p> : null}
         </div>
+        {live && locateMode === "search" && searchRange ? <section aria-label="Find an LED" className="mx-5 mt-4 rounded-xl border border-primary/50 bg-[#15130f] p-4 text-[13px]">
+          <p className="font-medium">Find the LED at your spot</p>
+          {searchRange.stop - searchRange.start === 1 ? <p className="mt-2">Search narrowed to LED {searchRange.start} (counting from zero). {searchReady ? "It is lit in Preview." : locate.error ? "Preview is not confirmed; use Retry or End Preview." : "Waiting for Preview confirmation."}</p> : <>
+            <p className="mt-2">Look at the spot you want to identify. Is an LED at that spot lit now? Checking LEDs {frame?.start}–{(frame?.stop ?? 1) - 1}.</p>
+            {!searchReady ? <p role="status" className="mt-2 text-muted-foreground">{locate.error ? "Preview is not confirmed. Retry or End Preview before answering." : "Waiting for Preview confirmation before answering."}</p> : null}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button type="button" onClick={() => setSearchRange(searchStep(searchRange, true))} disabled={!searchReady}>Lit at my spot</Button>
+              <Button type="button" variant="outline" onClick={() => setSearchRange(searchStep(searchRange, false))} disabled={!searchReady}>Not lit at my spot</Button>
+            </div>
+          </>}
+          <div className="mt-3 flex flex-wrap gap-3">
+            <Button type="button" variant="outline" onClick={() => setSearchRange({ start: 0, stop: light.ledCount })}>Start over</Button>
+            <Button type="button" variant="outline" onClick={() => { setSearchRange(null); setLocateMode("cursor"); }}>Leave search</Button>
+          </div>
+          <p className="mt-2 text-muted-foreground">Preview is temporary. End Preview restores; All Off cancels without restoring. No Segment is changed.</p>
+        </section> : null}
         <div className="px-5 pt-4 pb-2">
         <StripEditor
           svgId={`light-${light.id}`}

@@ -6,7 +6,7 @@ import { fetchJson } from "@/lib/api";
 import type { Drag, EditorState } from "./use-editor-state";
 import { LOCATE_LIT, LOCATE_OFF, type Range } from "./ops";
 
-export type LocateMode = "cursor" | "hold" | "count";
+export type LocateMode = "cursor" | "hold" | "count" | "search";
 
 /** Two painted spans per ten LEDs; the pixel Preview API accepts at most 512. */
 export const COUNT_OFF_MAX_LEDS = 2560;
@@ -48,9 +48,11 @@ export function locateFrame(input: {
   elements: Element[];
   hues: Record<string, string>;
   backgroundPercent?: number;
+  searchRange?: Range | null;
 }): LocateFrame | null {
   if (!input.enabled || input.ledCount < 1) return null;
   const name = input.lightName;
+  if (input.mode === "search") return input.searchRange ? searchFrame(input.searchRange, name) : null;
   if (input.mode === "count") return countOffFrame(input.ledCount, name);
   if (input.mode === "hold") return holdFrame(input);
   if (input.hoverIndex != null && !input.dragging) {
@@ -84,6 +86,22 @@ export function locateFrame(input: {
     stop: input.ledCount,
     color: LOCATE_OFF,
     caption: "Preview on · pick something to light",
+  };
+}
+
+/** Each answer discards one half. The stop remains exclusive throughout. */
+export function searchStep(range: Range, litAtSpot: boolean): Range {
+  const middle = range.start + Math.ceil((range.stop - range.start) / 2);
+  return litAtSpot ? { start: range.start, stop: middle } : { start: middle, stop: range.stop };
+}
+
+export function searchFrame(range: Range, lightName: string): LocateFrame {
+  const half = range.stop - range.start === 1 ? range : searchStep(range, true);
+  return {
+    ...half, color: LOCATE_LIT,
+    caption: half.stop - half.start === 1
+      ? `Lighting LED ${half.start} on ${lightName}`
+      : `Checking LEDs ${half.start}–${half.stop - 1} on ${lightName}`,
   };
 }
 
@@ -241,9 +259,10 @@ type LocateInput = {
 type LocateStatus = {
   error: { kind: "frame" | "end"; message: string; notSent?: boolean; code?: string } | null;
   stopping: boolean;
+  acknowledgedKey: string | null;
 };
 
-const IDLE: LocateStatus = { error: null, stopping: false };
+const IDLE: LocateStatus = { error: null, stopping: false, acknowledgedKey: null };
 
 export function useLiveLocate(input: LocateInput) {
   const latest = useRef(input);
@@ -347,6 +366,7 @@ function createLocateSender(
       );
       if (attempt !== generation) return;
       lastAcknowledged = key;
+      publish({ ...status, acknowledgedKey: key });
       if (!disposed && enabled && !mustEnd && !firstAcknowledged) {
         firstAcknowledged = true;
         onDetail(detail);
@@ -393,6 +413,7 @@ function createLocateSender(
       } else {
         publish({
           stopping: false,
+          acknowledgedKey: null,
           error: {
             kind: "end",
             message: `End Preview is not confirmed. ${errorMessage(error)} Reload this Light or use All Off.`,

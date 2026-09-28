@@ -24,6 +24,55 @@ import {
 } from "@/test/fixtures";
 
 describe("Segments Preview recovery", () => {
+  it("asks about the physical spot only after a confirmed half-Preview and narrows to one LED", async () => {
+    const initial = lightDetail({ light: lightView({ reachability: "online", on: true, brightness: 180, ledCount: 5 }) });
+    const writes: { path: string; body: { start?: number; stop?: number } }[] = [];
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      const body = init?.body ? JSON.parse(String(init.body)) : {};
+      if (init?.method === "POST") writes.push({ path, body });
+      if (path.endsWith("/preview") && body.start === 0 && body.stop === 3) await held;
+      return new Response(JSON.stringify(initial));
+    }));
+    render(<LightDetail initial={initial} tab="elements" />);
+    fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
+    fireEvent.click(screen.getByRole("button", { name: /Segments 35% · cursor bright/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /Find an LED/ }));
+    const find = screen.getByRole("region", { name: "Find an LED" });
+    await waitFor(() => expect(writes.some((write) => write.path.endsWith("/preview") && write.body.stop === 3)).toBe(true));
+    expect((within(find).getByRole("button", { name: "Lit at my spot" }) as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => { release(); await held; });
+    await waitFor(() => expect((within(find).getByRole("button", { name: "Lit at my spot" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(within(find).getByRole("button", { name: "Lit at my spot" }));
+    await waitFor(() => expect(writes.some((write) => write.path.endsWith("/preview") && write.body.stop === 2)).toBe(true));
+    await waitFor(() => expect((within(find).getByRole("button", { name: "Not lit at my spot" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(within(find).getByRole("button", { name: "Not lit at my spot" }));
+    await within(find).findByText(/Search narrowed to LED 2/);
+    expect(writes.some((write) => write.path.endsWith("/apply"))).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
+    await waitFor(() => expect(writes.some((write) => write.path.endsWith("/preview/end"))).toBe(true));
+    expect(screen.queryByRole("region", { name: "Find an LED" })).toBeNull();
+  });
+
+  it("resets the search on All Off without requesting restoration", async () => {
+    const initial = lightDetail({ light: lightView({ reachability: "online", on: true, brightness: 180, ledCount: 5 }) });
+    const paths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      if (init?.method === "POST") paths.push(path);
+      return new Response(JSON.stringify(initial));
+    }));
+    render(<LightDetail initial={initial} tab="elements" />);
+    fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
+    fireEvent.click(screen.getByRole("button", { name: /Segments 35% · cursor bright/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /Find an LED/ }));
+    await waitFor(() => expect(within(screen.getByRole("region", { name: "Find an LED" })).getByRole("button", { name: "Lit at my spot" }).hasAttribute("disabled")).toBe(false));
+    act(() => window.dispatchEvent(new CustomEvent("nightplot:all-off", { detail: { lightIds: [initial.light.id] } })));
+    expect(screen.queryByRole("region", { name: "Find an LED" })).toBeNull();
+    expect(paths.some((path) => path.endsWith("/preview/end"))).toBe(false);
+  });
   it("switches to count-off without Apply and ends through the same Preview session", async () => {
     const initial = lightDetail({ light: lightView({ reachability: "online", on: true, brightness: 180 }) });
     const writes: { path: string; body: unknown }[] = [];

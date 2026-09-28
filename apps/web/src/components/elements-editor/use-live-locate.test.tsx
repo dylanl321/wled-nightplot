@@ -12,12 +12,28 @@ import {
   holdSpans,
   locateFrame,
   locatePayloadKey,
+  searchFrame,
+  searchStep,
   LOCATE_INTERVAL_MS,
   LOCATE_BOUNDARY_TIMEOUT_MS,
   LOCATE_HOP_TIMEOUT_MS,
   useLiveLocate,
   type LocateFrame,
 } from "./use-live-locate";
+
+describe("binary-search Locate", () => {
+  it("halves odd and even exclusive ranges until one LED remains", () => {
+    const first = { start: 0, stop: 5 };
+    expect(searchFrame(first, "Porch")).toMatchObject({ start: 0, stop: 3, color: "#fff4dc" });
+    expect(searchStep(first, true)).toEqual({ start: 0, stop: 3 });
+    expect(searchStep(first, false)).toEqual({ start: 3, stop: 5 });
+    const second = searchStep(first, true);
+    expect(searchFrame(second, "Porch")).toMatchObject({ start: 0, stop: 2 });
+    const third = searchStep(second, false);
+    expect(searchFrame(third, "Porch")).toMatchObject({ start: 2, stop: 3 });
+    expect(searchStep({ start: 3, stop: 5 }, false)).toEqual({ start: 4, stop: 5 });
+  });
+});
 
 describe("count-off Preview", () => {
   it("counts from one across the full strip, including a short final run", () => {
