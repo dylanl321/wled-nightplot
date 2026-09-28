@@ -26,6 +26,7 @@ import {
   firstLocateWrite,
   isLocateOverlayWrite,
   locateHopWrite,
+  stabilizeLocateOverlayIds,
   previewWrite,
   previewWriteLeavingOverlay,
   previewWriteSpans,
@@ -159,7 +160,8 @@ export function createLiveEngine(deps: {
 
     const restore = updating ? openPreview.restore : (existing?.restore ?? restoreFrom(args.live!));
     const dest: HostPort = { hostname: args.light.hostname, port: args.light.port };
-    const picture: WledStateWrite = painted
+    const last = lastWrites.get(args.light.id);
+    const authored: WledStateWrite = painted
       ? previewWriteSpans(painted, brightness, args.light.ledCount)
       : previewWrite(
           target.start,
@@ -168,7 +170,7 @@ export function createLiveEngine(deps: {
           brightness,
           kind === "preview" && adHoc ? args.light.ledCount : undefined,
         );
-    const last = lastWrites.get(args.light.id);
+    const picture = stabilizeLocateOverlayIds(authored, last);
     const sameWrite = last != null && writeBodiesEqual(last, picture);
     let wrote = false;
     if (!sameWrite) {
@@ -191,6 +193,8 @@ export function createLiveEngine(deps: {
           message: "The controller did not take the temporary look. Nothing else changed.",
         };
       }
+      // Remapped overlay ids — sequential 0…n would shift later Elements
+      // on the next gap-cursor hop (`locateHopWrite` keys by id).
       lastWrites.set(args.light.id, picture);
       wrote = true;
     }

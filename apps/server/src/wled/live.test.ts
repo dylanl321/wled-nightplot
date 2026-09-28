@@ -10,6 +10,7 @@ import {
   previewWrite,
   previewWriteLeavingOverlay,
   previewWriteSpans,
+  stabilizeLocateOverlayIds,
   restoreBriField,
   restoreColField,
   restoreOnField,
@@ -356,6 +357,84 @@ describe("locate write shape (CONFIG-126)", () => {
     const next = previewWrite(4, 5, lit, 180, 10);
     expect(first.seg).toEqual([{ id: 0, start: 0, stop: 10, col: [[212, 165, 116]] }]);
     expect(locateHopWrite(next, first)).toEqual(next);
+  });
+});
+
+describe("locate overlay gap-cursor ids (CONFIG-138)", () => {
+  const peach = "#d4a574";
+  const teal = "#7ee0d0";
+  const lit = "#fff4dc";
+  const windowSpan = { start: 0, stop: 4, color: peach };
+  const doorSpan = { start: 10, stop: 14, color: teal };
+  const gapCursor = { start: 6, stop: 7, color: lit };
+
+  it("assigns sequential 0…n on a first picture — Door is id 2", () => {
+    const parked = overlayLocatePicture([windowSpan, doorSpan], 180, 16);
+    expect(parked.seg).toEqual([
+      { id: 0, start: 0, stop: 16, col: [[0, 0, 0]] },
+      { id: 1, start: 0, stop: 4, col: [[212, 165, 116]] },
+      { id: 2, start: 10, stop: 14, col: [[126, 224, 208]] },
+    ]);
+  });
+
+  it("sorts a gap cursor into the lit-piece table so a sequential picture remaps Door", () => {
+    const sequential = overlayLocatePicture([windowSpan, doorSpan, gapCursor], 180, 16);
+    expect(locateLitPieces([windowSpan, doorSpan, gapCursor], 16)).toEqual([
+      { start: 0, stop: 4, color: peach },
+      { start: 6, stop: 7, color: lit },
+      { start: 10, stop: 14, color: teal },
+    ]);
+    expect(sequential.seg?.find((seg) => seg.start === 10)?.id).toBe(3);
+    expect(sequential.seg?.map((seg) => seg.id)).toEqual([0, 1, 2, 3]);
+  });
+
+  it("reuses Door’s overlay id when start/stop/col match — hop packing, not Element identity", () => {
+    const parked = overlayLocatePicture([windowSpan, doorSpan], 180, 16);
+    const sequential = overlayLocatePicture([windowSpan, doorSpan, gapCursor], 180, 16);
+    const stable = stabilizeLocateOverlayIds(sequential, parked);
+    expect(stable.seg).toEqual([
+      { id: 0, start: 0, stop: 16, col: [[0, 0, 0]] },
+      { id: 1, start: 0, stop: 4, col: [[212, 165, 116]] },
+      { id: 3, start: 6, stop: 7, col: [[255, 244, 220]] },
+      { id: 2, start: 10, stop: 14, col: [[126, 224, 208]] },
+    ]);
+    expect(stable.seg?.find((seg) => seg.start === 10)?.id).toBe(2);
+  });
+
+  it("posts only the gap cursor when Door’s range and colour did not change", () => {
+    const parked = overlayLocatePicture([windowSpan, doorSpan], 180, 16);
+    const inGap = overlayLocatePicture([windowSpan, doorSpan, gapCursor], 180, 16);
+    const hop = locateHopWrite(inGap, parked);
+    expect(hop.seg).toEqual([{ id: 3, start: 6, stop: 7, col: [[255, 244, 220]] }]);
+    expect(hop.seg?.some((seg) => seg.start === 10 || seg.start === 0)).toBe(false);
+    expect(hop.tt).toBe(0);
+  });
+
+  it("clears only the gap cursor when leaving — Door stays unmentioned", () => {
+    const parked = overlayLocatePicture([windowSpan, doorSpan], 180, 16);
+    const inGap = stabilizeLocateOverlayIds(
+      overlayLocatePicture([windowSpan, doorSpan, gapCursor], 180, 16),
+      parked,
+    );
+    const leave = locateHopWrite(parked, inGap);
+    expect(leave.seg).toEqual([{ id: 3, start: 0, stop: 0 }]);
+    expect(leave.seg?.some((seg) => seg.start === 10)).toBe(false);
+  });
+
+  it("moves only the cursor id when the gap LED hops and Door still matches", () => {
+    const parked = overlayLocatePicture([windowSpan, doorSpan], 180, 16);
+    const firstGap = stabilizeLocateOverlayIds(
+      overlayLocatePicture([windowSpan, doorSpan, gapCursor], 180, 16),
+      parked,
+    );
+    const nextGap = overlayLocatePicture(
+      [windowSpan, doorSpan, { start: 7, stop: 8, color: lit }],
+      180,
+      16,
+    );
+    const hop = locateHopWrite(nextGap, firstGap);
+    expect(hop.seg).toEqual([{ id: 3, start: 7, stop: 8, col: [[255, 244, 220]] }]);
+    expect(hop.seg?.some((seg) => seg.start === 10)).toBe(false);
   });
 });
 
