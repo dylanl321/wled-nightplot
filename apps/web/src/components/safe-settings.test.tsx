@@ -156,6 +156,56 @@ describe("Safe settings", () => {
     expect(screen.getByText(/Not Hardware Done/)).toBeTruthy();
   });
 
+  it("shows a load-path refuse once — banner, not a doubled notice", async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      if (path.endsWith("/safe") && init?.method !== "POST") {
+        return new Response(
+          JSON.stringify(
+            payload({
+              safe: {
+                ...safe,
+                fingerprint: { ...safe.fingerprint, writable: false, fields: [] },
+                refuse: BUILD_REFUSE_MESSAGE,
+              },
+            }),
+          ),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ message: "unexpected path" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<SafeSettingsPanel lightId="light-garage" unreachable={false} />);
+
+    const lines = await screen.findAllByText(BUILD_REFUSE_MESSAGE);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.tagName).toBe("P");
+    expect(lines[0]?.className).toMatch(/font-semibold/);
+    expect(screen.getAllByText(/Not Hardware Done/)).toHaveLength(1);
+    expect(screen.queryByText("Sent")).toBeNull();
+    expect(screen.queryByText("Read back")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Revert" }));
+    expect(screen.getAllByText(BUILD_REFUSE_MESSAGE)).toHaveLength(1);
+    expect(screen.getAllByText(/Not Hardware Done/)).toHaveLength(1);
+  });
+
+  it("shows a successful load caption once — no refuse notice", async () => {
+    vi.stubGlobal("fetch", mockSafeFetch({}));
+
+    render(<SafeSettingsPanel lightId="light-garage" unreachable={false} />);
+
+    expect(await screen.findByRole("button", { name: "Write Safe settings" })).toBeTruthy();
+    expect(screen.getAllByText(/Not Hardware Done/)).toHaveLength(1);
+    expect(screen.queryByText(BUILD_REFUSE_MESSAGE)).toBeNull();
+    expect(screen.queryByText("Sent")).toBeNull();
+  });
+
   it("shows a matched write once — no Sent/Read panel", async () => {
     const fetch = mockSafeFetch(
       {
