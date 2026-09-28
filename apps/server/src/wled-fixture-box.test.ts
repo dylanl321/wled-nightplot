@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { Server } from "node:http";
 import { createFixtureBox } from "./wled-fixture-box.ts";
+import {
+  locateHopWrite,
+  overlayLocatePicture,
+  stabilizeLocateOverlayIds,
+} from "./wled/live.ts";
 
 const servers: Server[] = [];
 
@@ -168,6 +173,65 @@ describe("fixture info/cfg name divergence", () => {
     expect(afterHop.leds[5]).toBe("4f7dff");
     expect(afterHop.leds[4]).toBe("000000");
     expect(afterHop.leds[0]).toBe("000000");
+  });
+
+  it("keeps a later Element id when a gap-cursor hop posts only the new LED", async () => {
+    const box = createFixtureBox({ ledCount: 16, name: "WLED" });
+    const base = await listen(box);
+    const windowSpan = { start: 0, stop: 4, color: "#d4a574" };
+    const doorSpan = { start: 10, stop: 14, color: "#7ee0d0" };
+    const gapCursor = { start: 6, stop: 7, color: "#fff4dc" };
+    const parked = overlayLocatePicture([windowSpan, doorSpan], 180, 16);
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(parked),
+    });
+    const inGap = stabilizeLocateOverlayIds(
+      overlayLocatePicture([windowSpan, doorSpan, gapCursor], 180, 16),
+      parked,
+    );
+    const enter = locateHopWrite(inGap, parked);
+    expect(enter.seg).toEqual([{ id: 3, start: 6, stop: 7, col: [[255, 244, 220]] }]);
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(enter),
+    });
+    const afterEnter = (await (await fetch(`${base}/json`)).json()) as {
+      state: { seg?: { id?: number; start: number; stop: number }[] };
+    };
+    const liveEnter = (await (await fetch(`${base}/json/live`)).json()) as { leds: string[] };
+    expect(afterEnter.state.seg?.find((seg) => seg.start === 10)).toMatchObject({
+      id: 2,
+      start: 10,
+      stop: 14,
+    });
+    expect(liveEnter.leds[10]).toBe("7ee0d0");
+    expect(liveEnter.leds[13]).toBe("7ee0d0");
+    expect(liveEnter.leds[6]).toBe("fff4dc");
+    expect(liveEnter.leds[0]).toBe("d4a574");
+    const leave = locateHopWrite(parked, inGap);
+    expect(leave.seg).toEqual([{ id: 3, start: 0, stop: 0 }]);
+    await fetch(`${base}/json/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(leave),
+    });
+    const afterLeave = (await (await fetch(`${base}/json`)).json()) as {
+      state: { seg?: { id?: number; start: number; stop: number }[] };
+    };
+    const liveLeave = (await (await fetch(`${base}/json/live`)).json()) as { leds: string[] };
+    expect(afterLeave.state.seg?.find((seg) => seg.start === 10)).toMatchObject({
+      id: 2,
+      start: 10,
+      stop: 14,
+    });
+    expect(afterLeave.state.seg?.some((seg) => seg.id === 3 && (seg.stop ?? 0) > (seg.start ?? 0))).toBe(
+      false,
+    );
+    expect(liveLeave.leds[10]).toBe("7ee0d0");
+    expect(liveLeave.leds[6]).toBe("000000");
   });
 
   it("clears leftover overlay lit when named-Element Preview includes leftover stop:0", async () => {

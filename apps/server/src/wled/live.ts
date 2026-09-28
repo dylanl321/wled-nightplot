@@ -221,9 +221,12 @@ export function locateLitPieces(spans: PreviewSpan[], ledCount: number): Preview
  * Segment 0 is the whole-strip black underlay when anything is unlit.
  * Lit pieces are 1… — no black-gap tiles, so a cursor hop does not
  * rewrite a three-piece black|lit|black table. Adjacent same-colour
- * merge stays. Ids are 0…n for that picture. First locate leftover
- * controller ids use `firstLocateWrite` from a known snapshot count —
- * not invented here.
+ * merge stays. A first picture is ids 0…n. Later hops reuse previous
+ * overlay ids when start/stop/col match (`stabilizeLocateOverlayIds`)
+ * so a gap cursor between Elements does not remap later lit ids.
+ * That is hop packing, not a persistent Element→seg identity.
+ * First locate leftover controller ids use `firstLocateWrite` from a
+ * known snapshot count — not invented here.
  */
 export function overlayLocatePicture(
   spans: PreviewSpan[],
@@ -252,21 +255,83 @@ export function overlayLocatePicture(
 }
 
 /**
- * When only the cursor (or other lit) segments moved, POST those ids.
- * Leave the id-0 underlay unmentioned so WLED does not rebuild it.
- * Leftover ids from a shorter picture get `stop: 0`. HTTP is the
- * ceiling here — a still-flashing metal strip is a needs-split sibling,
- * not UDP in this slice.
+ * Keep overlay ids for unchanged start/stop/col. A gap cursor sorted
+ * into `locateLitPieces` would otherwise take the next sequential id
+ * and shift later Elements (Door 10–14: id 2→3). `locateHopWrite` keys
+ * by id, so that remap would rewrite a range that did not change.
+ * Unmatched pieces take vacated ids, then the next unused integer.
+ * No previous overlay → the 0…n picture is unchanged. Not a stored
+ * Element identity. Preview is not Apply.
  */
-export function locateHopWrite(
+export function stabilizeLocateOverlayIds(
   desired: WledStateWrite,
   previous: WledStateWrite | undefined,
 ): WledStateWrite {
   const nextSegs = desired.seg;
   const prevSegs = previous?.seg;
-  if (!nextSegs || !prevSegs) return desired;
+  if (!nextSegs?.length || !prevSegs?.length) return desired;
   if (!nextSegs.every((seg) => seg.id != null) || !prevSegs.every((seg) => seg.id != null)) {
     return desired;
+  }
+  const remaining = [...prevSegs];
+  const assigned: { next: WledSegWrite; id: number | null }[] = [];
+  for (const next of nextSegs) {
+    const matchAt = remaining.findIndex((prev) => segsGeometryEqual(prev, next));
+    if (matchAt >= 0) {
+      const prev = remaining.splice(matchAt, 1)[0]!;
+      assigned.push({ next, id: prev.id ?? null });
+    } else {
+      assigned.push({ next, id: null });
+    }
+  }
+  const used = new Set(
+    assigned.map((row) => row.id).filter((id): id is number => id != null),
+  );
+  const vacated = remaining
+    .map((seg) => seg.id)
+    .filter((id): id is number => id != null && !used.has(id))
+    .sort((a, b) => a - b);
+  let nextId = 0;
+  const allocId = (): number => {
+    while (vacated.length > 0) {
+      const id = vacated.shift()!;
+      if (!used.has(id)) {
+        used.add(id);
+        return id;
+      }
+    }
+    while (used.has(nextId)) nextId += 1;
+    const id = nextId;
+    used.add(id);
+    nextId += 1;
+    return id;
+  };
+  const seg = assigned.map((row) => ({
+    ...row.next,
+    id: row.id ?? allocId(),
+  }));
+  return { ...desired, seg };
+}
+
+/**
+ * When only the cursor (or other lit) segments moved, POST those ids.
+ * Leave the id-0 underlay unmentioned so WLED does not rebuild it.
+ * Leftover ids from a shorter picture get `stop: 0`. Geometry-equal
+ * pieces keep their previous ids first, so inserting a gap cursor
+ * does not rewrite a later Element that still has the same range and
+ * colour. HTTP is the ceiling here — a still-flashing metal strip is
+ * a needs-split sibling, not UDP in this slice.
+ */
+export function locateHopWrite(
+  desired: WledStateWrite,
+  previous: WledStateWrite | undefined,
+): WledStateWrite {
+  const stable = stabilizeLocateOverlayIds(desired, previous);
+  const nextSegs = stable.seg;
+  const prevSegs = previous?.seg;
+  if (!nextSegs || !prevSegs) return stable;
+  if (!nextSegs.every((seg) => seg.id != null) || !prevSegs.every((seg) => seg.id != null)) {
+    return stable;
   }
   const prevById = new Map(prevSegs.map((seg) => [seg.id, seg]));
   const nextIds = new Set(nextSegs.map((seg) => seg.id));
@@ -284,12 +349,12 @@ export function locateHopWrite(
   const hopSegs = [...changed, ...leftovers];
   const underlayTouched = changed.some((seg) => seg.id === 0);
   if (underlayTouched) {
-    return leftovers.length === 0 ? desired : { ...desired, seg: [...nextSegs, ...leftovers] };
+    return leftovers.length === 0 ? stable : { ...stable, seg: [...nextSegs, ...leftovers] };
   }
-  if (hopSegs.length === 0) return desired;
-  const hop: WledStateWrite = { tt: desired.tt ?? 0, seg: hopSegs };
-  if (desired.on !== previous.on) hop.on = desired.on;
-  if (desired.bri !== previous.bri) hop.bri = desired.bri;
+  if (hopSegs.length === 0) return stable;
+  const hop: WledStateWrite = { tt: stable.tt ?? 0, seg: hopSegs };
+  if (stable.on !== previous.on) hop.on = stable.on;
+  if (stable.bri !== previous.bri) hop.bri = stable.bri;
   return hop;
 }
 
@@ -397,13 +462,16 @@ function overlayAuthoredIdCount(segs: WledSegWrite[]): number {
   return Math.max(...ids) + 1;
 }
 
-function segsEqual(a: WledSegWrite, b: WledSegWrite): boolean {
+function segsGeometryEqual(a: WledSegWrite, b: WledSegWrite): boolean {
   return (
-    a.id === b.id &&
     a.start === b.start &&
     a.stop === b.stop &&
     JSON.stringify(a.col ?? null) === JSON.stringify(b.col ?? null)
   );
+}
+
+function segsEqual(a: WledSegWrite, b: WledSegWrite): boolean {
+  return a.id === b.id && segsGeometryEqual(a, b);
 }
 
 function hostForUrl(hostname: string): string {

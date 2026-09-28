@@ -547,4 +547,81 @@ describe("Preview session update", () => {
     expect(writes[0]?.seg?.[0]).not.toHaveProperty("id");
     expect(writes[0]?.seg?.some((seg) => seg.id === 0 && seg.stop === 0)).toBe(false);
   });
+
+  it("does not rewrite a later Element when a gap cursor is inserted or removed", async () => {
+    const holdLight: Light = { ...light, ledCount: 16 };
+    const writes: WledStateWrite[] = [];
+    const engine = createLiveEngine({
+      write: async (_target, body) => {
+        writes.push(body);
+        return true;
+      },
+      readLive: async () => ({
+        source: "fixture" as const,
+        leds: Array.from({ length: 16 }, () => "#4f7dff"),
+      }),
+      findLight: (id) => (id === holdLight.id ? holdLight : undefined),
+    });
+    const windowSpan = { start: 0, stop: 4, color: "#d4a574" };
+    const doorSpan = { start: 10, stop: 14, color: "#7ee0d0" };
+    const gapCursor = { start: 6, stop: 7, color: "#fff4dc" };
+    const live: WledSnapshot = { ...infoOnly, ledCount: 16, on: true, brightness: 40 };
+
+    const parked = await engine.startPreview({
+      light: holdLight,
+      live,
+      elements: [],
+      spans: [windowSpan, doorSpan],
+      brightness: 180,
+    });
+    expect(parked.ok).toBe(true);
+    expect(writes[0]?.seg?.find((seg) => seg.start === 10)).toMatchObject({
+      id: 2,
+      start: 10,
+      stop: 14,
+    });
+    writes.length = 0;
+
+    const enter = await engine.startPreview({
+      light: holdLight,
+      live,
+      elements: [],
+      spans: [windowSpan, doorSpan, gapCursor],
+      brightness: 180,
+    });
+    expect(enter.ok).toBe(true);
+    if (!enter.ok) return;
+    expect(enter.updated).toBe(true);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.seg).toEqual([{ id: 3, start: 6, stop: 7, col: [[255, 244, 220]] }]);
+    expect(writes[0]?.seg?.some((seg) => seg.start === 10)).toBe(false);
+    writes.length = 0;
+
+    const leave = await engine.startPreview({
+      light: holdLight,
+      live,
+      elements: [],
+      spans: [windowSpan, doorSpan],
+      brightness: 180,
+    });
+    expect(leave.ok).toBe(true);
+    if (!leave.ok) return;
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.seg).toEqual([{ id: 3, start: 0, stop: 0 }]);
+    expect(writes[0]?.seg?.some((seg) => seg.start === 10)).toBe(false);
+    writes.length = 0;
+
+    const reenter = await engine.startPreview({
+      light: holdLight,
+      live,
+      elements: [],
+      spans: [windowSpan, doorSpan, gapCursor],
+      brightness: 180,
+    });
+    expect(reenter.ok).toBe(true);
+    if (!reenter.ok) return;
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.seg).toEqual([{ id: 3, start: 6, stop: 7, col: [[255, 244, 220]] }]);
+    expect(writes[0]?.seg?.some((seg) => seg.start === 10)).toBe(false);
+  });
 });
