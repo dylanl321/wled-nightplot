@@ -15,7 +15,12 @@ import { FileLightsStore } from "./store/lights-store.ts";
 import { createFixtureBox } from "./wled-fixture-box.ts";
 import { createWledCfgReader, createWledCfgWriter } from "./wled/cfg.ts";
 import { probeWled, type ProbeFn } from "./wled/client.ts";
-import type { ReadLiveFn, WriteStateFn } from "./wled/live.ts";
+import {
+  createWledLiveReader,
+  createWledWriter,
+  type ReadLiveFn,
+  type WriteStateFn,
+} from "./wled/live.ts";
 
 const snapshot = {
   name: "WLED",
@@ -1219,13 +1224,113 @@ describe("preview + blink", () => {
     expect(((await ended.json()) as { restored: boolean }).restored).toBe(true);
     expect(writes).toHaveLength(1);
     expect(writes[0]?.seg).toEqual([
-      { start: 0, stop: 20, col: [[255, 160, 0]] },
       { id: 1, start: 0, stop: 0 },
+      { id: 0, start: 0, stop: 20, col: [[255, 160, 0]] },
     ]);
-    expect(writes[0]?.seg?.[0]).not.toHaveProperty("id");
     expect(box.leds[0]).toBe("#ffa000");
     expect(box.leds[40]).toBe("#000000");
     expect(box.leds[40]).not.toBe("#fff4dc");
+  });
+
+  describe("End Preview multi-range restore on fixture (CONFIG-146)", () => {
+    let server: Server | undefined;
+
+    afterEach(async () => {
+      if (!server) return;
+      await new Promise<void>((resolve) => server!.close(() => resolve()));
+      server = undefined;
+    });
+
+    it("keeps both restore ranges after locate leftover id:1", async () => {
+      const box = createFixtureBox({ ledCount: 10, name: "WLED" });
+      server = box.listen(0, "127.0.0.1");
+      const port = await listenReady(server);
+      const base = `http://127.0.0.1:${port}`;
+      await fetch(`${base}/json/state`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          on: true,
+          bri: 40,
+          seg: [
+            { id: 0, start: 0, stop: 3, col: [[255, 160, 0]] },
+            { id: 1, start: 3, stop: 7, col: [[255, 160, 0]] },
+          ],
+        }),
+      });
+
+      const writes: import("./wled/live.ts").WledStateWrite[] = [];
+      const write = createWledWriter();
+      const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
+      const store = new FileLightsStore(join(dir, "lights.json"));
+      const app = createApp({
+        store,
+        probe: (target) => probeWled(target, fetch, 500),
+        write: async (target, body) => {
+          writes.push(body);
+          return write(target, body);
+        },
+        readLive: createWledLiveReader(),
+        readCfg: createWledCfgReader(),
+        writeCfg: createWledCfgWriter(),
+        collect: async () => [],
+      });
+
+      const enrolled = await app.request("/api/lights", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host: `127.0.0.1:${port}` }),
+      });
+      expect(enrolled.status).toBe(201);
+      const id = ((await enrolled.json()) as { light: { id: string } }).light.id;
+      writes.length = 0;
+
+      const locate = await app.request(`/api/lights/${id}/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ start: 4, stop: 5, color: "#fff4dc", brightness: 180 }),
+      });
+      expect(locate.status).toBe(200);
+      expect(writes[0]?.seg).toEqual([
+        { id: 0, start: 0, stop: 10, col: [[0, 0, 0]] },
+        { id: 1, start: 4, stop: 5, col: [[255, 244, 220]] },
+      ]);
+      writes.length = 0;
+
+      const ended = await app.request(`/api/lights/${id}/preview/end`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(ended.status).toBe(200);
+      expect(((await ended.json()) as { restored: boolean }).restored).toBe(true);
+      expect(writes).toHaveLength(1);
+      expect(writes[0]?.seg).toEqual([
+        { id: 1, start: 0, stop: 0 },
+        { id: 0, start: 0, stop: 3, col: [[255, 160, 0]] },
+        { id: 1, start: 3, stop: 7, col: [[255, 160, 0]] },
+      ]);
+
+      const after = (await (await fetch(`${base}/json`)).json()) as {
+        state: { seg?: { id?: number; start: number; stop: number; col?: number[][] }[] };
+      };
+      const live = (await (await fetch(`${base}/json/live`)).json()) as { leds: string[] };
+      expect(after.state.seg).toEqual([
+        { id: 0, start: 0, stop: 3, col: [[255, 160, 0]] },
+        { id: 1, start: 3, stop: 7, col: [[255, 160, 0]] },
+      ]);
+      expect(live.leds.slice(0, 7)).toEqual([
+        "ffa000",
+        "ffa000",
+        "ffa000",
+        "ffa000",
+        "ffa000",
+        "ffa000",
+        "ffa000",
+      ]);
+      expect(live.leds[4]).not.toBe("fff4dc");
+      expect(live.leds[7]).not.toBe("ffa000");
+    });
   });
 
   it("clears leftover controller segs on first locate when snapshot count is higher", async () => {

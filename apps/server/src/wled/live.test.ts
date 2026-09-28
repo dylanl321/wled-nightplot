@@ -578,15 +578,14 @@ describe("End Preview restore after locate overlay (CONFIG-140)", () => {
     expect(overlay.seg?.map((seg) => seg.id)).toEqual([0, 1]);
     expect(restore.seg).toEqual([{ start: 0, stop: 10, col: [[255, 160, 0]] }]);
     expect(write.seg).toEqual([
-      { start: 0, stop: 10, col: [[255, 160, 0]] },
       { id: 1, start: 0, stop: 0 },
+      { id: 0, start: 0, stop: 10, col: [[255, 160, 0]] },
     ]);
-    expect(write.seg?.[0]).not.toHaveProperty("id");
     expect(write.on).toBe(true);
     expect(write.bri).toBe(40);
   });
 
-  it("posts leftover overlay id:1 stop:0 after two unnamed restore ranges", () => {
+  it("names two restore ranges and leftover-first so leftover id:1 cannot drop the second", () => {
     const overlay = previewWrite(4, 5, lit, 180, 10);
     const write = restoreWriteLeavingOverlay(
       {
@@ -601,12 +600,13 @@ describe("End Preview restore after locate overlay (CONFIG-140)", () => {
       overlay,
     );
     expect(write.seg).toEqual([
-      { start: 0, stop: 3, col: [[255, 160, 0]] },
-      { start: 3, stop: 7, col: [[255, 160, 0]] },
       { id: 1, start: 0, stop: 0 },
+      { id: 0, start: 0, stop: 3, col: [[255, 160, 0]] },
+      { id: 1, start: 3, stop: 7, col: [[255, 160, 0]] },
     ]);
-    expect(write.seg?.[0]).not.toHaveProperty("id");
-    expect(write.seg?.[1]).not.toHaveProperty("id");
+    expect(write.seg?.[0]).toMatchObject({ id: 1, stop: 0 });
+    expect(write.seg?.[1]).toMatchObject({ id: 0, start: 0, stop: 3 });
+    expect(write.seg?.[2]).toMatchObject({ id: 1, start: 3, stop: 7 });
   });
 
   it("clears leftover hold overlay ids on restore, not the un-id’d restore slot", () => {
@@ -629,9 +629,9 @@ describe("End Preview restore after locate overlay (CONFIG-140)", () => {
     );
     expect(overlay.seg?.map((seg) => seg.id)).toEqual([0, 1, 2]);
     expect(write.seg).toEqual([
-      { start: 0, stop: 16, col: [[255, 160, 0]] },
       { id: 1, start: 0, stop: 0 },
       { id: 2, start: 0, stop: 0 },
+      { id: 0, start: 0, stop: 16, col: [[255, 160, 0]] },
     ]);
   });
 
