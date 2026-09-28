@@ -94,6 +94,9 @@ describe("Safe settings", () => {
     vi.stubGlobal("fetch", fetch);
 
     render(<SafeSettingsPanel lightId="light-garage" unreachable={false} />);
+    fireEvent.change(await screen.findByRole("textbox", { name: "Device display name" }), {
+      target: { value: "Porch rail" },
+    });
     fireEvent.click(await screen.findByRole("button", { name: "Apply settings" }));
 
     const titles = await screen.findAllByText(BUILD_REFUSE_MESSAGE);
@@ -126,6 +129,9 @@ describe("Safe settings", () => {
     vi.stubGlobal("fetch", fetch);
 
     render(<SafeSettingsPanel lightId="light-garage" unreachable={false} />);
+    fireEvent.change(await screen.findByRole("textbox", { name: "Device display name" }), {
+      target: { value: "Porch rail" },
+    });
     fireEvent.click(await screen.findByRole("button", { name: "Apply settings" }));
 
     const titles = await screen.findAllByText(CFG_MISMATCH_MESSAGE);
@@ -147,6 +153,9 @@ describe("Safe settings", () => {
     vi.stubGlobal("fetch", fetch);
 
     render(<SafeSettingsPanel lightId="light-garage" unreachable={false} />);
+    fireEvent.change(await screen.findByRole("textbox", { name: "Device display name" }), {
+      target: { value: "Porch rail" },
+    });
     fireEvent.click(await screen.findByRole("button", { name: "Apply settings" }));
 
     const notice = await screen.findByText(NOTICE_ONLY_MESSAGE);
@@ -225,6 +234,9 @@ describe("Safe settings", () => {
     vi.stubGlobal("fetch", fetch);
 
     render(<SafeSettingsPanel lightId="light-garage" unreachable={false} />);
+    fireEvent.change(await screen.findByRole("textbox", { name: "Device display name" }), {
+      target: { value: "Porch rail" },
+    });
     fireEvent.click(await screen.findByRole("button", { name: "Apply settings" }));
 
     const line = await screen.findByText(MATCHED_MESSAGE);
@@ -233,5 +245,37 @@ describe("Safe settings", () => {
     expect(screen.queryByText("Read back")).toBeNull();
     expect(screen.queryByText(BUILD_REFUSE_MESSAGE)).toBeNull();
     expect(screen.queryByText(CFG_MISMATCH_MESSAGE)).toBeNull();
+  });
+
+  it("applies only the changed controller display name, not other Safe settings", async () => {
+    const fetch = mockSafeFetch(
+      {
+        ...payload(),
+        safeWrite: {
+          status: "matched",
+          matched: true,
+          sent: { displayName: "Porch rail" },
+          read: { ...safe.settings, displayName: "Porch rail" },
+          fingerprint: safe.fingerprint,
+          message: MATCHED_MESSAGE,
+          caption: safe.caption,
+        },
+      },
+      200,
+    );
+    vi.stubGlobal("fetch", fetch);
+
+    render(<SafeSettingsPanel lightId="light-garage" unreachable={false} />);
+    const apply = await screen.findByRole("button", { name: "Apply settings" });
+    expect((apply as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByRole("textbox", { name: "Device display name" }), {
+      target: { value: "Porch rail" },
+    });
+    expect((apply as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(apply);
+
+    await screen.findByText(MATCHED_MESSAGE);
+    const post = fetch.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ settings: { displayName: "Porch rail" } });
   });
 });

@@ -57,13 +57,18 @@ export function SettingsPanel({
           onUpdated={onUpdated}
         />
       </Section>
-      <Section title="Network" blurb="From the last snapshot.">
+      <Section
+        title="Network"
+        blurb="The address Nightplot uses to reach this Light. Changing it does not rename the controller."
+      >
         <div className="grid grid-cols-[120px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 text-[13px]">
-          <span className="text-muted-foreground">Address</span>
-          <span className="font-mono">{light.displayHost}</span>
+          <span className="text-muted-foreground">Hostname</span>
+          <span className="font-mono">{light.hostname}</span>
           <button type="button" onClick={onToggleAddress} className="text-[13px] text-primary">
             Change…
           </button>
+          <span className="text-muted-foreground">Port</span>
+          <span className="col-span-2 font-mono">{light.port}</span>
           <span className="text-muted-foreground">MAC</span>
           <span className="col-span-2 font-mono">{light.mac ?? "—"}</span>
           <span className="text-muted-foreground">Firmware</span>

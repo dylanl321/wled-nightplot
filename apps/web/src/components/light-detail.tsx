@@ -162,7 +162,10 @@ export function LightDetail({
       </p>
       <header className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-3.5">
-          <h1 className="text-[28px] font-semibold tracking-[-0.01em]">{light.name}</h1>
+          <div>
+            <h1 className="text-[28px] font-semibold tracking-[-0.01em]">{light.name}</h1>
+            <p className="font-mono text-[12px] text-muted-foreground">Hostname: {light.hostname}</p>
+          </div>
           <span className={cn("inline-flex items-center gap-1.5 text-[14px]", status.className)}>
             <span className="size-[7px] rounded-full" style={{ background: status.dot }} />
             {status.label}

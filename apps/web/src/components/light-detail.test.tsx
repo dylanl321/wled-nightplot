@@ -36,6 +36,7 @@ describe("Segments Preview recovery", () => {
       } : initial));
     }));
     render(<LightDetail initial={initial} tab="elements" />);
+    expect(screen.getByText(`Hostname: ${initial.light.hostname}`)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Light on strip" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Recover Preview…" }));
     expect(screen.getByText(/Clearing these LEDs discards/)).toBeTruthy();

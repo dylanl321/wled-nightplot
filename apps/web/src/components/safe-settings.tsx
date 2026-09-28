@@ -78,8 +78,11 @@ export function SafeSettingsPanel({
     const settings: Partial<WledSafeSettings> = {};
     for (const key of fields) {
       const value = draft[key];
-      if (value !== null && value !== undefined) settings[key] = value as never;
+      if (value !== null && value !== undefined && value !== read.settings[key]) {
+        settings[key] = value as never;
+      }
     }
+    if (requestedFields(settings).length === 0) return;
     setBusy("write");
     setNotice(null);
     const res = await postJson<SafePayload>(`/api/lights/${lightId}/safe`, { settings });
@@ -141,13 +144,13 @@ export function SafeSettingsPanel({
         <div className="grid gap-3 md:grid-cols-2">
           <SafeField
             present={fields.includes("displayName")}
-            label="Display name"
-            hint="Shown on this Light. WLED’s /json/info name can wait until reboot."
+            label="Device display name"
+            hint="Apply writes this name to WLED, not just to this Light. The hostname below is separate. /json/info may keep the old name until reboot."
           >
             <Input
               value={draft.displayName ?? ""}
               onChange={(event) => patch("displayName", event.target.value)}
-              aria-label="Display name"
+              aria-label="Device display name"
               className="font-sans"
               maxLength={32}
             />
@@ -291,7 +294,7 @@ export function SafeSettingsPanel({
         <Button
           variant={formDirty ? "default" : "outline"}
           onClick={() => void write()}
-          disabled={!writable || busy !== null}
+          disabled={!writable || !formDirty || busy !== null}
         >
           {busy === "write" ? "Writing…" : "Apply settings"}
         </Button>
