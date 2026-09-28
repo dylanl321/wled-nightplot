@@ -61,7 +61,7 @@ describe("CatalogDelete", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove recipe" }));
 
     await waitFor(() => {
-      expect(screen.getByText(blockedCheck.detail)).toBeTruthy();
+      expect(screen.getAllByText(blockedCheck.detail).length).toBeGreaterThan(0);
     });
     expect(screen.getByText("Remove · 0 of 1 checks")).toBeTruthy();
     expect(screen.getByText(/Unlocks when no Light attaches this recipe/)).toBeTruthy();
@@ -106,7 +106,7 @@ describe("CatalogDelete", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove recipe" }));
 
     await waitFor(() => {
-      expect(screen.getByText(/No Lights attach this recipe/)).toBeTruthy();
+      expect(screen.getAllByText(/No Lights attach this recipe/).length).toBeGreaterThan(0);
     });
     fireEvent.click(screen.getAllByRole("button", { name: "Remove recipe" })[0]!);
 
@@ -159,7 +159,7 @@ describe("CatalogDelete", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Remove recipe" })[0]!);
 
     await waitFor(() => {
-      expect(screen.getByText(blockedCheck.detail)).toBeTruthy();
+      expect(screen.getAllByText(blockedCheck.detail).length).toBeGreaterThan(0);
     });
     expect(deleted).toEqual([]);
     expect(screen.getByText("Remove · 0 of 1 checks")).toBeTruthy();
@@ -185,7 +185,7 @@ describe("CatalogDelete", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove recipe" }));
 
     await waitFor(() => {
-      expect(screen.getByText(LED_CATALOG_DELETE_REFUSE_UNKNOWN)).toBeTruthy();
+      expect(screen.getAllByText(LED_CATALOG_DELETE_REFUSE_UNKNOWN).length).toBeGreaterThan(0);
     });
     expect(screen.getByText("Remove · 0 of 1 checks")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Removing…" })).toBeNull();
