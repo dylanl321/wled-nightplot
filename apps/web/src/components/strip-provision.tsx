@@ -64,7 +64,7 @@ export function StripProvisionPanel({
           length: payload.provision.settings.length ?? fallback.length,
           gpio: payload.provision.settings.gpio ?? fallback.gpio,
         });
-        setNotice(payload.provision.refuse);
+        setNotice(null);
       })
       .catch((caught: unknown) => {
         if (cancelled) return;
@@ -362,7 +362,9 @@ export function StripProvisionPanel({
         </div>
       ) : null}
       {notice && !failed ? <p className="text-[13px] text-destructive">{notice}</p> : null}
-      {!failed ? <p className="text-[12px] text-primary">{read.caption}</p> : null}
+      {!failed && !read.refuse && !unreachable ? (
+        <p className="text-[12px] text-primary">{read.caption}</p>
+      ) : null}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
         <Button
@@ -375,7 +377,7 @@ export function StripProvisionPanel({
               gpio: read.settings.gpio ?? fallback.gpio,
             });
             setResult(null);
-            setNotice(read.refuse);
+            setNotice(null);
           }}
           disabled={busy !== null}
         >
