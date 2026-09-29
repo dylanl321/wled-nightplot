@@ -123,9 +123,11 @@ export function parseEffectBinding(value: unknown): EffectBinding | null {
 export function parseEffectDeployment(value: unknown): EffectDeployment | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Partial<EffectDeployment>;
-  if (!isEntityId(row.id) || !isEntityId(row.bindingId) || !Number.isInteger(row.nodeCount) ||
-    row.nodeCount < EFFECT_NODE_COUNT_MIN || row.nodeCount > EFFECT_NODE_COUNT_MAX) return null;
-  return { id: row.id, bindingId: row.bindingId, nodeCount: row.nodeCount };
+  const nodeCount = row.nodeCount;
+  if (!isEntityId(row.id) || !isEntityId(row.bindingId) || typeof nodeCount !== "number" ||
+    !Number.isInteger(nodeCount) || nodeCount < EFFECT_NODE_COUNT_MIN ||
+    nodeCount > EFFECT_NODE_COUNT_MAX) return null;
+  return { id: row.id, bindingId: row.bindingId, nodeCount };
 }
 
 export function mergeEffectValues(
