@@ -31,6 +31,9 @@ Hover shows a separate, faint marker and does not move the clicked cursor.
 focused cursor, or the cut boundary when using **Cut (C)**. Keyboard shortcuts
 leave typing in inputs alone. Toolbar button clicks do not disable arrow keys.
 The **Shortcuts** popover lists the available keys.
+Press **?** outside a text field on any Nightplot page to open the app-wide
+keyboard shortcuts sheet. It labels the Segment editor commands as specific to
+that tab; **Escape** closes the sheet and returns focus to where it was.
 
 ## Create and change Segments
 

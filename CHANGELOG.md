@@ -139,6 +139,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 - CONFIG-166: LED product recipes can use common 30/60/120/144 LEDs/m choices or custom addressable nodes per metre. The catalog derives exact pitch for calculated length; conflicting supplied pitch refuses. Manual pitch and COB section length stay available. Catalog edits do not write WLED, and calculated length is not a tape measurement or Hardware Done.
 
+- CONFIG-167: Press ? outside a text field anywhere in Nightplot to open a keyboard shortcuts sheet. The shared shell also has a Shortcuts button on desktop and phone; Escape closes and restores focus. Segment editor commands are labeled as specific to that tab, and no shortcut Saves, Previews, or Applies a Light. Software UI checks are not Hardware Done.
+
 ## 0.7.11 — Elements after strip length change (CONFIG-43)
 
 - After a successful length-changing Strip Apply, declared Elements are reconciled against the new `ledCount`. Ranges that run past the new strip are clipped; ranges that start past it are dropped. Grow does not invent Elements — leftover coverage is flagged.
