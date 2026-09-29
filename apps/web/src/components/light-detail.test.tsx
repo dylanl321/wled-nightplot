@@ -890,7 +890,7 @@ describe("LightDetail Apply unknown colour", () => {
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() => expect(paths.some((path) => path.endsWith("/preview/end"))).toBe(true));
     expect(paths.some((path) => path.endsWith("/apply"))).toBe(false);
-    expect(await screen.findByText(/Preview could not be restored\. Apply was not sent/)).toBeTruthy();
+    expect(await screen.findByText(/Preview could not be confirmed ended and restored\. Apply was not sent/)).toBeTruthy();
   });
 
   it("saves edits, ends Preview, then Applies in that order", async () => {

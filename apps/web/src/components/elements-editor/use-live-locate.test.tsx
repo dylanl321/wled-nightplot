@@ -14,6 +14,7 @@ import {
   locatePayloadKey,
   searchFrame,
   searchStep,
+  stopLocateSender,
   LOCATE_INTERVAL_MS,
   LOCATE_BOUNDARY_TIMEOUT_MS,
   LOCATE_HOP_TIMEOUT_MS,
@@ -296,6 +297,12 @@ function locateHold(hoverIndex: number | null): LocateFrame {
 }
 
 describe("useLiveLocate", () => {
+  it("refuses safely when Fast Refresh left a Preview sender without stop", async () => {
+    expect(await stopLocateSender(null)).toBe(false);
+    expect(await stopLocateSender({})).toBe(false);
+    expect(await stopLocateSender({ stop: async () => true })).toBe(true);
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();

@@ -229,7 +229,7 @@ export function ElementsPanel({
       const restored = await locate.stop();
       if (!restored) {
         onBusy(null);
-        onNotice("Preview could not be restored. Apply was not sent. Retry End Preview or use All Off.");
+        onNotice("Preview could not be confirmed ended and restored. Apply was not sent. Refresh this Light to check its state, or use All Off.");
         return;
       }
       if (!live && detail.session?.kind === "preview" && !locate.stopping) {

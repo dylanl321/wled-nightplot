@@ -314,8 +314,13 @@ export function useLiveLocate(input: LocateInput) {
   return {
     ...status,
     retry: () => sender.current?.retry(),
-    stop: () => sender.current?.stop() ?? Promise.resolve(false),
+    stop: () => stopLocateSender(sender.current),
   };
+}
+
+/** Fast Refresh can preserve a sender created before stop() existed. Refuse Apply safely. */
+export function stopLocateSender(sender: { stop?: () => Promise<boolean> } | null): Promise<boolean> {
+  return sender?.stop?.() ?? Promise.resolve(false);
 }
 
 /**
