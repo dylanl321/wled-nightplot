@@ -1,6 +1,24 @@
 export type { ActivityEntry } from "./activity.ts";
 export { estimatePowerScenario, type PowerScenario, type SegmentPowerColour } from "./power-budget.ts";
-export type { BackupData, BackupDocument, BackupReason, BackupSummary, ControllerReference, WledBackupFiles } from "./backup.ts";
+export type {
+  BackupData,
+  BackupDocument,
+  BackupReason,
+  BackupSummary,
+  ControllerReference,
+  WledBackupFiles,
+  WledNativeIdentity,
+  WledRestoreReview,
+} from "./backup.ts";
+export {
+  WLED_NATIVE_BACKUP_CAPTION,
+  WLED_NATIVE_RESTORE_CAPTION,
+  buildWledBackupFiles,
+  capturedWledIdentity,
+  nativeFilesComplete,
+  reviewWledNativeRestore,
+  stripWledBackupSecrets,
+} from "./backup.ts";
 export { backupNeedsControllerConfirmation, parseSegmentBackup, type SegmentBackup } from "./segment-backup.ts";
 export {
   APPLY_ADOPT_EMPTY_REASON,

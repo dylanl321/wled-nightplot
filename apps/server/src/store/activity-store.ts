@@ -8,6 +8,10 @@ type ActivityFile = { version: 1; entries: ActivityEntry[] };
 export class FileActivityStore {
   constructor(private readonly filePath: string) {}
 
+  get path(): string {
+    return this.filePath;
+  }
+
   list(lightId?: string): ActivityEntry[] {
     const entries = this.read();
     return (lightId ? entries.filter((entry) => entry.lightId === lightId) : entries).reverse();

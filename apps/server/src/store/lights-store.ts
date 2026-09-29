@@ -20,6 +20,10 @@ export type LightsRawLoad =
 export class FileLightsStore {
   constructor(private readonly filePath: string) {}
 
+  get path(): string {
+    return this.filePath;
+  }
+
   snapshotForBackup(): StoreShape {
     try {
       const parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as FileShape;

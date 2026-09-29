@@ -176,6 +176,7 @@ function testApp(overrides: Partial<AppDeps> = {}) {
     readNativeFiles: overrides.readNativeFiles ?? (async () => ({
       cfgJson: JSON.stringify(await cfg.read()), presetsJson: JSON.stringify({ "1": { n: "Test" } }),
     })),
+    writeNativeFiles: overrides.writeNativeFiles,
     writeCfg: overrides.writeCfg ?? cfg.write,
     collect: overrides.collect ?? (async () => []),
     now: overrides.now ?? (() => new Date("2026-09-26T18:00:00.000Z")),
@@ -307,6 +308,86 @@ describe("managed Backups", () => {
     expect(backups.read(result.safetyBackupId)?.data.elements).toEqual([]);
     expect(products.list().length).toBeGreaterThan(0);
     expect(activity.list()).toEqual([]);
+  });
+
+  it("uploads native WLED files only through the explicit restore, after identity review and a safety backup", async () => {
+    const uploads: { host: string; files: { cfgJson: string; presetsJson: string } }[] = [];
+    const { app, store, backups } = testApp({
+      writeNativeFiles: async (target, files) => {
+        uploads.push({ host: `${target.hostname}:${target.port}`, files });
+      },
+    });
+    const id = await enroll(app);
+    store.replaceElements(id, [{ id: "door", lightId: id, label: "Door", start: 0, stop: 20 }]);
+    const saved = (await (await app.request(`/api/lights/${id}/backups`, { method: "POST" })).json()) as {
+      backup: { id: string; deviceFiles: { mac: string; firmware: string; cfgJson: string } };
+    };
+    expect(saved.backup.deviceFiles.mac).toBe("e8:9f:6d:7f:2a:04");
+    expect(saved.backup.deviceFiles.firmware).toBe("WLED 0.15.4");
+    expect((await app.request(`/api/backups/${saved.backup.id}/restore-wled`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightId: id }),
+    })).status).toBe(400);
+    const check = await app.request(`/api/backups/${saved.backup.id}/restore-wled/check`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightId: id }),
+    });
+    expect(check.status).toBe(200);
+    const uploaded = await app.request(`/api/backups/${saved.backup.id}/restore-wled`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightId: id, confirmId: saved.backup.id }),
+    });
+    expect(uploaded.status).toBe(200);
+    expect(uploads).toHaveLength(1);
+    expect(uploads[0]?.files.cfgJson).toBe(saved.backup.deviceFiles.cfgJson);
+    expect(backups.list().some((row) => row.reason === "pre-restore")).toBe(true);
+    expect(store.elementsFor(id)[0]?.label).toBe("Door");
+
+    const nightplot = (await (await app.request("/api/backups", { method: "POST" })).json()) as {
+      backup: { id: string };
+    };
+    const review = (await (await app.request(`/api/backups/${nightplot.backup.id}/restore/check`, {
+      method: "POST" })).json()) as { expectedDigest: string; expectedCurrentDigest: string };
+    uploads.length = 0;
+    expect((await app.request(`/api/backups/${nightplot.backup.id}/restore`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmId: nightplot.backup.id, ...review }),
+    })).status).toBe(200);
+    expect(uploads).toEqual([]);
+  });
+
+  it("refuses a WLED upload when firmware differs until that mismatch is confirmed", async () => {
+    const first = testApp();
+    const id = await enroll(first.app);
+    const saved = (await (await first.app.request(`/api/lights/${id}/backups`, { method: "POST" })).json()) as {
+      backup: { id: string };
+    };
+    const uploads: string[] = [];
+    const older = testApp({
+      store: first.store, products: first.products, activity: first.activity, backups: first.backups,
+      probe: async () => {
+        const result = await first.box.probe();
+        if (result.kind !== "found") return result;
+        return { ...result, snapshot: { ...result.snapshot, firmware: "WLED 0.14.4" } };
+      },
+      writeNativeFiles: async () => { uploads.push("sent"); },
+    });
+    const check = await older.app.request(`/api/backups/${saved.backup.id}/restore-wled/check`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightId: id }),
+    });
+    expect(check.status).toBe(200);
+    expect(((await check.json()) as { requiresFirmwareConfirm: boolean }).requiresFirmwareConfirm).toBe(true);
+    expect((await older.app.request(`/api/backups/${saved.backup.id}/restore-wled`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightId: id, confirmId: saved.backup.id }),
+    })).status).toBe(409);
+    expect(uploads).toEqual([]);
+    expect((await older.app.request(`/api/backups/${saved.backup.id}/restore-wled`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightId: id, confirmId: saved.backup.id, confirmFirmwareMismatch: true }),
+    })).status).toBe(200);
+    expect(uploads).toEqual(["sent"]);
   });
 
   it("does not auto-back up temporary Preview or All Off, but backs up before deleting a Light", async () => {

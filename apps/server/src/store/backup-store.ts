@@ -43,7 +43,10 @@ export class FileBackupStore {
         lightId: backup.lightId, lightName: backup.lightName,
         lightCount: backup.data.lights.length, segmentCount: backup.data.elements.length,
         productCount: backup.data.products.length, hasControllerReference: backup.controller !== null,
-        hasDeviceFiles: Boolean(backup.deviceFiles?.cfgJson && backup.deviceFiles?.presetsJson) }))
+        hasDeviceFiles: Boolean(backup.deviceFiles?.cfgJson && backup.deviceFiles?.presetsJson),
+        deviceMac: backup.deviceFiles?.mac ?? backup.controller?.mac ?? null,
+        deviceFirmware: backup.deviceFiles?.firmware ?? null,
+        secretsRemoved: Boolean(backup.deviceFiles?.secretsRemoved) }))
       .sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
   }
 
