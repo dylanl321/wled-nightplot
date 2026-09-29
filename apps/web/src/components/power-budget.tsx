@@ -31,18 +31,18 @@ export function PowerBudgetPanel({ detail }: { detail: LightDetail }) {
   const scenario = estimatePowerScenario({ segments: detail.elements, ledCount: light.ledCount,
     stripKind: light.stripKind, brightness, limitMa: limit,
     colours: Object.fromEntries(detail.elements.map((segment) => [segment.id,
-      colours[segment.id] ?? { hex: "#ffffff", white: 0 }])),
+      colours[segment.id] ?? segment.color ?? { hex: "#ffffff", white: 0 }])),
   });
   const rgbw = light.stripKind === "sk6812-rgbw";
   return <div className="space-y-4 text-[13px]">
-    <p className="text-muted-foreground">Planning estimate only: choose a colour for each saved Segment. White starts at full RGB and RGBW’s separate white channel starts at zero. These are not live WLED colours or measured amps.</p>
+    <p className="text-muted-foreground">Planning estimate only: saved Segment colours start this scenario; unset colours start at full RGB with zero white. You can change them here without saving or writing WLED. These are not measured amps.</p>
     <label className="flex items-center gap-3">Scenario brightness (0–255)
       <Input className="w-24" type="number" min={0} max={255} value={brightness}
         onChange={(event) => setBrightness(Number(event.target.value))} aria-label="Scenario brightness" />
     </label>
     {detail.elements.length === 0 ? <p>No saved Segments to estimate.</p> : null}
     {detail.elements.map((segment) => {
-      const colour = colours[segment.id] ?? { hex: "#ffffff", white: 0 };
+      const colour = colours[segment.id] ?? segment.color ?? { hex: "#ffffff", white: 0 };
       const row = scenario?.rows.find((item) => item.id === segment.id);
       return <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3" key={segment.id}>
         <span className="min-w-32">{segment.label} · {segment.stop - segment.start} LEDs</span>

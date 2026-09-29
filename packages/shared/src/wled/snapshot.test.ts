@@ -52,6 +52,9 @@ describe("parseWledPayload", () => {
     };
     const state = { on: false, bri: 128, seg: [seg], pl: -1 };
     const native = parseWledPayload({ ...wledJson, state })?.nativeRestore;
+    expect(parseWledPayload({ ...wledJson, state })?.segmentColors).toEqual([
+      { start: 0, stop: 60, hex: "#1e2832", white: 60, hasWhite: true },
+    ]);
     expect(native).toEqual({ on: false, bri: 128, seg: [seg] });
     expect(native?.seg[0]?.col).not.toBe(seg.col);
     for (const unsafe of [
@@ -114,6 +117,7 @@ describe("parseWledPayload", () => {
       segments: null,
     });
     expect(snapshotSegmentCount(snap)).toBeNull();
+    expect(snap?.segmentColors).toBeNull();
   });
 
   it("treats a known empty seg list as zero — not unknown", () => {

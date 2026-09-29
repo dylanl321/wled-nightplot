@@ -130,6 +130,30 @@ describe("Frozen Preview recovery", () => {
 });
 
 describe("Preview restore honesty", () => {
+  it("refuses RGBW Preview when an off or unknown report lacks a restorable fourth channel", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    const result = await engine.startPreview({ light, live: { ...infoOnly, on: false, brightness: 100,
+      segments: [{ start: 0, stop: 10 }], segmentColors: null }, elements: [],
+      range: { start: 2, stop: 4 }, color: "#112233", white: 60 });
+    expect(result).toMatchObject({ ok: false, error: "rgbw-restore-unavailable", sent: false });
+    expect(writes).toEqual([]);
+  });
+  it("carries RGBW white in Preview, restores distinct original channels, and avoids RGB-only match claims", async () => {
+    const writes: WledStateWrite[] = [];
+    const engine = engineWithWrites(writes);
+    const rgbw = { ...light, stripKind: "sk6812-rgbw" };
+    const before: WledSnapshot = { ...infoOnly, rgbw: true, on: false, brightness: 100,
+      segments: [{ start: 0, stop: 10 }],
+      segmentColors: [{ start: 0, stop: 10, hex: "#112233", white: 91, hasWhite: true }] };
+    const started = await engine.startPreview({ light: rgbw, live: before, elements: [],
+      range: { start: 2, stop: 4 }, color: "#445566", white: 80 });
+    expect(started).toMatchObject({ ok: true, reported: null });
+    expect(writes[0]?.seg?.[1]?.col).toEqual([[68, 85, 102, 80]]);
+    expect(await engine.end(light.id, "complete")).toMatchObject({ ok: true, restored: true });
+    expect(writes[1]?.seg?.at(-1)?.col).toEqual([[17, 34, 51, 91]]);
+    expect(writes[1]?.on).toBe(false);
+  });
   it("refuses orphaned frozen pixels explicitly without writing or inventing a session", async () => {
     const writes: WledStateWrite[] = [];
     const engine = engineWithWrites(writes);

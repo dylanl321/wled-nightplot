@@ -155,6 +155,7 @@ export function ElementsPanel({
     mode: locateMode,
     elements: state.els,
     hues,
+    rgbw: light.stripKind === "sk6812-rgbw",
     backgroundPercent,
     searchRange,
   });
@@ -171,17 +172,15 @@ export function ElementsPanel({
   const frozenPreview = detail.frozenPreview === true || (!recoveryNotice && locate.error?.code === "pixel-preview-frozen");
 
   const firstIssue = issues[0] ?? null;
-  const colourApplyUnavailable = state.els.some((element) => element.color &&
-    (element.color.white !== 0 || element.color.hex.toLowerCase() !== (typeof light.bead === "string" ? light.bead.toLowerCase() : "")));
-  const applyReadyReason = colourApplyUnavailable ? "Saved Segment colours differ from the reported Light. Per-Segment colour Apply is not available yet." :
-    frozenPreview ? "Recover the frozen LEDs before Apply." : applyRefuseReason({
+  const applyReadyReason = frozenPreview ? "Recover the frozen LEDs before Apply." : applyRefuseReason({
     reachable: !unreachable,
     issueMessage: firstIssue?.message ?? null,
     elementCount: state.els.length,
     busyKind: detail.session?.kind === "blink" ? "blink" : null,
     previewIntent: false,
     segmentCount: light.segmentCount,
-    segmentColor: typeof light.bead === "string" ? light.bead : null,
+    segmentColor: state.els.every((element) => element.color) ? state.els[0]?.color?.hex :
+      typeof light.bead === "string" ? light.bead : null,
   });
   const canSave = dirtyCount > 0 && issues.length === 0 && busy === null;
   const canApply = applyReadyReason === null && busy === null && !locate.stopping && locate.error?.kind !== "end";
@@ -205,8 +204,8 @@ export function ElementsPanel({
     ? `${state.els.find((element) => element.id === firstIssue.elementId)?.label ?? "Segment"}: ${issueWord(firstIssue.code) ?? firstIssue.code}`
     : null;
 
-  async function save(): Promise<boolean> {
-    if (!canSave) return false;
+  async function save(): Promise<LightDetailPayload | null> {
+    if (!canSave) return null;
     onBusy("save");
     onNotice(null);
     let palette: { hex: string }[] = DEFAULT_PALETTE;
@@ -222,11 +221,11 @@ export function ElementsPanel({
     onBusy(null);
     if (!res.ok) {
       onNotice(res.data.message ?? "Draft was not saved.");
-      return false;
+      return null;
     }
     onDetail(res.data);
     onRefresh();
-    return true;
+    return res.data;
   }
 
   async function applyRanges() {
@@ -234,9 +233,11 @@ export function ElementsPanel({
       onNotice(applyReadyReason);
       return;
     }
+    let applyElements = elsRef.current;
     if (dirtyCount > 0) {
       const saved = await save();
       if (!saved) return;
+      applyElements = saved.elements;
     }
     onBusy("apply");
     onNotice(null);
@@ -266,7 +267,7 @@ export function ElementsPanel({
       }
     }
     const res = await postJson<LightDetailPayload>(`/api/lights/${light.id}/apply`, {
-      elements: payload(elsRef.current),
+      elements: payload(applyElements),
     });
     onBusy(null);
     const body = res.data as LightDetailPayload & { apply?: ApplyResult; message?: string };
@@ -551,7 +552,7 @@ export function ElementsPanel({
         </div>
       </div>
 
-        <ElementInspector state={state} hues={hues} issuesFor={issuesFor} dispatch={dispatch} spacingMm={light.spacingMm} />
+        <ElementInspector state={state} hues={hues} issuesFor={issuesFor} dispatch={dispatch} spacingMm={light.spacingMm} rgbw={light.stripKind === "sk6812-rgbw"} />
       </div>
 
       {notice ? <p className="text-[13px] text-destructive">{notice}</p> : null}

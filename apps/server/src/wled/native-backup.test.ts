@@ -1,7 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { createWledNativeFilesReader } from "./native-backup.ts";
+import { createWledConfigExportReader, createWledNativeFilesReader } from "./native-backup.ts";
 
 describe("WLED native backup", () => {
+  it("reads one fresh cfg.json without touching presets or sending a write", async () => {
+    const fetchFn = vi.fn(async (_url: string) => new Response('{"id":{"name":"Porch"}}'));
+    expect(await createWledConfigExportReader(fetchFn as unknown as typeof fetch)(
+      { hostname: "192.168.1.20", port: 8080 })).toBe('{"id":{"name":"Porch"}}');
+    expect(String(fetchFn.mock.calls[0]?.[0])).toBe("http://192.168.1.20:8080/cfg.json");
+    await expect(createWledConfigExportReader(async () => new Response("<html>"))(
+      { hostname: "example.local", port: 80 })).rejects.toThrow();
+  });
   it("fetches both native files byte-for-byte from the advertised port", async () => {
     const fetchFn = vi.fn(async (url: string) =>
       new Response(url.endsWith("cfg.json") ? '{ "name": "Porch" }\n' : '{"1":{"n":"Warm"}}'));

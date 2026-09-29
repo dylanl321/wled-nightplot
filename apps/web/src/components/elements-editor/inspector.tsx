@@ -12,8 +12,10 @@ export function ElementInspector({
   issuesFor,
   dispatch,
   spacingMm,
+  rgbw = false,
 }: {
   spacingMm?: number | null;
+  rgbw?: boolean;
   state: EditorState;
   hues: Record<string, string>;
   issuesFor: (id: string) => RangeIssue[];
@@ -29,6 +31,7 @@ export function ElementInspector({
           element={selected}
           cursor={state.cursor}
           spacingMm={spacingMm}
+          rgbw={rgbw}
           hue={hues[selected.id] ?? "#9a9488"}
           issues={issuesFor(selected.id)}
           ledCount={state.ledCount}
@@ -78,6 +81,7 @@ function OneElement({
   element,
   cursor,
   spacingMm,
+  rgbw,
   hue,
   issues,
   ledCount,
@@ -87,6 +91,7 @@ function OneElement({
   element: Element;
   cursor: number | null;
   spacingMm?: number | null;
+  rgbw: boolean;
   hue: string;
   issues: RangeIssue[];
   ledCount: number;
@@ -145,12 +150,12 @@ function OneElement({
 
       </div>
       <div className="flex flex-wrap gap-3 text-[12px]">
-        <p className="basis-full text-muted-foreground">Saved Segment colour; Apply does not yet send this per-Segment colour to WLED.</p>
+        <p className="basis-full text-muted-foreground">Saved Segment colour. Apply sends RGB and the separate white channel only after a complete WLED backup; readback must match before it is confirmed.</p>
         <label>Saved Segment colour<br/><input aria-label="Saved Segment colour" type="color"
           value={element.color?.hex ?? hue} onChange={(event) => dispatch({ type: "color", hex: event.target.value })} /></label>
-        <label>White channel (0–255)<br/><input aria-label="White channel" className="w-20 rounded border border-border bg-card px-2 py-1"
+        {rgbw ? <label>White channel (0–255)<br/><input aria-label="White channel" className="w-20 rounded border border-border bg-card px-2 py-1"
           type="number" min={0} max={255} value={element.color?.white ?? 0}
-          onChange={(event) => dispatch({ type: "color", white: Number(event.target.value) })} /></label>
+          onChange={(event) => dispatch({ type: "color", white: Number(event.target.value) })} /></label> : null}
         {!element.color ? <span className="self-end text-muted-foreground">Legacy Segment: colour unset until chosen.</span> : null}
       </div>
       <div className="flex flex-wrap gap-3.5 text-[12px] text-muted-foreground">

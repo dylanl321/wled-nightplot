@@ -78,6 +78,16 @@ function payload(overrides: Partial<LightDetailPayload> = {}): LightDetailPayloa
 }
 
 describe("Strip provision", () => {
+  it("suggests only missing Strip values without attaching the default product or replacing known reports", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      ...payload(), provision: { ...provision, settings: { ...provision.settings, length: null, gpio: 16 } },
+      nightplotSuggestions: { ledCount: 120, gpio: 3, defaultLedProductId: catalogProducts[0]?.id },
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
+    expect((await screen.findByRole("textbox", { name: "Node count" }) as HTMLInputElement).value).toBe("120");
+    expect((screen.getByRole("textbox", { name: "GPIO pin" }) as HTMLInputElement).value).toBe("16");
+    expect(screen.getByRole("button", { name: "Manual fields" }).getAttribute("aria-pressed")).toBe("true");
+  });
   it("offers Strip on an enrolled Light", () => {
     render(<LightDetail initial={payload()} mode="inspect" />);
     expect(screen.getByRole("heading", { name: "Strip hardware" })).toBeTruthy();

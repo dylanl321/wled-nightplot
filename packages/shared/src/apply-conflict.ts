@@ -1,6 +1,7 @@
 import { spansMatch } from "./apply.ts";
 import type { RangeSpan } from "./range.ts";
 import type { WledSnapshot } from "./wled/snapshot.ts";
+import { reportedColorsMatch, type SegmentColor } from "./segment-colors.ts";
 
 /** Saved only after a confirmed Segment Apply, independent of lastSnapshot. */
 export type LastApply = {
@@ -9,6 +10,7 @@ export type LastApply = {
   ledCount: number;
   ranges: RangeSpan[];
   color: string;
+  colors?: SegmentColor[];
 };
 
 export type ApplyConflict = {
@@ -28,6 +30,8 @@ export function compareLastApply(baseline: LastApply | null | undefined,
     !/^#[0-9a-f]{6}$/i.test(baseline.color)) return null;
   const rangesChanged = snapshot.segments !== null && !spansMatch(baseline.ranges, snapshot.segments);
   // Off or info-only reads do not report a comparable colour.
-  const colorChanged = snapshot.segmentColor !== null && snapshot.segmentColor.toLowerCase() !== baseline.color.toLowerCase();
+  const colorChanged = baseline.colors ? reportedColorsMatch(baseline.ranges.map((range) => ({ ...range, label: "" })),
+    baseline.colors, snapshot.segmentColors) === false :
+    snapshot.segmentColor !== null && snapshot.segmentColor.toLowerCase() !== baseline.color.toLowerCase();
   return rangesChanged || colorChanged ? { at: baseline.at, rangesChanged, colorChanged } : null;
 }

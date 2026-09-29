@@ -17,6 +17,8 @@ export type WledSnapshot = {
   on: boolean | null;
   brightness: number | null;
   segmentColor: string | null;
+  /** Fresh state.seg primary colours, including W for RGBW, independent of power. Null when unreadable. */
+  segmentColors?: { start: number; stop: number; hex: string; white: number; hasWhite?: boolean }[] | null;
   /**
    * Reported `state.seg` spans. `null` when state was skipped/hung or `seg`
    * was not an array — unknown, not zero. `[]` is a known empty list.
@@ -80,10 +82,32 @@ export function parseWledPayload(body: unknown): WledSnapshot | null {
     brightness,
     segmentColor,
     segments: parseSegments(state, count),
+    segmentColors: parseSegmentColors(state, count),
     ...(nativeRestore ? { nativeRestore } : {}),
     ...(nativeRestoreUnavailable ? { nativeRestoreUnavailable } : {}),
     ...(frozenSegments?.length ? { frozenSegments } : {}),
   };
+}
+
+function parseSegmentColors(state: Record<string, unknown> | null, ledCount: number): WledSnapshot["segmentColors"] {
+  if (!state || !Array.isArray(state.seg)) return null;
+  const colors: NonNullable<WledSnapshot["segmentColors"]> = [];
+  for (const raw of state.seg) {
+    if (!isRecord(raw)) return null;
+    const start = typeof raw.start === "number" ? raw.start : 0;
+    const stop = typeof raw.stop === "number" ? raw.stop : ledCount;
+    if (!Number.isInteger(start) || !Number.isInteger(stop) || start < 0 || stop <= start || stop > ledCount ||
+      !Array.isArray(raw.col) || !Array.isArray(raw.col[0])) return null;
+    const primary = raw.col[0] as unknown[];
+    if (primary.length < 3 || primary.length > 4 || !primary.every((n) => Number.isInteger(n) && (n as number) >= 0 && (n as number) <= 255)) return null;
+    colors.push({ start, stop, hex: rgbHex(primary as number[]), white: primary[3] as number | undefined ?? 0,
+      ...(primary.length === 4 ? { hasWhite: true } : {}) });
+  }
+  return colors;
+}
+
+function rgbHex(rgb: number[]): string {
+  return `#${rgb.slice(0, 3).map((n) => n.toString(16).padStart(2, "0")).join("")}`;
 }
 
 function readNativeRestore(state: Record<string, unknown> | null, allowFrozen = false): WledNativeRestore | null {

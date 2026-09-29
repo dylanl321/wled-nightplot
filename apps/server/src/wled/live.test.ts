@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { WledSnapshot } from "@nightplot/shared";
 import {
   applyRangesWrite,
+  pixelPreviewWrite,
   firstLocateWrite,
   isLocateOverlayWrite,
   locateHopWrite,
@@ -33,6 +34,12 @@ const known: WledSnapshot = {
 };
 
 describe("applyRangesWrite leftover clears", () => {
+  it("writes RGBW's fourth channel for each Segment", () => {
+    const planned = applyRangesWrite([{ start: 0, stop: 10 }, { start: 10, stop: 20 }], 2, "#000000",
+      [{ hex: "#112233", white: 90 }, { hex: "#445566", white: 0 }], true);
+    if (!planned.ok) throw new Error("known ranges must write");
+    expect(planned.body.seg?.map((row) => row.col)).toEqual([[[17, 34, 51, 90]], [[68, 85, 102, 0]]]);
+  });
   const ranges = [
     { start: 0, stop: 24 },
     { start: 24, stop: 50 },
@@ -66,6 +73,23 @@ describe("applyRangesWrite leftover clears", () => {
       { id: 1, start: 0, stop: 0, col: [[79, 125, 255]] },
       { id: 2, start: 0, stop: 0, col: [[79, 125, 255]] },
     ]);
+  });
+});
+
+describe("RGBW Preview and restoration", () => {
+  it("paints the white channel in transient segment and pixel writes", () => {
+    const spans = [{ start: 1, stop: 3, color: "#112233", white: 90 }];
+    expect(previewWriteSpans(spans, 128, 10).seg?.[1]?.col).toEqual([[17, 34, 51, 90]]);
+    expect(pixelPreviewWrite(spans, 128, 10).seg?.[0]?.i).toEqual([0, 10, "000000", 1, 3, "1122335a"]);
+    expect(previewWriteSpans([{ start: 1, stop: 3, color: "#000000", white: 255 }], 128, 10).seg?.[1]?.col)
+      .toEqual([[0, 0, 0, 255]]);
+  });
+  it("restores distinct reported RGBW colours rather than the first RGB value", () => {
+    const snapshot: WledSnapshot = { ...known, rgbw: true,
+      segments: [{ start: 0, stop: 20 }, { start: 20, stop: 60 }],
+      segmentColors: [{ start: 0, stop: 20, hex: "#112233", white: 90, hasWhite: true },
+        { start: 20, stop: 60, hex: "#445566", white: 0, hasWhite: true }] };
+    expect(restoreWriteFromSnapshot(snapshot).seg?.map((row) => row.col)).toEqual([[[17, 34, 51, 90]], [[68, 85, 102, 0]]]);
   });
 });
 

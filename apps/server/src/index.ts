@@ -8,7 +8,7 @@ import { FileLedProductsStore } from "./store/led-products-store.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
 import { FileSettingsStore } from "./store/settings-store.ts";
 import { createWledCfgReader, createWledCfgWriter } from "./wled/cfg.ts";
-import { createWledNativeFilesReader } from "./wled/native-backup.ts";
+import { createWledConfigExportReader, createWledNativeFilesReader } from "./wled/native-backup.ts";
 import { createWledProbe } from "./wled/client.ts";
 import { createWledLiveReader, createWledWriter } from "./wled/live.ts";
 
@@ -38,6 +38,7 @@ const app = createApp({
   readLive: createWledLiveReader(),
   readCfg: createWledCfgReader(),
   readNativeFiles: createWledNativeFilesReader(),
+  readConfigExport: createWledConfigExportReader(),
   writeCfg: createWledCfgWriter(),
   collect: createCollector({
     targets: process.env.NIGHTPLOT_DISCOVERY_TARGETS,
