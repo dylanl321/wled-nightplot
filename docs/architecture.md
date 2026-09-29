@@ -13,7 +13,7 @@ This is early software. Paths below are the real tree on `main`.
 | `packages/shared` | `@nightplot/shared` | Types, catalogs, LAN guard, parse, range / live / safe / provision |
 | `docs/ui/` | — | v2 prototype (visual source of truth) |
 
-Web talks to the API by rewrite: `/api/:path*` and `/health` → `NIGHTPLOT_API_URL` (default `http://127.0.0.1:43181`). Browser fetches use same-origin paths (`apps/web/src/lib/api.ts`). Add a Light (`/discover`) loads `GET /api/lights` and `GET /api/discover` independently: a Find miss keeps enrolled Lights and does not render ServerDown; a Lights miss still does. Inspect (`/lights/:id`) loads `GET /api/lights` and `GET /api/lights/:id` the same way: a detail miss keeps enrolled Lights; a Lights miss still uses ServerDown. LED products (`/led-products`) loads `GET /api/lights` and `GET /api/led-products` the same way: a catalog miss keeps enrolled Lights; a Lights miss still uses ServerDown.
+Web talks to the API by rewrite: `/api/:path*` and `/health` → `NIGHTPLOT_API_URL` (default `http://127.0.0.1:43181`). Browser fetches use same-origin paths (`apps/web/src/lib/api.ts`). Add a Light (`/discover`) loads `GET /api/lights` and `GET /api/discover` independently: a Find miss keeps enrolled Lights and does not render ServerDown; a Lights miss still does. Inspect (`/lights/:id`) loads `GET /api/lights` and `GET /api/lights/:id` the same way: a detail miss keeps enrolled Lights; a Lights miss still uses ServerDown. LED products (`/led-products`) loads `GET /api/lights` and `GET /api/led-products` the same way: a catalog miss keeps enrolled Lights; a Lights miss still uses ServerDown. Backups (`/backups`) loads `GET /api/lights` and `GET /api/backups` the same way: a backups miss keeps enrolled Lights; a Lights miss still uses ServerDown.
 
 ## Catalog seams
 
@@ -73,7 +73,6 @@ Strip Apply (`buildProvisionWrite`) writes WLED `order: 0` (GRBW on SK6812 RGBW;
 | --- | --- | --- |
 | HTTP | `createApp` | `apps/server/src/app.ts` |
 | Store | `FileLightsStore` | `apps/server/src/store/lights-store.ts` |
-| Backups | `FileBackupStore` | `apps/server/src/store/backup-store.ts` |
 | LED products | `FileLedProductsStore` | `apps/server/src/store/led-products-store.ts` |
 | Backups | `FileBackupStore` | `apps/server/src/store/backup-store.ts` |
 | Probe | `createWledProbe` | `apps/server/src/wled/client.ts` (`TIMEOUT_MS` 3000). All Off unknown-row copy is `allOffNoAnswerReason` — elapsed or generic refuse, not a claimed 3 s. Delete unknown-controller copy is `deleteUnknownControllerReason` — elapsed or generic refuse, not “in time” |

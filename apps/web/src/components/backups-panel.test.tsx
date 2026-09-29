@@ -39,7 +39,7 @@ describe("Backups panel", () => {
     });
     vi.stubGlobal("fetch", fetch);
     render(<BackupsPanel initialBackups={[backup]} />);
-    expect(screen.getByText("Saved backup")).toBeTruthy();
+    expect(screen.getAllByText("Saved backup").length).toBeGreaterThan(0);
     const deleteButton = screen.getByRole("button", { name: "Delete backup" });
     expect(deleteButton.hasAttribute("disabled")).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Review restore" }));

@@ -1,6 +1,6 @@
 # Nightplot Configure — UI notes
 
-The running shell is the v3 top bar in `apps/web`: Lights and LED products in the bar, All Off on the bar (thumb bar below `lg`), Elements and Settings on a Light, strip-map cards on Lights.
+The running shell is the v3 top bar in `apps/web`: Lights, LED products, and Backups in the bar, All Off on the bar (thumb bar below `lg`), Segments and Settings on a Light, strip-map cards on Lights.
 
 This folder keeps the earlier v2 bead-language prototype. It is not the running app.
 
