@@ -100,6 +100,8 @@ export type LightView = Light & {
 };
 
 export type LightDetail = {
+  /** Live /json/info health only; never cached as current while unreachable. */
+  health?: import("./wled/health.ts").WledHealth | null;
   /** Frozen controller pixels without a live session that can restore them. */
   frozenPreview?: boolean;
   light: LightView;

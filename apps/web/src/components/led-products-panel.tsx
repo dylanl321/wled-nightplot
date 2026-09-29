@@ -22,7 +22,7 @@ import {
 } from "@nightplot/shared";
 import { useState } from "react";
 import { CatalogDelete } from "@/components/catalog-delete";
-import { GlowingLedLoader } from "@/components/glowing-led-loader";
+import { LedLoader } from "@/components/ui/led-loader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { fetchJson, patchJson, postJson } from "@/lib/api";
@@ -554,7 +554,7 @@ export function LedProductsPanel({
             <Button type="submit" disabled={busy !== null}>
               {busy === "save" ? "Saving…" : editingId ? "Save recipe" : "Create recipe"}
             </Button>
-            {busy === "save" ? <GlowingLedLoader label="Saving recipe" /> : null}
+            {busy === "save" ? <LedLoader label="Saving recipe" /> : null}
           </div>
           <p className="text-[12px] text-quiet">
             Save recipe writes the catalog only. It is not Apply, not a WLED write, not Hardware

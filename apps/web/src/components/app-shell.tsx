@@ -45,6 +45,7 @@ export function AppShell({
 
       <header className="flex h-[52px] items-center gap-2.5 border-b border-border px-5 lg:hidden">
         <Brand markClassName="h-2.5 w-9" />
+        <Link href="/backups" className="ml-auto text-[13px] text-muted-foreground">Backups</Link>
       </header>
 
       <main className="flex min-h-0 flex-1 flex-col">{children}</main>

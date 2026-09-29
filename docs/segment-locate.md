@@ -158,6 +158,18 @@ Light's saved Nightplot Segments, even if the controller is offline. It does
 not move a controller address or settings, start Preview, or Apply ranges to
 the strip; use Apply separately when the Light is ready.
 
+To replace the controller while keeping the same physical strip and this
+Light's saved Segments, open **Settings → Network → Replace controller…**.
+Enter its host:port (or host for port 80), check the fresh WLED MAC and LED
+count, then explicitly confirm. Nightplot probes again before changing the
+Light's controller identity and address. The new controller must not already
+be another Light, and its LED count must match; an active Preview or Blink
+must end first. The old controller snapshot is discarded; saved Segments and
+the Strip recipe stay on the same Light. The Activity tab records the boundary.
+Verify the new controller's Strip hardware and use Apply separately; this does not transfer WLED
+settings or write ranges to the new controller. A normal address change is
+for the same MAC, not this replacement.
+
 Validation covers shared boundaries, focus, drag thresholds, undo, selection options,
 scan controls and Preview recovery with automated tests, plus desktop/mobile
 browser checks using mocked controller responses. These are software checks;

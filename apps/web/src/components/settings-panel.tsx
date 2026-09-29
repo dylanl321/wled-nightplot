@@ -3,8 +3,10 @@
 import type { LightDetail as LightDetailPayload, ReaddressStep } from "@nightplot/shared";
 import type { ReactNode } from "react";
 import { DeleteLight } from "@/components/delete-light";
+import { ControllerReplacement } from "@/components/controller-replacement";
 import { SafeSettingsPanel } from "@/components/safe-settings";
 import { StripProvisionPanel } from "@/components/strip-provision";
+import { PowerBudgetPanel } from "@/components/power-budget";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -56,6 +58,30 @@ export function SettingsPanel({
           staleInfoName={light.staleInfoName}
           onUpdated={onUpdated}
         />
+      </Section>
+      <Section
+        title="Health"
+        blurb="Current readings from this Light; no controller changes."
+      >
+        {!detail.health ? (
+          <p className="text-[13px] text-muted-foreground">Current health unavailable. {light.lastSeenAt ? `Last seen ${new Date(light.lastSeenAt).toLocaleString()}.` : "No last-seen report."}</p>
+        ) : (
+          <div className="space-y-3 text-[13px]">
+            <dl className="grid grid-cols-[140px_minmax(0,1fr)] gap-y-2">
+              <dt className="text-muted-foreground">WLED version</dt><dd>{light.firmware ?? "Unknown"}</dd>
+              <dt className="text-muted-foreground">Uptime</dt><dd>{detail.health.uptimeSeconds === null ? "Not reported" : formatUptime(detail.health.uptimeSeconds)}</dd>
+              <dt className="text-muted-foreground">Wi-Fi signal</dt><dd>{detail.health.wifiSignalPercent === null ? "Not reported" : `${detail.health.wifiSignalPercent}%`}{detail.health.wifiRssiDbm === null ? "" : ` · ${detail.health.wifiRssiDbm} dBm`}</dd>
+              <dt className="text-muted-foreground">Free memory</dt><dd>{detail.health.freeHeapBytes === null ? "Not reported" : `${(detail.health.freeHeapBytes / 1024).toFixed(1)} KiB`}</dd>
+            </dl>
+            {detail.health.compatibilityNotice ? <p role="status" className="rounded-lg border border-amber-500/40 p-3 text-amber-200">{detail.health.compatibilityNotice}</p> : null}
+          </div>
+        )}
+      </Section>
+      <Section
+        title="Power budget"
+        blurb="Explore Segment colours against WLED’s Safe current limit; no controller write."
+      >
+        <PowerBudgetPanel detail={detail} />
       </Section>
       <Section
         title="Network"
@@ -112,6 +138,7 @@ export function SettingsPanel({
             )}
           </div>
         ) : null}
+        <ControllerReplacement detail={detail} onUpdated={onUpdated} />
       </Section>
       <Section
         title="Remove"
@@ -127,6 +154,13 @@ export function SettingsPanel({
       </Section>
     </div>
   );
+}
+
+function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return [days ? `${days}d` : null, hours || days ? `${hours}h` : null, `${minutes}m`].filter(Boolean).join(" ");
 }
 
 function Section({

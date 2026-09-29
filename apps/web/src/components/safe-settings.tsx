@@ -12,7 +12,7 @@ import {
   type WledSafeSettings,
 } from "@nightplot/shared";
 import { useEffect, useState, type ReactNode } from "react";
-import { GlowingLedLoader } from "@/components/glowing-led-loader";
+import { LedLoader } from "@/components/ui/led-loader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { fetchJson, postJson } from "@/lib/api";
@@ -299,7 +299,7 @@ export function SafeSettingsPanel({
         >
           {busy === "write" ? "Writing…" : "Apply settings"}
         </Button>
-        {busy === "write" ? <GlowingLedLoader label="Applying Safe settings" /> : null}
+        {busy === "write" ? <LedLoader label="Applying Safe settings" /> : null}
       </div>
     </div>
   );

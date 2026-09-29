@@ -21,8 +21,29 @@ type FileShape = {
 export class FileLedProductsStore {
   constructor(private readonly filePath: string) {}
 
-  get path(): string {
-    return this.filePath;
+  snapshotForBackup(): LedProduct[] {
+    try {
+      const parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as FileShape;
+      if (parsed.version !== 1 || !this.validBackup(parsed.products))
+        throw new Error("Invalid LED products store; backup refused.");
+      return parsed.products;
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT")
+        return this.list(); // First boot seeds the catalog as usual.
+      throw error;
+    }
+  }
+
+  restoreBackup(products: LedProduct[]): void {
+    if (!this.validBackup(products)) {
+      throw new Error("Invalid backup LED products; nothing was restored.");
+    }
+    this.write(products);
+  }
+
+  validBackup(products: LedProduct[]): boolean {
+    return Array.isArray(products) && products.every(isStoredProduct) &&
+      new Set(products.map((product) => product.id)).size === products.length;
   }
 
   list(): LedProduct[] {
@@ -52,10 +73,6 @@ export class FileLedProductsStore {
     if (!found) return undefined;
     this.write(products.filter((row) => row.id !== id));
     return found;
-  }
-
-  replaceAll(products: LedProduct[]): void {
-    this.write(products);
   }
 
   private read(): LedProduct[] {

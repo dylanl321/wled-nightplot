@@ -7,6 +7,7 @@ import { FileBackupStore } from "./store/backup-store.ts";
 import { FileLedProductsStore } from "./store/led-products-store.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
 import { createWledCfgReader, createWledCfgWriter } from "./wled/cfg.ts";
+import { createWledNativeFilesReader } from "./wled/native-backup.ts";
 import { createWledProbe } from "./wled/client.ts";
 import { createWledLiveReader, createWledWriter } from "./wled/live.ts";
 
@@ -19,25 +20,20 @@ const productsPath = resolve(
   process.env.NIGHTPLOT_LED_PRODUCTS_PATH ?? "data/led-products.json",
 );
 const activityPath = resolve(process.env.NIGHTPLOT_ACTIVITY_PATH ?? join(dirname(storePath), "activity.json"));
-const backupsDir = resolve(process.env.NIGHTPLOT_BACKUPS_DIR ?? join(dirname(storePath), "backups"));
-const keepAutomatic = Number.parseInt(process.env.NIGHTPLOT_BACKUP_KEEP_AUTOMATIC ?? "40", 10);
-const keepSafety = Number.parseInt(process.env.NIGHTPLOT_BACKUP_KEEP_SAFETY ?? "10", 10);
+const backupsPath = resolve(process.env.NIGHTPLOT_BACKUPS_PATH ?? join(dirname(storePath), "backups"));
 const products = new FileLedProductsStore(productsPath);
 const seededProducts = products.list();
 
 const app = createApp({
   store: new FileLightsStore(storePath),
   activity: new FileActivityStore(activityPath),
-  backups: new FileBackupStore(
-    backupsDir,
-    Number.isFinite(keepAutomatic) && keepAutomatic > 0 ? keepAutomatic : 40,
-    Number.isFinite(keepSafety) && keepSafety > 0 ? keepSafety : 10,
-  ),
+  backups: new FileBackupStore(backupsPath),
   products,
   probe: createWledProbe(),
   write: createWledWriter(),
   readLive: createWledLiveReader(),
   readCfg: createWledCfgReader(),
+  readNativeFiles: createWledNativeFilesReader(),
   writeCfg: createWledCfgWriter(),
   collect: createCollector({
     targets: process.env.NIGHTPLOT_DISCOVERY_TARGETS,
@@ -48,6 +44,6 @@ serve({ fetch: app.fetch, port, hostname }, (info) => {
   console.log(`nightplot-configure api  http://${info.address}:${info.port}`);
   console.log(`store  ${storePath}`);
   console.log(`activity  ${activityPath}`);
-  console.log(`backups  ${backupsDir}`);
+  console.log(`backups  ${backupsPath}`);
   console.log(`led products  ${productsPath} (${seededProducts.length})`);
 });

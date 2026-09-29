@@ -1,354 +1,194 @@
 "use client";
 
-import {
-  CONTROLLER_CAPTURE_CAPTION,
-  RESTORE_NIGHTPLOT_CAPTION,
-  type NightplotBackupDiff,
-  type NightplotBackupMeta,
-} from "@nightplot/shared";
+import type { BackupDocument, BackupSummary, LightView } from "@nightplot/shared";
 import { useState } from "react";
-import { GlowingLedLoader } from "@/components/glowing-led-loader";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { LedLoader } from "@/components/ui/led-loader";
 import { deleteJson, fetchJson, postJson } from "@/lib/api";
 
-type BackupDetails = {
-  lights: { id: string; name: string; ledCount: number; host: string; segments: number }[];
-  ledProducts: { id: string; label: string }[];
-  activityCount: number;
-  controller: {
-    lightId: string;
-    lightName: string;
-    host: string;
-    missing: string[];
-    capturedAt: string;
-  } | null;
-  incomplete: string[];
-  restoreCaption?: string;
-  controllerCaption?: string | null;
+type RestoreCheck = {
+  backup: { id: string; at: string; reason: string; lights: number; segments: number; products: number; activity: number };
+  current: { lights: number; segments: number; products: number; activity: number };
+  expectedDigest: string;
+  expectedCurrentDigest: string;
 };
 
-export function BackupsPanel({
-  initialBackups = [],
-  skippedInvalid = 0,
-  restoreCaption,
-  controllerCaption,
-  loadError,
-}: {
-  initialBackups?: NightplotBackupMeta[];
-  skippedInvalid?: number;
-  restoreCaption?: string;
-  controllerCaption?: string;
-  loadError?: string;
-}) {
-  const [backups, setBackups] = useState(initialBackups);
-  const [invalidCount, setInvalidCount] = useState(skippedInvalid);
-  const [selectedId, setSelectedId] = useState<string | null>(initialBackups[0]?.id ?? null);
-  const [details, setDetails] = useState<BackupDetails | null>(null);
-  const [diff, setDiff] = useState<NightplotBackupDiff | null>(null);
-  const [busy, setBusy] = useState<"load" | "create" | "details" | "diff" | "restore" | "delete" | "download" | null>(
-    null,
-  );
-  const [notice, setNotice] = useState<string | null>(loadError ?? null);
-  const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const [restoreConfirm, setRestoreConfirm] = useState(false);
-
-  const selected = backups.find((row) => row.id === selectedId) ?? null;
+export function BackupsPanel({ initial, lights = [] }: { initial: BackupSummary[]; lights?: LightView[] }) {
+  const [backups, setBackups] = useState(initial);
+  const [selected, setSelected] = useState<BackupDocument | null>(null);
+  const [review, setReview] = useState<RestoreCheck | null>(null);
+  const [clearId, setClearId] = useState<string | null>(null);
+  const [typedId, setTypedId] = useState("");
+  const [deviceLightId, setDeviceLightId] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   async function reload() {
-    setBusy("load");
-    setNotice(null);
-    try {
-      const payload = await fetchJson<{
-        backups: NightplotBackupMeta[];
-        skippedInvalid?: number;
-      }>("/api/backups");
-      setBackups(payload.backups ?? []);
-      setInvalidCount(payload.skippedInvalid ?? 0);
-      setSelectedId((current) => {
-        if (current && payload.backups.some((row) => row.id === current)) return current;
-        return payload.backups[0]?.id ?? null;
-      });
-    } catch (caught) {
-      setNotice(caught instanceof Error ? caught.message : "Backups could not be loaded.");
-    }
-    setBusy(null);
+    const result = await fetchJson<{ backups: BackupSummary[] }>("/api/backups");
+    setBackups(result.backups);
   }
 
-  async function createBackup() {
-    setBusy("create");
-    setNotice(null);
-    const res = await postJson<{ backup?: NightplotBackupMeta }>("/api/backups", {});
-    setBusy(null);
-    if (!res.ok) {
-      setNotice(res.data.message ?? "Could not save a Nightplot backup.");
-      return;
-    }
-    if (res.data.backup) {
-      setBackups((current) => [res.data.backup!, ...current.filter((row) => row.id !== res.data.backup!.id)]);
-      setSelectedId(res.data.backup.id);
-      setDetails(null);
-      setDiff(null);
-      setDeleteConfirm(false);
-      setRestoreConfirm(false);
-    }
+  async function run(label: string, action: () => Promise<void>) {
+    setBusy(label);
+    setError(null);
+    try { await action(); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "Backup action failed. Check Nightplot before retrying."); }
+    finally { setBusy(null); }
   }
 
-  async function loadDetails(id: string) {
-    setBusy("details");
-    setNotice(null);
-    setDiff(null);
-    setDeleteConfirm(false);
-    setRestoreConfirm(false);
-    try {
-      const payload = await fetchJson<{ details: BackupDetails }>(`/api/backups/${id}`);
-      setDetails(payload.details);
-    } catch (caught) {
-      setDetails(null);
-      setNotice(caught instanceof Error ? caught.message : "That backup could not be opened.");
-    }
-    setBusy(null);
-  }
+  function resetReview() { setReview(null); setClearId(null); setTypedId(""); }
 
-  async function loadDiff(id: string) {
-    setBusy("diff");
-    setNotice(null);
-    try {
-      const payload = await fetchJson<{ diff: NightplotBackupDiff }>(`/api/backups/${id}/diff`);
-      setDiff(payload.diff);
-    } catch (caught) {
-      setDiff(null);
-      setNotice(caught instanceof Error ? caught.message : "Could not compare that backup.");
-    }
-    setBusy(null);
-  }
-
-  async function download(id: string) {
-    setBusy("download");
-    setNotice(null);
-    try {
-      const res = await fetch(`/api/backups/${id}/download`, { headers: { Accept: "application/json" } });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { message?: string };
-        throw new Error(body.message ?? "Download failed.");
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `nightplot-data-${id}.json`;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (caught) {
-      setNotice(caught instanceof Error ? caught.message : "Download failed.");
-    }
-    setBusy(null);
-  }
-
-  async function remove(id: string) {
-    if (!deleteConfirm) return;
-    setBusy("delete");
-    setNotice(null);
-    const res = await deleteJson<{ message?: string }>(`/api/backups/${id}`, { confirm: true });
-    setBusy(null);
-    if (!res.ok) {
-      setNotice(res.data.message ?? "That backup was not removed.");
-      return;
-    }
-    setBackups((current) => current.filter((row) => row.id !== id));
-    setSelectedId((current) => {
-      if (current !== id) return current;
-      const next = backups.find((row) => row.id !== id);
-      return next?.id ?? null;
+  async function create() {
+    await run("Creating backup…", async () => {
+      const res = await postJson<{ backup: BackupDocument }>("/api/backups", {});
+      if (!res.ok) throw new Error(res.data.message ?? "Backup could not be saved.");
+      await reload();
+      setSelected(res.data.backup);
+      resetReview();
+      setNotice("Nightplot data backup saved. No controller was changed.");
     });
-    setDetails(null);
-    setDiff(null);
-    setDeleteConfirm(false);
-    setRestoreConfirm(false);
   }
 
-  async function restore(id: string) {
-    if (!restoreConfirm || !diff) return;
-    setBusy("restore");
-    setNotice(null);
-    const res = await postJson<{ message?: string }>(`/api/backups/${id}/restore`, { confirm: true });
-    setBusy(null);
-    if (!res.ok) {
-      setNotice(res.data.message ?? "Restore did not run.");
-      return;
-    }
-    setNotice(res.data.message ?? "Restored Nightplot data. Nothing was sent to a controller.");
-    setRestoreConfirm(false);
-    await reload();
+  async function createDevice() {
+    if (!deviceLightId) return;
+    await run("Backing up WLED…", async () => {
+      const res = await postJson<{ backup: BackupDocument }>(`/api/lights/${deviceLightId}/backups`, {});
+      if (!res.ok) throw new Error(res.data.message ?? "WLED backup was not saved.");
+      await reload(); setSelected(res.data.backup); resetReview();
+      setNotice("WLED configuration and presets saved with Nightplot data. Passwords are excluded by WLED.");
+    });
   }
 
-  return (
-    <div className="mx-auto flex w-full max-w-[860px] flex-1 flex-col gap-6 px-5 py-8 sm:px-8">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-[26px] font-semibold tracking-[-0.01em]">Backups</h1>
-        <p className="text-muted-foreground">
-          Versioned copies of Nightplot Lights, Segments, LED products, and Activity.
-          Restore replaces Nightplot data only — it does not Apply to a controller.
-        </p>
-      </div>
+  async function open(id: string) {
+    await run("Opening backup…", async () => {
+      const result = await fetchJson<{ backup: BackupDocument }>(`/api/backups/${id}`);
+      setSelected(result.backup);
+      resetReview();
+      setNotice(null);
+    });
+  }
 
-      <div className="flex flex-col gap-3 rounded-xl border border-border bg-[#0e1014] p-4">
-        <p className="text-[13px] leading-5 text-[#c9c3b8]">
-          {restoreCaption ?? RESTORE_NIGHTPLOT_CAPTION}
-        </p>
-        <p className="text-[13px] leading-5 text-[#c9c3b8]">
-          {controllerCaption ?? CONTROLLER_CAPTURE_CAPTION}
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={() => void createBackup()} disabled={busy !== null}>
-            Save Nightplot backup
-          </Button>
-          <Button variant="outline" onClick={() => void reload()} disabled={busy !== null}>
-            Refresh
-          </Button>
-          {busy ? <GlowingLedLoader label={busyLabel(busy)} /> : null}
-        </div>
-      </div>
+  function downloadFile(content: string, name: string) {
+    const blob = new Blob([content], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = name;
+    document.body.append(link); link.click(); link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 
-      {notice ? <p role="alert" className="text-[13px] text-destructive">{notice}</p> : null}
-      {invalidCount > 0 ? (
-        <p className="text-[13px] text-primary">
-          {invalidCount} file{invalidCount === 1 ? "" : "s"} on the data volume could not be read as a Nightplot backup.
-        </p>
-      ) : null}
+  function download() {
+    if (!selected) return;
+    downloadFile(`${JSON.stringify(selected, null, 2)}\n`, `nightplot-backup-${selected.id}.json`);
+  }
 
-      {backups.length === 0 && !busy ? (
-        <p className="text-muted-foreground">No Nightplot backups yet. Save one here, or they appear before Apply, Strip Apply, Safe settings, catalog changes, and Remove.</p>
-      ) : null}
+  async function checkRestore() {
+    if (!selected) return;
+    await run("Reviewing restore…", async () => {
+      const res = await postJson<RestoreCheck>(`/api/backups/${selected.id}/restore/check`, {});
+      if (!res.ok) throw new Error(res.data.message ?? "Backup cannot be restored.");
+      setReview(res.data);
+      setClearId(null);
+      setTypedId("");
+    });
+  }
 
-      <ol className="divide-y divide-border rounded-xl border border-border">
-        {backups.map((row) => (
-          <li key={row.id}>
-            <button
-              type="button"
-              className={`flex w-full flex-col gap-1 px-4 py-3 text-left ${row.id === selectedId ? "bg-secondary/70" : "hover:bg-secondary/40"}`}
-              onClick={() => {
-                setSelectedId(row.id);
-                setDetails(null);
-                setDiff(null);
-                setDeleteConfirm(false);
-                setRestoreConfirm(false);
-                void loadDetails(row.id);
-              }}
-            >
-              <span className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">{row.reasonLabel}</span>
-                <span className="text-muted-foreground">{new Date(row.createdAt).toLocaleString()}</span>
-                <span className="ml-auto text-[12px] text-muted-foreground">
-                  {row.completeness === "partial" ? "Partial" : "Complete"}
-                </span>
-              </span>
-              <span className="text-[13px] text-muted-foreground">
-                {row.counts.lights} Lights · {row.counts.elements} Segments · {row.counts.ledProducts} LED products · {row.counts.activity} Activity
-                {row.note ? ` · ${row.note}` : ""}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ol>
+  async function restore() {
+    if (!selected || !review || typedId !== selected.id) return;
+    await run("Restoring Nightplot data…", async () => {
+      const res = await postJson<{ safetyBackupId: string; message: string }>(
+        `/api/backups/${selected.id}/restore`,
+        { confirmId: selected.id, expectedDigest: review.expectedDigest,
+          expectedCurrentDigest: review.expectedCurrentDigest },
+      );
+      if (!res.ok) { resetReview(); throw new Error(res.data.message ?? "Restore did not finish. Review again."); }
+      await reload();
+      resetReview();
+      setNotice(`${res.data.message} Safety backup: ${res.data.safetyBackupId}. Reload Lights to see restored data.`);
+    });
+  }
 
-      {selected ? (
-        <section className="flex flex-col gap-4 rounded-[14px] border border-border bg-card p-5" aria-label="Backup details">
-          <div>
-            <h2 className="text-lg font-medium">{selected.reasonLabel}</h2>
-            <p className="text-[13px] text-muted-foreground">{new Date(selected.createdAt).toLocaleString()}</p>
-          </div>
-          {selected.completeness === "partial" ? (
-            <p className="text-[13px] text-primary">{selected.incomplete.join(" ")}</p>
-          ) : null}
-          {details ? (
-            <div className="flex flex-col gap-2 text-[13px]">
-              {details.lights.length === 0 ? <p className="text-muted-foreground">No Lights in this backup.</p> : null}
-              {details.lights.map((light) => (
-                <p key={light.id} className="text-muted-foreground">
-                  {light.name} · {light.ledCount} LEDs · {light.segments} Segments · {light.host}
-                </p>
-              ))}
-              <p className="text-muted-foreground">
-                {details.ledProducts.length} LED products · {details.activityCount} Activity
-              </p>
-              {details.controller ? (
-                <p className="text-muted-foreground">
-                  Controller reference for {details.controller.lightName} ({details.controller.host})
-                  {details.controller.missing.length
-                    ? ` — missing ${details.controller.missing.join(" and ")}`
-                    : ""}
-                  . Download only — not restored to the box.
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            <Button variant="outline" onClick={() => void loadDetails(selected.id)} disabled={busy !== null}>
-              View details
-            </Button>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => void download(selected.id)} disabled={busy !== null}>
-              Download
-            </Button>
-            <Button variant="outline" onClick={() => void loadDiff(selected.id)} disabled={busy !== null}>
-              Review restore
-            </Button>
-          </div>
-          {diff ? (
-            <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
-              <p className="text-[13px] leading-5 text-[#c9c3b8]">{diff.summary}</p>
-              <label className="flex items-start gap-2 text-[13px]">
-                <input
-                  type="checkbox"
-                  checked={restoreConfirm}
-                  onChange={(event) => setRestoreConfirm(event.target.checked)}
-                />
-                <span>Restore Nightplot data from this backup. Nothing will be sent to a controller.</span>
-              </label>
-              <Button onClick={() => void restore(selected.id)} disabled={!restoreConfirm || busy !== null}>
-                Restore Nightplot data
-              </Button>
-            </div>
-          ) : null}
-          <div className="flex flex-col gap-2 rounded-lg border border-[#3a4150] p-3">
-            <label className="flex items-start gap-2 text-[13px]">
-              <input
-                type="checkbox"
-                checked={deleteConfirm}
-                onChange={(event) => setDeleteConfirm(event.target.checked)}
-              />
-              <span>Delete this backup from Nightplot. This does not change any controller.</span>
-            </label>
-            <Button
-              variant="outline"
-              className="border-destructive text-destructive hover:bg-[#1a1113]"
-              onClick={() => void remove(selected.id)}
-              disabled={!deleteConfirm || busy !== null}
-            >
-              Delete backup
-            </Button>
-          </div>
-        </section>
-      ) : null}
+  async function clear() {
+    if (!selected || clearId !== selected.id || typedId !== selected.id) return;
+    await run("Clearing backup…", async () => {
+      const res = await deleteJson(`/api/backups/${selected.id}`, { confirmId: selected.id });
+      if (!res.ok) throw new Error(res.data.message ?? "Backup was not cleared.");
+      setSelected(null);
+      resetReview();
+      await reload();
+      setNotice("Backup cleared from local storage. It cannot be recovered unless you downloaded a copy.");
+    });
+  }
+
+  return <div className="mx-auto flex w-full max-w-[1050px] flex-col gap-5 px-5 py-7 sm:px-10">
+    <header className="flex flex-wrap items-center justify-between gap-3">
+      <div><h1 className="text-[28px] font-semibold">Backups</h1>
+        <p className="text-[13px] text-muted-foreground">Each backup contains Nightplot data. A WLED backup also includes that Light’s native configuration and presets files; WLED excludes passwords.</p></div>
+      <Button disabled={busy !== null} onClick={() => void create()}>Back up Nightplot now</Button>
+    </header>
+    <div className="flex flex-wrap items-end gap-3">
+      <label className="text-[13px]">Light for device backup
+        <select className="mt-1 block rounded-lg border border-border bg-card p-2" value={deviceLightId} onChange={(event) => setDeviceLightId(event.target.value)}>
+          <option value="">Choose a Light</option>
+          {lights.map((light) => <option key={light.id} value={light.id}>{light.name}</option>)}
+        </select>
+      </label>
+      <Button variant="outline" disabled={busy !== null || !deviceLightId} onClick={() => void createDevice()}>Back up WLED</Button>
     </div>
-  );
-}
-
-function busyLabel(busy: "load" | "create" | "details" | "diff" | "restore" | "delete" | "download"): string {
-  switch (busy) {
-    case "load":
-      return "Loading backups";
-    case "create":
-      return "Saving backup";
-    case "details":
-      return "Opening backup";
-    case "diff":
-      return "Comparing backup";
-    case "restore":
-      return "Restoring Nightplot data";
-    case "delete":
-      return "Deleting backup";
-    case "download":
-      return "Preparing download";
-  }
+    {busy ? <LedLoader label={busy} /> : null}
+    {error ? <p role="alert" className="text-destructive">{error}</p> : null}
+    {notice ? <p role="status" className="text-online">{notice}</p> : null}
+    <p className="text-[12px] text-muted-foreground">Before Apply, Strip provision and Safe settings, Nightplot saves both WLED export files plus Nightplot data or refuses the write. Before Delete, replacement and LED product changes, it saves Nightplot data. Preview, Blink and All Off do not create automatic backups. Up to 100 backups are kept; download or clear older ones to make room.</p>
+    <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+      <section aria-label="Saved backups" className="rounded-xl border border-border bg-card p-4">
+        <h2 className="font-medium">Saved backups ({backups.length})</h2>
+        {backups.length === 0 ? <p className="mt-3 text-muted-foreground">No backups yet.</p> : null}
+        <ul className="mt-2 max-h-[540px] space-y-1 overflow-auto">{backups.map((item) => <li key={item.id}>
+          <button type="button" onClick={() => void open(item.id)} disabled={busy !== null}
+            className="w-full rounded-lg border border-border p-3 text-left hover:bg-secondary">
+            <span className="block font-medium">{item.reason.replaceAll("-", " ")}{item.lightName ? ` · ${item.lightName}` : ""}</span>
+            <span className="text-[12px] text-muted-foreground">{new Date(item.at).toLocaleString()} · {item.lightCount} Lights · {item.segmentCount} Segments {item.hasDeviceFiles ? "· WLED configuration + presets" : item.hasControllerReference ? "· controller reference" : ""}</span>
+          </button>
+        </li>)}</ul>
+      </section>
+      <section aria-label="Backup details" className="rounded-xl border border-border bg-card p-4">
+        <h2 className="font-medium">Details</h2>
+        {!selected ? <p className="mt-3 text-muted-foreground">Select a backup to inspect, download, restore or clear it.</p> : <div className="mt-3 flex flex-col gap-3 text-[13px]">
+          <p>{selected.reason.replaceAll("-", " ")} · {new Date(selected.at).toLocaleString()}</p>
+          <p>{selected.data.lights.length} Lights · {selected.data.elements.length} Segments · {selected.data.products.length} LED products · {selected.data.activity.length} Activity entries</p>
+          <p className="font-mono text-[11px] break-all text-muted-foreground">ID: {selected.id}</p>
+          {selected.controller ? <details className="rounded-lg border border-border p-3">
+            <summary className="cursor-pointer">Controller reference: {selected.controller.hostKey} · MAC {selected.controller.mac ?? "unknown"} · {selected.controller.ledCount} LEDs</summary>
+            <p className="mt-2 text-muted-foreground">Reported fields may be incomplete. This cannot be replayed as a full WLED restore.</p>
+            <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-all text-[11px]">{JSON.stringify(selected.controller, null, 2)}</pre>
+          </details> : null}
+          {selected.deviceFiles ? <div className="rounded-lg border border-border p-3">
+            <p>WLED configuration and presets are both saved. Passwords are excluded by WLED. Restoring these files on a device is a separate operation and may overwrite its settings.</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => downloadFile(selected.deviceFiles!.cfgJson, `wled-cfg-${selected.id}.json`)}>Download WLED configuration</Button>
+              <Button variant="outline" onClick={() => downloadFile(selected.deviceFiles!.presetsJson, `wled-presets-${selected.id}.json`)}>Download WLED presets</Button>
+            </div>
+          </div> : null}
+          <ul className="text-muted-foreground">{selected.data.lights.map((light) => <li key={light.id}>{light.name} · {light.hostname}:{light.port}</li>)}</ul>
+          <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={download}>Download JSON</Button>
+            <Button variant="outline" disabled={busy !== null} onClick={() => void checkRestore()}>Review restore</Button>
+            <Button variant="outline" disabled={busy !== null} onClick={() => { setClearId(selected.id); setReview(null); setTypedId(""); }}>Clear backup…</Button></div>
+          {review ? <div className="space-y-3 rounded-lg border border-primary/50 p-3">
+            <p>Restore: {review.backup.lights} Lights, {review.backup.segments} Segments, {review.backup.products} products, {review.backup.activity} Activity entries.</p>
+            <p>Current: {review.current.lights} Lights, {review.current.segments} Segments, {review.current.products} products, {review.current.activity} Activity entries.</p>
+            <p className="text-muted-foreground">All current Nightplot data will be replaced. A safety backup is saved first. Nothing is Applied to WLED.</p>
+            <label className="block">Type the full backup ID to restore<Input className="mt-1 font-mono" aria-label="Confirm backup ID" value={typedId} onChange={(event) => setTypedId(event.target.value)} /></label>
+            <Button disabled={busy !== null || typedId !== selected.id} onClick={() => void restore()}>Restore Nightplot data</Button>
+          </div> : null}
+          {clearId === selected.id ? <div className="space-y-3 rounded-lg border border-destructive/50 p-3">
+            <p>Clearing this backup cannot be undone. Download it first if you need a copy.</p>
+            <label className="block">Type the full backup ID to clear<Input className="mt-1 font-mono" aria-label="Confirm backup ID" value={typedId} onChange={(event) => setTypedId(event.target.value)} /></label>
+            <Button variant="allOff" disabled={busy !== null || typedId !== selected.id} onClick={() => void clear()}>Clear this backup</Button>
+          </div> : null}
+        </div>}
+      </section>
+    </div>
+  </div>;
 }

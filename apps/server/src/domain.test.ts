@@ -71,6 +71,16 @@ describe("lightFromSnapshot name", () => {
   });
 });
 
+describe("Light health freshness", () => {
+  it("shows live readings only while the Light is reachable", () => {
+    const light = lightFromSnapshot({ hostname: "192.168.1.72", port: 80 }, snapshot, "2026-09-26T18:00:00.000Z");
+    const live = { ...snapshot, health: { uptimeSeconds: 120, wifiSignalPercent: 75,
+      wifiRssiDbm: -60, freeHeapBytes: 20480, compatibilityNotice: null } };
+    expect(lightDetail(light, live, []).health).toEqual(live.health);
+    expect(lightDetail({ ...light, reachability: "no-answer" }, live, []).health).toBeNull();
+  });
+});
+
 describe("toLightView strip honesty", () => {
   const target = { hostname: "192.168.1.72", port: 80 };
 

@@ -159,8 +159,8 @@ function testApp(overrides: Partial<AppDeps> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
   const store = overrides.store ?? new FileLightsStore(join(dir, "lights.json"));
   const activity = overrides.activity ?? new FileActivityStore(join(dir, "activity.json"));
-  const products = overrides.products ?? new FileLedProductsStore(join(dir, "led-products.json"));
   const backups = overrides.backups ?? new FileBackupStore(join(dir, "backups"));
+  const products = overrides.products ?? new FileLedProductsStore(join(dir, "led-products.json"));
   const box = memoryBox();
   const cfg = memoryCfg();
   const probe: ProbeFn = overrides.probe ?? box.probe;
@@ -173,12 +173,160 @@ function testApp(overrides: Partial<AppDeps> = {}) {
     write: overrides.write ?? box.write,
     readLive: overrides.readLive ?? box.readLive,
     readCfg: overrides.readCfg ?? cfg.read,
+    readNativeFiles: overrides.readNativeFiles ?? (async () => ({
+      cfgJson: JSON.stringify(await cfg.read()), presetsJson: JSON.stringify({ "1": { n: "Test" } }),
+    })),
     writeCfg: overrides.writeCfg ?? cfg.write,
     collect: overrides.collect ?? (async () => []),
     now: overrides.now ?? (() => new Date("2026-09-26T18:00:00.000Z")),
   });
   return { app, store, activity, backups, products, dir, box, cfg };
 }
+
+describe("managed Backups", () => {
+  async function enroll(app: ReturnType<typeof testApp>["app"]) {
+    const res = await app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.80" }),
+    });
+    return ((await res.json()) as { light: { id: string } }).light.id;
+  }
+
+  it("creates, lists and reopens a Nightplot data backup across a restart; clear requires exact confirmation", async () => {
+    const first = testApp();
+    const id = await enroll(first.app);
+    first.store.replaceElements(id, [{ id: "door", lightId: id, label: "Door", start: 0, stop: 30 }]);
+    const created = await first.app.request("/api/backups", { method: "POST" });
+    expect(created.status).toBe(201);
+    const backup = ((await created.json()) as { backup: { id: string; data: { elements: unknown[] }; controller: unknown } }).backup;
+    expect(backup.data.elements).toHaveLength(1);
+    expect(backup.controller).toBeNull();
+    const restarted = testApp({ store: first.store, products: first.products,
+      activity: first.activity, backups: first.backups });
+    const listed = (await (await restarted.app.request("/api/backups")).json()) as {
+      backups: { id: string; segmentCount: number }[];
+    };
+    expect(listed.backups).toMatchObject([{ id: backup.id, segmentCount: 1 }]);
+    expect((await restarted.app.request(`/api/backups/${backup.id}`)).status).toBe(200);
+    expect((await restarted.app.request(`/api/backups/${backup.id}`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmId: "wrong" }),
+    })).status).toBe(400);
+    expect(restarted.backups.read(backup.id)).not.toBeNull();
+    expect((await restarted.app.request(`/api/backups/${backup.id}`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmId: backup.id }),
+    })).status).toBe(200);
+    expect(restarted.backups.read(backup.id)).toBeNull();
+  });
+
+  it("captures the reported controller before Apply, not raw cfg, and refuses WLED writes when backups fail", async () => {
+    const first = testApp();
+    const id = await enroll(first.app);
+    const write = vi.fn(first.box.write);
+    const backed = testApp({ store: first.store, products: first.products,
+      activity: first.activity, backups: first.backups, write });
+    const body = { elements: [{ label: "Door", start: 0, stop: 60 }] };
+    const applied = await backed.app.request(`/api/lights/${id}/apply`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    expect(applied.status).toBe(200);
+    expect(write).toHaveBeenCalledTimes(1);
+    const saved = backed.backups.list()[0]!;
+    expect(saved.reason).toBe("pre-apply");
+    const controller = backed.backups.read(saved.id)!.controller;
+    expect(controller).toMatchObject({ hostKey: "192.168.1.80:80", reported: { on: true } });
+    expect(controller).not.toHaveProperty("wifi");
+    expect(backed.backups.read(saved.id)?.deviceFiles).toMatchObject({
+      presetsJson: '{"1":{"n":"Test"}}',
+    });
+    vi.spyOn(first.backups, "create").mockImplementation(() => { throw new Error("disk full"); });
+    const refusedWrite = vi.fn(first.box.write);
+    const refused = testApp({ store: first.store, products: first.products,
+      activity: first.activity, backups: first.backups, write: refusedWrite });
+    const response = await refused.app.request(`/api/lights/${id}/apply`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    expect(response.status).toBe(503);
+    expect(refusedWrite).not.toHaveBeenCalled();
+  });
+
+  it("saves a manual per-Light native export and refuses Apply when a native file cannot be captured", async () => {
+    const first = testApp();
+    const id = await enroll(first.app);
+    const saved = await first.app.request(`/api/lights/${id}/backups`, { method: "POST" });
+    expect(saved.status).toBe(201);
+    const backups = first.backups.list();
+    expect(backups[0]?.hasDeviceFiles).toBe(true);
+    const write = vi.fn(first.box.write);
+    const unavailable = testApp({ store: first.store, products: first.products, activity: first.activity,
+      readNativeFiles: async () => { throw new Error("presets.json not available"); }, write });
+    const response = await unavailable.app.request(`/api/lights/${id}/apply`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: [{ label: "Door", start: 0, stop: 60 }] }),
+    });
+    expect(response.status).toBe(503);
+    expect(write).not.toHaveBeenCalled();
+    expect(unavailable.backups.list()).toHaveLength(0);
+  });
+
+  it("reviews a restore, refuses stale or wrong confirmation, and saves a recoverable pre-restore backup", async () => {
+    const { app, store, backups, products, activity } = testApp();
+    const id = await enroll(app);
+    store.replaceElements(id, [{ id: "original", lightId: id, label: "Original", start: 0, stop: 60 }]);
+    const created = (await (await app.request("/api/backups", { method: "POST" })).json()) as {
+      backup: { id: string };
+    };
+    store.replaceElements(id, [{ id: "changed", lightId: id, label: "Changed", start: 0, stop: 30 }]);
+    const check = await app.request(`/api/backups/${created.backup.id}/restore/check`, { method: "POST" });
+    expect(check.status).toBe(200);
+    const review = (await check.json()) as { expectedDigest: string; expectedCurrentDigest: string;
+      current: { segments: number }; backup: { segments: number } };
+    expect(review.current.segments).toBe(1);
+    expect((await app.request(`/api/backups/${created.backup.id}/restore`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmId: "wrong", ...review }),
+    })).status).toBe(400);
+    store.replaceElements(id, []);
+    expect((await app.request(`/api/backups/${created.backup.id}/restore`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmId: created.backup.id, ...review }),
+    })).status).toBe(409);
+    expect(store.elementsFor(id)).toEqual([]);
+    const fresh = (await (await app.request(`/api/backups/${created.backup.id}/restore/check`, {
+      method: "POST" })).json()) as typeof review;
+    const restored = await app.request(`/api/backups/${created.backup.id}/restore`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmId: created.backup.id, expectedDigest: fresh.expectedDigest,
+        expectedCurrentDigest: fresh.expectedCurrentDigest }),
+    });
+    expect(restored.status).toBe(200);
+    const result = (await restored.json()) as { safetyBackupId: string };
+    expect(store.elementsFor(id)[0]?.label).toBe("Original");
+    expect(backups.read(result.safetyBackupId)?.reason).toBe("pre-restore");
+    expect(backups.read(result.safetyBackupId)?.data.elements).toEqual([]);
+    expect(products.list().length).toBeGreaterThan(0);
+    expect(activity.list()).toEqual([]);
+  });
+
+  it("does not auto-back up temporary Preview or All Off, but backs up before deleting a Light", async () => {
+    const { app, backups, store } = testApp();
+    const id = await enroll(app);
+    const preview = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ color: "#4f7dff", brightness: 180 }),
+    });
+    expect(preview.status).toBe(200);
+    expect((await app.request(`/api/lights/${id}/preview/end`, { method: "POST" })).status).toBe(200);
+    expect((await app.request("/api/all-off", { method: "POST" })).status).toBe(200);
+    expect(backups.list()).toEqual([]);
+    const deleted = await app.request(`/api/lights/${id}`, { method: "DELETE" });
+    expect(deleted.status).toBe(200);
+    expect(store.findById(id)).toBeUndefined();
+    expect(backups.list()[0]?.reason).toBe("pre-delete");
+    expect(backups.read(backups.list()[0]!.id)?.data.lights[0]?.id).toBe(id);
+  });
+});
 
 describe("Segment backup and restore", () => {
   it("exports only saved Segments and restores them offline without probing or Applying", async () => {
@@ -250,176 +398,144 @@ describe("Segment backup and restore", () => {
   });
 });
 
-describe("managed Nightplot backups", () => {
-  class FailingBackupStore extends FileBackupStore {
-    create(): never {
-      throw new Error("disk full");
-    }
-  }
-
-  async function enroll(app: ReturnType<typeof testApp>["app"], host = "192.168.1.90") {
-    const res = await app.request("/api/lights", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ host }),
+describe("controller replacement", () => {
+  async function enrolled() {
+    const initial = testApp();
+    const res = await initial.app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.70" }),
     });
     const id = ((await res.json()) as { light: { id: string } }).light.id;
-    await app.request(`/api/lights/${id}/elements`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ elements: [{ label: "Eave", start: 0, stop: 20 }] }),
-    });
-    return id;
+    initial.store.replaceElements(id, [{ id: "door", lightId: id, label: "Door", start: 0, stop: 60 }]);
+    const before = initial.store.findById(id)!;
+    initial.store.replace({ ...before, lastSnapshot: snapshot, lastSnapshotAt: before.lastSeenAt });
+    return { ...initial, id };
   }
 
-  it("creates, lists, downloads, and deletes a Nightplot data backup with explicit confirm", async () => {
-    const { app } = testApp();
-    await enroll(app);
-    const created = await app.request("/api/backups", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ note: "Before a change" }),
-    });
-    expect(created.status).toBe(201);
-    const createdBody = (await created.json()) as { backup: { id: string; reason: string; completeness: string } };
-    expect(createdBody.backup.reason).toBe("manual");
-    expect(createdBody.backup.completeness).toBe("complete");
-    const listed = (await (await app.request("/api/backups")).json()) as { backups: { id: string }[] };
-    expect(listed.backups[0]?.id).toBe(createdBody.backup.id);
-    const download = await app.request(`/api/backups/${createdBody.backup.id}/download`);
-    expect(download.status).toBe(200);
-    expect((await download.json() as { kind: string }).kind).toBe("nightplot-data");
-    expect((await app.request(`/api/backups/${createdBody.backup.id}`, { method: "DELETE" })).status).toBe(400);
-    const removed = await app.request(`/api/backups/${createdBody.backup.id}`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ confirm: true }),
-    });
-    expect(removed.status).toBe(200);
-    expect(((await (await app.request("/api/backups")).json()) as { backups: unknown[] }).backups).toHaveLength(0);
-  });
-
-  it("restores Nightplot data after a review diff and a safety backup, without writing WLED", async () => {
+  it("checks then reprobes a new MAC and keeps this Light's Segments without writing WLED", async () => {
+    const { store, activity, id } = await enrolled();
+    store.replace({ ...store.findById(id)!, stripKind: "sk6812-rgbw" });
+    const probe = vi.fn(async () => ({ kind: "found" as const,
+      snapshot: { ...snapshot, mac: "aa:bb:cc:dd:ee:ff", name: "New WLED" } }));
     const write = vi.fn(async () => true);
-    const writeCfg = vi.fn(async () => true);
-    const { app, store } = testApp({ write, writeCfg });
-    const id = await enroll(app);
-    write.mockClear();
-    writeCfg.mockClear();
-    const created = await app.request("/api/backups", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-    const backupId = ((await created.json()) as { backup: { id: string } }).backup.id;
-    store.remove(id);
-    expect(store.findById(id)).toBeUndefined();
-    const diff = await app.request(`/api/backups/${backupId}/diff`);
-    expect(diff.status).toBe(200);
-    expect(((await diff.json()) as { diff: { summary: string } }).diff.summary).toMatch(/Nothing is sent to a controller/);
-    expect((await app.request(`/api/backups/${backupId}/restore`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
-    })).status).toBe(400);
-    const restore = await app.request(`/api/backups/${backupId}/restore`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ confirm: true }),
+    const { app } = testApp({ store, activity, probe, write });
+    const check = await app.request(`/api/lights/${id}/replacement/check`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.71:8080" }),
     });
-    expect(restore.status).toBe(200);
-    const body = (await restore.json()) as { restored: boolean; safetyBackupId: string; message: string };
-    expect(body.restored).toBe(true);
-    expect(body.safetyBackupId).toMatch(/-/);
-    expect(body.message).toMatch(/Nothing was sent/);
-    expect(store.findById(id)?.name).toBeTruthy();
-    expect(write).not.toHaveBeenCalled();
-    expect(writeCfg).not.toHaveBeenCalled();
-  });
-
-  it("captures a controller reference before Apply and refuses the write when the backup cannot persist", async () => {
-    const working = testApp();
-    const id = await enroll(working.app);
-    const applyOk = await working.app.request(`/api/lights/${id}/apply`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ elements: [{ label: "Eave", start: 0, stop: 20 }] }),
-    });
-    expect(applyOk.status).toBe(200);
-    const listed = (await (await working.app.request("/api/backups")).json()) as {
-      backups: { reason: string; completeness: string; hasControllerCapture: boolean }[];
+    expect(check.status).toBe(200);
+    const body = (await check.json()) as {
+      previous: { hostKey: string; mac: string | null };
+      replacement: { hostKey: string; mac: string };
+      segmentCount: number;
     };
-    expect(listed.backups.some((row) => row.reason === "pre-apply" && row.hasControllerCapture)).toBe(true);
-
-    const write = vi.fn(async () => true);
-    const failing = testApp({
-      backups: new FailingBackupStore(join(working.dir, "failing-backups")),
-      write,
-    });
-    const failId = await enroll(failing.app, "192.168.1.91");
-    write.mockClear();
-    const refused = await failing.app.request(`/api/lights/${failId}/apply`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ elements: [{ label: "Eave", start: 0, stop: 20 }] }),
-    });
-    expect(refused.status).toBe(422);
-    const refusedBody = (await refused.json()) as { error: string; message: string; sent: boolean };
-    expect(refusedBody.sent).toBe(false);
-    expect(refusedBody.message).toMatch(/Apply was not sent/);
+    expect(body).toMatchObject({ replacement: { hostKey: "192.168.1.71:8080", mac: "aa:bb:cc:dd:ee:ff" }, segmentCount: 1 });
+    expect(store.findById(id)?.hostKey).toBe("192.168.1.70:80");
     expect(write).not.toHaveBeenCalled();
+    const confirm = await app.request(`/api/lights/${id}/replacement`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.71:8080", confirm: true,
+        expectedHostKey: body.replacement.hostKey, expectedMac: body.replacement.mac,
+        previousHostKey: body.previous.hostKey, previousMac: body.previous.mac }),
+    });
+    expect(confirm.status).toBe(200);
+    expect(probe).toHaveBeenCalledTimes(2);
+    expect(write).not.toHaveBeenCalled();
+    expect(store.load()).toHaveLength(1);
+    expect(store.findById(id)).toMatchObject({ hostKey: "192.168.1.71:8080", mac: "aa:bb:cc:dd:ee:ff",
+      stripKind: "sk6812-rgbw", lastSnapshot: null, lastSnapshotAt: null });
+    expect(store.elementsFor(id)).toEqual([{ id: "door", lightId: id, label: "Door", start: 0, stop: 60 }]);
+    expect(activity.list(id)[0]).toMatchObject({ action: "replacement", readback: "not-checked" });
+    expect(((await confirm.json()) as { message: string }).message).toMatch(/Apply separately/);
   });
 
-  it("snapshots Nightplot data before catalog mutation and Light delete, not Preview, Blink, or All Off", async () => {
-    const { app } = testApp();
-    const id = await enroll(app);
-    await app.request(`/api/lights/${id}/preview`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+  it("allows a different MAC at the same host only through the explicit replacement path", async () => {
+    const { store, id } = await enrolled();
+    const { app } = testApp({ store, probe: async () => ({ kind: "found" as const,
+      snapshot: { ...snapshot, mac: "aa:bb:cc:dd:ee:ff" } }) });
+    const checked = (await (await app.request(`/api/lights/${id}/replacement/check`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.70" }),
+    })).json()) as { previous: { hostKey: string; mac: string | null }; replacement: { hostKey: string; mac: string } };
+    const done = await app.request(`/api/lights/${id}/replacement`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.70", confirm: true,
+        expectedHostKey: checked.replacement.hostKey, expectedMac: checked.replacement.mac,
+        previousHostKey: checked.previous.hostKey, previousMac: checked.previous.mac }),
+    });
+    expect(done.status).toBe(200);
+    expect(store.findById(id)?.mac).toBe("aa:bb:cc:dd:ee:ff");
+  });
+
+  it("refuses changed identity, wrong LED count, same MAC, and unconfirmed requests", async () => {
+    const { store, id } = await enrolled();
+    let incoming = { ...snapshot, mac: "aa:bb:cc:dd:ee:ff" };
+    const { app } = testApp({ store, probe: async () => ({ kind: "found" as const, snapshot: incoming }) });
+    const post = (path: string, body: unknown) => app.request(`/api/lights/${id}${path}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const check = await post("/replacement/check", { host: "192.168.1.75" });
+    const checked = (await check.json()) as { previous: { hostKey: string; mac: string | null };
+      replacement: { hostKey: string; mac: string } };
+    const confirm = { host: "192.168.1.75", confirm: true,
+      expectedHostKey: checked.replacement.hostKey, expectedMac: checked.replacement.mac,
+      previousHostKey: checked.previous.hostKey, previousMac: checked.previous.mac };
+    expect((await post("/replacement", { ...confirm, confirm: false })).status).toBe(400);
+    incoming = { ...incoming, mac: "aa:bb:cc:dd:ee:00" };
+    expect((await post("/replacement", confirm)).status).toBe(409);
+    incoming = { ...incoming, mac: "aa:bb:cc:dd:ee:ff", ledCount: 61 };
+    expect((await post("/replacement/check", { host: "192.168.1.75" })).status).toBe(422);
+    incoming = { ...snapshot };
+    expect((await post("/replacement/check", { host: "192.168.1.75" })).status).toBe(409);
+    expect(store.findById(id)?.hostKey).toBe("192.168.1.70:80");
+    expect(store.elementsFor(id)).toHaveLength(1);
+  });
+
+  it("refuses an unsafe address before probing and an active Preview before switching", async () => {
+    const { store, id } = await enrolled();
+    const probe = vi.fn(async (target: { hostname: string }) => ({ kind: "found" as const,
+      snapshot: target.hostname === "192.168.1.70" ? snapshot :
+        { ...snapshot, mac: "aa:bb:cc:dd:ee:ff" } }));
+    const { app } = testApp({ store, probe });
+    const publicHost = await app.request(`/api/lights/${id}/replacement/check`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "203.0.113.7" }),
+    });
+    expect(publicHost.status).toBe(403);
+    expect(probe).not.toHaveBeenCalled();
+    const preview = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ color: "#4f7dff", brightness: 180 }),
     });
-    await app.request(`/api/lights/${id}/preview/end`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+    expect(preview.status).toBe(200);
+    const checked = await app.request(`/api/lights/${id}/replacement/check`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.77" }),
     });
-    await app.request(`/api/lights/${id}/blink`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-    await app.request(`/api/lights/${id}/blink/end`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-    await app.request("/api/all-off", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-    expect(((await (await app.request("/api/backups")).json()) as { backups: unknown[] }).backups).toHaveLength(0);
-
-    const created = await app.request("/api/led-products", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: "eave-test",
-        label: "Eave test",
-        formFactor: "discrete",
-        driverId: "ws281x",
-        notes: "Operator SKU. Not written to WLED.",
-      }),
-    });
-    expect(created.status).toBe(201);
-    const afterCatalog = (await (await app.request("/api/backups")).json()) as { backups: { reason: string }[] };
-    expect(afterCatalog.backups.some((row) => row.reason === "pre-catalog")).toBe(true);
-
-    const deleted = await app.request(`/api/lights/${id}`, { method: "DELETE" });
-    expect(deleted.status).toBe(200);
-    const afterDelete = (await (await app.request("/api/backups")).json()) as { backups: { reason: string }[] };
-    expect(afterDelete.backups.some((row) => row.reason === "pre-delete-light")).toBe(true);
+    expect(checked.status).toBe(409);
+    expect(probe).toHaveBeenCalledTimes(1);
+    expect(store.findById(id)?.mac).toBe(snapshot.mac);
   });
 
-  it("refuses restore while Preview is open and refuses an invalid backup file", async () => {
-    const { app } = testApp();
-    const id = await enroll(app);
-    const created = await app.request("/api/backups", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-    const backupId = ((await created.json()) as { backup: { id: string } }).backup.id;
-    await app.request(`/api/lights/${id}/preview`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ color: "#4f7dff" }),
+  it("refuses a replacement already enrolled as another Light", async () => {
+    const { store, id } = await enrolled();
+    const other = testApp({ store, probe: async () => ({ kind: "found" as const,
+      snapshot: { ...snapshot, mac: "aa:bb:cc:dd:ee:ff" } }) });
+    const enrolledOther = await other.app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.78" }),
     });
-    const blocked = await app.request(`/api/backups/${backupId}/restore`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ confirm: true }),
+    expect(enrolledOther.status).toBe(201);
+    const probe = vi.fn(async () => ({ kind: "found" as const,
+      snapshot: { ...snapshot, mac: "aa:bb:cc:dd:ee:ff" } }));
+    const { app } = testApp({ store, probe });
+    const post = (host: string) => app.request(`/api/lights/${id}/replacement/check`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host }),
     });
-    expect(blocked.status).toBe(409);
-    expect((await app.request("/api/backups/not-a-uuid")).status).toBe(400);
+    expect((await post("192.168.1.78")).status).toBe(409);
+    expect(probe).not.toHaveBeenCalled();
+    expect((await post("192.168.1.79")).status).toBe(409);
+    expect(probe).toHaveBeenCalledTimes(1);
   });
 });
 

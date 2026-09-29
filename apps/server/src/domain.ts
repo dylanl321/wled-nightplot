@@ -113,6 +113,7 @@ export function lightDetail(
   const issues = validateDeclaredRanges(elements, light.ledCount);
   const display = buildRangeDisplay(elements, reported, issues, { reachable });
   return {
+    health: reachable ? live.health ?? null : null,
     light: toLightView(light, live, {
       elementCount: elements.length,
       segmentCount: reachable ? snapshotSegmentCount(live) : null,

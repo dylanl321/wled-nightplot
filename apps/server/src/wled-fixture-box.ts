@@ -55,6 +55,9 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     mac: "020000000001",
     brand: "WLED",
     product: "FOSS",
+    uptime: 3920,
+    freeheap: 115000,
+    wifi: { signal: 78, rssi: -62 },
     leds: { count: ledCount, rgbw: nativeType === WLED_SK6812_RGBW_NATIVE_TYPE },
   };
   const cfgEnabled = options.cfgEnabled ?? true;
@@ -296,6 +299,14 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
 
     if (url === "/json") {
       res.end(JSON.stringify({ info, state: reportedState(), nightplot: kind }));
+      return;
+    }
+    if (url === "/cfg.json") {
+      res.end(JSON.stringify(cfg));
+      return;
+    }
+    if (url === "/presets.json") {
+      res.end(JSON.stringify({ "1": { n: "Fixture preset", on: true, bri: 128, seg: state.seg } }));
       return;
     }
     if (url === "/json/info") {

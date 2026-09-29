@@ -8,12 +8,6 @@ import {
   APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE,
   applyOutcome,
   backupNeedsControllerConfirmation,
-  backupPersistRefuseMessage,
-  isBackupId,
-  normalizeBackupNote,
-  toBackupMeta,
-  RESTORE_NIGHTPLOT_CAPTION,
-  CONTROLLER_CAPTURE_CAPTION,
   APPLY_UNKNOWN_COLOUR_REASON,
   applyRefuseReason,
   applyUnknownSegments,
@@ -37,7 +31,9 @@ import {
   foldHonestySource,
   honestySource,
   manageCaption,
+  macsMatch,
   normalizeHostKey,
+  normalizeMac,
   parseHexColor,
   parseSegmentBackup,
   parseWledCfg,
@@ -64,6 +60,9 @@ import {
   type AllOffResult,
   type AllOffRow,
   type ActivityEntry,
+  type BackupData,
+  type BackupReason,
+  type ControllerReference,
   type DiscoverRow,
   type DraftRange,
   type Element,
@@ -79,7 +78,6 @@ import {
   type ProvisionRead,
   type SafeRead,
   type SafeWriteResult,
-  type BackupReason,
   type SegmentBackup,
   type WledSafeSettings,
   type WledSnapshot,
@@ -105,17 +103,12 @@ import {
 } from "./domain.ts";
 import { createLiveEngine, previewDisplaySnapshot } from "./live/engine.ts";
 import { FileActivityStore } from "./store/activity-store.ts";
-import { FileBackupStore } from "./store/backup-store.ts";
-import {
-  captureControllerReference,
-  currentBackupDiff,
-  persistNightplotBackup,
-  restoreNightplotData,
-} from "./store/backup-service.ts";
+import { backupDigest, FileBackupStore } from "./store/backup-store.ts";
 import { FileLedProductsStore } from "./store/led-products-store.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
 import type { ProbeFn } from "./wled/client.ts";
 import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
+import { createWledNativeFilesReader, type ReadWledNativeFiles } from "./wled/native-backup.ts";
 import { applyRangesWrite, type ReadLiveFn, type WriteStateFn } from "./wled/live.ts";
 
 export type AppDeps = {
@@ -128,6 +121,7 @@ export type AppDeps = {
   write: WriteStateFn;
   readLive: ReadLiveFn;
   readCfg: ReadCfgFn;
+  readNativeFiles?: ReadWledNativeFiles;
   writeCfg: WriteCfgFn;
   now?: () => Date;
 };
@@ -139,46 +133,47 @@ export function createApp(deps: AppDeps) {
     new FileLedProductsStore(join(tmpdir(), `nightplot-led-products-${randomUUID()}.json`));
   const activity = deps.activity ?? new FileActivityStore(join(tmpdir(), `nightplot-activity-${randomUUID()}.json`));
   const backups = deps.backups ?? new FileBackupStore(join(tmpdir(), `nightplot-backups-${randomUUID()}`));
-  const backupStores = { lights: deps.store, products, activity, backups };
-
-  async function takeRequiredBackup(input: {
-    reason: BackupReason;
-    action: string;
-    light?: Light;
-    state?: WledSnapshot | null;
-    cfg?: unknown;
-    note?: string | null;
-  }): Promise<{ ok: true } | { ok: false; message: string }> {
-    let controller = null;
-    if (
-      input.light &&
-      (input.reason === "pre-apply" || input.reason === "pre-provision" || input.reason === "pre-safe")
-    ) {
-      const cfg = input.cfg !== undefined
-        ? input.cfg
-        : await deps.readCfg({ hostname: input.light.hostname, port: input.light.port });
-      controller = captureControllerReference(input.light, input.state ?? null, cfg, nowIso());
-    }
-    const saved = persistNightplotBackup(backupStores, {
-      id: randomUUID(),
-      createdAt: nowIso(),
-      reason: input.reason,
-      note: input.note,
-      controller,
-    });
-    if (!saved.ok) return { ok: false, message: backupPersistRefuseMessage(input.action) };
-    return { ok: true };
-  }
-
-  function backupFailed(message: string) {
-    return { error: "backup-failed", message, sent: false as const };
-  }
+  const readNativeFiles = deps.readNativeFiles ?? createWledNativeFilesReader();
   const session: { rows: DiscoverRow[] } = { rows: [] };
   const nowIso = () => (deps.now ?? (() => new Date()))().toISOString();
   function record(light: Pick<Light, "id" | "name">, action: ActivityEntry["action"],
     readback: ActivityEntry["readback"], detail: string) {
     activity.append({ id: randomUUID(), at: nowIso(), lightId: light.id,
       lightName: light.name, action, readback, detail });
+  }
+
+  function currentBackupData(): BackupData {
+    const saved = deps.store.snapshotForBackup();
+    return { ...saved, products: products.snapshotForBackup(), activity: activity.list().reverse() };
+  }
+
+  function capture(reason: BackupReason, light?: Light, controller?: ControllerReference) {
+    return backups.create({ at: nowIso(), reason, lightId: light?.id, lightName: light?.name,
+      data: currentBackupData(), controller });
+  }
+
+  async function captureDevice(reason: BackupReason, light: Light, snap: WledSnapshot,
+    settings?: { safe?: Record<string, unknown>; strip?: Record<string, unknown> }) {
+    if (light.mac && snap.mac && !macsMatch(light.mac, snap.mac))
+      throw new Error("Controller MAC changed; no device backup was saved.");
+    const deviceFiles = await readNativeFiles({ hostname: light.hostname, port: light.port });
+    return backups.create({ at: nowIso(), reason, lightId: light.id, lightName: light.name,
+      data: currentBackupData(), controller: controllerReference(light, snap, settings), deviceFiles });
+  }
+
+  function controllerReference(light: Light, snap: WledSnapshot,
+    settings?: { safe?: Record<string, unknown>; strip?: Record<string, unknown> }): ControllerReference {
+    return { hostKey: light.hostKey, mac: snap.mac, ledCount: snap.ledCount,
+      reported: { on: snap.on, brightness: snap.brightness,
+        segments: snap.segments, segmentColor: snap.segmentColor },
+      ...(settings?.safe ? { safeSettings: settings.safe } : {}),
+      ...(settings?.strip ? { stripSettings: settings.strip } : {}) };
+  }
+
+  function backupFailure(error: unknown) {
+    return { error: "backup-failed", message: error instanceof Error ?
+      `Safety backup failed: ${error.message} The requested change was not made; nothing was sent to WLED.` :
+      "Safety backup failed. The requested change was not made; nothing was sent to WLED." };
   }
   const live = createLiveEngine({
     write: deps.write,
@@ -209,178 +204,98 @@ export function createApp(deps: AppDeps) {
 
   app.get("/api/catalogs", (c) => c.json(catalogSnapshot(products.list())));
 
-  app.get("/api/activity", (c) => c.json({ entries: activity.list(c.req.query("lightId")) }));
-
-  app.get("/api/backups", (c) => {
-    const listed = backups.list();
-    return c.json({
-      backups: listed.backups,
-      skippedInvalid: listed.skippedInvalid,
-      retention: backups.retention,
-      controllerCaption: CONTROLLER_CAPTURE_CAPTION,
-      restoreCaption: RESTORE_NIGHTPLOT_CAPTION,
-    });
+  app.get("/api/backups", (c) => c.json({ backups: backups.list() }));
+  app.post("/api/backups", (c) => {
+    try { return c.json({ backup: capture("manual") }, 201); }
+    catch (error) { return c.json(backupFailure(error), 503); }
   });
-
-  app.post("/api/backups", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const note = normalizeBackupNote(body && typeof body === "object" ? (body as { note?: unknown }).note : null);
-    const saved = persistNightplotBackup(backupStores, {
-      id: randomUUID(),
-      createdAt: nowIso(),
-      reason: "manual",
-      note,
-    });
-    if (!saved.ok) return c.json(backupFailed(saved.message), 422);
-    return c.json({ backup: saved.meta }, 201);
+  app.post("/api/lights/:id/backups", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    const { light, live: snap } = await refreshOne(stored);
+    if (!snap || light.reachability !== "online") return c.json({ error: "unreachable",
+      message: "WLED did not answer. A complete device backup was not saved." }, 503);
+    try { return c.json({ backup: await captureDevice("manual", light, snap) }, 201); }
+    catch (error) { return c.json(backupFailure(error), 503); }
   });
-
-  app.get("/api/backups/:id/download", (c) => {
-    const id = c.req.param("id");
-    if (!isBackupId(id)) return c.json({ error: "invalid", message: "That is not a backup id." }, 400);
-    const read = backups.get(id);
-    if (!read.ok) {
-      return c.json({
-        error: read.error,
-        message: read.error === "not_found"
-          ? "That backup is not on this Nightplot."
-          : "That backup file is not valid. Nothing was restored or sent.",
-      }, read.error === "not_found" ? 404 : 422);
-    }
-    c.header("Content-Disposition", `attachment; filename="nightplot-data-${id}.json"`);
-    return c.json(read.backup);
-  });
-
-  app.get("/api/backups/:id/diff", (c) => {
-    const id = c.req.param("id");
-    if (!isBackupId(id)) return c.json({ error: "invalid", message: "That is not a backup id." }, 400);
-    const read = backups.get(id);
-    if (!read.ok) {
-      return c.json({
-        error: read.error,
-        message: read.error === "not_found"
-          ? "That backup is not on this Nightplot."
-          : "That backup file is not valid. Nothing was restored or sent.",
-      }, read.error === "not_found" ? 404 : 422);
-    }
-    const diff = currentBackupDiff(backupStores, read.backup);
-    if (!diff.ok) return c.json({ error: "invalid", message: diff.message }, 422);
-    return c.json({
-      backup: { id: read.backup.id, createdAt: read.backup.createdAt, reason: read.backup.reason },
-      diff: diff.diff,
-      restoreCaption: RESTORE_NIGHTPLOT_CAPTION,
-    });
-  });
-
   app.get("/api/backups/:id", (c) => {
+    const backup = backups.read(c.req.param("id"));
+    return backup ? c.json({ backup }) : c.json({ error: "not_found", message: "Backup not found." }, 404);
+  });
+  app.delete("/api/backups/:id", async (c) => {
     const id = c.req.param("id");
-    if (!isBackupId(id)) return c.json({ error: "invalid", message: "That is not a backup id." }, 400);
-    const read = backups.get(id);
-    if (!read.ok) {
-      return c.json({
-        error: read.error,
-        message: read.error === "not_found"
-          ? "That backup is not on this Nightplot."
-          : "That backup file is not valid. Nothing was restored or sent.",
-      }, read.error === "not_found" ? 404 : 422);
-    }
-    const backup = read.backup;
-    return c.json({
-      backup: {
-        ...toBackupMeta(backup),
-      },
-      details: {
-        lights: backup.nightplot.lights.map((light) => ({
-          id: light.id,
-          name: light.name,
-          ledCount: light.ledCount,
-          host: `${light.hostname}:${light.port}`,
-          segments: backup.nightplot.elements.filter((element) => element.lightId === light.id).length,
-        })),
-        ledProducts: backup.nightplot.ledProducts.map((product) => ({
-          id: product.id,
-          label: product.label,
-        })),
-        activityCount: backup.nightplot.activity.length,
-        controller: backup.controller
-          ? {
-              lightId: backup.controller.lightId,
-              lightName: backup.controller.lightName,
-              host: backup.controller.host,
-              missing: backup.controller.missing,
-              capturedAt: backup.controller.capturedAt,
-            }
-          : null,
-        incomplete: backup.incomplete,
-        restoreCaption: RESTORE_NIGHTPLOT_CAPTION,
-        controllerCaption: backup.controller ? CONTROLLER_CAPTURE_CAPTION : null,
-      },
-    });
+    const body = await c.req.json().catch(() => null);
+    if (!body || body.confirmId !== id) return c.json({ error: "confirmation-required",
+      message: "Confirm the exact backup id before clearing it. Nothing was removed." }, 400);
+    const removed = backups.remove(id);
+    return removed ? c.json({ removed: true, id, message: "Backup cleared from local storage; download a copy first if needed." }) :
+      c.json({ error: "not_found", message: "Backup not found." }, 404);
+  });
+
+  function restoreReview(id: string) {
+    const backup = backups.read(id);
+    if (!backup) return { ok: false as const, error: "not_found", message: "Backup not found." };
+    const data = backup.data;
+    if (!deps.store.validBackup(data) || !products.validBackup(data.products) ||
+      !activity.validBackup(data.activity)) return { ok: false as const, error: "invalid-backup",
+        message: "Backup data did not validate; nothing was restored." };
+    return { ok: true as const, backup, data };
+  }
+
+  app.post("/api/backups/:id/restore/check", (c) => {
+    const reviewed = restoreReview(c.req.param("id"));
+    if (!reviewed.ok) return c.json(reviewed, reviewed.error === "not_found" ? 404 : 422);
+    const current = currentBackupData();
+    return c.json({ backup: { id: reviewed.backup.id, at: reviewed.backup.at, reason: reviewed.backup.reason,
+      lights: reviewed.data.lights.length, segments: reviewed.data.elements.length,
+      products: reviewed.data.products.length, activity: reviewed.data.activity.length },
+      current: { lights: current.lights.length, segments: current.elements.length,
+        products: current.products.length, activity: current.activity.length },
+      expectedDigest: backupDigest(reviewed.data), expectedCurrentDigest: backupDigest(current),
+      message: "Review these counts. Restore replaces Nightplot data only; it does not write any controller. A safety backup is created first." });
   });
 
   app.post("/api/backups/:id/restore", async (c) => {
     const id = c.req.param("id");
-    if (!isBackupId(id)) return c.json({ error: "invalid", message: "That is not a backup id." }, 400);
-    const raw = await c.req.json().catch(() => null);
-    if (!raw || typeof raw !== "object" || (raw as { confirm?: unknown }).confirm !== true) {
-      return c.json({
-        error: "confirm-required",
-        message: "Review the restore diff and send { confirm: true }. Nothing was restored.",
-      }, 400);
-    }
-    if (live.list().length > 0) {
-      return c.json({
-        error: "preview-active",
-        message: "End Preview or Blink on every Light before restoring Nightplot data. Nothing was restored or sent.",
-      }, 409);
-    }
-    const read = backups.get(id);
-    if (!read.ok) {
-      return c.json({
-        error: read.error,
-        message: read.error === "not_found"
-          ? "That backup is not on this Nightplot."
-          : "That backup file is not valid. Nothing was restored or sent.",
-      }, read.error === "not_found" ? 404 : 422);
-    }
-    const diff = currentBackupDiff(backupStores, read.backup);
-    if (!diff.ok) return c.json({ error: "invalid", message: diff.message }, 422);
-    const restored = restoreNightplotData(backupStores, read.backup, {
-      id: randomUUID(),
-      createdAt: nowIso(),
-    });
-    if (!restored.ok) return c.json(backupFailed(restored.message), 422);
-    return c.json({
-      restored: true,
-      safetyBackupId: restored.safety.id,
-      diff: diff.diff,
-      message: "Restored Nightplot Lights, Segments, LED products, and Activity. Nothing was sent to any controller. Preview and Apply were not started.",
-      restoreCaption: RESTORE_NIGHTPLOT_CAPTION,
-    });
+    const body = await c.req.json().catch(() => null);
+    if (!body || body.confirmId !== id || typeof body.expectedDigest !== "string" ||
+      typeof body.expectedCurrentDigest !== "string") return c.json({ error: "confirmation-required",
+        message: "Review this backup and confirm its exact id first. Nothing was restored." }, 400);
+    const reviewed = restoreReview(id);
+    if (!reviewed.ok) return c.json(reviewed, reviewed.error === "not_found" ? 404 : 422);
+    if (live.list().length) return c.json({ error: "busy", message: "End Preview or Blink before restoring Nightplot data." }, 409);
+    const saved = deps.store.load();
+    const releases = saved.map((light) => live.block(light.id));
+    try {
+      await Promise.all(saved.map((light) => live.settle(light.id)));
+      if (live.list().length) return c.json({ error: "busy", message: "End Preview or Blink before restoring Nightplot data." }, 409);
+      const current = currentBackupData();
+      if (backupDigest(reviewed.data) !== body.expectedDigest ||
+        backupDigest(current) !== body.expectedCurrentDigest) return c.json({ error: "changed",
+          message: "Backup or current Nightplot data changed. Review again; nothing was restored." }, 409);
+      let safety;
+      try { safety = capture("pre-restore"); }
+      catch (error) { return c.json(backupFailure(error), 503); }
+      try {
+        deps.store.restoreBackup(reviewed.data);
+        products.restoreBackup(reviewed.data.products);
+        activity.restoreBackup(reviewed.data.activity);
+      } catch (error) {
+        try {
+          deps.store.restoreBackup(current);
+          products.restoreBackup(current.products);
+          activity.restoreBackup(current.activity);
+        } catch { return c.json({ error: "restore-partial",
+          message: `Restore and rollback failed. Safety backup ${safety.id} is kept; inspect Nightplot data before further changes.` }, 500); }
+        return c.json({ error: "restore-failed",
+          message: `Restore failed and was rolled back. Safety backup ${safety.id} is kept. ${error instanceof Error ? error.message : ""}` }, 500);
+      }
+      return c.json({ restored: true, safetyBackupId: safety.id,
+        message: "Nightplot data restored. No WLED controller was changed; inspect Lights and use Apply separately." });
+    } finally { releases.forEach((release) => release()); }
   });
 
-  app.delete("/api/backups/:id", async (c) => {
-    const id = c.req.param("id");
-    if (!isBackupId(id)) return c.json({ error: "invalid", message: "That is not a backup id." }, 400);
-    const raw = await c.req.json().catch(() => null);
-    if (!raw || typeof raw !== "object" || (raw as { confirm?: unknown }).confirm !== true) {
-      return c.json({
-        error: "confirm-required",
-        message: "Send { confirm: true } to delete this backup. Nothing was removed.",
-      }, 400);
-    }
-    const read = backups.get(id);
-    if (!read.ok) {
-      return c.json({
-        error: read.error,
-        message: read.error === "not_found"
-          ? "That backup is not on this Nightplot."
-          : "That backup file is not valid.",
-      }, read.error === "not_found" ? 404 : 422);
-    }
-    backups.remove(id);
-    return c.json({ deleted: true, id, message: "That Nightplot backup was removed." });
-  });
+  app.get("/api/activity", (c) => c.json({ entries: activity.list(c.req.query("lightId")) }));
 
   app.get("/api/led-products", (c) => c.json({ products: products.list() }));
 
@@ -432,8 +347,8 @@ export function createApp(deps: AppDeps) {
       );
     }
     const product = { ...parsed.product, id };
-    const captured = await takeRequiredBackup({ reason: "pre-catalog", action: "Catalog change" });
-    if (!captured.ok) return c.json(backupFailed(captured.message), 422);
+    try { capture("pre-catalog"); }
+    catch (error) { return c.json(backupFailure(error), 503); }
     products.create(product);
     return c.json({ product }, 201);
   });
@@ -466,8 +381,8 @@ export function createApp(deps: AppDeps) {
       return c.json({ error: parsed.error, message: parsed.message }, status);
     }
     const product = { ...parsed.product, id: existing.id };
-    const captured = await takeRequiredBackup({ reason: "pre-catalog", action: "Catalog change" });
-    if (!captured.ok) return c.json(backupFailed(captured.message), 422);
+    try { capture("pre-catalog"); }
+    catch (error) { return c.json(backupFailure(error), 503); }
     const updated = products.update(product);
     if (!updated) {
       return c.json(
@@ -478,7 +393,7 @@ export function createApp(deps: AppDeps) {
     return c.json({ product: updated });
   });
 
-  app.delete("/api/led-products/:id", async (c) => {
+  app.delete("/api/led-products/:id", (c) => {
     const existing = products.findById(c.req.param("id"));
     if (!existing) {
       return c.json(
@@ -501,8 +416,8 @@ export function createApp(deps: AppDeps) {
         status,
       );
     }
-    const captured = await takeRequiredBackup({ reason: "pre-catalog", action: "Catalog change" });
-    if (!captured.ok) return c.json(backupFailed(captured.message), 422);
+    try { capture("pre-catalog"); }
+    catch (error) { return c.json(backupFailure(error), 503); }
     const removed = products.remove(existing.id);
     if (!removed) {
       return c.json(
@@ -714,6 +629,8 @@ export function createApp(deps: AppDeps) {
     const elements: Element[] = backup.segments.map((segment) => ({
       ...segment, id: randomUUID(), lightId: light.id,
     }));
+    try { capture("pre-restore", light); }
+    catch (error) { return c.json(backupFailure(error), 503); }
     deps.store.replaceElements(light.id, elements);
     return c.json({
       ...lightDetail(light, null, elements, attachedProduct(light)),
@@ -797,13 +714,8 @@ export function createApp(deps: AppDeps) {
     if (!planned.ok) {
       return c.json({ error: "refused", message: APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE }, 422);
     }
-    const captured = await takeRequiredBackup({
-      reason: "pre-apply",
-      action: "Apply",
-      light,
-      state: snap,
-    });
-    if (!captured.ok) return c.json(backupFailed(captured.message), 422);
+    try { await captureDevice("pre-apply", light, snap!); }
+    catch (error) { return c.json(backupFailure(error), 503); }
     const written = await deps.write(dest, planned.body);
     if (!written) {
       record(light, "apply", "unknown", `Apply write was not confirmed for ${sentDescription}; ranges were not read back.`);
@@ -970,6 +882,71 @@ export function createApp(deps: AppDeps) {
         ] satisfies ReaddressStep[],
       },
     });
+  });
+
+  app.post("/api/lights/:id/replacement/check", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    const body = await readHostBody(c);
+    if (!body) return c.json({ error: "invalid", message: "Send { host }." }, 400);
+    const checked = await replacementCandidate(stored, body.host);
+    if (!checked.ok) return c.json({ error: checked.error, message: checked.message }, checked.status);
+    return c.json({
+      previous: { hostKey: stored.hostKey, mac: stored.mac, name: stored.name },
+      replacement: { hostKey: normalizeHostKey(checked.target), mac: checked.snapshot.mac,
+        name: checked.snapshot.name, ledCount: checked.snapshot.ledCount },
+      segmentCount: deps.store.elementsFor(stored.id).length,
+      message: "A different WLED controller answered. Review its address and MAC before replacing this Light. Nothing was saved or sent.",
+    });
+  });
+
+  app.post("/api/lights/:id/replacement", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    const raw = await c.req.json().catch(() => null);
+    const body = raw && typeof raw === "object" ? raw as Record<string, unknown> : null;
+    if (!body || body.confirm !== true || typeof body.host !== "string" ||
+      typeof body.expectedHostKey !== "string" || typeof body.expectedMac !== "string" ||
+      !(body.previousMac === null || typeof body.previousMac === "string") ||
+      typeof body.previousHostKey !== "string" || !normalizeMac(body.expectedMac)) {
+      return c.json({ error: "confirmation-required", message: "Check the replacement first, then explicitly confirm its address and MAC. Nothing was saved or sent." }, 400);
+    }
+    if (stored.hostKey !== body.previousHostKey || normalizeMac(stored.mac) !== normalizeMac(body.previousMac)) {
+      return c.json({ error: "source-changed", message: "This Light changed since the check. Check again. Nothing was saved or sent." }, 409);
+    }
+    if (live.get(stored.id)) return c.json({ error: "busy", message: "End Preview or Blink before replacing this controller. Nothing was saved or sent." }, 409);
+    const release = live.block(stored.id);
+    try {
+      await live.settle(stored.id);
+      if (live.get(stored.id)) return c.json({ error: "busy", message: "End Preview or Blink before replacing this controller. Nothing was saved or sent." }, 409);
+      const checked = await replacementCandidate(stored, body.host);
+      if (!checked.ok) return c.json({ error: checked.error, message: checked.message }, checked.status);
+      const targetKey = normalizeHostKey(checked.target);
+      if (targetKey !== body.expectedHostKey || !macsMatch(checked.snapshot.mac, body.expectedMac)) {
+        return c.json({ error: "replacement-changed", message: "The controller address or MAC changed since the check. Check again. Nothing was saved or sent." }, 409);
+      }
+      const current = deps.store.findById(stored.id);
+      if (!current || current.hostKey !== stored.hostKey || normalizeMac(current.mac) !== normalizeMac(stored.mac)) {
+        return c.json({ error: "source-changed", message: "This Light changed while checking. Check again. Nothing was saved or sent." }, 409);
+      }
+      const next = lightFromSnapshot(checked.target, checked.snapshot, nowIso(), stored);
+      // A snapshot from the old controller is not a baseline for this one.
+      next.lastSnapshot = null;
+      next.lastSnapshotAt = null;
+      try { capture("pre-replacement", stored); }
+      catch (error) { return c.json(backupFailure(error), 503); }
+      deps.store.replace(next);
+      record(next, "replacement", "not-checked",
+        `Controller changed from ${stored.hostKey} (${shortMac(stored.mac)}) to ${targetKey} (${shortMac(next.mac)}). Saved Segments stayed on this Light; nothing was Applied.`);
+      return c.json({
+        ...lightDetail(next, checked.snapshot, deps.store.elementsFor(next.id), attachedProduct(next)),
+        replacement: { previousHost: stored.hostKey, previousMac: stored.mac,
+          nextHost: targetKey, nextMac: next.mac, movedSegments: deps.store.elementsFor(next.id).length },
+        message: "Controller replaced on this Light. Saved Segments remain; inspect Strip and use Apply separately when ready. Nothing was written to WLED.",
+      });
+    } finally {
+      release();
+    }
   });
 
   app.get("/api/lights/:id/live", async (c) => {
@@ -1253,13 +1230,8 @@ export function createApp(deps: AppDeps) {
     if (!built.ok) {
       return c.json(refusedSafeBody(safe, draft, built.message), 422);
     }
-    const captured = await takeRequiredBackup({
-      reason: "pre-safe",
-      action: "Safe settings",
-      light,
-      state: snap,
-    });
-    if (!captured.ok) return c.json(backupFailed(captured.message), 422);
+    try { await captureDevice("pre-safe", light, snap!, { safe: { ...safe.settings } }); }
+    catch (error) { return c.json(backupFailure(error), 503); }
     const written = await deps.writeCfg(dest, built.body);
     if (!written) {
       return c.json(
@@ -1421,14 +1393,8 @@ export function createApp(deps: AppDeps) {
         422,
       );
     }
-    const captured = await takeRequiredBackup({
-      reason: "pre-provision",
-      action: "Strip Apply",
-      light,
-      state: snap,
-      cfg: raw,
-    });
-    if (!captured.ok) return c.json(backupFailed(captured.message), 422);
+    try { await captureDevice("pre-provision", light, snap!, { strip: { ...provision.settings } }); }
+    catch (error) { return c.json(backupFailure(error), 503); }
     const written = await deps.writeCfg(dest, built.body);
     if (!written) {
       return c.json(
@@ -1520,8 +1486,8 @@ export function createApp(deps: AppDeps) {
         422,
       );
     }
-    const captured = await takeRequiredBackup({ reason: "pre-delete-light", action: "Remove" });
-    if (!captured.ok) return c.json(backupFailed(captured.message), 422);
+    try { capture("pre-delete", stored); }
+    catch (error) { return c.json(backupFailure(error), 503); }
     deps.store.remove(stored.id);
     return c.json({
       deleted: true,
@@ -1737,6 +1703,39 @@ export function createApp(deps: AppDeps) {
   function attachedProduct(light: Light): LedProduct | null {
     if (!light.ledProductId) return null;
     return products.findById(light.ledProductId) ?? null;
+  }
+
+  async function replacementCandidate(stored: Light, host: string): Promise<
+    | { ok: true; target: HostPort; snapshot: WledSnapshot }
+    | { ok: false; status: 403 | 409 | 422; error: string; message: string }
+  > {
+    const decision = decideProbeAddress(host);
+    if (!decision.ok) return { ok: false, status: 403, error: decision.reasonCode, message: decision.reason };
+    if (live.get(stored.id)) return { ok: false, status: 409, error: "busy",
+      message: "End Preview or Blink before replacing this controller. Nothing was saved or sent." };
+    const nextKey = normalizeHostKey(decision.target);
+    const occupant = deps.store.findByHostKey(nextKey);
+    if (occupant && occupant.id !== stored.id) return { ok: false, status: 409, error: "already-added",
+      message: "That address already belongs to another Light. Nothing was saved or sent." };
+    const outcome = await deps.probe(decision.target);
+    if (outcome.kind !== "found") return { ok: false, status: 422, error: outcome.kind,
+      message: `${outcome.reason} Kept the current controller. Nothing was saved or sent.` };
+    if (live.get(stored.id)) return { ok: false, status: 409, error: "busy",
+      message: "Preview or Blink started during the check. Nothing was saved or sent." };
+    if (!normalizeMac(outcome.snapshot.mac)) return { ok: false, status: 422, error: "mac-unknown",
+      message: "The replacement did not report a usable MAC. Nothing was saved or sent." };
+    if (macsMatch(stored.mac, outcome.snapshot.mac)) return { ok: false, status: 409, error: "same-controller",
+      message: "That is the same controller. Use Change address instead. Nothing was saved or sent." };
+    if (deps.store.load().some((light) => light.id !== stored.id && macsMatch(light.mac, outcome.snapshot.mac))) {
+      return { ok: false, status: 409, error: "already-added",
+        message: "That controller MAC already belongs to another Light. Nothing was saved or sent." };
+    }
+    if (outcome.snapshot.ledCount !== stored.ledCount ||
+      validateDeclaredRanges(deps.store.elementsFor(stored.id), outcome.snapshot.ledCount).length) {
+      return { ok: false, status: 422, error: "length-mismatch",
+        message: `The replacement reports ${outcome.snapshot.ledCount} LEDs; this Light has ${stored.ledCount}. Match the strip length before moving Segments. Nothing was saved or sent.` };
+    }
+    return { ok: true, target: decision.target, snapshot: outcome.snapshot };
   }
 
   function rememberStripKind(light: Light, ledType: string | null | undefined): Light {

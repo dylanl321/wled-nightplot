@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,6 +6,15 @@ import { seedLedProductsFromPresets } from "@nightplot/shared";
 import { FileLedProductsStore } from "./led-products-store.ts";
 
 describe("FileLedProductsStore", () => {
+  it("refuses to capture a corrupt catalog instead of silently re-seeding a backup", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-led-"));
+    const file = join(dir, "led-products.json");
+    const store = new FileLedProductsStore(file);
+    store.list();
+    writeFileSync(file, '{"version":1,"products":[{}]}');
+    expect(() => store.snapshotForBackup()).toThrow("backup refused");
+  });
+
   it("seeds from strip presets on first boot and round-trips a create", () => {
     const dir = mkdtempSync(join(tmpdir(), "nightplot-led-"));
     const file = join(dir, "led-products.json");

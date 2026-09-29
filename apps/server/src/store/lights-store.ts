@@ -1,12 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import {
-  normalizeLightLedProductId,
-  parseStoredElement,
-  parseStoredLight,
-  type Element,
-  type Light,
-} from "@nightplot/shared";
+import { normalizeLightLedProductId, type Element, type Light } from "@nightplot/shared";
 
 type FileShape = {
   version: 1;
@@ -23,15 +17,34 @@ export type LightsRawLoad =
   | { ok: true; lights: unknown[] }
   | { ok: false; error: "unreadable" | "invalid" };
 
-export type LightsExport =
-  | { ok: true; lights: Light[]; elements: Element[] }
-  | { ok: false; error: "unreadable" | "invalid" };
-
 export class FileLightsStore {
   constructor(private readonly filePath: string) {}
 
-  get path(): string {
-    return this.filePath;
+  snapshotForBackup(): StoreShape {
+    try {
+      const parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as FileShape;
+      const elements = parsed.elements ?? [];
+      if (parsed.version !== 1 || !this.validBackup({ lights: parsed.lights, elements }))
+        throw new Error("Invalid Lights store; backup refused.");
+      return { lights: parsed.lights.map(withLedProductId), elements };
+    } catch (error) {
+      if (isEnoent(error)) return { lights: [], elements: [] };
+      throw error;
+    }
+  }
+
+  restoreBackup(value: StoreShape): void {
+    if (!this.validBackup(value)) throw new Error("Invalid backup Lights or Segments; nothing was restored.");
+    this.write(value.lights, value.elements);
+  }
+
+  validBackup(value: StoreShape): boolean {
+    return Array.isArray(value.lights) && value.lights.every(isStoredLight) &&
+      Array.isArray(value.elements) && value.elements.every(isElement) &&
+      new Set(value.lights.map((light) => light.id)).size === value.lights.length &&
+      new Set(value.lights.map((light) => light.hostKey)).size === value.lights.length &&
+      new Set(value.elements.map((element) => element.id)).size === value.elements.length &&
+      value.elements.every((element) => value.lights.some((light) => light.id === element.lightId));
   }
 
   load(): Light[] {
@@ -107,39 +120,6 @@ export class FileLightsStore {
     ]);
   }
 
-  tryExport(): LightsExport {
-    try {
-      const raw = readFileSync(this.filePath, "utf8");
-      const parsed = JSON.parse(raw) as FileShape;
-      if (parsed.version !== 1 || !Array.isArray(parsed.lights)) {
-        return { ok: false, error: "invalid" };
-      }
-      const lights: Light[] = [];
-      for (const row of parsed.lights) {
-        const light = parseStoredLight(row);
-        if (!light) return { ok: false, error: "invalid" };
-        lights.push(light);
-      }
-      const elements: Element[] = [];
-      if (parsed.elements !== undefined && !Array.isArray(parsed.elements)) {
-        return { ok: false, error: "invalid" };
-      }
-      for (const row of parsed.elements ?? []) {
-        const element = parseStoredElement(row);
-        if (!element) return { ok: false, error: "invalid" };
-        elements.push(element);
-      }
-      return { ok: true, lights, elements };
-    } catch (error) {
-      if (isEnoent(error)) return { ok: true, lights: [], elements: [] };
-      return { ok: false, error: "unreadable" };
-    }
-  }
-
-  replaceAll(lights: Light[], elements: Element[]): void {
-    this.write(lights, elements);
-  }
-
   private read(): StoreShape {
     try {
       const raw = readFileSync(this.filePath, "utf8");
@@ -188,4 +168,13 @@ function isElement(value: unknown): value is Element {
     typeof row.start === "number" &&
     typeof row.stop === "number"
   );
+}
+
+function isStoredLight(value: unknown): value is Light {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Partial<Light>;
+  return typeof row.id === "string" && !!row.id && typeof row.name === "string" &&
+    typeof row.hostname === "string" && typeof row.port === "number" &&
+    typeof row.hostKey === "string" && Number.isInteger(row.ledCount) &&
+    (row.ledCount ?? 0) > 0 && (row.mac === null || typeof row.mac === "string");
 }

@@ -1,60 +1,48 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import type { BackupSummary } from "@nightplot/shared";
 import { BackupsPanel } from "./backups-panel";
 
-const backup = {
-  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-  createdAt: "2026-09-29T00:00:00.000Z",
-  reason: "manual" as const,
-  reasonLabel: "Saved backup",
-  note: null,
-  completeness: "complete" as const,
-  incomplete: [],
-  counts: { lights: 1, elements: 2, ledProducts: 3, activity: 0 },
-  hasControllerCapture: false,
-  controllerCaption: null,
-};
+const id = "03c75c3e-9846-458e-b458-8739f0bff750";
+const summary: BackupSummary = { id, at: "2026-09-28T18:00:00.000Z", reason: "manual", lightId: null,
+  lightName: null, lightCount: 1, segmentCount: 1, productCount: 0, hasControllerReference: false, hasDeviceFiles: false };
+const document = { version: 1, ...summary, data: {
+  lights: [{ id: "porch", name: "Porch", hostname: "192.168.1.40", port: 80 }],
+  elements: [{ id: "door" }], products: [], activity: [],
+}, controller: null };
 
-describe("Backups panel", () => {
-  it("requires explicit confirm before delete or restore", async () => {
-    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.endsWith("/diff")) {
-        return new Response(JSON.stringify({
-          diff: {
-            lights: { wouldAdd: [], wouldRemove: [], wouldChange: [] },
-            elements: { current: 2, backup: 2, wouldAdd: 0, wouldRemove: 0, wouldChange: 0 },
-            ledProducts: { wouldAdd: [], wouldRemove: [], wouldChange: [] },
-            activity: { current: 0, backup: 0 },
-            summary: "Lights match. Restores Nightplot data only. Nothing is sent to a controller.",
-          },
-        }));
-      }
-      if (url.includes("/api/backups/") && !init?.method) {
-        return new Response(JSON.stringify({
-          details: { lights: [], ledProducts: [], activityCount: 0, controller: null, incomplete: [] },
-        }));
-      }
-      return new Response(JSON.stringify({ backups: [backup] }));
-    });
-    vi.stubGlobal("fetch", fetch);
-    render(<BackupsPanel initialBackups={[backup]} />);
-    expect(screen.getAllByText("Saved backup").length).toBeGreaterThan(0);
-    const deleteButton = screen.getByRole("button", { name: "Delete backup" });
-    expect(deleteButton.hasAttribute("disabled")).toBe(true);
+describe("Backups management", () => {
+  it("reviews counts, requires the exact ID for restore and clear, and shows the reusable LED loader", async () => {
+    const requests: { path: string; method?: string; body?: string }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      requests.push({ path, method: init?.method, body: String(init?.body ?? "") });
+      if (path.endsWith("/restore/check")) return new Response(JSON.stringify({
+        backup: { id, lights: 1, segments: 1, products: 0, activity: 0 },
+        current: { lights: 2, segments: 3, products: 1, activity: 2 },
+        expectedDigest: "before", expectedCurrentDigest: "current",
+      }));
+      if (path.endsWith("/restore")) return new Response(JSON.stringify({ safetyBackupId: "safety", message: "Nightplot data restored." }));
+      if (init?.method === "DELETE") return new Response(JSON.stringify({ removed: true }));
+      if (path === "/api/backups") return new Response(JSON.stringify({ backups: [summary] }));
+      return new Response(JSON.stringify({ backup: document }));
+    }));
+    render(<BackupsPanel initial={[summary]} />);
+    fireEvent.click(screen.getByRole("button", { name: /manual/ }));
+    expect(await screen.findByText(`ID: ${id}`)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Review restore" }));
-    const restoreButton = await screen.findByRole("button", { name: "Restore Nightplot data" });
-    expect(restoreButton.hasAttribute("disabled")).toBe(true);
-    fireEvent.click(screen.getByLabelText(/Restore Nightplot data from this backup/));
-    expect(restoreButton.hasAttribute("disabled")).toBe(false);
-    fireEvent.click(restoreButton);
-    await waitFor(() => {
-      expect(fetch.mock.calls.some((call) => String(call[0]).includes("/restore") && String(call[1]?.body).includes("\"confirm\":true"))).toBe(true);
-    });
-    fireEvent.click(screen.getByLabelText(/Delete this backup from Nightplot/));
-    fireEvent.click(screen.getByRole("button", { name: "Delete backup" }));
-    await waitFor(() => {
-      expect(fetch.mock.calls.some((call) => call[1]?.method === "DELETE" && String(call[1]?.body).includes("\"confirm\":true"))).toBe(true);
-    });
+    expect(await screen.findByText(/Current: 2 Lights, 3 Segments/)).toBeTruthy();
+    const restore = screen.getByRole("button", { name: "Restore Nightplot data" }) as HTMLButtonElement;
+    expect(restore.disabled).toBe(true);
+    fireEvent.change(screen.getByRole("textbox", { name: "Confirm backup ID" }), { target: { value: id } });
+    fireEvent.click(restore);
+    await waitFor(() => expect(requests.some((request) => request.path.endsWith("/restore") &&
+      request.body?.includes("\"confirmId\":\"" + id + "\""))).toBe(true));
+    expect(await screen.findByText(/Safety backup: safety/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Clear backup…" }));
+    expect((screen.getByRole("button", { name: "Clear this backup" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByRole("textbox", { name: "Confirm backup ID" }), { target: { value: id } });
+    fireEvent.click(screen.getByRole("button", { name: "Clear this backup" }));
+    await waitFor(() => expect(requests.some((request) => request.method === "DELETE")).toBe(true));
   });
 });

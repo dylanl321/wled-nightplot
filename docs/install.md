@@ -38,9 +38,7 @@ Copy [`.env.example`](../.env.example). Both apps read process env; there is no 
 | `NIGHTPLOT_STORE_PATH` | `data/lights.json` | Enrolled Lights + Elements |
 | `NIGHTPLOT_LED_PRODUCTS_PATH` | `data/led-products.json` | Operator LED product catalog (`/led-products`) |
 | `NIGHTPLOT_ACTIVITY_PATH` | beside the Lights store (`activity.json`) | Durable Activity history |
-| `NIGHTPLOT_BACKUPS_DIR` | beside the Lights store (`backups/`) | Managed Nightplot data backups |
-| `NIGHTPLOT_BACKUP_KEEP_AUTOMATIC` | `40` | Automatic backups retained |
-| `NIGHTPLOT_BACKUP_KEEP_SAFETY` | `10` | Pre-restore safety backups retained |
+| `NIGHTPLOT_BACKUPS_PATH` | beside the Lights store (`backups/`) | Managed Nightplot data and native WLED file backups |
 | `NIGHTPLOT_DISCOVERY_TARGETS` | empty | Extra Find hosts (`host` or `host:port`) |
 | `NIGHTPLOT_FIXTURE_PORT` | `48210` | Local in-process WLED-shaped stub |
 | `NIGHTPLOT_FIXTURE_INFO_NAME_LAG` | off | Keep `/json/info` name stale after a cfg rename |
