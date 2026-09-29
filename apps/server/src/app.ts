@@ -1448,14 +1448,13 @@ export function createApp(deps: AppDeps) {
     const views: LightView[] = [];
     const allElements = deps.store.loadElements();
     for (const light of stored) {
-      const { light: next, live } = await refreshOne(light);
-      const elements = allElements.filter((element) => element.lightId === next.id);
-      views.push(lightDetail(next, live, elements, attachedProduct(next)).light);
+      const elements = allElements.filter((element) => element.lightId === light.id);
+      views.push(lightDetail(light, null, elements, attachedProduct(light)).light);
     }
     const enrolled = new Set(views.map((light) => light.hostKey));
     return {
       lights: views,
-      elements: deps.store.loadElements(),
+      elements: allElements,
       unenrolled: session.rows.filter(
         (row) => row.status === "found" && !enrolled.has(row.key),
       ),

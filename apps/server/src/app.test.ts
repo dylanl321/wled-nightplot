@@ -542,6 +542,80 @@ describe("discover + connect", () => {
     expect(body.lights).toHaveLength(1);
     expect(body.lights[0]?.hostKey).toBe("10.0.0.20:80");
   });
+
+  it("lists saved Lights and Segments without probing or writing, even when a Light is unreachable", async () => {
+    const first = testApp();
+    const enroll = await first.app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.40" }),
+    });
+    const { light } = (await enroll.json()) as { light: { id: string } };
+    const save = await first.app.request(`/api/lights/${light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: [{ label: "Door", start: 0, stop: 60 }] }),
+    });
+    expect(save.status).toBe(200);
+    const probe = vi.fn(async () => ({
+      kind: "probe-failed" as const,
+      reason: "Unreachable controller",
+    }));
+    const replace = vi.spyOn(first.store, "replace");
+    const { app } = testApp({ store: first.store, probe });
+
+    const list = await app.request("/api/lights");
+    expect(list.status).toBe(200);
+    const cached = (await list.json()) as {
+      lights: { id: string; reachability: string; lastSeenAt: string | null; bead: string;
+        elementCount: number; segmentCount: number | null }[];
+      elements: { label: string; start: number; stop: number }[];
+    };
+    expect(probe).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+    expect(cached.lights[0]).toMatchObject({
+      id: light.id, reachability: "online", lastSeenAt: "2026-09-26T18:00:00.000Z",
+      bead: "unknown", elementCount: 1, segmentCount: null,
+    });
+    expect(cached.elements).toMatchObject([{ label: "Door", start: 0, stop: 60 }]);
+
+    const inspect = await app.request(`/api/lights/${light.id}`);
+    expect(inspect.status).toBe(200);
+    expect(probe).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(((await inspect.json()) as { light: { reachability: string } }).light.reachability)
+      .toBe("no-answer");
+
+    const offlineList = await app.request("/api/lights");
+    expect(offlineList.status).toBe(200);
+    expect(probe).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledTimes(1);
+    const offline = (await offlineList.json()) as {
+      lights: { reachability: string; bead: string; lastSeenAt: string | null }[];
+    };
+    expect(offline.lights[0]).toMatchObject({
+      reachability: "no-answer", bead: "unknown", lastSeenAt: "2026-09-26T18:00:00.000Z",
+    });
+  });
+
+  it("keeps an explicit live Refresh as a one-Light probe", async () => {
+    const first = testApp();
+    const enroll = await first.app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.41" }),
+    });
+    const { light } = (await enroll.json()) as { light: { id: string } };
+    const probe = vi.fn(async () => ({ kind: "found" as const, snapshot }));
+    const { app } = testApp({ store: first.store, probe });
+    await app.request("/api/lights");
+    expect(probe).not.toHaveBeenCalled();
+    const refresh = await app.request(`/api/lights/${light.id}/live`);
+    expect(refresh.status).toBe(200);
+    expect(probe).toHaveBeenCalledTimes(1);
+    expect(((await refresh.json()) as { light: { bead: string } }).light.bead)
+      .toBe("#ffa000");
+  });
 });
 
 describe("real WLED HTTP probe", () => {
@@ -871,7 +945,7 @@ describe("info-only segmentCount", () => {
       lights: { driftLabel: string | null; segmentCount: number | null }[];
     };
     expect(list.lights[0]?.segmentCount).toBeNull();
-    expect(list.lights[0]?.driftLabel).toBe("Segments unknown — no report to compare.");
+    expect(list.lights[0]?.driftLabel).toBe("No current report to compare.");
   });
 
   it("keeps a known empty seg list as zero — distinct from unknown", async () => {

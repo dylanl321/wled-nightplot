@@ -87,7 +87,7 @@ Strip Apply (`buildProvisionWrite`) writes WLED `order: 0` (GRBW on SK6812 RGBW;
 
 `GET /health` returns `{ ok, service: "nightplot-configure", slice: CURRENT_SLICE }`.
 
-`GET /api/lights` still calls `refreshOne` (a probe) for every enrolled Light, then `lightDetail`. The Lights **list component** does not start its own probes; Inspect Refresh is the one-Light UI probe. The server list path is a known gap — leave it unless that gap is the slice you are on.
+`GET /api/lights` builds rows from saved Lights, Segments, and last-seen fields only; it does not probe or write the store. Without a current snapshot, list beads are grey and controller Segment counts are unknown, including for a previously online Light. Inspect (`GET /api/lights/:id`) and explicit live Refresh (`GET /api/lights/:id/live`) still probe one Light and update its saved reachability. The Lights list component does not start its own probes.
 
 ## LAN guard
 
