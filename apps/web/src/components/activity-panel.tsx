@@ -3,6 +3,7 @@
 import type { ActivityEntry } from "@nightplot/shared";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { LedLoader } from "@/components/ui/led-loader";
 import { fetchJson } from "@/lib/api";
 
 export function ActivityPanel({ lightId }: { lightId: string }) {
@@ -37,7 +38,7 @@ export function ActivityPanel({ lightId }: { lightId: string }) {
         <Button variant="outline" onClick={() => void load()} disabled={busy}>Refresh activity</Button>
       </div>
       {error ? <p role="alert" className="text-destructive">{error}</p> : null}
-      {busy && entries.length === 0 ? <p className="text-muted-foreground">Loading activity…</p> : null}
+      {busy && entries.length === 0 ? <LedLoader label="Loading activity…" /> : null}
       {!busy && !error && entries.length === 0 ? <p className="text-muted-foreground">No activity recorded for this Light yet.</p> : null}
       <ol className="divide-y divide-border">
         {entries.map((entry) => (

@@ -75,3 +75,13 @@ a {
 a:hover {
   color: var(--foreground);
 }
+
+@keyframes nightplot-led-glow {
+  0%, 65%, 100% { opacity: .25; box-shadow: 0 0 0 transparent; transform: scale(.85); }
+  32% { opacity: 1; box-shadow: 0 0 12px 3px color-mix(in srgb, var(--primary) 65%, transparent); transform: scale(1.12); }
+}
+
+.nightplot-loading-led { animation: nightplot-led-glow 1.35s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .nightplot-loading-led { animation: none; opacity: .8; }
+}

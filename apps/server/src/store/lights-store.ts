@@ -20,6 +20,33 @@ export type LightsRawLoad =
 export class FileLightsStore {
   constructor(private readonly filePath: string) {}
 
+  snapshotForBackup(): StoreShape {
+    try {
+      const parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as FileShape;
+      const elements = parsed.elements ?? [];
+      if (parsed.version !== 1 || !this.validBackup({ lights: parsed.lights, elements }))
+        throw new Error("Invalid Lights store; backup refused.");
+      return { lights: parsed.lights.map(withLedProductId), elements };
+    } catch (error) {
+      if (isEnoent(error)) return { lights: [], elements: [] };
+      throw error;
+    }
+  }
+
+  restoreBackup(value: StoreShape): void {
+    if (!this.validBackup(value)) throw new Error("Invalid backup Lights or Segments; nothing was restored.");
+    this.write(value.lights, value.elements);
+  }
+
+  validBackup(value: StoreShape): boolean {
+    return Array.isArray(value.lights) && value.lights.every(isStoredLight) &&
+      Array.isArray(value.elements) && value.elements.every(isElement) &&
+      new Set(value.lights.map((light) => light.id)).size === value.lights.length &&
+      new Set(value.lights.map((light) => light.hostKey)).size === value.lights.length &&
+      new Set(value.elements.map((element) => element.id)).size === value.elements.length &&
+      value.elements.every((element) => value.lights.some((light) => light.id === element.lightId));
+  }
+
   load(): Light[] {
     return this.read().lights;
   }
@@ -141,4 +168,13 @@ function isElement(value: unknown): value is Element {
     typeof row.start === "number" &&
     typeof row.stop === "number"
   );
+}
+
+function isStoredLight(value: unknown): value is Light {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Partial<Light>;
+  return typeof row.id === "string" && !!row.id && typeof row.name === "string" &&
+    typeof row.hostname === "string" && typeof row.port === "number" &&
+    typeof row.hostKey === "string" && Number.isInteger(row.ledCount) &&
+    (row.ledCount ?? 0) > 0 && (row.mac === null || typeof row.mac === "string");
 }

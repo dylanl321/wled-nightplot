@@ -103,6 +103,8 @@ Find must use an advertised port (SSDP `LOCATION` in `apps/server/src/discovery/
 
 Replacement checks a new WLED address/MAC and LED count without writing, then re-probes on explicit confirmation. The same Light ID and saved Segments remain; the old controller's snapshot is cleared and Activity marks the identity boundary. An already-enrolled address or MAC, active Preview/Blink, different LED count, or identity change during confirmation refuses. Replacement does not copy controller settings or Apply ranges. Same-MAC Change address remains a distinct path.
 
+`FileBackupStore` keeps versioned JSON documents in `data/backups/` (override `NIGHTPLOT_BACKUPS_PATH`) on the same persistent volume as Lights; its 100-file limit refuses new captures rather than silently deleting history. Each contains Lights, Segments, LED products, Activity and optional reference-only WLED fields. Raw `/json/cfg` is not stored (it may contain secrets); Safe and Strip fields are allowlisted. Backups UI can view/download/clear an exact id. Restore validates all Nightplot stores, compares digests from review, blocks active Preview/Blink, writes a pre-restore safety backup, then replaces the three JSON stores with rollback on write failure. The files are individually atomic; the group is **not** a transactional database. Keep an off-volume download or mount `NIGHTPLOT_BACKUPS_PATH` elsewhere for disaster recovery; losing the data volume also loses its local backups. Restore does not Apply or reconstruct a complete WLED controller configuration.
+
 ## Stubs / NYI (honest)
 
 | Thing | Status |

@@ -12,6 +12,7 @@ import { createApp, type AppDeps } from "./app.ts";
 import { ALL_OFF_PROBE_CONCURRENCY, FIND_PROBE_CONCURRENCY } from "./discovery/map-limit.ts";
 import { FileLedProductsStore } from "./store/led-products-store.ts";
 import { FileActivityStore } from "./store/activity-store.ts";
+import { FileBackupStore } from "./store/backup-store.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
 import { createFixtureBox } from "./wled-fixture-box.ts";
 import { createWledCfgReader, createWledCfgWriter } from "./wled/cfg.ts";
@@ -158,6 +159,7 @@ function testApp(overrides: Partial<AppDeps> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
   const store = overrides.store ?? new FileLightsStore(join(dir, "lights.json"));
   const activity = overrides.activity ?? new FileActivityStore(join(dir, "activity.json"));
+  const backups = overrides.backups ?? new FileBackupStore(join(dir, "backups"));
   const products = overrides.products ?? new FileLedProductsStore(join(dir, "led-products.json"));
   const box = memoryBox();
   const cfg = memoryCfg();
@@ -165,6 +167,7 @@ function testApp(overrides: Partial<AppDeps> = {}) {
   const app = createApp({
     store,
     activity,
+    backups,
     products,
     probe,
     write: overrides.write ?? box.write,
@@ -174,8 +177,131 @@ function testApp(overrides: Partial<AppDeps> = {}) {
     collect: overrides.collect ?? (async () => []),
     now: overrides.now ?? (() => new Date("2026-09-26T18:00:00.000Z")),
   });
-  return { app, store, activity, products, dir, box, cfg };
+  return { app, store, activity, backups, products, dir, box, cfg };
 }
+
+describe("managed Backups", () => {
+  async function enroll(app: ReturnType<typeof testApp>["app"]) {
+    const res = await app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.80" }),
+    });
+    return ((await res.json()) as { light: { id: string } }).light.id;
+  }
+
+  it("creates, lists and reopens a Nightplot data backup across a restart; clear requires exact confirmation", async () => {
+    const first = testApp();
+    const id = await enroll(first.app);
+    first.store.replaceElements(id, [{ id: "door", lightId: id, label: "Door", start: 0, stop: 30 }]);
+    const created = await first.app.request("/api/backups", { method: "POST" });
+    expect(created.status).toBe(201);
+    const backup = ((await created.json()) as { backup: { id: string; data: { elements: unknown[] }; controller: unknown } }).backup;
+    expect(backup.data.elements).toHaveLength(1);
+    expect(backup.controller).toBeNull();
+    const restarted = testApp({ store: first.store, products: first.products,
+      activity: first.activity, backups: first.backups });
+    const listed = (await (await restarted.app.request("/api/backups")).json()) as {
+      backups: { id: string; segmentCount: number }[];
+    };
+    expect(listed.backups).toMatchObject([{ id: backup.id, segmentCount: 1 }]);
+    expect((await restarted.app.request(`/api/backups/${backup.id}`)).status).toBe(200);
+    expect((await restarted.app.request(`/api/backups/${backup.id}`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmId: "wrong" }),
+    })).status).toBe(400);
+    expect(restarted.backups.read(backup.id)).not.toBeNull();
+    expect((await restarted.app.request(`/api/backups/${backup.id}`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmId: backup.id }),
+    })).status).toBe(200);
+    expect(restarted.backups.read(backup.id)).toBeNull();
+  });
+
+  it("captures the reported controller before Apply, not raw cfg, and refuses WLED writes when backups fail", async () => {
+    const first = testApp();
+    const id = await enroll(first.app);
+    const write = vi.fn(first.box.write);
+    const backed = testApp({ store: first.store, products: first.products,
+      activity: first.activity, backups: first.backups, write });
+    const body = { elements: [{ label: "Door", start: 0, stop: 60 }] };
+    const applied = await backed.app.request(`/api/lights/${id}/apply`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    expect(applied.status).toBe(200);
+    expect(write).toHaveBeenCalledTimes(1);
+    const saved = backed.backups.list()[0]!;
+    expect(saved.reason).toBe("pre-apply");
+    const controller = backed.backups.read(saved.id)!.controller;
+    expect(controller).toMatchObject({ hostKey: "192.168.1.80:80", reported: { on: true } });
+    expect(controller).not.toHaveProperty("wifi");
+    vi.spyOn(first.backups, "create").mockImplementation(() => { throw new Error("disk full"); });
+    const refusedWrite = vi.fn(first.box.write);
+    const refused = testApp({ store: first.store, products: first.products,
+      activity: first.activity, backups: first.backups, write: refusedWrite });
+    const response = await refused.app.request(`/api/lights/${id}/apply`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    expect(response.status).toBe(503);
+    expect(refusedWrite).not.toHaveBeenCalled();
+  });
+
+  it("reviews a restore, refuses stale or wrong confirmation, and saves a recoverable pre-restore backup", async () => {
+    const { app, store, backups, products, activity } = testApp();
+    const id = await enroll(app);
+    store.replaceElements(id, [{ id: "original", lightId: id, label: "Original", start: 0, stop: 60 }]);
+    const created = (await (await app.request("/api/backups", { method: "POST" })).json()) as {
+      backup: { id: string };
+    };
+    store.replaceElements(id, [{ id: "changed", lightId: id, label: "Changed", start: 0, stop: 30 }]);
+    const check = await app.request(`/api/backups/${created.backup.id}/restore/check`, { method: "POST" });
+    expect(check.status).toBe(200);
+    const review = (await check.json()) as { expectedDigest: string; expectedCurrentDigest: string;
+      current: { segments: number }; backup: { segments: number } };
+    expect(review.current.segments).toBe(1);
+    expect((await app.request(`/api/backups/${created.backup.id}/restore`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmId: "wrong", ...review }),
+    })).status).toBe(400);
+    store.replaceElements(id, []);
+    expect((await app.request(`/api/backups/${created.backup.id}/restore`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmId: created.backup.id, ...review }),
+    })).status).toBe(409);
+    expect(store.elementsFor(id)).toEqual([]);
+    const fresh = (await (await app.request(`/api/backups/${created.backup.id}/restore/check`, {
+      method: "POST" })).json()) as typeof review;
+    const restored = await app.request(`/api/backups/${created.backup.id}/restore`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmId: created.backup.id, expectedDigest: fresh.expectedDigest,
+        expectedCurrentDigest: fresh.expectedCurrentDigest }),
+    });
+    expect(restored.status).toBe(200);
+    const result = (await restored.json()) as { safetyBackupId: string };
+    expect(store.elementsFor(id)[0]?.label).toBe("Original");
+    expect(backups.read(result.safetyBackupId)?.reason).toBe("pre-restore");
+    expect(backups.read(result.safetyBackupId)?.data.elements).toEqual([]);
+    expect(products.list().length).toBeGreaterThan(0);
+    expect(activity.list()).toEqual([]);
+  });
+
+  it("does not auto-back up temporary Preview or All Off, but backs up before deleting a Light", async () => {
+    const { app, backups, store } = testApp();
+    const id = await enroll(app);
+    const preview = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ color: "#4f7dff", brightness: 180 }),
+    });
+    expect(preview.status).toBe(200);
+    expect((await app.request(`/api/lights/${id}/preview/end`, { method: "POST" })).status).toBe(200);
+    expect((await app.request("/api/all-off", { method: "POST" })).status).toBe(200);
+    expect(backups.list()).toEqual([]);
+    const deleted = await app.request(`/api/lights/${id}`, { method: "DELETE" });
+    expect(deleted.status).toBe(200);
+    expect(store.findById(id)).toBeUndefined();
+    expect(backups.list()[0]?.reason).toBe("pre-delete");
+    expect(backups.read(backups.list()[0]!.id)?.data.lights[0]?.id).toBe(id);
+  });
+});
 
 describe("Segment backup and restore", () => {
   it("exports only saved Segments and restores them offline without probing or Applying", async () => {

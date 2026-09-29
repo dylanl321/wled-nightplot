@@ -26,6 +26,15 @@ const base: Light = {
 };
 
 describe("lights store ledProductId", () => {
+  it("refuses a backup when Segments reference missing Lights", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-lights-"));
+    const file = join(dir, "lights.json");
+    writeFileSync(file, JSON.stringify({ version: 1, lights: [], elements: [
+      { id: "orphan", lightId: "missing", label: "Orphan", start: 0, stop: 1 },
+    ] }));
+    expect(() => new FileLightsStore(file).snapshotForBackup()).toThrow("backup refused");
+  });
+
   it("persists a catalog id and treats a missing field as null", () => {
     const dir = mkdtempSync(join(tmpdir(), "nightplot-lights-"));
     const file = join(dir, "lights.json");

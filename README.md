@@ -67,7 +67,7 @@ docker compose up --build
 - App: [http://127.0.0.1:43180](http://127.0.0.1:43180)
 - API: [http://127.0.0.1:43181](http://127.0.0.1:43181)
 
-Store volume: `lights-store` → `/data` (`lights.json`, `led-products.json`). `pnpm dev` bind stays loopback; compose publishes `0.0.0.0` on purpose.
+Store volume: `lights-store` → `/data` (`lights.json`, `led-products.json`, `activity.json`, `backups/`). `pnpm dev` bind stays loopback; compose publishes `0.0.0.0` on purpose.
 
 GHCR build: Actions → Docker → Run workflow, or push to `main` / a `v*` tag. Images push only when GHCR login succeeds. Workflow does not run on pull requests.
 
@@ -122,6 +122,10 @@ Enrolled Lights and declared Segments persist in `data/lights.json` (override wi
 | DELETE | `/api/led-products/:id` | Remove a catalog recipe. 409 while any Light still attaches that `ledProductId`. 422 when the attach count is unknown or partial. No override. Does not write WLED. Not Apply. |
 | GET | `/api/lights` | Saved Lights and Segments, last-seen state, unenrolled tray. No controller probe or store write; beads are grey without a current snapshot. Inspect and live Refresh probe one Light. |
 | GET | `/api/activity?lightId=…` | Saved Activity (newest first; optional Light filter): Apply readback, Preview start/end, per-Light All Off results, and controller replacement boundaries. `match` is controller/software readback, not Hardware Done. |
+| GET/POST | `/api/backups` | List saved backup summaries / create a versioned Nightplot data snapshot. Stored locally beside the Lights store (override with `NIGHTPLOT_BACKUPS_PATH`); up to 100, no silent pruning. |
+| GET/DELETE | `/api/backups/:id` | Inspect/download the JSON backup / clear that exact backup with `{ confirmId }`. Clearing cannot be undone without a downloaded copy. |
+| POST | `/api/backups/:id/restore/check` | Validate backup and compare counts/digests with current Nightplot data. No writes. |
+| POST | `/api/backups/:id/restore` | `{ confirmId, expectedDigest, expectedCurrentDigest }` — refuse stale review or active Preview/Blink, create a safety backup, restore only Nightplot data; never write WLED. |
 | GET | `/api/lights/:id` | Inspect payload: identity, declared Segments, reported segments, drift, live session. When `stripKind` is still the default and no LED product is attached, a live Inspect may persist a known `/json/cfg` bus type. An open first-locate Preview with unknown restore segment count keeps that leftover caption — Inspect does not replace it with a live-read / fixture line. |
 | GET | `/api/lights/:id/segments/backup` | Download a versioned JSON backup of this Light's saved Segments, without probing the controller. Unsaved edits are not included. |
 | POST | `/api/lights/:id/segments/restore` | `{ backup, confirmDifferentController? }` — validate and replace Nightplot's saved Segments. Refuses a different LED count or active Preview/Blink, and needs confirmation for a different controller. Does not probe, Preview, or Apply. |

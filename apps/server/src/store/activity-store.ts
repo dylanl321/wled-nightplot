@@ -21,6 +21,20 @@ export class FileActivityStore {
     renameSync(tmp, this.filePath);
   }
 
+  restoreBackup(entries: ActivityEntry[]): void {
+    if (!this.validBackup(entries)) {
+      throw new Error("Invalid backup Activity; nothing was restored.");
+    }
+    mkdirSync(dirname(this.filePath), { recursive: true });
+    const tmp = `${this.filePath}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify({ version: 1, entries } satisfies ActivityFile, null, 2)}\n`);
+    renameSync(tmp, this.filePath);
+  }
+
+  validBackup(entries: ActivityEntry[]): boolean {
+    return Array.isArray(entries) && entries.every(isActivityEntry);
+  }
+
   private read(): ActivityEntry[] {
     try {
       const parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as ActivityFile;
