@@ -146,6 +146,18 @@ It describes range differences; that alone is not a reason for Preview to fail.
 storage and API fields, `Element` TypeScript types, legacy links, and saved
 custom labels remain compatible.
 
+## Back up or restore Segments
+
+On a Light's Segments page, open **Back up or restore Segments** and download a
+JSON copy of the saved layout. Unsaved edits are not included. Choose a backup
+to review its source Light, LED count, names, and inclusive–exclusive ranges
+before restoring. A different controller needs an explicit confirmation;
+different strip lengths or invalid/overlapping ranges refuse. Save or discard
+unsaved edits and end Preview before restoring. Restore replaces only this
+Light's saved Nightplot Segments, even if the controller is offline. It does
+not move a controller address or settings, start Preview, or Apply ranges to
+the strip; use Apply separately when the Light is ready.
+
 Validation covers shared boundaries, focus, drag thresholds, undo, selection options,
 scan controls and Preview recovery with automated tests, plus desktop/mobile
 browser checks using mocked controller responses. These are software checks;

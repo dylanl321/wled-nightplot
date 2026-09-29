@@ -177,6 +177,76 @@ function testApp(overrides: Partial<AppDeps> = {}) {
   return { app, store, activity, products, dir, box, cfg };
 }
 
+describe("Segment backup and restore", () => {
+  it("exports only saved Segments and restores them offline without probing or Applying", async () => {
+    const first = testApp();
+    const enroll = await first.app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.80" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const save = await first.app.request(`/api/lights/${id}/elements`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: [{ label: "Door", start: 0, stop: 20 }, { label: "Roof", start: 20, stop: 60 }] }),
+    });
+    expect(save.status).toBe(200);
+    const backupResponse = await first.app.request(`/api/lights/${id}/segments/backup`);
+    expect(backupResponse.status).toBe(200);
+    const backup = (await backupResponse.json()) as {
+      kind: string; version: number; source: { ledCount: number; mac: string | null };
+      segments: { label: string; start: number; stop: number }[];
+    };
+    expect(backup).toMatchObject({ kind: "nightplot-segments", version: 1,
+      source: { ledCount: 60 }, segments: [{ label: "Door", start: 0, stop: 20 }, { label: "Roof", start: 20, stop: 60 }] });
+    first.store.replaceElements(id, []);
+    const probe = vi.fn(async () => ({ kind: "probe-failed" as const, reason: "offline" }));
+    const write = vi.fn(async () => true);
+    const restarted = testApp({ store: first.store, probe, write });
+    const restore = await restarted.app.request(`/api/lights/${id}/segments/restore`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ backup }),
+    });
+    expect(restore.status).toBe(200);
+    expect(probe).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+    expect(((await restore.json()) as { message: string }).message).toMatch(/Apply separately/);
+    expect(first.store.elementsFor(id).map(({ label, start, stop }) => ({ label, start, stop })))
+      .toEqual(backup.segments);
+  });
+
+  it("refuses mismatched length, different controller without confirmation, and invalid backups without replacing Segments", async () => {
+    const { app, store } = testApp();
+    const enroll = await app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.81" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const backup = (await (await app.request(`/api/lights/${id}/segments/backup`)).json()) as {
+      source: { mac: string | null; ledCount: number }; segments: unknown[];
+    };
+    const restore = (value: unknown, confirmDifferentController = false) => app.request(`/api/lights/${id}/segments/restore`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backup: value, confirmDifferentController }),
+    });
+    expect((await restore({ ...backup, source: { ...backup.source, ledCount: 70 } })).status).toBe(422);
+    expect((await restore({ ...backup, segments: [{ label: "Bad", start: 0, stop: 61 }] })).status).toBe(422);
+    const other = { ...backup, source: { ...backup.source, mac: "other-mac" },
+      segments: [{ label: "Different", start: 0, stop: 30 }] };
+    expect((await restore(other)).status).toBe(409);
+    expect(store.elementsFor(id)).toEqual([]);
+    expect((await restore(other, true)).status).toBe(200);
+    expect(store.elementsFor(id)[0]?.label).toBe("Different");
+    const preview = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ color: "#4f7dff", brightness: 180 }),
+    });
+    expect(preview.status).toBe(200);
+    expect((await restore(backup)).status).toBe(409);
+    expect(store.elementsFor(id)[0]?.label).toBe("Different");
+    store.replaceElements(id, [{ ...store.elementsFor(id)[0]!, stop: 61 }]);
+    expect((await app.request(`/api/lights/${id}/segments/backup`)).status).toBe(409);
+  });
+});
+
 describe("durable Activity", () => {
   it("records Apply readback, Preview start/end, and All Off across a restart without duplicate hop entries", async () => {
     const { app, activity, store } = testApp();

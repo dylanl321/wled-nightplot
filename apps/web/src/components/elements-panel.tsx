@@ -52,6 +52,7 @@ import {
   type LocateMode,
 } from "@/components/elements-editor/use-live-locate";
 import { StripZoom } from "@/components/elements-editor/zoom";
+import { SegmentBackupPanel } from "@/components/segment-backup";
 import { Button } from "@/components/ui/button";
 import { patchJson, postJson } from "@/lib/api";
 import { displayBead, inspectPowerHow } from "@/lib/power-status";
@@ -307,6 +308,8 @@ export function ElementsPanel({
 
   return (
     <div className="flex flex-col gap-4">
+      <SegmentBackupPanel detail={detail} blocked={dirtyCount > 0 || live || busy !== null || Boolean(detail.session)}
+        onRestored={(next) => { setApply(null); onDetail(next); }} />
       {remoteOpen ? <PhoneRemote
         lightName={light.name}
         ledCount={light.ledCount}

@@ -7,6 +7,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- CONFIG-157: Segments can download a versioned backup of the saved layout and review a JSON backup before restoring it to a Light. Restore validates ranges and LED count, requires explicit confirmation for another controller, and works without probing an offline Light. It replaces Nightplot's saved Segments only; Preview and Apply remain separate. Tests are software-only, not Hardware Done.
+
 - CONFIG-156: Each Light now has a durable Activity tab for Apply, Preview, and All Off. Apply records matched, differing, or unknown controller readback; Preview records start and end separately without claiming Apply or pixel proof; All Off records each Light's result, including unknown. History survives restarts in `data/activity.json` beside the Lights store (latest 1000 entries). Software readback is not Hardware Done.
 
 - CONFIG-69: The Lights list now reads saved Lights, Segments, and last-seen state without probing each controller. List beads are grey without a current snapshot; Inspect and explicit Refresh still check one Light live. An unreachable Light no longer delays list loading.

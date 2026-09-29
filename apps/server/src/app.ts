@@ -7,6 +7,7 @@ import {
   allOffSummary,
   APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE,
   applyOutcome,
+  backupNeedsControllerConfirmation,
   APPLY_UNKNOWN_COLOUR_REASON,
   applyRefuseReason,
   applyUnknownSegments,
@@ -32,6 +33,7 @@ import {
   manageCaption,
   normalizeHostKey,
   parseHexColor,
+  parseSegmentBackup,
   parseWledCfg,
   readdressContinuity,
   applyResolvedName,
@@ -71,6 +73,7 @@ import {
   type ProvisionRead,
   type SafeRead,
   type SafeWriteResult,
+  type SegmentBackup,
   type WledSafeSettings,
   type WledSnapshot,
   type WledStripProvisionDraft,
@@ -445,6 +448,50 @@ export function createApp(deps: AppDeps) {
     const { light, live: snap, elapsedMs } = await refreshOne(stored);
     const next = await seedStripKindFromInspect(light, snap);
     return c.json(await decorateDetail(next, snap, undefined, elapsedMs));
+  });
+
+  app.get("/api/lights/:id/segments/backup", (c) => {
+    const light = deps.store.findById(c.req.param("id"));
+    if (!light) return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    const saved = deps.store.elementsFor(light.id);
+    if (validateDeclaredRanges(saved, light.ledCount).length) return c.json({
+      error: "invalid-layout",
+      message: "Saved Segments do not fit this Light's current length. Fix the layout before downloading a restorable backup.",
+    }, 409);
+    const backup: SegmentBackup = {
+      kind: "nightplot-segments", version: 1, exportedAt: nowIso(),
+      source: { lightId: light.id, lightName: light.name, mac: light.mac, ledCount: light.ledCount },
+      segments: saved.map(({ label, start, stop }) => ({ label, start, stop })),
+    };
+    return c.json(backup);
+  });
+
+  app.post("/api/lights/:id/segments/restore", async (c) => {
+    const light = deps.store.findById(c.req.param("id"));
+    if (!light) return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    const raw = await c.req.json().catch(() => null);
+    const backup = parseSegmentBackup(raw && typeof raw === "object" ? (raw as { backup?: unknown }).backup : null);
+    if (!backup) return c.json({ error: "invalid-backup", message: "This is not a valid Nightplot Segment backup. Nothing was saved or sent." }, 422);
+    if (backup.source.ledCount !== light.ledCount) return c.json({
+      error: "length-mismatch",
+      message: `This backup is for ${backup.source.ledCount} LEDs; ${light.name} has ${light.ledCount}. Match the strip length first. Nothing was saved or sent.`,
+    }, 422);
+    if (live.get(light.id)) return c.json({
+      error: "preview-active", message: "End Preview or Blink before restoring Segments. Nothing was saved or sent.",
+    }, 409);
+    if (backupNeedsControllerConfirmation(backup, light) && (raw as { confirmDifferentController?: unknown }).confirmDifferentController !== true) {
+      return c.json({ error: "different-controller",
+        message: "This backup came from a different controller. Confirm the target Light before restoring. Nothing was saved or sent.",
+      }, 409);
+    }
+    const elements: Element[] = backup.segments.map((segment) => ({
+      ...segment, id: randomUUID(), lightId: light.id,
+    }));
+    deps.store.replaceElements(light.id, elements);
+    return c.json({
+      ...lightDetail(light, null, elements, attachedProduct(light)),
+      message: "Segments restored to Nightplot. Preview and Apply were not started; use Apply separately to write the controller.",
+    });
   });
 
   app.patch("/api/lights/:id/elements", async (c) => {

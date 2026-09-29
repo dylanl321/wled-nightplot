@@ -1,4 +1,5 @@
 export type { ActivityEntry } from "./activity.ts";
+export { backupNeedsControllerConfirmation, parseSegmentBackup, type SegmentBackup } from "./segment-backup.ts";
 export {
   APPLY_ADOPT_EMPTY_REASON,
   APPLY_ADOPT_UNKNOWN_REASON,
