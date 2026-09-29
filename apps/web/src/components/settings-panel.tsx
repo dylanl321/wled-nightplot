@@ -3,6 +3,7 @@
 import type { LightDetail as LightDetailPayload, ReaddressStep } from "@nightplot/shared";
 import type { ReactNode } from "react";
 import { DeleteLight } from "@/components/delete-light";
+import { ControllerReplacement } from "@/components/controller-replacement";
 import { SafeSettingsPanel } from "@/components/safe-settings";
 import { StripProvisionPanel } from "@/components/strip-provision";
 import { Button } from "@/components/ui/button";
@@ -112,6 +113,7 @@ export function SettingsPanel({
             )}
           </div>
         ) : null}
+        <ControllerReplacement detail={detail} onUpdated={onUpdated} />
       </Section>
       <Section
         title="Remove"

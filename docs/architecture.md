@@ -101,6 +101,8 @@ Find must use an advertised port (SSDP `LOCATION` in `apps/server/src/discovery/
 
 `FileActivityStore` writes `{ version: 1, entries }` atomically to `data/activity.json` beside the Lights store (or `NIGHTPLOT_ACTIVITY_PATH`). The latest 1000 entries survive server restarts and appear newest first on a Light's Activity tab. Apply logs controller readback match/difference/unknown after a write attempt; Preview logs its initial start and end (not every cursor hop), with restore write acceptance explicitly distinct from pixel verification. All Off logs each targeted Light and Preview cancellation without restoration. A controller/software readback match is not Hardware Done.
 
+Replacement checks a new WLED address/MAC and LED count without writing, then re-probes on explicit confirmation. The same Light ID and saved Segments remain; the old controller's snapshot is cleared and Activity marks the identity boundary. An already-enrolled address or MAC, active Preview/Blink, different LED count, or identity change during confirmation refuses. Replacement does not copy controller settings or Apply ranges. Same-MAC Change address remains a distinct path.
+
 ## Stubs / NYI (honest)
 
 | Thing | Status |

@@ -31,7 +31,9 @@ import {
   foldHonestySource,
   honestySource,
   manageCaption,
+  macsMatch,
   normalizeHostKey,
+  normalizeMac,
   parseHexColor,
   parseSegmentBackup,
   parseWledCfg,
@@ -736,6 +738,69 @@ export function createApp(deps: AppDeps) {
         ] satisfies ReaddressStep[],
       },
     });
+  });
+
+  app.post("/api/lights/:id/replacement/check", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    const body = await readHostBody(c);
+    if (!body) return c.json({ error: "invalid", message: "Send { host }." }, 400);
+    const checked = await replacementCandidate(stored, body.host);
+    if (!checked.ok) return c.json({ error: checked.error, message: checked.message }, checked.status);
+    return c.json({
+      previous: { hostKey: stored.hostKey, mac: stored.mac, name: stored.name },
+      replacement: { hostKey: normalizeHostKey(checked.target), mac: checked.snapshot.mac,
+        name: checked.snapshot.name, ledCount: checked.snapshot.ledCount },
+      segmentCount: deps.store.elementsFor(stored.id).length,
+      message: "A different WLED controller answered. Review its address and MAC before replacing this Light. Nothing was saved or sent.",
+    });
+  });
+
+  app.post("/api/lights/:id/replacement", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    const raw = await c.req.json().catch(() => null);
+    const body = raw && typeof raw === "object" ? raw as Record<string, unknown> : null;
+    if (!body || body.confirm !== true || typeof body.host !== "string" ||
+      typeof body.expectedHostKey !== "string" || typeof body.expectedMac !== "string" ||
+      !(body.previousMac === null || typeof body.previousMac === "string") ||
+      typeof body.previousHostKey !== "string" || !normalizeMac(body.expectedMac)) {
+      return c.json({ error: "confirmation-required", message: "Check the replacement first, then explicitly confirm its address and MAC. Nothing was saved or sent." }, 400);
+    }
+    if (stored.hostKey !== body.previousHostKey || normalizeMac(stored.mac) !== normalizeMac(body.previousMac)) {
+      return c.json({ error: "source-changed", message: "This Light changed since the check. Check again. Nothing was saved or sent." }, 409);
+    }
+    if (live.get(stored.id)) return c.json({ error: "busy", message: "End Preview or Blink before replacing this controller. Nothing was saved or sent." }, 409);
+    const release = live.block(stored.id);
+    try {
+      await live.settle(stored.id);
+      if (live.get(stored.id)) return c.json({ error: "busy", message: "End Preview or Blink before replacing this controller. Nothing was saved or sent." }, 409);
+      const checked = await replacementCandidate(stored, body.host);
+      if (!checked.ok) return c.json({ error: checked.error, message: checked.message }, checked.status);
+      const targetKey = normalizeHostKey(checked.target);
+      if (targetKey !== body.expectedHostKey || !macsMatch(checked.snapshot.mac, body.expectedMac)) {
+        return c.json({ error: "replacement-changed", message: "The controller address or MAC changed since the check. Check again. Nothing was saved or sent." }, 409);
+      }
+      const current = deps.store.findById(stored.id);
+      if (!current || current.hostKey !== stored.hostKey || normalizeMac(current.mac) !== normalizeMac(stored.mac)) {
+        return c.json({ error: "source-changed", message: "This Light changed while checking. Check again. Nothing was saved or sent." }, 409);
+      }
+      const next = lightFromSnapshot(checked.target, checked.snapshot, nowIso(), stored);
+      // A snapshot from the old controller is not a baseline for this one.
+      next.lastSnapshot = null;
+      next.lastSnapshotAt = null;
+      deps.store.replace(next);
+      record(next, "replacement", "not-checked",
+        `Controller changed from ${stored.hostKey} (${shortMac(stored.mac)}) to ${targetKey} (${shortMac(next.mac)}). Saved Segments stayed on this Light; nothing was Applied.`);
+      return c.json({
+        ...lightDetail(next, checked.snapshot, deps.store.elementsFor(next.id), attachedProduct(next)),
+        replacement: { previousHost: stored.hostKey, previousMac: stored.mac,
+          nextHost: targetKey, nextMac: next.mac, movedSegments: deps.store.elementsFor(next.id).length },
+        message: "Controller replaced on this Light. Saved Segments remain; inspect Strip and use Apply separately when ready. Nothing was written to WLED.",
+      });
+    } finally {
+      release();
+    }
   });
 
   app.get("/api/lights/:id/live", async (c) => {
@@ -1486,6 +1551,39 @@ export function createApp(deps: AppDeps) {
   function attachedProduct(light: Light): LedProduct | null {
     if (!light.ledProductId) return null;
     return products.findById(light.ledProductId) ?? null;
+  }
+
+  async function replacementCandidate(stored: Light, host: string): Promise<
+    | { ok: true; target: HostPort; snapshot: WledSnapshot }
+    | { ok: false; status: 403 | 409 | 422; error: string; message: string }
+  > {
+    const decision = decideProbeAddress(host);
+    if (!decision.ok) return { ok: false, status: 403, error: decision.reasonCode, message: decision.reason };
+    if (live.get(stored.id)) return { ok: false, status: 409, error: "busy",
+      message: "End Preview or Blink before replacing this controller. Nothing was saved or sent." };
+    const nextKey = normalizeHostKey(decision.target);
+    const occupant = deps.store.findByHostKey(nextKey);
+    if (occupant && occupant.id !== stored.id) return { ok: false, status: 409, error: "already-added",
+      message: "That address already belongs to another Light. Nothing was saved or sent." };
+    const outcome = await deps.probe(decision.target);
+    if (outcome.kind !== "found") return { ok: false, status: 422, error: outcome.kind,
+      message: `${outcome.reason} Kept the current controller. Nothing was saved or sent.` };
+    if (live.get(stored.id)) return { ok: false, status: 409, error: "busy",
+      message: "Preview or Blink started during the check. Nothing was saved or sent." };
+    if (!normalizeMac(outcome.snapshot.mac)) return { ok: false, status: 422, error: "mac-unknown",
+      message: "The replacement did not report a usable MAC. Nothing was saved or sent." };
+    if (macsMatch(stored.mac, outcome.snapshot.mac)) return { ok: false, status: 409, error: "same-controller",
+      message: "That is the same controller. Use Change address instead. Nothing was saved or sent." };
+    if (deps.store.load().some((light) => light.id !== stored.id && macsMatch(light.mac, outcome.snapshot.mac))) {
+      return { ok: false, status: 409, error: "already-added",
+        message: "That controller MAC already belongs to another Light. Nothing was saved or sent." };
+    }
+    if (outcome.snapshot.ledCount !== stored.ledCount ||
+      validateDeclaredRanges(deps.store.elementsFor(stored.id), outcome.snapshot.ledCount).length) {
+      return { ok: false, status: 422, error: "length-mismatch",
+        message: `The replacement reports ${outcome.snapshot.ledCount} LEDs; this Light has ${stored.ledCount}. Match the strip length before moving Segments. Nothing was saved or sent.` };
+    }
+    return { ok: true, target: decision.target, snapshot: outcome.snapshot };
   }
 
   function rememberStripKind(light: Light, ledType: string | null | undefined): Light {

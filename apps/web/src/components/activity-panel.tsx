@@ -43,7 +43,7 @@ export function ActivityPanel({ lightId }: { lightId: string }) {
         {entries.map((entry) => (
           <li key={entry.id} className="flex flex-col gap-1 py-3 text-[13px]">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{entry.action === "all-off" ? "All Off" : entry.action === "apply" ? "Apply" : "Preview"}</span>
+              <span className="font-medium">{entry.action === "all-off" ? "All Off" : entry.action === "apply" ? "Apply" : entry.action === "replacement" ? "Controller replaced" : "Preview"}</span>
               <span className="text-muted-foreground">{new Date(entry.at).toLocaleString()}</span>
               <span className="ml-auto text-muted-foreground">{entry.readback === "match" ? "Readback matched" : entry.readback === "mismatch" ? "Readback differs" : entry.readback === "unknown" ? "Readback unknown" : "Not checked"}</span>
             </div>

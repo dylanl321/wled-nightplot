@@ -247,6 +247,147 @@ describe("Segment backup and restore", () => {
   });
 });
 
+describe("controller replacement", () => {
+  async function enrolled() {
+    const initial = testApp();
+    const res = await initial.app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.70" }),
+    });
+    const id = ((await res.json()) as { light: { id: string } }).light.id;
+    initial.store.replaceElements(id, [{ id: "door", lightId: id, label: "Door", start: 0, stop: 60 }]);
+    const before = initial.store.findById(id)!;
+    initial.store.replace({ ...before, lastSnapshot: snapshot, lastSnapshotAt: before.lastSeenAt });
+    return { ...initial, id };
+  }
+
+  it("checks then reprobes a new MAC and keeps this Light's Segments without writing WLED", async () => {
+    const { store, activity, id } = await enrolled();
+    store.replace({ ...store.findById(id)!, stripKind: "sk6812-rgbw" });
+    const probe = vi.fn(async () => ({ kind: "found" as const,
+      snapshot: { ...snapshot, mac: "aa:bb:cc:dd:ee:ff", name: "New WLED" } }));
+    const write = vi.fn(async () => true);
+    const { app } = testApp({ store, activity, probe, write });
+    const check = await app.request(`/api/lights/${id}/replacement/check`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.71:8080" }),
+    });
+    expect(check.status).toBe(200);
+    const body = (await check.json()) as {
+      previous: { hostKey: string; mac: string | null };
+      replacement: { hostKey: string; mac: string };
+      segmentCount: number;
+    };
+    expect(body).toMatchObject({ replacement: { hostKey: "192.168.1.71:8080", mac: "aa:bb:cc:dd:ee:ff" }, segmentCount: 1 });
+    expect(store.findById(id)?.hostKey).toBe("192.168.1.70:80");
+    expect(write).not.toHaveBeenCalled();
+    const confirm = await app.request(`/api/lights/${id}/replacement`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.71:8080", confirm: true,
+        expectedHostKey: body.replacement.hostKey, expectedMac: body.replacement.mac,
+        previousHostKey: body.previous.hostKey, previousMac: body.previous.mac }),
+    });
+    expect(confirm.status).toBe(200);
+    expect(probe).toHaveBeenCalledTimes(2);
+    expect(write).not.toHaveBeenCalled();
+    expect(store.load()).toHaveLength(1);
+    expect(store.findById(id)).toMatchObject({ hostKey: "192.168.1.71:8080", mac: "aa:bb:cc:dd:ee:ff",
+      stripKind: "sk6812-rgbw", lastSnapshot: null, lastSnapshotAt: null });
+    expect(store.elementsFor(id)).toEqual([{ id: "door", lightId: id, label: "Door", start: 0, stop: 60 }]);
+    expect(activity.list(id)[0]).toMatchObject({ action: "replacement", readback: "not-checked" });
+    expect(((await confirm.json()) as { message: string }).message).toMatch(/Apply separately/);
+  });
+
+  it("allows a different MAC at the same host only through the explicit replacement path", async () => {
+    const { store, id } = await enrolled();
+    const { app } = testApp({ store, probe: async () => ({ kind: "found" as const,
+      snapshot: { ...snapshot, mac: "aa:bb:cc:dd:ee:ff" } }) });
+    const checked = (await (await app.request(`/api/lights/${id}/replacement/check`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.70" }),
+    })).json()) as { previous: { hostKey: string; mac: string | null }; replacement: { hostKey: string; mac: string } };
+    const done = await app.request(`/api/lights/${id}/replacement`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.70", confirm: true,
+        expectedHostKey: checked.replacement.hostKey, expectedMac: checked.replacement.mac,
+        previousHostKey: checked.previous.hostKey, previousMac: checked.previous.mac }),
+    });
+    expect(done.status).toBe(200);
+    expect(store.findById(id)?.mac).toBe("aa:bb:cc:dd:ee:ff");
+  });
+
+  it("refuses changed identity, wrong LED count, same MAC, and unconfirmed requests", async () => {
+    const { store, id } = await enrolled();
+    let incoming = { ...snapshot, mac: "aa:bb:cc:dd:ee:ff" };
+    const { app } = testApp({ store, probe: async () => ({ kind: "found" as const, snapshot: incoming }) });
+    const post = (path: string, body: unknown) => app.request(`/api/lights/${id}${path}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const check = await post("/replacement/check", { host: "192.168.1.75" });
+    const checked = (await check.json()) as { previous: { hostKey: string; mac: string | null };
+      replacement: { hostKey: string; mac: string } };
+    const confirm = { host: "192.168.1.75", confirm: true,
+      expectedHostKey: checked.replacement.hostKey, expectedMac: checked.replacement.mac,
+      previousHostKey: checked.previous.hostKey, previousMac: checked.previous.mac };
+    expect((await post("/replacement", { ...confirm, confirm: false })).status).toBe(400);
+    incoming = { ...incoming, mac: "aa:bb:cc:dd:ee:00" };
+    expect((await post("/replacement", confirm)).status).toBe(409);
+    incoming = { ...incoming, mac: "aa:bb:cc:dd:ee:ff", ledCount: 61 };
+    expect((await post("/replacement/check", { host: "192.168.1.75" })).status).toBe(422);
+    incoming = { ...snapshot };
+    expect((await post("/replacement/check", { host: "192.168.1.75" })).status).toBe(409);
+    expect(store.findById(id)?.hostKey).toBe("192.168.1.70:80");
+    expect(store.elementsFor(id)).toHaveLength(1);
+  });
+
+  it("refuses an unsafe address before probing and an active Preview before switching", async () => {
+    const { store, id } = await enrolled();
+    const probe = vi.fn(async (target: { hostname: string }) => ({ kind: "found" as const,
+      snapshot: target.hostname === "192.168.1.70" ? snapshot :
+        { ...snapshot, mac: "aa:bb:cc:dd:ee:ff" } }));
+    const { app } = testApp({ store, probe });
+    const publicHost = await app.request(`/api/lights/${id}/replacement/check`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "203.0.113.7" }),
+    });
+    expect(publicHost.status).toBe(403);
+    expect(probe).not.toHaveBeenCalled();
+    const preview = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ color: "#4f7dff", brightness: 180 }),
+    });
+    expect(preview.status).toBe(200);
+    const checked = await app.request(`/api/lights/${id}/replacement/check`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.77" }),
+    });
+    expect(checked.status).toBe(409);
+    expect(probe).toHaveBeenCalledTimes(1);
+    expect(store.findById(id)?.mac).toBe(snapshot.mac);
+  });
+
+  it("refuses a replacement already enrolled as another Light", async () => {
+    const { store, id } = await enrolled();
+    const other = testApp({ store, probe: async () => ({ kind: "found" as const,
+      snapshot: { ...snapshot, mac: "aa:bb:cc:dd:ee:ff" } }) });
+    const enrolledOther = await other.app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.78" }),
+    });
+    expect(enrolledOther.status).toBe(201);
+    const probe = vi.fn(async () => ({ kind: "found" as const,
+      snapshot: { ...snapshot, mac: "aa:bb:cc:dd:ee:ff" } }));
+    const { app } = testApp({ store, probe });
+    const post = (host: string) => app.request(`/api/lights/${id}/replacement/check`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host }),
+    });
+    expect((await post("192.168.1.78")).status).toBe(409);
+    expect(probe).not.toHaveBeenCalled();
+    expect((await post("192.168.1.79")).status).toBe(409);
+    expect(probe).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("durable Activity", () => {
   it("records Apply readback, Preview start/end, and All Off across a restart without duplicate hop entries", async () => {
     const { app, activity, store } = testApp();
