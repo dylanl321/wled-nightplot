@@ -22,6 +22,7 @@ GitHub: [`dylanl321/wled-nightplot`](https://github.com/dylanl321/wled-nightplot
 - **Preview** writes a temporary colour and brightness, then restores (or cancels without restore). Locate hops update that session — they do not take a new snapshot, and they do not claim a `/json/live` report unless one was read.
 - **Apply** writes declared ranges (or Strip / Safe fields) and re-reads the controller. Success only when the readback matches.
 - **Blink** pulses a Light or a Find candidate so you can see which box it is.
+- An **Effect** is a portable colour function of normalized position and time. The same source samples any node count. A software frame is not Preview, not Apply, and not a lit strip.
 - **All Off** cancels live sessions without restoring, then powers off enrolled Lights.
 
 ## How it behaves
@@ -109,6 +110,7 @@ Enrolled Lights and declared Segments persist in `data/lights.json` (override wi
 | [docs/install.md](docs/install.md) | Install, env, fixture, sim / e2e, proto |
 | [docs/deploy.md](docs/deploy.md) | Docker / compose / GHCR on a LAN |
 | [docs/architecture.md](docs/architecture.md) | Real paths and symbols |
+| [docs/effects-research-and-plan.md](docs/effects-research-and-plan.md) | Portable Effect contract and restricted-expression evaluator (software sample only) |
 | [docs/ui/README.md](docs/ui/README.md) | Bead language; the running shell is the v3 top bar |
 | [docs/PLANE.md](docs/PLANE.md) | CONFIG tickets, REST-only Plane duties |
 | [AGENTS.md](AGENTS.md) | Slice duties and product words |
@@ -191,7 +193,7 @@ Enrolled Lights and declared Segments persist in `data/lights.json` (override wi
 | --- | --- |
 | `apps/web` | Quiet-utility top bar, Lights cards, Discover, LED product catalog, Backups, Segments, Settings, All Off, Remove, `StripBeads` |
 | `apps/server` | Discover/connect, JSON Light store, LED product catalog, managed backups, WLED snapshot + live + Apply + Strip provision + All Off + Delete + Safe settings + fixture |
-| `packages/shared` | LAN guard, WLED parse, catalogs, Light / Segment types |
+| `packages/shared` | LAN guard, WLED parse, catalogs, Light / Segment types, portable Effect contract |
 | `docs/ui/` | Bead-language prototype. The running shell is the v3 top bar. See [docs/ui/README.md](docs/ui/README.md). |
 | `docs/PLANE.md` | CONFIG tickets, REST-only Plane duties. |
 | `Dockerfile` / `docker-compose.yml` | Local/LAN image + compose. See [docs/deploy.md](docs/deploy.md). |
