@@ -88,7 +88,7 @@ import {
   type WledSnapshot,
   type WledStripProvisionDraft,
 } from "@nightplot/shared";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { resolveCorsOrigins } from "./cors-origins.ts";
 import type { CollectFn } from "./discovery/collect.ts";
@@ -191,6 +191,13 @@ export function createApp(deps: AppDeps) {
       ...(settings?.strip ? { stripSettings: settings.strip } : {}) };
   }
 
+  function departingControllerReference(light: Light): ControllerReference {
+    return light.lastSnapshot
+      ? controllerReference(light, light.lastSnapshot)
+      : { hostKey: light.hostKey, mac: light.mac, ledCount: light.ledCount,
+        reported: { on: light.on, brightness: light.brightness, segments: null, segmentColor: null } };
+  }
+
   function backupFailure(error: unknown) {
     return { error: "backup-failed", message: error instanceof Error ?
       `Safety backup failed: ${error.message} The requested change was not made; nothing was sent to WLED.` :
@@ -243,6 +250,20 @@ export function createApp(deps: AppDeps) {
     const backup = backups.read(c.req.param("id"));
     return backup ? c.json({ backup }) : c.json({ error: "not_found", message: "Backup not found." }, 404);
   });
+  app.get("/api/backups/:id/cfg.json", (c) => nativeFileDownload(c, "cfgJson", "cfg.json"));
+  app.get("/api/backups/:id/presets.json", (c) => nativeFileDownload(c, "presetsJson", "presets.json"));
+
+  function nativeFileDownload(c: Context, field: "cfgJson" | "presetsJson", filename: string) {
+    const backup = backups.read(c.req.param("id"));
+    if (!backup) return c.json({ error: "not_found", message: "Backup not found." }, 404);
+    const text = backup.deviceFiles?.[field];
+    if (!text) return c.json({ error: "missing-device-files",
+      message: "This backup has no complete WLED configuration and presets files." }, 404);
+    return c.body(text, { headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+    } });
+  }
   app.delete("/api/backups/:id", async (c) => {
     const id = c.req.param("id");
     const body = await c.req.json().catch(() => null);
@@ -1043,10 +1064,7 @@ export function createApp(deps: AppDeps) {
           lightId: stored.id,
           lightName: stored.name,
           data: currentBackupData(),
-          controller: stored.lastSnapshot
-            ? controllerReference(stored, stored.lastSnapshot)
-            : { hostKey: stored.hostKey, mac: stored.mac, ledCount: stored.ledCount,
-              reported: { on: stored.on, brightness: stored.brightness, segments: null, segmentColor: null } },
+          controller: departingControllerReference(stored),
           deviceFiles: buildWledBackupFiles({
             cfgJson: raw.cfgJson,
             presetsJson: raw.presetsJson,
@@ -1055,10 +1073,24 @@ export function createApp(deps: AppDeps) {
             liveFirmware: stored.firmware,
             capturedAt: nowIso(),
           }),
+          deviceCaptureStatus: "complete",
         });
-      } catch {
-        try { capture("pre-replacement", stored); }
-        catch (error) { return c.json(backupFailure(error), 503); }
+      } catch (error) {
+        try {
+          backups.create({
+            at: nowIso(),
+            reason: "pre-replacement",
+            lightId: stored.id,
+            lightName: stored.name,
+            data: currentBackupData(),
+            controller: departingControllerReference(stored),
+            deviceFiles: null,
+            deviceCaptureStatus: "incomplete",
+            deviceCaptureError: error instanceof Error
+              ? error.message
+              : "WLED did not return both native configuration and presets files.",
+          });
+        } catch (persistError) { return c.json(backupFailure(persistError), 503); }
       }
       deps.store.replace(next);
       record(next, "replacement", "not-checked",

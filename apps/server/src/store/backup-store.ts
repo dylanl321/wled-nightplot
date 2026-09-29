@@ -1,7 +1,17 @@
 import { randomUUID, createHash } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { BackupData, BackupDocument, BackupReason, BackupSummary, ControllerReference, WledBackupFiles } from "@nightplot/shared";
+import {
+  deviceCaptureOf,
+  nativeFilesComplete,
+  type BackupData,
+  type BackupDocument,
+  type BackupReason,
+  type BackupSummary,
+  type ControllerReference,
+  type DeviceCaptureStatus,
+  type WledBackupFiles,
+} from "@nightplot/shared";
 
 const BACKUP_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const MAX_MANAGED_BACKUPS = 100;
@@ -15,13 +25,17 @@ export class FileBackupStore {
 
   create(input: { at: string; reason: BackupReason; lightId?: string | null;
     lightName?: string | null; data: BackupData; controller?: ControllerReference | null;
-    deviceFiles?: WledBackupFiles | null }): BackupDocument {
+    deviceFiles?: WledBackupFiles | null; deviceCaptureStatus?: DeviceCaptureStatus;
+    deviceCaptureError?: string | null }): BackupDocument {
     if (this.list().length >= MAX_MANAGED_BACKUPS) {
       throw new Error("Backup storage is full. Download and clear an older backup first. Nothing was changed.");
     }
+    const deviceCaptureStatus = input.deviceCaptureStatus
+      ?? (nativeFilesComplete(input.deviceFiles) ? "complete" : "none");
     const backup: BackupDocument = { version: 1, id: randomUUID(), at: input.at,
       reason: input.reason, lightId: input.lightId ?? null, lightName: input.lightName ?? null,
-      data: input.data, controller: input.controller ?? null, deviceFiles: input.deviceFiles ?? null };
+      data: input.data, controller: input.controller ?? null, deviceFiles: input.deviceFiles ?? null,
+      deviceCaptureStatus, deviceCaptureError: input.deviceCaptureError ?? null };
     mkdirSync(this.directory, { recursive: true });
     const path = this.path(backup.id);
     const tmp = `${path}.tmp`;
@@ -39,14 +53,19 @@ export class FileBackupStore {
     }
     return names.filter((name) => name.endsWith(".json") && BACKUP_ID.test(name.slice(0, -5)))
       .map((name) => this.read(name.slice(0, -5))!)
-      .map((backup) => ({ id: backup.id, at: backup.at, reason: backup.reason,
+      .map((backup) => {
+        const capture = deviceCaptureOf(backup);
+        return { id: backup.id, at: backup.at, reason: backup.reason,
         lightId: backup.lightId, lightName: backup.lightName,
         lightCount: backup.data.lights.length, segmentCount: backup.data.elements.length,
         productCount: backup.data.products.length, hasControllerReference: backup.controller !== null,
-        hasDeviceFiles: Boolean(backup.deviceFiles?.cfgJson && backup.deviceFiles?.presetsJson),
+        hasDeviceFiles: nativeFilesComplete(backup.deviceFiles),
+        deviceCaptureStatus: capture.status,
+        deviceCaptureError: capture.error,
         deviceMac: backup.deviceFiles?.mac ?? backup.controller?.mac ?? null,
         deviceFirmware: backup.deviceFiles?.firmware ?? null,
-        secretsRemoved: Boolean(backup.deviceFiles?.secretsRemoved) }))
+        secretsRemoved: Boolean(backup.deviceFiles?.secretsRemoved) };
+      })
       .sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
   }
 

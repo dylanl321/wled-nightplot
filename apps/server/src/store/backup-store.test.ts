@@ -20,6 +20,22 @@ describe("managed backup storage", () => {
     expect(store.list()).toHaveLength(MAX_MANAGED_BACKUPS - 1);
   });
 
+  it("records an explicit incomplete device capture without inventing native files", () => {
+    const store = new FileBackupStore(mkdtempSync(join(tmpdir(), "nightplot-backups-")));
+    const created = store.create({
+      at: new Date().toISOString(), reason: "pre-replacement",
+      data: { lights: [], elements: [], products: [], activity: [] },
+      deviceCaptureStatus: "incomplete",
+      deviceCaptureError: "WLED did not return both native configuration and presets files.",
+    });
+    expect(created.deviceCaptureStatus).toBe("incomplete");
+    expect(store.list()[0]).toMatchObject({
+      deviceCaptureStatus: "incomplete",
+      hasDeviceFiles: false,
+      deviceCaptureError: "WLED did not return both native configuration and presets files.",
+    });
+  });
+
   it("does not silently ignore a corrupted backup", () => {
     const directory = mkdtempSync(join(tmpdir(), "nightplot-backups-"));
     const store = new FileBackupStore(directory);

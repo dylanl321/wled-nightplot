@@ -7,6 +7,9 @@ import type { WledSnapshot } from "./wled/snapshot.ts";
 export type BackupReason = "manual" | "pre-apply" | "pre-safe" | "pre-provision" |
   "pre-delete" | "pre-replacement" | "pre-catalog" | "pre-restore";
 
+/** Whether this backup holds both native WLED files. Incomplete is an honest miss, not a restore source. */
+export type DeviceCaptureStatus = "complete" | "incomplete" | "none";
+
 export type BackupData = {
   lights: Light[];
   elements: Element[];
@@ -59,6 +62,8 @@ export type BackupDocument = {
   data: BackupData;
   controller: ControllerReference | null;
   deviceFiles?: WledBackupFiles | null;
+  deviceCaptureStatus?: DeviceCaptureStatus;
+  deviceCaptureError?: string | null;
 };
 
 export type BackupSummary = Pick<BackupDocument, "id" | "at" | "reason" | "lightId" | "lightName"> & {
@@ -67,6 +72,8 @@ export type BackupSummary = Pick<BackupDocument, "id" | "at" | "reason" | "light
   productCount: number;
   hasControllerReference: boolean;
   hasDeviceFiles: boolean;
+  deviceCaptureStatus: DeviceCaptureStatus;
+  deviceCaptureError?: string | null;
   deviceMac?: string | null;
   deviceFirmware?: string | null;
   secretsRemoved?: boolean;
@@ -94,6 +101,19 @@ export type WledRestoreReview = {
 
 export function nativeFilesComplete(files: WledBackupFiles | null | undefined): boolean {
   return Boolean(files && files.cfgJson && files.presetsJson);
+}
+
+export function deviceCaptureOf(backup: Pick<BackupDocument, "deviceFiles" | "deviceCaptureStatus" | "deviceCaptureError">): {
+  status: DeviceCaptureStatus;
+  error: string | null;
+} {
+  if (backup.deviceCaptureStatus) {
+    return { status: backup.deviceCaptureStatus, error: backup.deviceCaptureError ?? null };
+  }
+  return {
+    status: nativeFilesComplete(backup.deviceFiles) ? "complete" : "none",
+    error: backup.deviceCaptureError ?? null,
+  };
 }
 
 export function capturedWledIdentity(backup: BackupDocument): WledNativeIdentity {

@@ -191,6 +191,19 @@ export function BackupsPanel({ initial, lights = [] }: { initial: BackupSummary[
       </label>
       <Button variant="outline" disabled={busy !== null || !deviceLightId} onClick={() => void createDevice()}>Back up WLED</Button>
     </div>
+    {lights.length > 0 ? <section aria-label="Per-Light WLED exports" className="rounded-xl border border-border bg-card p-4">
+      <h2 className="font-medium">Per-Light WLED exports</h2>
+      <ul className="mt-2 space-y-1 text-[13px]">{lights.map((light) => {
+        const rows = backups.filter((item) => item.lightId === light.id);
+        const complete = rows.find((item) => item.hasDeviceFiles || item.deviceCaptureStatus === "complete");
+        const incomplete = rows.find((item) => item.deviceCaptureStatus === "incomplete");
+        return <li key={light.id}>{complete
+          ? `${light.name} — complete configuration + presets · ${new Date(complete.at).toLocaleString()}`
+          : incomplete
+            ? `${light.name} — incomplete: ${incomplete.deviceCaptureError || "native files were not saved"}`
+            : `${light.name} — no complete WLED configuration + presets`}</li>;
+      })}</ul>
+    </section> : null}
     {busy ? <LedLoader label={busy} /> : null}
     {error ? <p role="alert" className="text-destructive">{error}</p> : null}
     {notice ? <p role="status" className="text-online">{notice}</p> : null}
@@ -203,7 +216,7 @@ export function BackupsPanel({ initial, lights = [] }: { initial: BackupSummary[
           <button type="button" onClick={() => void open(item.id)} disabled={busy !== null}
             className="w-full rounded-lg border border-border p-3 text-left hover:bg-secondary">
             <span className="block font-medium">{item.reason.replaceAll("-", " ")}{item.lightName ? ` · ${item.lightName}` : ""}</span>
-            <span className="text-[12px] text-muted-foreground">{new Date(item.at).toLocaleString()} · {item.lightCount} Lights · {item.segmentCount} Segments {item.hasDeviceFiles ? "· WLED configuration + presets" : item.hasControllerReference ? "· controller reference only" : "· Nightplot data only"}{item.deviceFirmware ? ` · ${item.deviceFirmware}` : ""}</span>
+            <span className="text-[12px] text-muted-foreground">{new Date(item.at).toLocaleString()} · {item.lightCount} Lights · {item.segmentCount} Segments {item.hasDeviceFiles || item.deviceCaptureStatus === "complete" ? "· WLED configuration + presets" : item.deviceCaptureStatus === "incomplete" ? "· WLED export incomplete" : item.hasControllerReference ? "· controller reference only" : "· Nightplot data only"}{item.deviceFirmware ? ` · ${item.deviceFirmware}` : ""}</span>
           </button>
         </li>)}</ul>
       </section>
@@ -226,7 +239,9 @@ export function BackupsPanel({ initial, lights = [] }: { initial: BackupSummary[
               <Button variant="outline" onClick={() => downloadFile(selected.deviceFiles!.cfgJson, `wled-cfg-${selected.id}.json`)}>Download WLED configuration</Button>
               <Button variant="outline" onClick={() => downloadFile(selected.deviceFiles!.presetsJson, `wled-presets-${selected.id}.json`)}>Download WLED presets</Button>
             </div>
-          </div> : <p className="text-muted-foreground">No complete WLED configuration + presets in this backup. A small cfg/state reference is not a device backup.</p>}
+          </div> : <p className="text-muted-foreground">{selected.deviceCaptureStatus === "incomplete"
+            ? `WLED export incomplete: ${selected.deviceCaptureError || "native files were not saved"}. Nightplot data in this backup is still valid. A small cfg/state reference is not a device backup.`
+            : "No complete WLED configuration + presets in this backup. A small cfg/state reference is not a device backup."}</p>}
           <ul className="text-muted-foreground">{selected.data.lights.map((light) => <li key={light.id}>{light.name} · {light.hostname}:{light.port}</li>)}</ul>
           <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={download}>Download JSON</Button>
             <Button variant="outline" disabled={busy !== null} onClick={() => void checkRestore()}>Review Nightplot restore</Button>

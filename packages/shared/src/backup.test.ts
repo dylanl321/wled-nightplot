@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildWledBackupFiles,
+  deviceCaptureOf,
   reviewWledNativeRestore,
   stripWledBackupSecrets,
   type BackupDocument,
@@ -98,5 +99,14 @@ describe("WLED native backup files", () => {
     });
     expect(missing.ok).toBe(false);
     expect(missing.error).toBe("missing-device-files");
+  });
+
+  it("reports an explicit incomplete capture without treating it as a restore source", () => {
+    expect(deviceCaptureOf(backupWithFiles(null))).toEqual({ status: "none", error: null });
+    expect(deviceCaptureOf({
+      ...backupWithFiles(null),
+      deviceCaptureStatus: "incomplete",
+      deviceCaptureError: "presets.json returned HTTP 404",
+    })).toEqual({ status: "incomplete", error: "presets.json returned HTTP 404" });
   });
 });

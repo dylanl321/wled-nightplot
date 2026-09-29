@@ -5,7 +5,8 @@ import { BackupsPanel } from "./backups-panel";
 
 const id = "03c75c3e-9846-458e-b458-8739f0bff750";
 const summary: BackupSummary = { id, at: "2026-09-28T18:00:00.000Z", reason: "manual", lightId: null,
-  lightName: null, lightCount: 1, segmentCount: 1, productCount: 0, hasControllerReference: false, hasDeviceFiles: false };
+  lightName: null, lightCount: 1, segmentCount: 1, productCount: 0, hasControllerReference: false,
+  hasDeviceFiles: false, deviceCaptureStatus: "none" };
 const document = { version: 1, ...summary, data: {
   lights: [{ id: "porch", name: "Porch", hostname: "192.168.1.40", port: 80 }],
   elements: [{ id: "door" }], products: [], activity: [],
@@ -86,5 +87,15 @@ describe("Backups management", () => {
     await waitFor(() => expect(requests.some((request) => request.path.endsWith("/restore-wled") &&
       request.body?.includes("\"confirmId\":\"" + id + "\""))).toBe(true));
     expect(await screen.findByText(/Safety backup: safety-wled/)).toBeTruthy();
+  });
+
+  it("shows per-Light export completeness and an incomplete capture error", () => {
+    const incomplete: BackupSummary = {
+      ...summary, lightId: "porch", lightName: "Porch", hasControllerReference: true,
+      deviceCaptureStatus: "incomplete", deviceCaptureError: "presets.json returned HTTP 404",
+    };
+    render(<BackupsPanel initial={[incomplete]} lights={[{ id: "porch", name: "Porch" } as never]} />);
+    expect(screen.getByText("Porch — incomplete: presets.json returned HTTP 404")).toBeTruthy();
+    expect(screen.getByText(/WLED export incomplete/)).toBeTruthy();
   });
 });
