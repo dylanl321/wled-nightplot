@@ -1,5 +1,6 @@
 export type { ActivityEntry } from "./activity.ts";
 export { defaultNightplotSettings, isNightplotSettings, DEFAULT_PALETTE, type NightplotSettings, type SegmentPaletteColor } from "./settings.ts";
+export { resolveApplyColors, reportedColorsMatch, type SegmentColor } from "./segment-colors.ts";
 export { compareLastApply, type ApplyConflict, type LastApply } from "./apply-conflict.ts";
 export { estimatePowerScenario, type PowerScenario, type SegmentPowerColour } from "./power-budget.ts";
 export type {

@@ -114,6 +114,9 @@ function stubPreview(args: {
 }
 
 describe("locatePayloadKey", () => {
+  it("includes the RGBW white channel in the Preview identity", () => {
+    expect(locatePayloadKey({ ...frame, white: 90 }, 128)).not.toBe(locatePayloadKey({ ...frame, white: 91 }, 128));
+  });
   it("ignores caption and treats the same start/stop/color as identical", () => {
     expect(locatePayloadKey(led(4, "Lighting LED 4 on Porch"), 180)).toBe(
       locatePayloadKey(led(4, "Lighting LED 4 on Eave"), 180),
@@ -133,6 +136,17 @@ describe("locatePayloadKey", () => {
     };
     expect(locatePayloadKey(spans, 180)).not.toBe(locatePayloadKey(led(4), 180));
     expect(locatePayloadKey(led(4), 180)).not.toBe(locatePayloadKey(led(4), 200));
+  });
+});
+
+describe("RGBW Segment Preview", () => {
+  it("dims the separate white channel only on RGBW Lights", () => {
+    const element = { id: "rgbw", lightId: "light", label: "Door", start: 0, stop: 4,
+      color: { hex: "#112233", white: 100 } };
+    const input = { ledCount: 6, hoverIndex: null, dragging: false, elements: [element],
+      hues: { rgbw: "#112233" }, backgroundPercent: 60 };
+    expect(holdSpans({ ...input, rgbw: true })[0]).toMatchObject({ color: "#0a141f", white: 60 });
+    expect(holdSpans({ ...input, rgbw: false })[0]).not.toHaveProperty("white");
   });
 });
 

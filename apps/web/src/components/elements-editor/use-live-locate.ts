@@ -16,12 +16,14 @@ export type LocateSpan = {
   start: number;
   stop: number;
   color: string;
+  white?: number;
 };
 
 export type LocateFrame = {
   start: number;
   stop: number;
   color: string;
+  white?: number;
   caption: string;
   /** When set, Preview paints these spans and blacks every other LED. */
   spans?: LocateSpan[];
@@ -47,6 +49,7 @@ export function locateFrame(input: {
   mode: LocateMode;
   elements: Element[];
   hues: Record<string, string>;
+  rgbw?: boolean;
   backgroundPercent?: number;
   searchRange?: Range | null;
 }): LocateFrame | null {
@@ -78,6 +81,7 @@ export function locateFrame(input: {
       start: input.element.start,
       stop: input.element.stop,
       color: input.hue,
+      ...(input.rgbw && input.element.color ? { white: input.element.color.white } : {}),
       caption: `Lighting ${input.element.label} on ${name}`,
     };
   }
@@ -129,6 +133,7 @@ function holdFrame(input: {
   ledSel: Range | null;
   elements: Element[];
   hues: Record<string, string>;
+  rgbw?: boolean;
   backgroundPercent?: number;
 }): LocateFrame {
   const selected = input.drawing ?? input.ledSel;
@@ -198,6 +203,7 @@ export function holdSpans(input: {
   dragging: boolean;
   elements: Element[];
   hues: Record<string, string>;
+  rgbw?: boolean;
   backgroundPercent?: number;
   selection?: Range | null;
 }): LocateSpan[] {
@@ -209,15 +215,17 @@ export function holdSpans(input: {
     const range = clippedElementRange(element, input.ledCount);
     if (!range) continue;
     const color = dimPreviewColor(input.hues[element.id] ?? ELEMENT_HUES[0], input.backgroundPercent ?? 100);
+    const white = input.rgbw && element.color ? Math.round(element.color.white * Math.max(0, Math.min(100, input.backgroundPercent ?? 100)) / 100) : undefined;
+    const shade = { color, ...(white !== undefined ? { white } : {}) };
     if (selection) {
-      if (range.start < selection.start) spans.push({ start: range.start, stop: Math.min(range.stop, selection.start), color });
-      if (range.stop > selection.stop) spans.push({ start: Math.max(range.start, selection.stop), stop: range.stop, color });
+      if (range.start < selection.start) spans.push({ start: range.start, stop: Math.min(range.stop, selection.start), ...shade });
+      if (range.stop > selection.stop) spans.push({ start: Math.max(range.start, selection.stop), stop: range.stop, ...shade });
       continue;
     }
     if (index !== null && index >= range.start && index < range.stop) {
-      if (range.start < index) spans.push({ start: range.start, stop: index, color });
-      if (index + 1 < range.stop) spans.push({ start: index + 1, stop: range.stop, color });
-    } else spans.push({ start: range.start, stop: range.stop, color });
+      if (range.start < index) spans.push({ start: range.start, stop: index, ...shade });
+      if (index + 1 < range.stop) spans.push({ start: index + 1, stop: range.stop, ...shade });
+    } else spans.push({ start: range.start, stop: range.stop, ...shade });
   }
   if (selection) {
     spans.push({ ...selection, color: LOCATE_LIT });
@@ -250,15 +258,16 @@ export const LOCATE_HOP_TIMEOUT_MS = 5_000;
 /** Preview body identity — start/stop/color or spans, plus brightness. Caption is not sent. */
 export function locatePayloadKey(frame: LocateFrame, brightness: number | null): string {
   const painted = frame.spans
-    ? frame.spans.map((span) => `${span.start}:${span.stop}:${span.color}`).join("|")
-    : `${frame.start}:${frame.stop}:${frame.color}`;
+    ? frame.spans.map((span) => `${span.start}:${span.stop}:${span.color}:${span.white ?? ""}`).join("|")
+    : `${frame.start}:${frame.stop}:${frame.color}:${frame.white ?? ""}`;
   return `${painted}@${brightness ?? ""}${frame.pixels ? ":pixels" : ""}`;
 }
 
 export function locatePreviewBody(frame: LocateFrame, brightness: number | null) {
   const painted = frame.spans
     ? { spans: frame.spans }
-    : { start: frame.start, stop: frame.stop, color: frame.color };
+    : { start: frame.start, stop: frame.stop, color: frame.color,
+      ...(frame.white !== undefined ? { white: frame.white } : {}) };
   return { ...painted, ...(brightness != null ? { brightness } : {}), ...(frame.pixels ? { pixels: true } : {}) };
 }
 

@@ -67,8 +67,9 @@ export type StartArgs = {
   /** Ad-hoc locate range. When set, Preview paints this span and blacks the rest. */
   range?: { start: number; stop: number } | null;
   /** Several coloured spans. When set, Preview paints these and blacks the rest. */
-  spans?: { start: number; stop: number; color: string }[] | null;
+  spans?: { start: number; stop: number; color: string; white?: number }[] | null;
   color?: string;
+  white?: number;
   brightness?: number;
   pixels?: boolean;
   revision?: number;
@@ -198,6 +199,12 @@ export function createLiveEngine(deps: {
     }
 
     const restore = updating ? openPreview.restore : (existing?.restore ?? restoreFrom(args.live!));
+    const usesWhite = args.white !== undefined || painted?.some((span) => span.white !== undefined);
+    if (usesWhite && (restore.on === null || restore.brightness === null || !restore.segments?.length ||
+      restore.segments.some((segment) => segment.color === null || segment.white === undefined))) return {
+      ok: false, status: 422, error: "rgbw-restore-unavailable", sent: false,
+      message: "RGBW Preview needs a complete fresh four-channel look to restore. Refresh this Light; nothing was sent.",
+    };
     const dest: HostPort = { hostname: args.light.hostname, port: args.light.port };
     const last = lastWrites.get(args.light.id);
     const usePixels = kind === "preview" && (args.pixels === true || pixelSessions.has(args.light.id));
@@ -229,6 +236,7 @@ export function createLiveEngine(deps: {
           color,
           brightness,
           kind === "preview" && adHoc ? args.light.ledCount : undefined,
+          args.white,
         );
     const picture = usePixels ? authored : stabilizeLocateOverlayIds(authored, last);
     const sameWrite = last != null && writeBodiesEqual(last, picture);
@@ -308,6 +316,7 @@ export function createLiveEngine(deps: {
         };
     sessions.set(args.light.id, session);
     const reported = live
+      && args.white === undefined && !painted?.some((span) => span.white !== undefined)
       ? countRangeMatches(live.leds, target.start, target.stop, color)
       : null;
     return {
@@ -489,7 +498,7 @@ function restoreFrom(snapshot: WledSnapshot): LiveRestoreSnapshot {
     on: snapshot.on,
     brightness: snapshot.brightness,
     color: snapshot.segmentColor,
-    segments: restoreSegmentsFromSnapshot(snapshot.segments, snapshot.segmentColor),
+    segments: restoreSegmentsFromSnapshot(snapshot.segments, snapshot.segmentColor, snapshot.segmentColors),
   };
 }
 
@@ -498,10 +507,10 @@ function clampByte(n: number): number {
 }
 
 function normalizeSpans(
-  spans: { start: number; stop: number; color: string }[] | null | undefined,
+  spans: { start: number; stop: number; color: string; white?: number }[] | null | undefined,
   ledCount: number,
   limit = 64,
-): { start: number; stop: number; color: string }[] | null {
+): { start: number; stop: number; color: string; white?: number }[] | null {
   if (!spans || spans.length === 0) return null;
   const clipped = spans.flatMap((span) => {
     if (!Number.isInteger(span.start) || !Number.isInteger(span.stop)) return [];
@@ -509,7 +518,8 @@ function normalizeSpans(
     if (!color) return [];
     const start = Math.max(0, Math.min(ledCount, span.start));
     const stop = Math.max(0, Math.min(ledCount, span.stop));
-    return stop > start ? [{ start, stop, color }] : [];
+    if (span.white !== undefined && (!Number.isInteger(span.white) || span.white < 0 || span.white > 255)) return [];
+    return stop > start ? [{ start, stop, color, ...(span.white !== undefined ? { white: span.white } : {}) }] : [];
   });
   if (clipped.length === 0) return null;
   return clipped.sort((a, b) => a.start - b.start || a.stop - b.stop).slice(0, limit);

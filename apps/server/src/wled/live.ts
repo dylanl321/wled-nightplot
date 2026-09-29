@@ -6,6 +6,7 @@ import {
   type LiveRead,
   type LiveRestoreSnapshot,
   type WledSnapshot,
+  type SegmentColor,
   type WledNativeRestore,
 } from "@nightplot/shared";
 
@@ -25,14 +26,14 @@ export type WledStateWrite = {
   }[];
 };
 
-export type PreviewSpan = { start: number; stop: number; color: string };
+export type PreviewSpan = { start: number; stop: number; color: string; white?: number };
 export type WledSegWrite = NonNullable<WledStateWrite["seg"]>[number];
 
 /** One fixed full-strip segment. Logical color boundaries never rebuild geometry. */
 export function pixelPreviewWrite(spans: PreviewSpan[], brightness: number, ledCount: number): WledStateWrite {
   const pixels: (number | string)[] = [0, ledCount, "000000"];
   for (const span of locateLitPieces(spans, ledCount)) {
-    pixels.push(span.start, span.stop, span.color.slice(1));
+    pixels.push(span.start, span.stop, `${span.color.slice(1)}${span.white != null ? span.white.toString(16).padStart(2, "0") : ""}`);
   }
   return {
     on: true, bri: brightness, tt: 0,
@@ -162,9 +163,10 @@ export function restoreBriField(
  */
 export function restoreColField(
   color: string | null | undefined,
-): { col: [number, number, number][] } | Record<string, never> {
+  white?: number,
+): { col: number[][] } | Record<string, never> {
   const rgb = color ? hexToRgb(color) : null;
-  return rgb ? { col: [rgb] } : {};
+  return rgb ? { col: [white != null ? [...rgb, white] : rgb] } : {};
 }
 
 /**
@@ -181,7 +183,7 @@ export function restoreSegField(
     seg: segments.map((seg) => ({
       start: seg.start,
       stop: seg.stop,
-      ...restoreColField(seg.color ?? color),
+      ...restoreColField(seg.color ?? color, seg.white),
     })),
   };
 }
@@ -223,7 +225,7 @@ export function restoreWriteFromSnapshot(snapshot: WledSnapshot): WledStateWrite
     on: snapshot.on,
     brightness: snapshot.brightness,
     color: snapshot.segmentColor,
-    segments: restoreSegmentsFromSnapshot(snapshot.segments, snapshot.segmentColor),
+    segments: restoreSegmentsFromSnapshot(snapshot.segments, snapshot.segmentColor, snapshot.segmentColors),
   });
 }
 
@@ -242,6 +244,8 @@ export function applyRangesWrite(
   ranges: { start: number; stop: number }[],
   previousSegmentCount: number | null,
   color: string,
+  colors?: readonly SegmentColor[],
+  rgbw = false,
 ): ApplyRangesWriteResult {
   if (previousSegmentCount === null) {
     return { ok: false, reason: "unknown-segment-count" };
@@ -251,7 +255,7 @@ export function applyRangesWrite(
     id,
     start: range.start,
     stop: range.stop,
-    ...col,
+    ...(colors?.[id] ? { col: [[...hexToRgb(colors[id]!.hex)!, ...(rgbw ? [colors[id]!.white] : [])]] } : col),
   }));
   for (let id = ranges.length; id < previousSegmentCount; id += 1) {
     seg.push({ id, start: 0, stop: 0, ...col });
@@ -273,15 +277,15 @@ export function locateLitPieces(spans: PreviewSpan[], ledCount: number): Preview
   for (const span of ordered) {
     const start = Math.max(span.start, cursor);
     const stop = Math.min(span.stop, ledCount);
-    if (stop > start && !isBlackTriple(hexToTriple(span.color))) {
-      pieces.push({ start, stop, color: span.color });
+    if (stop > start && (!isBlackTriple(hexToTriple(span.color)) || (span.white ?? 0) > 0)) {
+      pieces.push({ start, stop, color: span.color, ...(span.white !== undefined ? { white: span.white } : {}) });
     }
     cursor = Math.max(cursor, stop);
   }
   const merged: PreviewSpan[] = [];
   for (const piece of pieces) {
     const prev = merged[merged.length - 1];
-    if (prev && prev.color === piece.color && prev.stop === piece.start) prev.stop = piece.stop;
+    if (prev && prev.color === piece.color && prev.white === piece.white && prev.stop === piece.start) prev.stop = piece.stop;
     else merged.push({ ...piece });
   }
   return merged;
@@ -317,7 +321,7 @@ export function overlayLocatePicture(
       id: seg.length,
       start: piece.start,
       stop: piece.stop,
-      col: [hexToTriple(piece.color)],
+      col: [[...hexToTriple(piece.color), ...(piece.white != null ? [piece.white] : [])]],
     });
   }
   if (seg.length === 0 && ledCount > 0) {
@@ -489,12 +493,13 @@ export function previewWrite(
   color: string,
   brightness: number,
   ledCount?: number,
+  white?: number,
 ): WledStateWrite {
   const locateRest = ledCount != null && ledCount > 0 && (start > 0 || stop < ledCount);
   if (locateRest && ledCount != null) {
-    return overlayLocatePicture([{ start, stop, color }], brightness, ledCount);
+    return overlayLocatePicture([{ start, stop, color, white }], brightness, ledCount);
   }
-  return { on: true, bri: brightness, seg: [{ start, stop, col: [hexToTriple(color)] }] };
+  return { on: true, bri: brightness, seg: [{ start, stop, col: [[...hexToTriple(color), ...(white != null ? [white] : [])]] }] };
 }
 
 /**

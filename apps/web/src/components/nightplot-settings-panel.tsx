@@ -15,6 +15,8 @@ export function NightplotSettingsPanel({ initial, products, lights }: {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [rotation, setRotation] = useState<{ remove: BackupSummary[]; room: boolean } | null>(null);
+  const [configRead, setConfigRead] = useState<{ lightId: string; mac: string; firmware: string;
+    sourceDigest: string; config: unknown } | null>(null);
   const change = (patch: Partial<NightplotSettings>) => setDraft((current) => ({ ...current, ...patch }));
 
   async function save() {
@@ -40,13 +42,21 @@ export function NightplotSettingsPanel({ initial, products, lights }: {
     if (result.ok) setRotation(result.data);
     else setNotice(result.data.message ?? "Could not review backup rotation.");
   }
+  async function loadConfig(lightId: string) {
+    setConfigRead(null);
+    try {
+      setConfigRead(await fetchJson<{ lightId: string; mac: string; firmware: string;
+        sourceDigest: string; config: unknown }>(`/api/lights/${lightId}/config`));
+      setNotice("Fresh WLED configuration loaded for inspection. Nothing was sent.");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "WLED configuration could not be read."); }
+  }
 
   return <div className="mx-auto w-full max-w-4xl space-y-7 px-5 py-8 lg:px-8">
     <header><h1 className="font-serif text-3xl">Settings</h1>
       <p className="mt-2 text-muted-foreground">Nightplot preferences are shared across browsers. Save never writes to WLED; a reviewed Apply does.</p></header>
     <section className="space-y-3 rounded-lg border border-border bg-card p-5">
       <h2 className="text-lg">Defaults</h2>
-      <p className="text-muted-foreground">Saved suggestions only; Light and Strip forms do not use these yet. Existing hardware and product attachments are not changed.</p>
+      <p className="text-muted-foreground">Suggestions fill missing Strip-form values only. Reported hardware settings and product attachments are never replaced automatically.</p>
       <label className="block">Default LED product<br/><select className={inputClass} value={draft.defaultLedProductId ?? ""}
         onChange={(event) => change({ defaultLedProductId: event.target.value || null })}>
         <option value="">None</option>{products.map((product) => <option key={product.id} value={product.id}>{product.label}</option>)}
@@ -61,7 +71,7 @@ export function NightplotSettingsPanel({ initial, products, lights }: {
         onChange={(event) => change({ preview: { ...draft.preview, hex: event.target.value } })} /></label>
         <label>Fallback brightness (1–255)<br/><input className={inputClass} type="number" min={1} max={255} value={draft.preview.brightness}
           onChange={(event) => change({ preview: { ...draft.preview, brightness: Number(event.target.value) } })} /></label></div>
-      <p className="text-muted-foreground">Preview currently uses its existing defaults; these starting values are saved for future use. Held-Segment Preview dim remains 60%.</p>
+      <p className="text-muted-foreground">These values are used when Preview does not specify a colour or the Light reports no brightness. Held-Segment Preview dim remains 60%.</p>
     </section>
     <section className="space-y-3 rounded-lg border border-border bg-card p-5"><h2 className="text-lg">Segment colours</h2>
       <p className="text-muted-foreground">Palette changes are suggestions for new Segments; they do not recolour saved Segments.</p>
@@ -92,8 +102,13 @@ export function NightplotSettingsPanel({ initial, products, lights }: {
           <li key={item.id}>{item.id} · {new Date(item.at).toLocaleString()}</li>)}</ul> : null}</div> : null}
     </section>
     <section className="space-y-3 rounded-lg border border-border bg-card p-5"><h2 className="text-lg">WLED across Lights</h2>
-      <p className="text-muted-foreground">Bulk configuration review and Apply are not available yet. No configuration upload is sent from this page.</p>
-      {lights.map((light) => <p key={light.id}><Link className="underline" href={`/lights/${light.id}?tab=settings`}>{light.name} — Light Settings</Link></p>)}
+      <p className="text-muted-foreground">Read each Light’s own fresh cfg.json, MAC and firmware. Bulk configuration review and Apply are not available yet; no upload is sent from this page. WLED excludes passwords from exports.</p>
+      {lights.map((light) => <p key={light.id} className="flex flex-wrap items-center gap-3"><Link className="underline" href={`/lights/${light.id}?tab=settings`}>{light.name} — Light Settings</Link>
+        <button className="rounded border border-border px-3 py-1" onClick={() => void loadConfig(light.id)}>Read configuration</button></p>)}
+      {configRead ? <details className="rounded border border-border p-3"><summary>Fresh {lights.find((light) => light.id === configRead.lightId)?.name ?? "Light"} configuration · {configRead.firmware} · MAC {configRead.mac}</summary>
+        <p className="mt-2 break-all font-mono text-xs">Source digest: {configRead.sourceDigest}</p>
+        <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify(configRead.config, null, 2)}</pre>
+      </details> : null}
     </section>
     <div className="flex items-center gap-3 pb-8"><button className="rounded bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50" disabled={busy} onClick={save}>Save preferences</button>
       <button className="rounded border border-border px-4 py-2" onClick={reload}>Reload</button>

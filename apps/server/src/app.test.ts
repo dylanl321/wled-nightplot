@@ -179,6 +179,7 @@ function testApp(overrides: Partial<AppDeps> = {}) {
       cfgJson: JSON.stringify(await cfg.read()), presetsJson: JSON.stringify({ "1": { n: "Test" } }),
     })),
     writeNativeFiles: overrides.writeNativeFiles,
+    readConfigExport: overrides.readConfigExport,
     writeCfg: overrides.writeCfg ?? cfg.write,
     collect: overrides.collect ?? (async () => []),
     now: overrides.now ?? (() => new Date("2026-09-26T18:00:00.000Z")),
@@ -204,6 +205,87 @@ describe("shared Nightplot Settings", () => {
     expect(probe).not.toHaveBeenCalled();
     expect(write).not.toHaveBeenCalled();
     expect(writeCfg).not.toHaveBeenCalled();
+  });
+});
+
+describe("fresh WLED configuration read", () => {
+  it("returns only this Light's export with identity and source digest, without writing", async () => {
+    const write = vi.fn(memoryBox().write);
+    const readConfigExport = vi.fn(async () => '{"id":{"name":"Porch"}}');
+    const { app } = testApp({ write, readConfigExport });
+    const enrolled = await app.request("/api/lights", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: "192.168.1.80" }) });
+    const id = ((await enrolled.json()) as { light: { id: string } }).light.id;
+    const response = await app.request(`/api/lights/${id}/config`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ lightId: id, mac: snapshot.mac,
+      firmware: snapshot.firmware, config: { id: { name: "Porch" } } });
+    expect(readConfigExport).toHaveBeenCalledTimes(1);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("refuses a replaced MAC before opening cfg.json", async () => {
+    const readConfigExport = vi.fn(async () => "{}");
+    const box = memoryBox();
+    let changed = false;
+    const probe: ProbeFn = async () => ({ kind: "found", snapshot: { ...snapshot,
+      mac: changed ? "aa:bb:cc:dd:ee:ff" : snapshot.mac } });
+    const { app } = testApp({ probe, readConfigExport, write: box.write });
+    const enrolled = await app.request("/api/lights", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: "192.168.1.80" }) });
+    const id = ((await enrolled.json()) as { light: { id: string } }).light.id;
+    changed = true;
+    expect((await app.request(`/api/lights/${id}/config`)).status).toBe(409);
+    expect(readConfigExport).not.toHaveBeenCalled();
+  });
+  it("discards an export if the controller changes during the read", async () => {
+    let probes = 0;
+    const probe: ProbeFn = async () => ({ kind: "found", snapshot: { ...snapshot,
+      mac: ++probes >= 3 ? "aa:bb:cc:dd:ee:ff" : snapshot.mac } });
+    const { app } = testApp({ probe, readConfigExport: async () => "{}" });
+    const enrolled = await app.request("/api/lights", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: "192.168.1.80" }) });
+    const id = ((await enrolled.json()) as { light: { id: string } }).light.id;
+    expect((await app.request(`/api/lights/${id}/config`)).status).toBe(409);
+  });
+});
+
+describe("RGBW Segment Apply", () => {
+  it("refuses white-channel Preview on an RGB Light before writing", async () => {
+    const write = vi.fn(memoryBox().write);
+    const { app } = testApp({ write });
+    const enrolled = await app.request("/api/lights", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: "192.168.1.80" }) });
+    const id = ((await enrolled.json()) as { light: { id: string } }).light.id;
+    const refused = await app.request(`/api/lights/${id}/preview`, { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start: 0, stop: 5, color: "#112233", white: 60 }) });
+    expect(refused.status).toBe(422);
+    expect(write).not.toHaveBeenCalled();
+  });
+  it("writes four channels per Segment from an off Light and confirms fresh exact readback", async () => {
+    const box = memoryBox();
+    const write = vi.fn(box.write);
+    const probe: ProbeFn = async () => ({ kind: "found", snapshot: {
+      ...snapshot, on: false, segmentColor: null, rgbw: true,
+      segments: box.segs.map(({ start, stop }) => ({ start, stop })),
+      segmentColors: box.segs.map(({ start, stop, col }) => ({ start, stop,
+        hex: `#${col![0]!.slice(0, 3).map((n) => n.toString(16).padStart(2, "0")).join("")}`,
+        white: col![0]![3] ?? 0, ...(col![0]!.length === 4 ? { hasWhite: true } : {}) })),
+    } });
+    const { app, store } = testApp({ probe, write });
+    const enrolled = await app.request("/api/lights", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: "192.168.1.80" }) });
+    const id = ((await enrolled.json()) as { light: { id: string } }).light.id;
+    store.replace({ ...store.findById(id)!, stripKind: "sk6812-rgbw" });
+    const applied = await app.request(`/api/lights/${id}/apply`, { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ elements: [
+        { label: "Left", start: 0, stop: 20, color: { hex: "#112233", white: 90 } },
+        { label: "Right", start: 20, stop: 60, color: { hex: "#aabbcc", white: 0 } },
+      ] }) });
+    expect(applied.status).toBe(200);
+    expect(write.mock.calls[0]?.[1].seg?.map((row) => row.col)).toEqual([[[17, 34, 51, 90]], [[170, 187, 204, 0]]]);
+    expect(((await applied.json()) as { apply: { matched: boolean } }).apply.matched).toBe(true);
   });
 });
 

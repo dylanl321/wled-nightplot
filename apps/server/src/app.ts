@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -36,6 +36,9 @@ import {
   normalizeHostKey,
   normalizeMac,
   parseHexColor,
+  getStrip,
+  resolveApplyColors,
+  reportedColorsMatch,
   parseSegmentBackup,
   parseWledCfg,
   readdressContinuity,
@@ -117,8 +120,10 @@ import type { FileLightsStore } from "./store/lights-store.ts";
 import type { ProbeFn } from "./wled/client.ts";
 import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
 import {
+  createWledConfigExportReader,
   createWledNativeFilesReader,
   createWledNativeFilesWriter,
+  type ReadWledConfigExport,
   type ReadWledNativeFiles,
   type WriteWledNativeFiles,
 } from "./wled/native-backup.ts";
@@ -137,6 +142,7 @@ export type AppDeps = {
   readCfg: ReadCfgFn;
   readNativeFiles?: ReadWledNativeFiles;
   writeNativeFiles?: WriteWledNativeFiles;
+  readConfigExport?: ReadWledConfigExport;
   writeCfg: WriteCfgFn;
   now?: () => Date;
 };
@@ -151,6 +157,7 @@ export function createApp(deps: AppDeps) {
   const backups = deps.backups ?? new FileBackupStore(join(tmpdir(), `nightplot-backups-${randomUUID()}`), () => settings.read().backupRetention);
   const readNativeFiles = deps.readNativeFiles ?? createWledNativeFilesReader();
   const writeNativeFiles = deps.writeNativeFiles ?? createWledNativeFilesWriter();
+  const readConfigExport = deps.readConfigExport ?? createWledConfigExportReader();
   const session: { rows: DiscoverRow[] } = { rows: [] };
   const nowIso = () => (deps.now ?? (() => new Date()))().toISOString();
   function record(light: Pick<Light, "id" | "name">, action: ActivityEntry["action"],
@@ -237,6 +244,28 @@ export function createApp(deps: AppDeps) {
   app.get("/api/catalogs", (c) => c.json(catalogSnapshot(products.list())));
 
   app.get("/api/settings", (c) => c.json({ settings: settings.read() }));
+  app.get("/api/lights/:id/config", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    const target = { hostname: stored.hostname, port: stored.port };
+    const found = await deps.probe(target);
+    if (found.kind !== "found") return c.json({ error: "unreachable", message: "WLED did not answer. Configuration was not loaded." }, 503);
+    if (!stored.mac || !found.snapshot.mac || !macsMatch(stored.mac, found.snapshot.mac))
+      return c.json({ error: "identity-unknown", message: "Controller MAC is missing or changed. Configuration was not loaded." }, 409);
+    try {
+      const raw = await readConfigExport(target);
+      const after = await deps.probe(target);
+      if (after.kind !== "found" || !after.snapshot.mac || !macsMatch(stored.mac, after.snapshot.mac) ||
+        after.snapshot.firmware !== found.snapshot.firmware)
+        return c.json({ error: "source-changed", message: "WLED identity or firmware changed while reading configuration. Nothing was loaded or sent." }, 409);
+      const config: unknown = JSON.parse(raw);
+      return c.json({ lightId: stored.id, mac: found.snapshot.mac, firmware: found.snapshot.firmware,
+        sourceDigest: createHash("sha256").update(raw).digest("hex"), config,
+        message: "Fresh WLED cfg.json export. Passwords are excluded by WLED. Nothing was sent." });
+    } catch {
+      return c.json({ error: "config-unavailable", message: "WLED cfg.json could not be read. Nothing was sent." }, 503);
+    }
+  });
   app.patch("/api/settings", async (c) => {
     const body = await c.req.json().catch(() => null);
     if (!body || !isNightplotSettings(body.settings)) return c.json({ error: "invalid",
@@ -851,9 +880,8 @@ export function createApp(deps: AppDeps) {
     }
     const issues = validateDeclaredRanges(drafts, light.ledCount);
     const previousSegmentCount = snapshotSegmentCount(snap);
-    const color = knownApplyColor(snap?.segmentColor);
-    const pendingColours = drafts.some((row) => row.color &&
-      (row.color.white !== 0 || row.color.hex.toLowerCase() !== color?.toLowerCase()));
+    const colors = snap ? resolveApplyColors(drafts, snap) : null;
+    const color = knownApplyColor(colors?.[0]?.hex ?? snap?.segmentColor);
     const reason = applyRefuseReason({
       reachable: light.reachability === "online" && snap !== null,
       issueMessage: issues[0]?.message ?? null,
@@ -868,8 +896,11 @@ export function createApp(deps: AppDeps) {
         422,
       );
     }
-    if (pendingColours) return c.json({ error: "colour-apply-unavailable",
-      message: "Saved Segment colours differ from the reported Light. Per-Segment colour Apply is not available yet; nothing was sent to WLED." }, 422);
+    if (!colors) return c.json({ error: "colour-unknown",
+      message: "An unset Segment has no unique fresh WLED colour at its exact range. Choose a colour, then Save before Apply. Nothing was sent." }, 422);
+    const rgbw = getStrip(light.stripKind)?.bead === "rgbw";
+    if (colors.some((entry) => entry.white && !rgbw)) return c.json({ error: "unsupported-white",
+      message: "This Light is not configured as RGBW. White-channel Apply was not sent." }, 422);
     const sent = drafts.map((row) => ({
       label: row.label.trim() || "Untitled",
       start: row.start,
@@ -877,7 +908,7 @@ export function createApp(deps: AppDeps) {
     }));
     const sentDescription = sent.map((row) => `${row.label} (${row.start}–${row.stop})`).join(", ");
     const dest: HostPort = { hostname: light.hostname, port: light.port };
-    const planned = applyRangesWrite(sent, previousSegmentCount, color);
+    const planned = applyRangesWrite(sent, previousSegmentCount, color, colors, rgbw);
     if (!planned.ok) {
       return c.json({ error: "refused", message: APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE }, 422);
     }
@@ -917,6 +948,11 @@ export function createApp(deps: AppDeps) {
         409,
       );
     }
+    if (light.mac && (!reread.snapshot.mac || !macsMatch(light.mac, reread.snapshot.mac))) {
+      const outcome = applyUnreadFailed(sent, "Apply was sent, but the readback controller identity is missing or changed. Not treating this as success.", "controller");
+      record(light, "apply", "unknown", outcome.message);
+      return c.json({ error: "controller-changed", message: outcome.message, apply: outcome }, 409);
+    }
     const liveRead = await live.read({ ...light, reachability: "online" });
     const source = honestySource(liveRead?.source);
     const read = reread.snapshot.segments;
@@ -936,11 +972,22 @@ export function createApp(deps: AppDeps) {
       );
     }
     const outcome = applyOutcome(sent, read, source);
+    const colorMatch = reread.snapshot.segmentColors?.some((entry) => Boolean(entry.hasWhite) !== rgbw) ? false :
+      reportedColorsMatch(drafts, colors, reread.snapshot.segmentColors);
+    if (outcome.matched && colorMatch !== true && reread.snapshot.segmentColors !== undefined) {
+      deps.store.replace(next);
+      const uncertain = { ...outcome, status: "mismatch" as const, matched: false,
+        message: colorMatch === null ? "Ranges matched, but Segment colours were not reported. Sent but unverified." :
+          "Ranges matched, but Segment colours differ on readback. Apply is not confirmed." };
+      record(next, "apply", "unknown", uncertain.message);
+      return c.json({ ...(await decorateDetail(next, reread.snapshot)), apply: uncertain, message: uncertain.message }, 409);
+    }
     if (outcome.matched) {
       next.lastSnapshot = reread.snapshot;
       next.lastSnapshotAt = next.lastSeenAt;
       next.lastApply = next.mac ? { at: next.lastSeenAt ?? nowIso(), mac: next.mac,
-        ledCount: next.ledCount, ranges: sent.map(({ start, stop }) => ({ start, stop })), color } : null;
+        ledCount: next.ledCount, ranges: sent.map(({ start, stop }) => ({ start, stop })), color,
+        ...(reread.snapshot.segmentColors ? { colors } : {}) } : null;
       deps.store.replace(next);
       const elements = persistDrafts(light.id, drafts);
       record(next, "apply", "match", `Applied ${sentDescription}; reported ranges match. ${outcome.caption}`);
@@ -1172,6 +1219,11 @@ export function createApp(deps: AppDeps) {
     if (body.invalidPixels) return c.json({
       error: "invalid-pixels", message: "Preview needs valid color ranges (at most 512). Nothing was sent.",
     }, 422);
+    if (body.invalidWhite) return c.json({ error: "invalid-white",
+      message: "White channel must be a whole number from 0 to 255. Nothing was sent." }, 422);
+    if ((body.white !== undefined || body.spans?.some((span) => span.white !== undefined)) &&
+      getStrip(stored.stripKind)?.bead !== "rgbw")
+      return c.json({ error: "unsupported-white", message: "This Light is not configured as RGBW. White-channel Preview was not sent." }, 422);
     const existing = live.get(stored.id);
     const updating = existing?.kind === "preview";
     let light = stored;
@@ -1191,8 +1243,9 @@ export function createApp(deps: AppDeps) {
       elementId: body.elementId,
       range: body.range,
       spans: body.spans,
-      color: body.color,
-      brightness: body.brightness,
+      color: body.color ?? settings.read().preview.hex,
+      white: body.white,
+      brightness: body.brightness ?? (snap?.brightness == null ? settings.read().preview.brightness : undefined),
       reread: body.reread,
       pixels: body.pixels,
       revision,
@@ -1531,6 +1584,8 @@ export function createApp(deps: AppDeps) {
       ...(await decorateDetail(next, snap)),
       provision,
       ledProducts: products.list(),
+      nightplotSuggestions: { ...settings.read().stripSuggestions,
+        defaultLedProductId: settings.read().defaultLedProductId },
     });
   });
 
@@ -2151,10 +2206,12 @@ export function createApp(deps: AppDeps) {
         range: null,
         spans: null,
         color: undefined,
+        white: undefined,
         brightness: undefined,
         reread: undefined as boolean | undefined,
         pixels: undefined as boolean | undefined,
         invalidPixels: false,
+        invalidWhite: false,
       };
     }
     const row = body as {
@@ -2163,6 +2220,7 @@ export function createApp(deps: AppDeps) {
       stop?: unknown;
       spans?: unknown;
       color?: unknown;
+      white?: unknown;
       brightness?: unknown;
       reread?: unknown;
       pixels?: unknown;
@@ -2170,7 +2228,7 @@ export function createApp(deps: AppDeps) {
     const spans = Array.isArray(row.spans)
       ? row.spans.flatMap((item) => {
           if (!item || typeof item !== "object") return [];
-          const span = item as { start?: unknown; stop?: unknown; color?: unknown };
+          const span = item as { start?: unknown; stop?: unknown; color?: unknown; white?: unknown };
           if (
             typeof span.start !== "number" ||
             typeof span.stop !== "number" ||
@@ -2178,12 +2236,14 @@ export function createApp(deps: AppDeps) {
             !Number.isInteger(span.stop) ||
             span.start < 0 ||
             span.stop <= span.start ||
-            typeof span.color !== "string"
+            typeof span.color !== "string" ||
+            (span.white !== undefined && (!Number.isInteger(span.white) || (span.white as number) < 0 || (span.white as number) > 255))
           ) {
             return [];
           }
           const color = parseHexColor(span.color);
-          return color ? [{ start: span.start, stop: span.stop, color }] : [];
+          return color ? [{ start: span.start, stop: span.stop, color,
+            ...(span.white !== undefined ? { white: span.white as number } : {}) }] : [];
         })
       : null;
     const range =
@@ -2200,11 +2260,15 @@ export function createApp(deps: AppDeps) {
       range,
       spans: spans && spans.length > 0 ? (row.pixels === true ? spans : spans.slice(0, 64)) : null,
       color: typeof row.color === "string" ? parseHexColor(row.color) ?? undefined : undefined,
+      white: Number.isInteger(row.white) && (row.white as number) >= 0 && (row.white as number) <= 255 ? row.white as number : undefined,
       brightness: typeof row.brightness === "number" ? row.brightness : undefined,
       reread: typeof row.reread === "boolean" ? row.reread : undefined,
       pixels: row.pixels === true,
       invalidPixels: row.pixels === true && (!Array.isArray(row.spans) || row.spans.length === 0
         || row.spans.length > 512 || spans?.length !== row.spans.length),
+      invalidWhite: row.white !== undefined && (!Number.isInteger(row.white) || (row.white as number) < 0 || (row.white as number) > 255)
+        || Array.isArray(row.spans) && spans?.length !== row.spans.length && row.spans.some((span: unknown) =>
+          span && typeof span === "object" && "white" in span),
     };
   }
 

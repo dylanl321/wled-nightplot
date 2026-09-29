@@ -76,6 +76,7 @@ export type LiveRestoreSegment = {
   start: number;
   stop: number;
   color: string | null;
+  white?: number;
 };
 
 export type LiveRestoreSnapshot = {
@@ -97,12 +98,14 @@ export type LiveRestoreSnapshot = {
 export function restoreSegmentsFromSnapshot(
   segments: { start: number; stop: number }[] | null,
   color: string | null,
+  colors?: { start: number; stop: number; hex: string; white: number; hasWhite?: boolean }[] | null,
 ): LiveRestoreSnapshot["segments"] {
   if (segments === null) return null;
-  return segments.map((seg) => ({
+  return segments.map((seg, index) => ({
     start: seg.start,
     stop: seg.stop,
-    color,
+    color: colors?.[index]?.start === seg.start && colors[index]?.stop === seg.stop ? colors[index]!.hex : color,
+    ...(colors?.[index]?.start === seg.start && colors[index]?.stop === seg.stop && colors[index]?.hasWhite ? { white: colors[index]!.white } : {}),
   }));
 }
 

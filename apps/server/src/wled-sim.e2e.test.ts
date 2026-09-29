@@ -101,8 +101,8 @@ describe("headless WLED sim e2e (external process)", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           elements: [
-            { label: "Left run", start: 0, stop: 24 },
-            { label: "Right run", start: 24, stop: 50 },
+            { label: "Left run", start: 0, stop: 24, color: { hex: "#ffa000", white: 0 } },
+            { label: "Right run", start: 24, stop: 50, color: { hex: "#ffa000", white: 0 } },
           ],
         }),
       });
@@ -148,7 +148,7 @@ describe("headless WLED sim e2e (external process)", () => {
     const res = await app.request(`/api/lights/${light.id}/apply`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ elements: [{ label: "Left run", start: 0, stop: 24 }] }),
+      body: JSON.stringify({ elements: [{ label: "Left run", start: 0, stop: 24, color: { hex: "#ffa000", white: 0 } }] }),
     });
     expect(res.status).toBe(409);
     const body = (await res.json()) as {
@@ -173,7 +173,7 @@ describe("headless WLED sim e2e (external process)", () => {
     const res = await app.request(`/api/lights/${light.id}/apply`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ elements: [{ label: "Left run", start: 0, stop: 24 }] }),
+      body: JSON.stringify({ elements: [{ label: "Left run", start: 0, stop: 24, color: { hex: "#ffa000", white: 0 } }] }),
     });
     expect(res.status).toBe(409);
     const body = (await res.json()) as {

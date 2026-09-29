@@ -3,6 +3,7 @@
 import {
   defaultStripPreset,
   draftLedTypeFromSettings,
+  isProvisionLedType,
   formatNodeLength,
   ledProductSpacing,
   LED_CATALOG_ATTACH_COPY,
@@ -32,6 +33,7 @@ type ProvisionPayload = LightDetail & {
   provision: ProvisionRead;
   provisionWrite?: ProvisionWriteResult;
   ledProducts?: LedProduct[];
+  nightplotSuggestions?: { ledCount: number | null; gpio: number | null; defaultLedProductId: string | null };
   message?: string;
 };
 
@@ -65,10 +67,13 @@ export function StripProvisionPanel({
         setProducts(catalog);
         setAttachedId(payload.light.ledProductId ?? null);
         const fallback = defaultStripPreset();
+        const suggestions = payload.nightplotSuggestions;
+        const suggestedProduct = !payload.light.ledProductId ? catalog.find((product) => product.id === suggestions?.defaultLedProductId) : null;
         setDraft({
-          ledType: draftLedTypeFromSettings(payload.provision.settings.ledType),
-          length: payload.provision.settings.length ?? fallback.length,
-          gpio: payload.provision.settings.gpio ?? fallback.gpio,
+          ledType: payload.provision.settings.ledType !== "unknown" ? draftLedTypeFromSettings(payload.provision.settings.ledType) :
+            suggestedProduct && isProvisionLedType(suggestedProduct.driverId) ? suggestedProduct.driverId : fallback.ledType,
+          length: payload.provision.settings.length ?? suggestions?.ledCount ?? suggestedProduct?.defaultLength ?? fallback.length,
+          gpio: payload.provision.settings.gpio ?? suggestions?.gpio ?? suggestedProduct?.defaultGpio ?? fallback.gpio,
         });
         setNotice(null);
       })
