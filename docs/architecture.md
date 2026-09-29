@@ -36,7 +36,7 @@ The seams above register controller, strip-driver, and discovery members. Operat
 | Layer | What it owns | Home |
 | --- | --- | --- |
 | Strip / driver | IC recipe: channels, colour order, bead | `packages/shared/src/strip/catalog.ts` (`ws281x`, `sk6812-rgbw`) |
-| LED product | Shared SKU: `driverId`, form factor, optional defaults, pitch or COB section length, Advanced facts | `packages/shared/src/strip/products.ts`, `apps/server/src/store/led-products-store.ts`, `data/led-products.json`, `/led-products` |
+| LED product | Shared SKU: `driverId`, form factor, optional defaults, discrete/diffused LEDs/m deriving pitch or manual pitch, COB section length, Advanced facts | `packages/shared/src/strip/products.ts`, `apps/server/src/store/led-products-store.ts`, `data/led-products.json`, `/led-products` |
 | This Light | `ledProductId`, node count / GPIO / type overrides, Element ranges, calculated length when the recipe has spacing | `packages/shared/src/lights.ts`, `data/lights.json`, Strip |
 
 Controller and discovery catalogs stay their own seams (`packages/shared/src/controller/`, `packages/shared/src/discovery/`). They do not replace the LED product catalog.

@@ -137,6 +137,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 - CONFIG-164: Unsaved Segment drafts survive reload in the same browser, scoped to the Light. A changed saved layout or strip length pauses Save and Apply for explicit draft review; Revert clears the local draft. Storage failures are named. This does not send Preview or Apply to a controller; software checks are not Hardware Done.
 
+- CONFIG-166: LED product recipes can use common 30/60/120/144 LEDs/m choices or custom addressable nodes per metre. The catalog derives exact pitch for calculated length; conflicting supplied pitch refuses. Manual pitch and COB section length stay available. Catalog edits do not write WLED, and calculated length is not a tape measurement or Hardware Done.
+
 ## 0.7.11 — Elements after strip length change (CONFIG-43)
 
 - After a successful length-changing Strip Apply, declared Elements are reconciled against the new `ledCount`. Ranges that run past the new strip are clipped; ranges that start past it are dropped. Grow does not invent Elements — leftover coverage is flagged.

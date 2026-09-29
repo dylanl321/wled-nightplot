@@ -22,6 +22,43 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 describe("LED products catalog", () => {
+  it("uses a 60 LEDs/m recipe preset to fill exact pitch without a WLED write", async () => {
+    const posts: Record<string, unknown>[] = [];
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (requestPath(String(input)).endsWith("/led-products") && init?.method === "POST") {
+        const payload = JSON.parse(String(init.body));
+        posts.push(payload.product);
+        return jsonResponse({ product: { ...payload.product, id: "sixty" } }, 201);
+      }
+      return jsonResponse({ message: "unexpected path" }, 500);
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<LedProductsPanel initialProducts={catalog} />);
+    fireEvent.click(screen.getByRole("button", { name: "New LED product" }));
+    fireEvent.change(screen.getByLabelText("Catalog id"), { target: { value: "sixty" } });
+    fireEvent.change(screen.getByLabelText("Label"), { target: { value: "Sixty" } });
+    fireEvent.change(screen.getByLabelText("Suggested node count"), { target: { value: "60" } });
+    fireEvent.click(screen.getByRole("button", { name: "60 LEDs/m" }));
+    expect((screen.getByLabelText("Pitch") as HTMLInputElement).value).toBe(String(1000 / 60));
+    fireEvent.click(screen.getByRole("button", { name: "Create recipe" }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]).toMatchObject({ ledsPerMeter: 60, pitchMm: 1000 / 60 });
+    expect(screen.getByText(/60 LEDs\/m · .*about 1 m from 60 nodes/)).toBeTruthy();
+    expect(fetch.mock.calls.every((call) => !String(call[0]).includes("/provision"))).toBe(true);
+  });
+
+  it("keeps manual pitch available and never offers LEDs/m for COB sections", () => {
+    render(<LedProductsPanel initialProducts={catalog} />);
+    fireEvent.click(screen.getByRole("button", { name: "New LED product" }));
+    fireEvent.click(screen.getByRole("button", { name: "120 LEDs/m" }));
+    fireEvent.change(screen.getByLabelText("Pitch"), { target: { value: "8.5" } });
+    expect((screen.getByLabelText("LEDs per metre") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Pitch") as HTMLInputElement).value).toBe("8.5");
+    fireEvent.click(screen.getByRole("button", { name: "COB" }));
+    expect(screen.queryByLabelText("LEDs per metre")).toBeNull();
+    expect(screen.getByLabelText("Section length")).toBeTruthy();
+  });
+
   it("lists recipes and names shared catalog vs this Light", () => {
     render(<LedProductsPanel initialProducts={catalog} />);
 
