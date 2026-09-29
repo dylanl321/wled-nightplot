@@ -254,7 +254,7 @@ export function createApp(deps: AppDeps) {
   app.get("/api/backups/:id/presets.json", (c) => nativeFileDownload(c, "presetsJson", "presets.json"));
 
   function nativeFileDownload(c: Context, field: "cfgJson" | "presetsJson", filename: string) {
-    const backup = backups.read(c.req.param("id"));
+    const backup = backups.read(c.req.param("id") ?? "");
     if (!backup) return c.json({ error: "not_found", message: "Backup not found." }, 404);
     const text = backup.deviceFiles?.[field];
     if (!text) return c.json({ error: "missing-device-files",
