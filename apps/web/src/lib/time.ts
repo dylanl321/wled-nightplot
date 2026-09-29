@@ -12,6 +12,20 @@ export function lastSeenLabel(iso: string | null, now = Date.now()): string {
   return `last seen ${days} d ago`;
 }
 
+/** Cached Online status is not a fresh probe; show age of the actual last answer. */
+export function answeredLabel(iso: string | null, now = Date.now()): string {
+  if (!iso) return "Answer time unknown";
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then) || then > now + 5_000) return "Answer time unknown";
+  const seconds = Math.floor(Math.max(0, now - then) / 1_000);
+  if (seconds < 60) return `Answered ${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `Answered ${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `Answered ${hours}h ago`;
+  return `Answered ${Math.floor(hours / 24)}d ago`;
+}
+
 export function brightnessPct(bri: number | null): number | null {
   if (bri === null) return null;
   return Math.round((bri / 255) * 100);

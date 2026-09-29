@@ -9,13 +9,13 @@ import {
   type LightView,
 } from "@nightplot/shared";
 import Link from "next/link";
-import { useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useDiscoveryCandidates } from "@/components/discovery-watch";
 import { StripBeads } from "@/components/strip-beads";
 import { Button } from "@/components/ui/button";
 import { postJson } from "@/lib/api";
 import { displayBead } from "@/lib/power-status";
-import { brightnessPct, lastSeenLabel } from "@/lib/time";
+import { answeredLabel, brightnessPct, lastSeenLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 export function LightsHome({
@@ -132,12 +132,13 @@ function LightCard({ light }: { light: LightView }) {
         className="absolute inset-0 rounded-[14px]"
         aria-label={`Open ${light.name}`}
       />
-      <div className="pointer-events-none flex items-center gap-3">
+      <div className="pointer-events-none flex flex-wrap items-center gap-3">
         <span className="text-[18px] font-medium">{light.name}</span>
         <span className={cn("inline-flex items-center gap-1.5 text-[13px]", status.className)}>
           <span className="size-1.5 rounded-full" style={{ background: status.dot }} />
           {status.label}
         </span>
+        {!unreachable ? <CardHeartbeat lastSeenAt={light.lastSeenAt} /> : null}
         <Button
           type="button"
           variant="outline"
@@ -183,6 +184,17 @@ function LightCard({ light }: { light: LightView }) {
       </div>
     </article>
   );
+}
+
+function CardHeartbeat({ lastSeenAt }: { lastSeenAt: string | null }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const tick = () => { if (document.visibilityState !== "hidden") setNow(Date.now()); };
+    const timer = window.setInterval(tick, 1_000);
+    document.addEventListener("visibilitychange", tick);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", tick); };
+  }, []);
+  return <span className="whitespace-nowrap text-[12px] text-muted-foreground" suppressHydrationWarning>{answeredLabel(lastSeenAt, now)}</span>;
 }
 
 function CardSync({ light, drifted }: { light: LightView; drifted: number }) {
