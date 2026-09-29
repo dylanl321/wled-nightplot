@@ -206,6 +206,14 @@ export function LightDetail({
         {unreachable ? (
           <p className="text-[13px] text-destructive">{inspectPowerHow(light)}</p>
         ) : null}
+        {detail.applyConflict ? <div role="status" className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 text-[13px]">
+          <p className="font-medium">Controller differs from the last Apply</p>
+          <p className="mt-1 text-muted-foreground">Reported {[
+            detail.applyConflict.rangesChanged ? "Segment ranges" : null,
+            detail.applyConflict.colorChanged ? "colour" : null,
+          ].filter(Boolean).join(" and ")} changed since {new Date(detail.applyConflict.at).toLocaleString()}.
+            Review the controller before another Apply. Nightplot cannot tell what changed it.</p>
+        </div> : null}
         <div className="flex gap-6 border-b border-border">
           <TabButton active={tab === "elements"} onClick={() => goTab("elements")}>
             Segments

@@ -23,6 +23,17 @@ import {
   requestPath,
 } from "@/test/fixtures";
 
+describe("last Apply conflict banner", () => {
+  it("shows known readback differences without claiming who changed the controller", () => {
+    const initial = lightDetail({ light: lightView({ reachability: "online", on: true }),
+      applyConflict: { at: "2026-09-26T18:00:00.000Z", rangesChanged: true, colorChanged: false } });
+    render(<LightDetail initial={initial} tab="elements" />);
+    expect(screen.getByText("Controller differs from the last Apply")).toBeTruthy();
+    expect(screen.getByText(/Reported Segment ranges changed/)).toBeTruthy();
+    expect(screen.getByText(/Nightplot cannot tell what changed it/)).toBeTruthy();
+  });
+});
+
 describe("Segments Preview recovery", () => {
   it("asks about the physical spot only after a confirmed half-Preview and narrows to one LED", async () => {
     const initial = lightDetail({ light: lightView({ reachability: "online", on: true, brightness: 180, ledCount: 5 }) });

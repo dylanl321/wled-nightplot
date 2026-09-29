@@ -398,6 +398,35 @@ describe("Segment backup and restore", () => {
   });
 });
 
+describe("last Apply conflict", () => {
+  it("persists a confirmed Apply baseline and flags an externally changed range on fresh readback", async () => {
+    const { app, store, box } = testApp();
+    const enrolled = await app.request("/api/lights", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: "192.168.1.80" }) });
+    const id = ((await enrolled.json()) as { light: { id: string } }).light.id;
+    const applied = await app.request(`/api/lights/${id}/apply`, { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: [{ label: "Left", start: 0, stop: 20 },
+        { label: "Right", start: 20, stop: 60 }] }) });
+    expect(applied.status).toBe(200);
+    expect(store.findById(id)?.lastApply?.ranges).toEqual([{ start: 0, stop: 20 }, { start: 20, stop: 60 }]);
+    const same = (await (await app.request(`/api/lights/${id}`)).json()) as { applyConflict?: unknown };
+    expect(same.applyConflict).toBeNull();
+    await box.write({ hostname: "192.168.1.80", port: 80 }, { seg: [
+      { id: 1, start: 0, stop: 0 }, { id: 0, start: 0, stop: 60, col: [[255, 160, 0]] },
+    ] });
+    const changed = (await (await app.request(`/api/lights/${id}`)).json()) as {
+      applyConflict: { rangesChanged: boolean; colorChanged: boolean };
+    };
+    expect(changed.applyConflict).toMatchObject({ rangesChanged: true, colorChanged: false });
+    expect(store.findById(id)?.lastApply?.ranges).toHaveLength(2);
+    const preview = await app.request(`/api/lights/${id}/preview`, { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ color: "#4f7dff", brightness: 180 }) });
+    expect(preview.status).toBe(200);
+    expect(((await preview.json()) as { applyConflict?: unknown }).applyConflict).toBeNull();
+  });
+});
+
 describe("controller replacement", () => {
   async function enrolled() {
     const initial = testApp();
@@ -408,7 +437,9 @@ describe("controller replacement", () => {
     const id = ((await res.json()) as { light: { id: string } }).light.id;
     initial.store.replaceElements(id, [{ id: "door", lightId: id, label: "Door", start: 0, stop: 60 }]);
     const before = initial.store.findById(id)!;
-    initial.store.replace({ ...before, lastSnapshot: snapshot, lastSnapshotAt: before.lastSeenAt });
+    initial.store.replace({ ...before, lastSnapshot: snapshot, lastSnapshotAt: before.lastSeenAt,
+      lastApply: { at: before.lastSeenAt!, mac: before.mac!, ledCount: 60,
+        ranges: [{ start: 0, stop: 60 }], color: "#ffa000" } });
     return { ...initial, id };
   }
 
@@ -443,7 +474,7 @@ describe("controller replacement", () => {
     expect(write).not.toHaveBeenCalled();
     expect(store.load()).toHaveLength(1);
     expect(store.findById(id)).toMatchObject({ hostKey: "192.168.1.71:8080", mac: "aa:bb:cc:dd:ee:ff",
-      stripKind: "sk6812-rgbw", lastSnapshot: null, lastSnapshotAt: null });
+      stripKind: "sk6812-rgbw", lastSnapshot: null, lastSnapshotAt: null, lastApply: null });
     expect(store.elementsFor(id)).toEqual([{ id: "door", lightId: id, label: "Door", start: 0, stop: 60 }]);
     expect(activity.list(id)[0]).toMatchObject({ action: "replacement", readback: "not-checked" });
     expect(((await confirm.json()) as { message: string }).message).toMatch(/Apply separately/);
