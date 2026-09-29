@@ -3,6 +3,33 @@ export { defaultNightplotSettings, isNightplotSettings, DEFAULT_PALETTE, type Ni
 export { resolveApplyColors, reportedColorsMatch, type SegmentColor } from "./segment-colors.ts";
 export { compareLastApply, type ApplyConflict, type LastApply } from "./apply-conflict.ts";
 export { estimatePowerScenario, type PowerScenario, type SegmentPowerColour } from "./power-budget.ts";
+export {
+  EFFECT_BUILTINS,
+  EFFECT_CONTRACT_VERSION,
+  EFFECT_FUNCTIONS,
+  EFFECT_NODE_COUNT_MAX,
+  EFFECT_NODE_COUNT_MIN,
+  effectAllowedVars,
+  evaluateEffectExpr,
+  mergeEffectValues,
+  normalizedPosition,
+  parseEffectBinding,
+  parseEffectDefinition,
+  parseEffectDeployment,
+  parseEffectExpr,
+  sampleBoundEffect,
+  sampleEffect,
+  sampleEffectAt,
+  type EffectBinding,
+  type EffectChannels,
+  type EffectDefinition,
+  type EffectDeployment,
+  type EffectEnv,
+  type EffectExpr,
+  type EffectFrame,
+  type EffectParameter,
+  type EffectPixel,
+} from "./effect/evaluate.ts";
 export type {
   BackupData,
   BackupDocument,
