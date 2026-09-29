@@ -5,6 +5,12 @@ cursor, auto-scan, keyboard controls, and adjustable Preview background brightne
 
 Nightplot Configure is a LAN utility for home LED strips on WLED. Find a controller on the network, enroll it as a **Light**, describe **Segments** as ranges on the strip, **Preview** colour on the beads, then **Apply**. **Blink** identifies a box; **All Off** sits on the rack.
 
+The top-level [Settings page](http://127.0.0.1:43180/settings) saves shared Nightplot preferences in `data/settings.json` (or `NIGHTPLOT_SETTINGS_PATH`). It controls the dark/light theme, visible-tab background Find interval (Off, 30, 60, 120 seconds), an eight-colour Segment palette, and opt-in backup retention. Manual Find is always available. A stale browser revision must reload before saving. Preference Save never writes WLED; each Light still has its own Settings tab for hardware and network.
+
+Backups now include preferences; restoring an older backup without them leaves current preferences in place. Retention is Off by default and storage refuses once full. Opting in rotates the oldest eligible backups up to the 100-file cap; pinned copies, the newest Nightplot recovery copy and the newest complete WLED export per Light are protected. Settings previews the exact copies to remove; pinning, downloads and manual clearing stay on Backups. WLED exports omit passwords.
+
+This Settings work is not complete: saved default Strip/product suggestions and Preview starting values are not yet consumed, and saved Segment colours (including RGBW white) do not yet drive Apply or live Preview. Bulk WLED configuration review and upload are unavailable. The existing Apply remains range-oriented and must not be mistaken for per-Segment colour Apply or Hardware Done.
+
 It is early software for a home network. There is no authentication and no TLS. Docker packages the same local/LAN run.
 
 GitHub: [`dylanl321/wled-nightplot`](https://github.com/dylanl321/wled-nightplot) on `main`. The package name is `nightplot-configure`.
@@ -70,7 +76,7 @@ docker compose up --build
 - App: [http://127.0.0.1:43180](http://127.0.0.1:43180)
 - API: [http://127.0.0.1:43181](http://127.0.0.1:43181)
 
-Store volume: `lights-store` → `/data` (`lights.json`, `led-products.json`, `activity.json`, `backups/`). `pnpm dev` bind stays loopback; compose publishes `0.0.0.0` on purpose.
+Store volume: `lights-store` → `/data` (`lights.json`, `settings.json`, `led-products.json`, `activity.json`, `backups/`). `pnpm dev` bind stays loopback; compose publishes `0.0.0.0` on purpose.
 
 GHCR build: Actions → Docker → Run workflow, or push to `main` / a `v*` tag. Images push only when GHCR login succeeds. Workflow does not run on pull requests.
 

@@ -14,6 +14,7 @@ import { FileLedProductsStore } from "./store/led-products-store.ts";
 import { FileActivityStore } from "./store/activity-store.ts";
 import { FileBackupStore } from "./store/backup-store.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
+import { FileSettingsStore } from "./store/settings-store.ts";
 import { createFixtureBox } from "./wled-fixture-box.ts";
 import { createWledCfgReader, createWledCfgWriter } from "./wled/cfg.ts";
 import { probeWled, type ProbeFn } from "./wled/client.ts";
@@ -166,6 +167,7 @@ function testApp(overrides: Partial<AppDeps> = {}) {
   const probe: ProbeFn = overrides.probe ?? box.probe;
   const app = createApp({
     store,
+    settings: overrides.settings,
     activity,
     backups,
     products,
@@ -182,6 +184,27 @@ function testApp(overrides: Partial<AppDeps> = {}) {
   });
   return { app, store, activity, backups, products, dir, box, cfg };
 }
+
+describe("shared Nightplot Settings", () => {
+  it("persists across a restart, refuses stale revisions, and never calls WLED on save", async () => {
+    const settings = new FileSettingsStore(join(mkdtempSync(join(tmpdir(), "nightplot-settings-api-")), "settings.json"));
+    const probe = vi.fn(memoryBox().probe);
+    const write = vi.fn(memoryBox().write);
+    const writeCfg = vi.fn(memoryCfg().write);
+    const first = testApp({ settings, probe, write, writeCfg });
+    const original = ((await (await first.app.request("/api/settings")).json()) as { settings: import("@nightplot/shared").NightplotSettings }).settings;
+    const change = { ...original, appearance: "light" as const, findIntervalSeconds: 0 as const };
+    const patch = () => first.app.request("/api/settings", { method: "PATCH",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: change }) });
+    expect((await patch()).status).toBe(200);
+    expect((await patch()).status).toBe(409);
+    expect(((await (await testApp({ settings }).app.request("/api/settings")).json()) as
+      { settings: import("@nightplot/shared").NightplotSettings }).settings.appearance).toBe("light");
+    expect(probe).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+    expect(writeCfg).not.toHaveBeenCalled();
+  });
+});
 
 describe("managed Backups", () => {
   async function enroll(app: ReturnType<typeof testApp>["app"]) {
@@ -329,6 +352,23 @@ describe("managed Backups", () => {
 });
 
 describe("Segment backup and restore", () => {
+  it("keeps legacy colour unset and saves a distinct palette colour for a new Segment", async () => {
+    const { app, store } = testApp();
+    const id = ((await (await app.request("/api/lights", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: "192.168.1.80" }) })).json()) as { light: { id: string } }).light.id;
+    store.replaceElements(id, [{ id: "legacy", lightId: id, label: "Old", start: 0, stop: 20 }]);
+    const saved = await app.request(`/api/lights/${id}/elements`, { method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: [{ id: "legacy", label: "Old", start: 0, stop: 20 },
+        { label: "New", start: 20, stop: 60, color: { hex: "#EE8276", white: 0 } }] }) });
+    expect(saved.status).toBe(200);
+    expect(store.elementsFor(id)[0]?.color).toBeUndefined();
+    expect(store.elementsFor(id)[1]?.color).toEqual({ hex: "#EE8276", white: 0 });
+    const backup = (await (await app.request(`/api/lights/${id}/segments/backup`)).json()) as
+      { segments: { color?: { hex: string; white: number } }[] };
+    expect(backup.segments[0]?.color).toBeUndefined();
+    expect(backup.segments[1]?.color?.hex).toBe("#EE8276");
+  });
   it("exports only saved Segments and restores them offline without probing or Applying", async () => {
     const first = testApp();
     const enroll = await first.app.request("/api/lights", {
@@ -360,7 +400,7 @@ describe("Segment backup and restore", () => {
     expect(probe).not.toHaveBeenCalled();
     expect(write).not.toHaveBeenCalled();
     expect(((await restore.json()) as { message: string }).message).toMatch(/Apply separately/);
-    expect(first.store.elementsFor(id).map(({ label, start, stop }) => ({ label, start, stop })))
+    expect(first.store.elementsFor(id).map(({ label, start, stop, color }) => ({ label, start, stop, ...(color ? { color } : {}) })))
       .toEqual(backup.segments);
   });
 

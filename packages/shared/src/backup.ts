@@ -2,6 +2,7 @@ import type { ActivityEntry } from "./activity.ts";
 import type { LedProduct } from "./strip/products.ts";
 import type { Element, Light } from "./lights.ts";
 import type { WledSnapshot } from "./wled/snapshot.ts";
+import type { NightplotSettings } from "./settings.ts";
 
 export type BackupReason = "manual" | "pre-apply" | "pre-safe" | "pre-provision" |
   "pre-delete" | "pre-replacement" | "pre-catalog" | "pre-restore";
@@ -11,6 +12,8 @@ export type BackupData = {
   elements: Element[];
   products: LedProduct[];
   activity: ActivityEntry[];
+  /** Missing on backups made before Nightplot preferences existed. */
+  settings?: NightplotSettings;
 };
 
 /** Reference-only. Never sufficient to replay a full WLED configuration. */
@@ -36,6 +39,7 @@ export type BackupDocument = {
   data: BackupData;
   controller: ControllerReference | null;
   deviceFiles?: WledBackupFiles | null;
+  pinned?: boolean;
 };
 
 export type BackupSummary = Pick<BackupDocument, "id" | "at" | "reason" | "lightId" | "lightName"> & {
@@ -44,4 +48,5 @@ export type BackupSummary = Pick<BackupDocument, "id" | "at" | "reason" | "light
   productCount: number;
   hasControllerReference: boolean;
   hasDeviceFiles: boolean;
+  pinned?: boolean;
 };

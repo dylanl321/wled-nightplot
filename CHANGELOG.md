@@ -7,6 +7,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- Settings foundation (partial): Nightplot-wide Settings now has a versioned, revision-checked `data/settings.json`, shared theme and visible-tab Find interval, an editable eight-colour palette, and opt-in protected backup rotation with pinning and a removal preview. New saved Segments gain a palette colour; legacy Segments remain unset, and Segment exports include saved colours. New Nightplot backups include preferences; older backups leave current preferences intact. Saving preferences sends nothing to WLED. Default Strip/product suggestions and Preview starting values are stored but not yet consumed by their forms; saved Segment colours are not yet sent by Apply. Multi-Light Common/Advanced WLED review and RGBW live/Apply/readback are not implemented; native configuration upload has not been bench-verified. Do not treat this as Hardware Done.
+
 - CONFIG-162: A Light now keeps a separate last-successful-Segment-Apply baseline. Fresh same-controller readback that differs in known Segment ranges or colour gets a conflict banner; missing reads, offline Lights and active Preview/Blink do not invent a conflict. Readdressing does not rewrite the Apply baseline, while controller replacement and successful Strip provision clear it. The banner cannot identify who caused the change. Tests and docs land with code; fixture is not Hardware Done.
 
 - CONFIG-161: Every Online-looking Light card shows a ticking “Answered Ns ago” age from its persisted last answer, so cached power does not look like a fresh probe. Missing/invalid/future timestamps say “Answer time unknown”; unreachable cards retain grey beads and last-seen copy. The timer pauses while hidden and never probes WLED.

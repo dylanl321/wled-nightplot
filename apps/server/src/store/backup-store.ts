@@ -2,6 +2,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BackupData, BackupDocument, BackupReason, BackupSummary, ControllerReference, WledBackupFiles } from "@nightplot/shared";
+import type { NightplotSettings } from "@nightplot/shared";
 
 const BACKUP_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const MAX_MANAGED_BACKUPS = 100;
@@ -11,13 +12,41 @@ export function backupDigest(data: BackupData): string {
 }
 
 export class FileBackupStore {
-  constructor(private readonly directory: string) {}
+  constructor(private readonly directory: string, private readonly retention: () => NightplotSettings["backupRetention"] =
+    () => ({ enabled: false, limit: 100 })) {}
+
+  rotationPreview(policy = this.retention()): { remove: BackupSummary[]; room: boolean } {
+    const rows = this.list();
+    const toRemove = policy.enabled ? Math.max(0, rows.length - policy.limit + 1) : 0;
+    if (toRemove === 0) return { remove: [], room: rows.length < MAX_MANAGED_BACKUPS };
+    const protectedIds = new Set<string>();
+    // Keep the newest Nightplot recovery copy, and the latest complete device export per Light.
+    if (rows[0]) protectedIds.add(rows[0].id);
+    const seenLights = new Set<string>();
+    for (const row of rows) if (row.hasDeviceFiles && row.lightId && !seenLights.has(row.lightId)) {
+      protectedIds.add(row.id);
+      seenLights.add(row.lightId);
+    }
+    const eligible = [...rows].reverse().filter((row) => !row.pinned && !protectedIds.has(row.id));
+    return { remove: eligible.slice(0, toRemove), room: eligible.length >= toRemove };
+  }
+
+  setPinned(id: string, pinned: boolean): BackupSummary | null {
+    const backup = this.read(id);
+    if (!backup) return null;
+    const next = { ...backup, pinned };
+    const tmp = `${this.path(id)}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+    renameSync(tmp, this.path(id));
+    return this.list().find((row) => row.id === id) ?? null;
+  }
 
   create(input: { at: string; reason: BackupReason; lightId?: string | null;
     lightName?: string | null; data: BackupData; controller?: ControllerReference | null;
     deviceFiles?: WledBackupFiles | null }): BackupDocument {
-    if (this.list().length >= MAX_MANAGED_BACKUPS) {
-      throw new Error("Backup storage is full. Download and clear an older backup first. Nothing was changed.");
+    const rotation = this.rotationPreview();
+    if (!rotation.room) {
+      throw new Error("Backup storage has no eligible room. Download and clear an older backup or change retention; nothing was changed.");
     }
     const backup: BackupDocument = { version: 1, id: randomUUID(), at: input.at,
       reason: input.reason, lightId: input.lightId ?? null, lightName: input.lightName ?? null,
@@ -27,6 +56,10 @@ export class FileBackupStore {
     const tmp = `${path}.tmp`;
     writeFileSync(tmp, `${JSON.stringify(backup, null, 2)}\n`, { flag: "wx", mode: 0o600 });
     renameSync(tmp, path);
+    // Publish the new recovery copy before clearing any older one. A failed
+    // rename must never cost an existing backup; a failed prune refuses the
+    // dependent WLED write while leaving the newly published copy available.
+    for (const row of rotation.remove) unlinkSync(this.path(row.id));
     return backup;
   }
 
@@ -43,7 +76,8 @@ export class FileBackupStore {
         lightId: backup.lightId, lightName: backup.lightName,
         lightCount: backup.data.lights.length, segmentCount: backup.data.elements.length,
         productCount: backup.data.products.length, hasControllerReference: backup.controller !== null,
-        hasDeviceFiles: Boolean(backup.deviceFiles?.cfgJson && backup.deviceFiles?.presetsJson) }))
+        hasDeviceFiles: Boolean(backup.deviceFiles?.cfgJson && backup.deviceFiles?.presetsJson),
+        pinned: backup.pinned === true }))
       .sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
   }
 

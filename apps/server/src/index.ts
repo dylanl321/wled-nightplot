@@ -6,6 +6,7 @@ import { FileActivityStore } from "./store/activity-store.ts";
 import { FileBackupStore } from "./store/backup-store.ts";
 import { FileLedProductsStore } from "./store/led-products-store.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
+import { FileSettingsStore } from "./store/settings-store.ts";
 import { createWledCfgReader, createWledCfgWriter } from "./wled/cfg.ts";
 import { createWledNativeFilesReader } from "./wled/native-backup.ts";
 import { createWledProbe } from "./wled/client.ts";
@@ -21,13 +22,16 @@ const productsPath = resolve(
 );
 const activityPath = resolve(process.env.NIGHTPLOT_ACTIVITY_PATH ?? join(dirname(storePath), "activity.json"));
 const backupsPath = resolve(process.env.NIGHTPLOT_BACKUPS_PATH ?? join(dirname(storePath), "backups"));
+const settingsPath = resolve(process.env.NIGHTPLOT_SETTINGS_PATH ?? join(dirname(storePath), "settings.json"));
 const products = new FileLedProductsStore(productsPath);
+const settings = new FileSettingsStore(settingsPath);
 const seededProducts = products.list();
 
 const app = createApp({
   store: new FileLightsStore(storePath),
   activity: new FileActivityStore(activityPath),
-  backups: new FileBackupStore(backupsPath),
+  backups: new FileBackupStore(backupsPath, () => settings.read().backupRetention),
+  settings,
   products,
   probe: createWledProbe(),
   write: createWledWriter(),

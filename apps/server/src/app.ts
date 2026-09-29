@@ -73,6 +73,7 @@ import {
   type LightDetail,
   type LightView,
   type LightsPayload,
+  isNightplotSettings,
   type LiveEndKind,
   type LiveSource,
   type ReaddressStep,
@@ -106,6 +107,7 @@ import { createLiveEngine, previewDisplaySnapshot } from "./live/engine.ts";
 import { FileActivityStore } from "./store/activity-store.ts";
 import { backupDigest, FileBackupStore } from "./store/backup-store.ts";
 import { FileLedProductsStore } from "./store/led-products-store.ts";
+import { FileSettingsStore } from "./store/settings-store.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
 import type { ProbeFn } from "./wled/client.ts";
 import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
@@ -116,6 +118,7 @@ export type AppDeps = {
   store: FileLightsStore;
   activity?: FileActivityStore;
   backups?: FileBackupStore;
+  settings?: FileSettingsStore;
   products?: FileLedProductsStore;
   probe: ProbeFn;
   collect: CollectFn;
@@ -133,7 +136,8 @@ export function createApp(deps: AppDeps) {
     deps.products ??
     new FileLedProductsStore(join(tmpdir(), `nightplot-led-products-${randomUUID()}.json`));
   const activity = deps.activity ?? new FileActivityStore(join(tmpdir(), `nightplot-activity-${randomUUID()}.json`));
-  const backups = deps.backups ?? new FileBackupStore(join(tmpdir(), `nightplot-backups-${randomUUID()}`));
+  const settings = deps.settings ?? new FileSettingsStore(join(tmpdir(), `nightplot-settings-${randomUUID()}.json`));
+  const backups = deps.backups ?? new FileBackupStore(join(tmpdir(), `nightplot-backups-${randomUUID()}`), () => settings.read().backupRetention);
   const readNativeFiles = deps.readNativeFiles ?? createWledNativeFilesReader();
   const session: { rows: DiscoverRow[] } = { rows: [] };
   const nowIso = () => (deps.now ?? (() => new Date()))().toISOString();
@@ -145,7 +149,7 @@ export function createApp(deps: AppDeps) {
 
   function currentBackupData(): BackupData {
     const saved = deps.store.snapshotForBackup();
-    return { ...saved, products: products.snapshotForBackup(), activity: activity.list().reverse() };
+    return { ...saved, products: products.snapshotForBackup(), activity: activity.list().reverse(), settings: settings.read() };
   }
 
   function capture(reason: BackupReason, light?: Light, controller?: ControllerReference) {
@@ -205,7 +209,27 @@ export function createApp(deps: AppDeps) {
 
   app.get("/api/catalogs", (c) => c.json(catalogSnapshot(products.list())));
 
+  app.get("/api/settings", (c) => c.json({ settings: settings.read() }));
+  app.patch("/api/settings", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || !isNightplotSettings(body.settings)) return c.json({ error: "invalid",
+      message: "Invalid Nightplot preferences. Nothing was saved or sent to WLED." }, 422);
+    if (body.settings.defaultLedProductId && !products.findById(body.settings.defaultLedProductId))
+      return c.json({ error: "invalid", message: "That default LED product is not in the catalog." }, 422);
+    const result = settings.save(body.settings);
+    if (result.error === "conflict") return c.json({ error: "conflict",
+      message: "Preferences changed in another browser. Reload and review before saving." }, 409);
+    return c.json({ settings: result.settings, message: "Nightplot preferences saved. Nothing was sent to WLED." });
+  });
+
   app.get("/api/backups", (c) => c.json({ backups: backups.list() }));
+  app.get("/api/backups/rotation-preview", (c) => c.json(backups.rotationPreview()));
+  app.post("/api/backups/rotation-preview", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || !isNightplotSettings(body.settings))
+      return c.json({ error: "invalid", message: "Invalid retention settings." }, 422);
+    return c.json(backups.rotationPreview(body.settings.backupRetention));
+  });
   app.post("/api/backups", (c) => {
     try { return c.json({ backup: capture("manual") }, 201); }
     catch (error) { return c.json(backupFailure(error), 503); }
@@ -223,6 +247,12 @@ export function createApp(deps: AppDeps) {
     const backup = backups.read(c.req.param("id"));
     return backup ? c.json({ backup }) : c.json({ error: "not_found", message: "Backup not found." }, 404);
   });
+  app.patch("/api/backups/:id/pin", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body.pinned !== "boolean") return c.json({ error: "invalid", message: "Choose pinned or unpinned." }, 422);
+    const backup = backups.setPinned(c.req.param("id"), body.pinned);
+    return backup ? c.json({ backup }) : c.json({ error: "not_found", message: "Backup not found." }, 404);
+  });
   app.delete("/api/backups/:id", async (c) => {
     const id = c.req.param("id");
     const body = await c.req.json().catch(() => null);
@@ -237,7 +267,8 @@ export function createApp(deps: AppDeps) {
     const backup = backups.read(id);
     if (!backup) return { ok: false as const, error: "not_found", message: "Backup not found." };
     const data = backup.data;
-    if (!deps.store.validBackup(data) || !products.validBackup(data.products) ||
+    if ((data.settings !== undefined && !isNightplotSettings(data.settings)) ||
+      !deps.store.validBackup(data) || !products.validBackup(data.products) ||
       !activity.validBackup(data.activity)) return { ok: false as const, error: "invalid-backup",
         message: "Backup data did not validate; nothing was restored." };
     return { ok: true as const, backup, data };
@@ -281,11 +312,13 @@ export function createApp(deps: AppDeps) {
         deps.store.restoreBackup(reviewed.data);
         products.restoreBackup(reviewed.data.products);
         activity.restoreBackup(reviewed.data.activity);
+        if (reviewed.data.settings) settings.restore(reviewed.data.settings);
       } catch (error) {
         try {
           deps.store.restoreBackup(current);
           products.restoreBackup(current.products);
           activity.restoreBackup(current.activity);
+          if (current.settings) settings.restore(current.settings);
         } catch { return c.json({ error: "restore-partial",
           message: `Restore and rollback failed. Safety backup ${safety.id} is kept; inspect Nightplot data before further changes.` }, 500); }
         return c.json({ error: "restore-failed",
@@ -604,7 +637,7 @@ export function createApp(deps: AppDeps) {
     const backup: SegmentBackup = {
       kind: "nightplot-segments", version: 1, exportedAt: nowIso(),
       source: { lightId: light.id, lightName: light.name, mac: light.mac, ledCount: light.ledCount },
-      segments: saved.map(({ label, start, stop }) => ({ label, start, stop })),
+      segments: saved.map(({ label, start, stop, color }) => ({ label, start, stop, ...(color ? { color } : {}) })),
     };
     return c.json(backup);
   });
@@ -661,6 +694,7 @@ export function createApp(deps: AppDeps) {
       );
     }
     const existingIds = new Set(deps.store.elementsFor(light.id).map((element) => element.id));
+    const previous = deps.store.elementsFor(light.id);
     const elements: Element[] = drafts.map((draft, index) => ({
       id:
         draft.id && existingIds.has(draft.id)
@@ -672,6 +706,8 @@ export function createApp(deps: AppDeps) {
       label: draft.label.trim() || `Segment ${index + 1}`,
       start: draft.start,
       stop: draft.stop,
+      ...(draft.color ? { color: draft.color } :
+        previous.find((item) => item.id === draft.id)?.color ? { color: previous.find((item) => item.id === draft.id)!.color } : {}),
     }));
     deps.store.replaceElements(light.id, elements);
     return c.json(await decorateDetail(light, snap, elements));
@@ -690,6 +726,8 @@ export function createApp(deps: AppDeps) {
     const issues = validateDeclaredRanges(drafts, light.ledCount);
     const previousSegmentCount = snapshotSegmentCount(snap);
     const color = knownApplyColor(snap?.segmentColor);
+    const pendingColours = drafts.some((row) => row.color &&
+      (row.color.white !== 0 || row.color.hex.toLowerCase() !== color?.toLowerCase()));
     const reason = applyRefuseReason({
       reachable: light.reachability === "online" && snap !== null,
       issueMessage: issues[0]?.message ?? null,
@@ -704,6 +742,8 @@ export function createApp(deps: AppDeps) {
         422,
       );
     }
+    if (pendingColours) return c.json({ error: "colour-apply-unavailable",
+      message: "Saved Segment colours differ from the reported Light. Per-Segment colour Apply is not available yet; nothing was sent to WLED." }, 422);
     const sent = drafts.map((row) => ({
       label: row.label.trim() || "Untitled",
       start: row.start,
@@ -1880,13 +1920,15 @@ export function createApp(deps: AppDeps) {
     const drafts: DraftRange[] = [];
     for (const item of raw) {
       if (!item || typeof item !== "object") return null;
-      const row = item as { id?: unknown; label?: unknown; start?: unknown; stop?: unknown };
+      const row = item as { id?: unknown; label?: unknown; start?: unknown; stop?: unknown; color?: unknown };
       if (typeof row.start !== "number" || typeof row.stop !== "number") return null;
+      if (!validSegmentColor(row.color)) return null;
       drafts.push({
         id: typeof row.id === "string" ? row.id : undefined,
         label: typeof row.label === "string" ? row.label : "",
         start: row.start,
         stop: row.stop,
+        color: row.color as DraftRange["color"],
       });
     }
     return drafts;
@@ -1906,13 +1948,15 @@ export function createApp(deps: AppDeps) {
     const drafts: DraftRange[] = [];
     for (const item of raw) {
       if (!item || typeof item !== "object") return null;
-      const row = item as { id?: unknown; label?: unknown; start?: unknown; stop?: unknown };
+      const row = item as { id?: unknown; label?: unknown; start?: unknown; stop?: unknown; color?: unknown };
       if (typeof row.start !== "number" || typeof row.stop !== "number") return null;
+      if (!validSegmentColor(row.color)) return null;
       drafts.push({
         id: typeof row.id === "string" ? row.id : undefined,
         label: typeof row.label === "string" ? row.label : "",
         start: row.start,
         stop: row.stop,
+        color: row.color as DraftRange["color"],
       });
     }
     return drafts;
@@ -1931,6 +1975,9 @@ export function createApp(deps: AppDeps) {
       label: draft.label.trim() || `Segment ${index + 1}`,
       start: draft.start,
       stop: draft.stop,
+      ...(draft.color ? { color: draft.color } :
+        deps.store.elementsFor(lightId).find((item) => item.id === draft.id)?.color ?
+          { color: deps.store.elementsFor(lightId).find((item) => item.id === draft.id)!.color } : {}),
     }));
     deps.store.replaceElements(lightId, elements);
     return elements;
@@ -2006,6 +2053,14 @@ export function createApp(deps: AppDeps) {
 
 function looksLikeId(id: string): boolean {
   return id.length > 0 && !id.startsWith("draft-");
+}
+
+function validSegmentColor(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!value || typeof value !== "object") return false;
+  const color = value as { hex?: unknown; white?: unknown };
+  return typeof color.hex === "string" && /^#[0-9a-fA-F]{6}$/.test(color.hex) &&
+    Number.isInteger(color.white) && (color.white as number) >= 0 && (color.white as number) <= 255;
 }
 
 function refusedSafeBody(

@@ -5,7 +5,7 @@ export type SegmentBackup = {
   version: 1;
   exportedAt: string;
   source: { lightId: string; lightName: string; mac: string | null; ledCount: number };
-  segments: { label: string; start: number; stop: number }[];
+  segments: { label: string; start: number; stop: number; color?: { hex: string; white: number } }[];
 };
 
 export function parseSegmentBackup(value: unknown): SegmentBackup | null {
@@ -24,6 +24,9 @@ export function parseSegmentBackup(value: unknown): SegmentBackup | null {
     if (!segment || typeof segment !== "object" ||
       typeof segment.label !== "string" || !segment.label.trim() ||
       typeof segment.start !== "number" || typeof segment.stop !== "number") return null;
+    if (segment.color !== undefined && (!segment.color || typeof segment.color !== "object" ||
+      !/^#[0-9a-fA-F]{6}$/.test(segment.color.hex) ||
+      !Number.isInteger(segment.color.white) || segment.color.white < 0 || segment.color.white > 255)) return null;
     segments.push({ label: segment.label, start: segment.start, stop: segment.stop });
   }
   if (validateDeclaredRanges(segments, source.ledCount).length) return null;

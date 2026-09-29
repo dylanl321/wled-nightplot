@@ -166,7 +166,10 @@ function isElement(value: unknown): value is Element {
     typeof row.lightId === "string" &&
     typeof row.label === "string" &&
     typeof row.start === "number" &&
-    typeof row.stop === "number"
+    typeof row.stop === "number" &&
+    (row.color === undefined || (typeof row.color === "object" && row.color !== null &&
+      typeof row.color.hex === "string" && /^#[0-9a-fA-F]{6}$/.test(row.color.hex) &&
+      Number.isInteger(row.color.white) && row.color.white >= 0 && row.color.white <= 255))
   );
 }
 

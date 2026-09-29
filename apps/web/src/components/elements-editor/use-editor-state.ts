@@ -89,6 +89,7 @@ export type EditorAction =
   | { type: "redo" }
   | { type: "revert" }
   | { type: "label"; value: string }
+  | { type: "color"; hex?: string; white?: number }
   | { type: "start"; value: number }
   | { type: "stop"; value: number }
   | { type: "nudge"; delta: number; which?: NudgeEdge }
@@ -480,6 +481,13 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       const element = one(state);
       if (!element) return state;
       return commit(state, withElement(state, element.id, { label: action.value }), { sel: [element.id] });
+    }
+    case "color": {
+      const element = one(state);
+      if (!element) return state;
+      const color = { hex: action.hex ?? element.color?.hex ?? "#F1AD61",
+        white: action.white ?? element.color?.white ?? 0 };
+      return commit(state, withElement(state, element.id, { color }), { sel: [element.id] });
     }
     case "start":
     case "stop": {
