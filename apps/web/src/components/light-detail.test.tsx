@@ -38,7 +38,7 @@ describe("Segments Preview recovery", () => {
     }));
     render(<LightDetail initial={initial} tab="elements" />);
     fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
-    fireEvent.click(screen.getByRole("button", { name: /Segments 35% · cursor bright/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Segments 60% · cursor bright/ }));
     fireEvent.click(screen.getByRole("radio", { name: /Find an LED/ }));
     const find = screen.getByRole("region", { name: "Find an LED" });
     await waitFor(() => expect(writes.some((write) => write.path.endsWith("/preview") && write.body.stop === 3)).toBe(true));
@@ -66,7 +66,7 @@ describe("Segments Preview recovery", () => {
     }));
     render(<LightDetail initial={initial} tab="elements" />);
     fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
-    fireEvent.click(screen.getByRole("button", { name: /Segments 35% · cursor bright/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Segments 60% · cursor bright/ }));
     fireEvent.click(screen.getByRole("radio", { name: /Find an LED/ }));
     await waitFor(() => expect(within(screen.getByRole("region", { name: "Find an LED" })).getByRole("button", { name: "Lit at my spot" }).hasAttribute("disabled")).toBe(false));
     act(() => window.dispatchEvent(new CustomEvent("nightplot:all-off", { detail: { lightIds: [initial.light.id] } })));
@@ -83,7 +83,7 @@ describe("Segments Preview recovery", () => {
     }));
     render(<LightDetail initial={initial} tab="elements" />);
     fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
-    fireEvent.click(screen.getByRole("button", { name: /Segments 35% · cursor bright/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Segments 60% · cursor bright/ }));
     const options = screen.getByRole("radiogroup", { name: "Preview lighting" });
     fireEvent.click(within(options).getByRole("radio", { name: /Count off/ }));
     await waitFor(() => expect(writes.some((write) => write.path.endsWith("/preview") &&
@@ -235,9 +235,9 @@ describe("Segments Preview recovery", () => {
     fireEvent.change(cursor, { target: { value: "4" } });
     fireEvent.blur(cursor);
     fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
-    fireEvent.click(screen.getByRole("button", { name: /Segments 35%/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Segments 60%/ }));
     const slider = screen.getByRole("slider", { name: "Segment brightness" });
-    expect((slider as HTMLInputElement).value).toBe("35");
+    expect((slider as HTMLInputElement).value).toBe("60");
     await waitFor(() => expect(bodies.length).toBeGreaterThan(0));
     expect(bodies.at(-1)).toMatchObject({ pixels: true, brightness: 180 });
     expect(bodies.at(-1)?.spans).toContainEqual({ start: 4, stop: 5, color: "#fff4dc" });

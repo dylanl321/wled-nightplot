@@ -60,7 +60,7 @@ grab the corresponding edge and use the same shared-boundary behavior as arrows.
 
 **Light on strip** enables temporary Preview. Its summary opens the lighting
 options: **Cursor only**, or **Segments stay lit** with a bright cursor.
-**Segment brightness** starts at **35%** and controls other Segment LEDs from
+**Segment brightness** starts at **60%** and controls other Segment LEDs from
 0–100%. It does not change saved colors or overall controller brightness.
 The focused node stays bright, including while an edge or Segment moves.
 

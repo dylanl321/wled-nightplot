@@ -87,7 +87,7 @@ export function ElementsPanel({
   const [locateMode, setLocateMode] = useState<LocateMode>("hold");
   const [searchRange, setSearchRange] = useState<{ start: number; stop: number } | null>(null);
   const [remoteOpen, setRemoteOpen] = useState(false);
-  const [backgroundPercent, setBackgroundPercent] = useState(35);
+  const [backgroundPercent, setBackgroundPercent] = useState(60);
   const [hues, setHues] = useState<Record<string, string>>({});
   const unreachable = light.reachability === "no-answer";
   const [scanning, setScanning] = useState<1 | -1 | null>(null);

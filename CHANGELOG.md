@@ -11,6 +11,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 - CONFIG-69: The Lights list now reads saved Lights, Segments, and last-seen state without probing each controller. List beads are grey without a current snapshot; Inspect and explicit Refresh still check one Light live. An unreachable Light no longer delays list loading.
 
+- Segment brightness in **Segments stay lit** now starts at 60% instead of 35%. The cursor remains bright; the slider still adjusts only the other Segments in Preview.
+
 - Blink it now holds a three-second pulse and restores a complete WLED state; an incomplete snapshot refuses before writing. The Lights-card Blink also ends its session. In Segments, Safari drag selection no longer selects SVG text, a drawn range lights during Preview, and the display-only Segment colours are refreshed. Naming is available beside the strip; Save Segments works during Preview. Controller differences are summarized with optional Details. Save & Apply now waits for Preview to end and restore before writing ranges; a failed restore, All Off cancellation, or stale Fast Refresh sender sends no Apply. Fixture and UI checks are software-only, not Hardware Done.
 
 - CONFIG-179: Root dev, demo, test, typecheck and helper scripts now invoke pinned pnpm through Corepack. `corepack pnpm dev` no longer requires a separate bare `pnpm` shim in the launching shell. The packageManager pin is unchanged.
