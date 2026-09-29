@@ -107,6 +107,8 @@ Replacement checks a new WLED address/MAC and LED count without writing, then re
 
 WLED-native captures now GET `/cfg.json` and `/presets.json` from the enrolled host:port, verify each is a bounded JSON object, and store both original file texts as one per-Light backup alongside Nightplot data. A missing/error/HTML file refuses the required pre-Apply/Strip/Safe write. The Backups page downloads the two WLED exports separately; restoring Nightplot data does not upload them. WLED Security & Updates warns that passwords are not backed up and uploads can overwrite settings or require a factory reset. Native exports are private controller data even without passwords. The earlier allowlisted `controller` is a reference, not a substitute for either native file. Fixture endpoints are software stubs, not Hardware Done.
 
+Light Settings health is derived only from the current `/json/info` snapshot (uptime seconds, Wi-Fi signal/RSSI and free heap bytes). Missing values stay null and unreachable Lights never reuse cached health as current. Compatibility messaging uses the Strip provision firmware table: versions older than its 0.14.0 baseline warn as too old; other unlisted versions are unverified, not declared too old. No health reading proves a physical strip is lit.
+
 ## Stubs / NYI (honest)
 
 | Thing | Status |

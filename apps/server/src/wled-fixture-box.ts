@@ -55,6 +55,9 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     mac: "020000000001",
     brand: "WLED",
     product: "FOSS",
+    uptime: 3920,
+    freeheap: 115000,
+    wifi: { signal: 78, rssi: -62 },
     leds: { count: ledCount, rgbw: nativeType === WLED_SK6812_RGBW_NATIVE_TYPE },
   };
   const cfgEnabled = options.cfgEnabled ?? true;

@@ -27,6 +27,13 @@ describe("snapshotSegmentCount", () => {
 });
 
 describe("parseWledPayload", () => {
+  it("carries live health from /json/info without filling absent fields", () => {
+    const snap = parseWledPayload({ ...wledJson, info: { ...wledJson.info, uptime: 120,
+      freeheap: 20480, wifi: { signal: 75, rssi: -60 } } });
+    expect(snap?.health).toMatchObject({ uptimeSeconds: 120, freeHeapBytes: 20480,
+      wifiSignalPercent: 75, wifiRssiDbm: -60 });
+    expect(parseWledPayload(wledJson)?.health?.uptimeSeconds).toBeNull();
+  });
   it("retains why native Preview cannot restore a frozen controller or playlist", () => {
     const frozen = parseWledPayload({
       ...wledJson, state: { ...wledJson.state, seg: [{ id: 0, start: 0, stop: 60, frz: true }] },

@@ -1,4 +1,5 @@
 import type { RangeSpan } from "../range.ts";
+import { parseWledHealth, type WledHealth } from "./health.ts";
 
 export type WledNativeSegment = {
   id: number; start: number; stop: number; col: number[][]; frz: boolean;
@@ -9,6 +10,7 @@ export type WledNativeRestore = { on: boolean; bri: number; seg: WledNativeSegme
 export type WledSnapshot = {
   name: string;
   firmware: string;
+  health?: WledHealth;
   mac: string | null;
   ledCount: number;
   rgbw: boolean;
@@ -70,6 +72,7 @@ export function parseWledPayload(body: unknown): WledSnapshot | null {
   return {
     name,
     firmware: ver.startsWith("0") || ver.includes(".") ? `WLED ${ver}` : ver,
+    health: parseWledHealth(info, ver),
     mac: typeof info.mac === "string" ? formatMac(info.mac) : null,
     ledCount: count,
     rgbw: Boolean(leds?.rgbw),
