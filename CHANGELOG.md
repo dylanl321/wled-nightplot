@@ -7,6 +7,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- Blink it now holds a three-second pulse and restores a complete WLED state; an incomplete snapshot refuses before writing. The Lights-card Blink also ends its session. In Segments, Safari drag selection no longer selects SVG text, a drawn range lights during Preview, and the display-only Segment colours are refreshed. Naming is available beside the strip; Save Segments works during Preview. Controller differences are summarized with optional Details. Save & Apply now waits for Preview to end and restore before writing ranges; a failed restore or All Off cancellation sends no Apply. Fixture and UI checks are software-only, not Hardware Done.
+
 - CONFIG-179: Root dev, demo, test, typecheck and helper scripts now invoke pinned pnpm through Corepack. `corepack pnpm dev` no longer requires a separate bare `pnpm` shim in the launching shell. The packageManager pin is unchanged.
 
 - CONFIG-178: macOS Find also uses system Bonjour DNS-SD to browse `_wled._tcp`, resolve the advertised SRV port and IPv4, and feed the existing Light probe when raw UDP multicast misses. An unreachable Node API process now names its LAN-access failure instead of a generic probe failure. Unresolved or unreachable services are not shown as addable; Windows/Linux paths and typed hosts are unchanged. A browse result is not hardware validation.

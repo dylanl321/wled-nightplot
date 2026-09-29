@@ -202,6 +202,41 @@ describe("holdSpans", () => {
 });
 
 describe("locateFrame hold", () => {
+  it("lights the whole dragged selection over gaps and Segments while keeping the rest lit", () => {
+    const selected = locateFrame({
+      enabled: true, lightName: "Porch", ledCount: 20,
+      hoverIndex: 11, dragging: true,
+      drawing: { start: 5, stop: 12 }, ledSel: null,
+      element: null, hue: null, mode: "hold",
+      elements: holdElements, hues: holdHues, backgroundPercent: 100,
+    });
+    expect(selected).toMatchObject({ pixels: true, caption: "Lighting 5–12 on Porch. Other Segments stay lit." });
+    expect(selected?.spans).toEqual([
+      { start: 0, stop: 5, color: "#d4a574" },
+      { start: 12, stop: 14, color: "#7ee0d0" },
+      { start: 5, stop: 12, color: "#fff4dc" },
+    ]);
+    const settled = locateFrame({
+      enabled: true, lightName: "Porch", ledCount: 20,
+      hoverIndex: 11, dragging: false,
+      drawing: null, ledSel: { start: 5, stop: 12 },
+      element: null, hue: null, mode: "hold",
+      elements: holdElements, hues: holdHues,
+    });
+    expect(settled?.spans).toEqual(selected?.spans);
+    expect(holdSpans({ ...holdArgs(null), selection: { start: 8, stop: 10 } }).at(-1))
+      .toEqual({ start: 8, stop: 10, color: "#fff4dc" });
+  });
+
+  it("lights a drawn range even before the first Segment exists", () => {
+    const selected = locateFrame({
+      enabled: true, lightName: "Porch", ledCount: 20,
+      hoverIndex: null, dragging: true, drawing: { start: 2, stop: 6 }, ledSel: null,
+      element: null, hue: null, mode: "hold", elements: [], hues: {},
+    });
+    expect(selected?.spans).toEqual([{ start: 2, stop: 6, color: "#fff4dc" }]);
+  });
+
   it("marks the cursor on a Segment as well as in gaps", () => {
     const onElement = locateHold(4);
     const inGap = locateHold(9);
@@ -282,6 +317,24 @@ describe("useLiveLocate", () => {
     await finish(unmount);
     expect(paths.filter((path) => path.endsWith("/preview/end"))).toEqual([]);
     expect(bodies).toHaveLength(1);
+  });
+
+  it("reports a cancelled stop to Apply when All Off arrives during a Preview hop", async () => {
+    vi.useFakeTimers();
+    const gate = deferred();
+    const paths: string[] = [];
+    stubPreview({ bodies: [], paths, gate: () => gate.promise });
+    const { result, unmount } = renderHook(() => useLiveLocate(input()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    let stopped!: Promise<boolean>;
+    act(() => { stopped = result.current.stop(); });
+    act(() => {
+      window.dispatchEvent(new CustomEvent("nightplot:all-off", { detail: { lightIds: ["light-1"] } }));
+    });
+    expect(await stopped).toBe(false);
+    await act(async () => { gate.resolve(); await Promise.resolve(); });
+    expect(paths.some((path) => path.endsWith("/preview/end"))).toBe(false);
+    await finish(unmount);
   });
 
   it("sends immediately and every 50 ms during an uninterrupted sweep, then settles", async () => {

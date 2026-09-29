@@ -10,6 +10,7 @@ import {
   edgeAt,
   neighbourAt,
   elementAt,
+  ELEMENT_HUES,
   LOCATE_OFF,
   pieces,
   rowTop,
@@ -115,15 +116,18 @@ export function StripEditor({
         width="100%"
         role="img"
         aria-label={label}
-        style={{ display: "block", height: "auto", overflow: "visible", cursor, touchAction: "none", userSelect: "none" }}
+        className="[&_text]:pointer-events-none"
+        style={{ display: "block", height: "auto", overflow: "visible", cursor, touchAction: "none", userSelect: "none", WebkitUserSelect: "none" }}
         onPointerDown={(event) => {
           if (event.button !== 0) return;
           const hit = atEvent(event);
           if (!hit) return;
+          event.preventDefault();
           if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
           event.currentTarget.setPointerCapture(event.pointerId);
           dispatch({ type: "down", hit, shift: event.shiftKey });
         }}
+        onDragStart={(event) => event.preventDefault()}
         onPointerMove={(event) => {
           const hit = atEvent(event);
           if (!hit) return;
@@ -221,7 +225,7 @@ export function StripEditor({
         })}
         {ordered.map((element) => {
           const word = issueWord(element.id);
-          const hue = word ? "#e07070" : (hues[element.id] ?? "#d4a574");
+          const hue = word ? "#e07070" : (hues[element.id] ?? ELEMENT_HUES[0]);
           const isSel = state.sel.includes(element.id);
           const start = Math.max(0, Math.min(count, element.start));
           const stop = Math.max(0, Math.min(count, element.stop));
@@ -283,7 +287,7 @@ export function StripEditor({
               const y = beadCenterY(row);
               const active = state.focus.kind === "edge" && state.focus.id === selected.id && state.focus.which === edge;
               const shared = active && neighbourAt(selected, edge, state.els);
-              const hue = issueWord(selected.id) ? "#e07070" : (hues[selected.id] ?? "#d4a574");
+              const hue = issueWord(selected.id) ? "#e07070" : (hues[selected.id] ?? ELEMENT_HUES[0]);
               return (
                 <g key={edge}>
                 <rect

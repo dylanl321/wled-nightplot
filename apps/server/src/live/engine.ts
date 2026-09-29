@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import {
   BLINK_COLOR,
+  BLINK_PULSE_MS,
   blinkRefuseReason,
   countRangeMatches,
   fixtureCaption,
+  hexToRgb,
   parseHexColor,
   previewLocateCaption,
   previewRefuseReason,
@@ -32,7 +34,6 @@ import {
   previewWriteLeavingOverlay,
   previewWriteSpans,
   restoreWriteLeavingOverlay,
-  restoreWriteFromSnapshot,
   writeBodiesEqual,
   pixelPreviewWrite,
   openPixelPreview,
@@ -109,6 +110,7 @@ export function createLiveEngine(deps: {
   write: WriteStateFn;
   readLive: ReadLiveFn;
   findLight: (id: string) => Light | undefined;
+  wait?: (ms: number) => Promise<void>;
 }): LiveEngine {
   const sessions = new Map<string, LiveSession>();
   const lastWrites = new Map<string, WledStateWrite>();
@@ -430,9 +432,24 @@ export function createLiveEngine(deps: {
       return next;
     },
     read,
-    async identifyHost(target, ledCount, snapshot) {
-      const restore = restoreWriteFromSnapshot(snapshot);
-      const sent = await deps.write(target, previewWrite(0, ledCount, BLINK_COLOR, 220));
+  async identifyHost(target, ledCount, snapshot) {
+      const native = snapshot.nativeRestore;
+      if (!native || native.seg.some((segment) => segment.stop > ledCount)) {
+        return {
+          ok: false, status: 422, error: "restore-unavailable", sent: false,
+          message: "Blink needs a complete controller state to restore this Light. Refresh and try again. Nothing was sent.",
+        };
+      }
+      // WLED may retain other active segments and a segment's own off switch.
+      // Clear those for the pulse; restore their full native state afterward.
+      const pulse: WledStateWrite = {
+        on: true, bri: 220, tt: 0,
+        seg: [
+          ...native.seg.filter((segment) => segment.id !== 0).map((segment) => ({ id: segment.id, start: 0, stop: 0 })),
+          { id: 0, start: 0, stop: ledCount, on: true, bri: 255, fx: 0, col: [hexToRgb(BLINK_COLOR)!] },
+        ],
+      };
+      const sent = await deps.write(target, pulse);
       if (!sent) {
         return {
           ok: false,
@@ -442,7 +459,18 @@ export function createLiveEngine(deps: {
         };
       }
       const pulsed = await deps.readLive(target, ledCount);
-      const restored = await deps.write(target, restore);
+      await (deps.wait?.(BLINK_PULSE_MS) ?? new Promise<void>((resolve) => setTimeout(resolve, BLINK_PULSE_MS)));
+      const restored = await deps.write(target, {
+        on: native.on, bri: native.bri, tt: 0,
+        seg: [
+          ...(!native.seg.some((segment) => segment.id === 0) ? [{ id: 0, start: 0, stop: 0 }] : []),
+          ...native.seg.map((segment) => ({ ...segment })),
+        ],
+      });
+      if (!restored) return {
+        ok: false, status: 422, error: "restore-failed",
+        message: "Blink ran, but the previous look was not restored. Check this Light in WLED.",
+      };
       const live = await deps.readLive(target, ledCount);
       return {
         ok: true,

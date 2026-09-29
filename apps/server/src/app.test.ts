@@ -914,6 +914,34 @@ describe("preview + blink", () => {
     return body.light.id;
   }
 
+  it("saves a Segment name during Preview without Applying or ending the live session", async () => {
+    const { app, box } = testApp();
+    const id = await enroll(app);
+    const preview = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ color: "#4f7dff", brightness: 180 }),
+    });
+    expect(preview.status).toBe(200);
+    expect(box.leds[0]).toBe("#4f7dff");
+    const before = (await (await app.request(`/api/lights/${id}`)).json()) as {
+      elements: { id: string; label: string; start: number; stop: number }[];
+    };
+    const save = await app.request(`/api/lights/${id}/elements`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: before.elements.map((element) => ({
+        ...element, label: element.label === "Left run" ? "Porch edge" : element.label,
+      })) }),
+    });
+    expect(save.status).toBe(200);
+    const after = (await save.json()) as { elements: { label: string }[]; session: { kind: string } };
+    expect(after.elements[0]?.label).toBe("Porch edge");
+    expect(after.session.kind).toBe("preview");
+    expect(box.leds[0]).toBe("#4f7dff");
+    const ended = await app.request(`/api/lights/${id}/preview/end`, { method: "POST" });
+    expect(ended.status).toBe(200);
+    expect(box.leds[0]).toBe("#ffa000");
+  });
+
   it("previews a range, reads it back, then restores", async () => {
     const { app, box } = testApp();
     const id = await enroll(app);

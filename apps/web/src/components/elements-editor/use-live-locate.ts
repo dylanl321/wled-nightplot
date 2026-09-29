@@ -4,7 +4,7 @@ import type { Element, LightDetail } from "@nightplot/shared";
 import { useEffect, useRef, useState } from "react";
 import { fetchJson } from "@/lib/api";
 import type { Drag, EditorState } from "./use-editor-state";
-import { LOCATE_LIT, LOCATE_OFF, type Range } from "./ops";
+import { ELEMENT_HUES, LOCATE_LIT, LOCATE_OFF, type Range } from "./ops";
 
 export type LocateMode = "cursor" | "hold" | "count" | "search";
 
@@ -125,11 +125,15 @@ function holdFrame(input: {
   ledCount: number;
   hoverIndex: number | null;
   dragging: boolean;
+  drawing: Range | null;
+  ledSel: Range | null;
   elements: Element[];
   hues: Record<string, string>;
   backgroundPercent?: number;
 }): LocateFrame {
-  const spans = holdSpans(input);
+  const selected = input.drawing ?? input.ledSel;
+  const selection = selected && selected.stop > selected.start ? selected : null;
+  const spans = holdSpans({ ...input, selection });
   if (spans.length === 0) {
     return {
       start: 0,
@@ -145,7 +149,9 @@ function holdFrame(input: {
     color: spans[0]?.color ?? LOCATE_LIT,
     spans,
     pixels: true,
-    caption: marked
+    caption: selection
+      ? `Lighting ${selection.start}–${selection.stop} on ${input.lightName}. Other Segments stay lit.`
+      : marked
       ? `LED ${input.hoverIndex} is the bright one. Segments stay lit on ${input.lightName}.`
       : `Segments stay lit on ${input.lightName}.`,
   };
@@ -193,20 +199,29 @@ export function holdSpans(input: {
   elements: Element[];
   hues: Record<string, string>;
   backgroundPercent?: number;
+  selection?: Range | null;
 }): LocateSpan[] {
-  const index = holdHoverIndex(input);
+  const selection = input.selection && input.selection.stop > input.selection.start ? input.selection : null;
+  const index = selection ? null : holdHoverIndex(input);
   const spans: LocateSpan[] = [];
   const ordered = [...input.elements].sort((a, b) => a.start - b.start);
   for (const element of ordered) {
     const range = clippedElementRange(element, input.ledCount);
     if (!range) continue;
-    const color = dimPreviewColor(input.hues[element.id] ?? "#d4a574", input.backgroundPercent ?? 100);
+    const color = dimPreviewColor(input.hues[element.id] ?? ELEMENT_HUES[0], input.backgroundPercent ?? 100);
+    if (selection) {
+      if (range.start < selection.start) spans.push({ start: range.start, stop: Math.min(range.stop, selection.start), color });
+      if (range.stop > selection.stop) spans.push({ start: Math.max(range.start, selection.stop), stop: range.stop, color });
+      continue;
+    }
     if (index !== null && index >= range.start && index < range.stop) {
       if (range.start < index) spans.push({ start: range.start, stop: index, color });
       if (index + 1 < range.stop) spans.push({ start: index + 1, stop: range.stop, color });
     } else spans.push({ start: range.start, stop: range.stop, color });
   }
-  if (index != null) {
+  if (selection) {
+    spans.push({ ...selection, color: LOCATE_LIT });
+  } else if (index != null) {
     spans.push({ start: index, stop: index + 1, color: LOCATE_LIT });
   }
   return spans;
@@ -296,7 +311,11 @@ export function useLiveLocate(input: LocateInput) {
   }, [input.enabled, input.lightId, payloadKey]);
 
   const status = reported.lightId === input.lightId ? reported.status : IDLE;
-  return { ...status, retry: () => sender.current?.retry() };
+  return {
+    ...status,
+    retry: () => sender.current?.retry(),
+    stop: () => sender.current?.stop() ?? Promise.resolve(false),
+  };
 }
 
 /**
@@ -321,6 +340,12 @@ function createLocateSender(
   let lastStarted: number | null = null;
   let status = IDLE;
   let generation = 0;
+  let stopWaiters: ((restored: boolean) => void)[] = [];
+
+  function finishStop(restored: boolean) {
+    for (const resolve of stopWaiters) resolve(restored);
+    stopWaiters = [];
+  }
 
   function publish(next: LocateStatus) {
     status = next;
@@ -393,6 +418,7 @@ function createLocateSender(
   async function end() {
     flight = true;
     const attempt = generation;
+    let restored = false;
     try {
       const detail = await requestLocate(
         `/api/lights/${lightId}/preview/end`,
@@ -405,11 +431,13 @@ function createLocateSender(
       }
       if (!disposed) onDetail(detail);
       publish(IDLE);
+      restored = true;
     } catch (error) {
       if (attempt !== generation) return;
       // 404 means there is no session to end (e.g. a rejected first frame).
       if (error instanceof Error && "status" in error && error.status === 404) {
         publish(IDLE);
+        restored = true;
       } else {
         publish({
           stopping: false,
@@ -427,6 +455,7 @@ function createLocateSender(
       lastAcknowledged = null;
       lastStarted = null;
       flight = false;
+      finishStop(restored);
       schedule();
     }
   }
@@ -434,6 +463,7 @@ function createLocateSender(
   return {
     cancel() {
       generation++;
+      finishStop(false);
       enabled = false;
       desired = null;
       mustEnd = false;
@@ -458,6 +488,18 @@ function createLocateSender(
         enabled = true;
       }
       schedule();
+    },
+    stop(): Promise<boolean> {
+      if (status.error?.kind === "end") return Promise.resolve(false);
+      enabled = false;
+      desired = null;
+      clearTimer();
+      if (!open) return Promise.resolve(true);
+      mustEnd = true;
+      publish({ ...status, stopping: true });
+      const finished = new Promise<boolean>((resolve) => stopWaiters.push(resolve));
+      schedule();
+      return finished;
     },
     retry() {
       if (disposed || !enabled || status.error?.kind !== "frame" || mustEnd) return;

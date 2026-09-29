@@ -181,9 +181,13 @@ describe("element editor ops", () => {
   });
 
   it("keeps a stored hue and gives a new Segment the next free one", () => {
-    const hues = assignHues([{ id: "a" }, { id: "b" }], { a: "#7ee0d0" });
-    expect(hues.a).toBe("#7ee0d0");
-    expect(hues.b).toBe("#d4a574");
+    const hues = assignHues([{ id: "a" }, { id: "b" }], { a: "#4fd3c1" });
+    expect(hues.a).toBe("#4fd3c1");
+    expect(hues.b).toBe("#e8ae66");
+    expect(assignHues([{ id: "a" }, { id: "b" }], { a: "#d4a574", b: "#7ee0d0" }))
+      .toEqual({ a: "#e8ae66", b: "#4fd3c1" });
+    expect(assignHues([{ id: "a" }, { id: "b" }], { a: "#7ee0d0", b: "#d4a574" }))
+      .toEqual({ a: "#4fd3c1", b: "#e8ae66" });
   });
 
   it("reports the free runs between Segments", () => {

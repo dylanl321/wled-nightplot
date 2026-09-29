@@ -550,7 +550,11 @@ describe("LightDetail info-only segments", () => {
     const row = screen.getByRole("button", { name: /Door 0–60/ });
     expect(row.textContent).toMatch(/ok/);
     expect(row.textContent).not.toMatch(/matches/i);
-    expect(screen.getByText(/doesn’t match this page/)).toBeTruthy();
+    expect(screen.getByText("Segments differ from the controller")).toBeTruthy();
+    const comparison = screen.getByText("Details").closest("details")!;
+    expect(comparison.open).toBe(false);
+    fireEvent.click(screen.getByText("Details"));
+    expect(comparison.open).toBe(true);
   });
 
   it("still says matches on Edit ranges when a known report compares equal", () => {
@@ -794,7 +798,7 @@ describe("LightDetail Apply unknown colour", () => {
     expect(screen.queryByText(/Colour is unknown/)).toBeNull();
   });
 
-  it("refuses Apply as soon as Light on strip is on — does not wait for the first hop", () => {
+  it("offers Apply during Preview and waits for the in-flight hop before ending it", async () => {
     const initial = lightDetail({
       light: lightView({
         reachability: "online",
@@ -805,23 +809,19 @@ describe("LightDetail Apply unknown colour", () => {
       }),
       snapshotAt: "2026-09-26T20:00:00.000Z",
     });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        const path = requestPath(String(input));
-        if (path === `/api/lights/${initial.light.id}/preview/end`) {
-          return new Response(JSON.stringify({ ...initial, session: null }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        await new Promise(() => undefined);
-        return new Response(JSON.stringify(initial), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }),
-    );
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const paths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = requestPath(String(input));
+      paths.push(path);
+      if (path.endsWith("/preview") && !path.endsWith("/preview/end")) await pending;
+      return new Response(JSON.stringify(path.endsWith("/preview/end")
+        ? { ...initial, session: null, restored: true }
+        : path.endsWith("/apply")
+          ? { ...initial, apply: applyOutcome([{ label: "Door", start: 0, stop: 60 }], [{ start: 0, stop: 60 }], "fixture") }
+          : initial), { headers: { "Content-Type": "application/json" } });
+    }));
     render(
       <LightDetail
         initial={initial}
@@ -834,10 +834,94 @@ describe("LightDetail Apply unknown colour", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
 
-    expect((screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
-    expect(screen.getByText(/End the Preview first\. Preview is not Apply/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText(/End the Preview first\. Preview is not Apply/)).toBeNull();
+    expect(screen.queryByText(/Save Segments works during Preview/)).toBeNull();
+    await waitFor(() => expect(paths.some((path) => path.endsWith("/preview"))).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(paths.some((path) => path.endsWith("/preview/end") || path.endsWith("/apply"))).toBe(false);
+    await act(async () => { release(); await pending; });
+    await waitFor(() => expect(paths.some((path) => path.endsWith("/apply"))).toBe(true));
+    expect(paths.findIndex((path) => path.endsWith("/preview/end"))).toBeLessThan(paths.findIndex((path) => path.endsWith("/apply")));
+  });
+
+  it("names beside the strip and saves Segments during Preview without Applying", async () => {
+    const initial = lightDetail({
+      light: lightView({ reachability: "online", on: true, brightness: 128, bead: "#ffa000", segmentCount: 1 }),
+    });
+    const calls: { path: string; method: string; body: unknown }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      calls.push({ path, method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : null });
+      const saved = path.endsWith("/elements") && init?.method === "PATCH";
+      return new Response(JSON.stringify(saved ? {
+        ...initial, elements: [{ ...initial.elements[0], label: "Porch edge" }],
+      } : initial), { headers: { "Content-Type": "application/json" } });
+    }));
+    render(<LightDetail initial={initial} mode="ranges" />);
+    const name = screen.getByRole("textbox", { name: "Name selected Segment" });
+    fireEvent.change(name, { target: { value: "Porch edge" } });
+    fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
+    const save = screen.getByRole("button", { name: "Save Segments" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Save & Apply" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText(/Save Segments keeps Preview on\. Save & Apply ends Preview first/)).toBeTruthy();
+    fireEvent.click(save);
+    await waitFor(() => expect(calls.some((call) => call.path.endsWith("/elements") && call.method === "PATCH")).toBe(true));
+    expect(calls.find((call) => call.method === "PATCH")?.body).toMatchObject({ elements: [{ label: "Porch edge" }] });
+    expect(calls.some((call) => call.path.endsWith("/apply") || call.path.endsWith("/preview/end"))).toBe(false);
+  });
+
+  it("does not Apply when automatic End Preview cannot restore", async () => {
+    const initial = lightDetail({
+      light: lightView({ reachability: "online", on: true, brightness: 128, bead: "#ffa000", segmentCount: 1 }),
+    });
+    const paths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = requestPath(String(input));
+      paths.push(path);
+      return path.endsWith("/preview/end")
+        ? new Response(JSON.stringify({ error: "restore-failed", message: "Could not restore." }), { status: 422 })
+        : new Response(JSON.stringify(initial));
+    }));
+    render(<LightDetail initial={initial} mode="ranges" />);
+    fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
+    await waitFor(() => expect(paths.some((path) => path.endsWith("/preview"))).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(paths.some((path) => path.endsWith("/preview/end"))).toBe(true));
+    expect(paths.some((path) => path.endsWith("/apply"))).toBe(false);
+    expect(await screen.findByText(/Preview could not be restored\. Apply was not sent/)).toBeTruthy();
+  });
+
+  it("saves edits, ends Preview, then Applies in that order", async () => {
+    const initial = lightDetail({
+      light: lightView({ reachability: "online", on: true, brightness: 128, bead: "#ffa000", segmentCount: 1 }),
+    });
+    const paths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      paths.push(path);
+      const saved = path.endsWith("/elements") && init?.method === "PATCH";
+      return new Response(JSON.stringify(path.endsWith("/preview/end")
+        ? { ...initial, restored: true, session: null }
+        : path.endsWith("/apply")
+          ? { ...initial, apply: applyOutcome([{ label: "Porch edge", start: 0, stop: 60 }], [{ start: 0, stop: 60 }], "fixture") }
+          : saved
+            ? { ...initial, elements: [{ ...initial.elements[0], label: "Porch edge" }] }
+            : initial), { headers: { "Content-Type": "application/json" } });
+    }));
+    render(<LightDetail initial={initial} mode="ranges" />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Name selected Segment" }), { target: { value: "Porch edge" } });
+    fireEvent.click(screen.getByRole("button", { name: "Light on strip" }));
+    await waitFor(() => expect(paths.some((path) => path.endsWith("/preview"))).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Save & Apply" }));
+    await waitFor(() => expect(paths.some((path) => path.endsWith("/apply"))).toBe(true));
+    const patch = paths.findIndex((path) => path.endsWith("/elements"));
+    const end = paths.findIndex((path) => path.endsWith("/preview/end"));
+    const apply = paths.findIndex((path) => path.endsWith("/apply"));
+    expect(patch).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(patch);
+    expect(apply).toBeGreaterThan(end);
   });
 
   it("captions first locate when restore segment count is unknown — not leftover-clear success", async () => {
@@ -1184,7 +1268,7 @@ describe("LightDetail selected Segment kind chip", () => {
 
     expect(selectedKindChip().textContent).toBe("ok");
     expect(screen.getByText("Door is 0–60 here. The controller has nothing there.")).toBeTruthy();
-    expect(screen.getByText(/doesn’t match this page/)).toBeTruthy();
+    expect(screen.getByText("Segments differ from the controller")).toBeTruthy();
     expect(screen.queryByText("overlap")).toBeNull();
   });
 
@@ -1294,7 +1378,7 @@ describe("LightDetail bead legend", () => {
 
     expect(selectedKindChip().textContent).toBe("ok");
     expect(screen.getByText("Door is 0–60 here. The controller has nothing there.")).toBeTruthy();
-    expect(screen.getByText(/doesn’t match this page/)).toBeTruthy();
+    expect(screen.getByText("Segments differ from the controller")).toBeTruthy();
   });
 });
 
@@ -1489,7 +1573,7 @@ function dirtyLabel() {
 }
 
 function expectSaveRefused() {
-  const save = screen.getByRole("button", { name: "Save" });
+  const save = screen.getByRole("button", { name: "Save Segments" });
   const apply = screen.getByRole("button", { name: "Save & Apply" });
   expect((save as HTMLButtonElement).disabled).toBe(true);
   expect((apply as HTMLButtonElement).disabled).toBe(true);

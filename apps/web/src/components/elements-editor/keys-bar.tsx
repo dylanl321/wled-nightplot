@@ -2,7 +2,7 @@
 
 import { formatNodeLength } from "@nightplot/shared";
 import type { ReactNode } from "react";
-import { bounds, elementAt, neighbourAt } from "./ops";
+import { bounds, elementAt, neighbourAt, ELEMENT_HUES } from "./ops";
 import type { EditorState } from "./use-editor-state";
 
 export function Key({ children }: { children: ReactNode }) {
@@ -21,7 +21,7 @@ export function KeysBar({ state, hues, live, spacingMm }: {
   const here = state.cursor === null ? null : elementAt(state.cursor, state.els);
   const limits = el ? bounds(el, state.els, state.ledCount) : null;
   const nb = el && focus.kind === "edge" ? neighbourAt(el, focus.which, state.els) : null;
-  const hue = el ? hues[el.id] ?? "#d4a574" : focus.kind === "sel" ? "#ece7dc" : "#9a9488";
+  const hue = el ? hues[el.id] ?? ELEMENT_HUES[0] : focus.kind === "sel" ? "#ece7dc" : "#9a9488";
   const range = state.ledSel;
   const title = el ? `${el.label}${focus.kind === "edge" ? ` · ${focus.which === "start" ? "start" : "stop"} edge` : ""}`
     : focus.kind === "sel" ? `${range ? range.stop - range.start : 0} LEDs selected` : "Cursor";

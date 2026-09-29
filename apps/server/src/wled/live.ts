@@ -21,7 +21,7 @@ export type WledStateWrite = {
     id?: number; start: number; stop: number; col?: number[][];
     i?: (number | string)[];
     frz?: boolean; on?: boolean; bri?: number; grp?: number; spc?: number; of?: number;
-    rev?: boolean; mi?: boolean;
+    rev?: boolean; mi?: boolean; fx?: number;
   }[];
 };
 

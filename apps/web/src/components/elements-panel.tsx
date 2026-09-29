@@ -22,6 +22,7 @@ import { ElementInspector } from "@/components/elements-editor/inspector";
 import { CursorControls } from "@/components/elements-editor/cursor-controls";
 import {
   assignHues,
+  ELEMENT_HUES,
   elementAt,
   gapAt,
   gaps,
@@ -164,17 +165,17 @@ export function ElementsPanel({
   const frozenPreview = detail.frozenPreview === true || (!recoveryNotice && locate.error?.code === "pixel-preview-frozen");
 
   const firstIssue = issues[0] ?? null;
-  const applyReason = frozenPreview ? "Recover the frozen LEDs before Apply." : applyRefuseReason({
+  const applyReadyReason = frozenPreview ? "Recover the frozen LEDs before Apply." : applyRefuseReason({
     reachable: !unreachable,
     issueMessage: firstIssue?.message ?? null,
     elementCount: state.els.length,
-    busyKind: detail.session?.kind ?? null,
-    previewIntent: (live && !unreachable) || locate.stopping || locate.error?.kind === "end",
+    busyKind: detail.session?.kind === "blink" ? "blink" : null,
+    previewIntent: false,
     segmentCount: light.segmentCount,
     segmentColor: typeof light.bead === "string" ? light.bead : null,
   });
   const canSave = dirtyCount > 0 && issues.length === 0 && busy === null;
-  const canApply = applyReason === null && busy === null;
+  const canApply = applyReadyReason === null && busy === null && !locate.stopping && locate.error?.kind !== "end";
   const liveReason = unreachable
     ? previewRefuseReason({ reachable: false, hasTarget: true })
     : null;
@@ -213,8 +214,8 @@ export function ElementsPanel({
   }
 
   async function applyRanges() {
-    if (applyReason) {
-      onNotice(applyReason);
+    if (applyReadyReason) {
+      onNotice(applyReadyReason);
       return;
     }
     if (dirtyCount > 0) {
@@ -223,6 +224,31 @@ export function ElementsPanel({
     }
     onBusy("apply");
     onNotice(null);
+    if (live || locate.stopping || detail.session?.kind === "preview") {
+      setLive(false);
+      const restored = await locate.stop();
+      if (!restored) {
+        onBusy(null);
+        onNotice("Preview could not be restored. Apply was not sent. Retry End Preview or use All Off.");
+        return;
+      }
+      if (!live && detail.session?.kind === "preview" && !locate.stopping) {
+        let ended;
+        try {
+          ended = await postJson<LightDetailPayload & { restored?: boolean }>(`/api/lights/${light.id}/preview/end`, {});
+        } catch {
+          onBusy(null);
+          onNotice("Preview could not be confirmed ended. Apply was not sent.");
+          return;
+        }
+        if ((!ended.ok && ended.status !== 404) || (ended.ok && ended.data.restored === false)) {
+          onBusy(null);
+          onNotice(!ended.ok ? ended.data.message ?? "Preview could not be restored. Apply was not sent." : "Preview could not be restored. Apply was not sent.");
+          return;
+        }
+        if (ended.ok) onDetail(ended.data);
+      }
+    }
     const res = await postJson<LightDetailPayload>(`/api/lights/${light.id}/apply`, {
       elements: payload(elsRef.current),
     });
@@ -311,7 +337,7 @@ export function ElementsPanel({
       ) : segmentsUnknown ? (
         <div className="rounded-xl border border-border bg-[#12141a] px-4 py-3.5">
           <p className="text-[15px] font-medium">{display.notes[0]?.text ?? "Segments unknown"}</p>
-          {applyReason ? <p className="mt-1 text-[13px] text-destructive">{applyReason}</p> : null}
+          {applyReadyReason ? <p className="mt-1 text-[13px] text-destructive">{applyReadyReason}</p> : null}
         </div>
       ) : unreachable ? (
         <div className="rounded-xl border border-[#5a2f33] bg-[#1a1113] px-4 py-3.5">
@@ -323,25 +349,28 @@ export function ElementsPanel({
       ) : showDrift ? (
         <div className="flex flex-col gap-3 rounded-xl border border-primary/70 bg-[#15130f] px-4 py-3.5 sm:flex-row sm:items-center">
           <div className="flex flex-col gap-1">
-            <p className="text-[15px] font-medium text-primary">The controller doesn’t match this page</p>
-            {(driftLines.length > 0 ? driftLines : display.notes.map((note) => note.text)).map(
-              (line, index) => (
-                <p key={`${index}-${line}`} className="text-[13px] text-[#c9c3b8]">
-                  {line}
-                </p>
-              ),
-            )}
+            <p className="text-[15px] font-medium text-primary">Segments differ from the controller</p>
+            <p className="text-[13px] text-[#c9c3b8]">{dirtyCount > 0 ? "Unsaved edits on this page. Save them first; Apply later if you want them on the controller." : "Your saved Segments stay as they are until you Apply."}</p>
+            <details className="text-[13px] text-[#c9c3b8]">
+              <summary className="w-fit cursor-pointer text-primary">Details</summary>
+              <div className="mt-2 flex flex-col gap-1">
+                {(driftLines.length > 0 ? driftLines : display.notes.map((note) => note.text)).map(
+                  (line, index) => <p key={`${index}-${line}`}>{line}</p>,
+                )}
+              </div>
+            </details>
           </div>
           <div className="flex gap-2 sm:ml-auto">
             <Button
               variant="outline"
               className="h-9 text-[13px]"
               onClick={adopt}
-              disabled={display.reported.length === 0 || busy !== null}
+              disabled={display.reported.length === 0 || dirtyCount > 0 || busy !== null}
+              title={dirtyCount > 0 ? "Save or revert your edits before using the controller’s ranges." : undefined}
             >
               Use controller’s
             </Button>
-            <Button className="h-9 text-[13px]" onClick={() => void applyRanges()} disabled={!canApply} title={applyReason ?? undefined}>
+            <Button className="h-9 text-[13px]" onClick={() => void applyRanges()} disabled={!canApply} title={applyReadyReason ?? undefined}>
               {busy === "apply" ? "Applying…" : "Apply mine"}
             </Button>
           </div>
@@ -409,6 +438,17 @@ export function ElementsPanel({
           <p className="mt-2 text-muted-foreground">Preview is temporary. End Preview restores; All Off cancels without restoring. No Segment is changed.</p>
         </section> : null}
         <div className="px-5 pt-4 pb-2">
+        {one ? (
+          <label className="mb-3 flex max-w-[460px] flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
+            <span>Name selected Segment</span>
+            <input
+              aria-label="Name selected Segment"
+              value={one.label}
+              onChange={(event) => dispatch({ type: "label", value: event.target.value })}
+              className="h-9 min-w-[180px] flex-1 rounded-md border border-input bg-[#07080a] px-3 text-[14px] text-foreground outline-none focus:border-primary"
+            />
+          </label>
+        ) : null}
         <StripEditor
           svgId={`light-${light.id}`}
           label={`${light.name} strip, ${light.ledCount} LEDs, ${light.stripBead === "rgbw" ? "RGBW" : "RGB"}`}
@@ -450,7 +490,7 @@ export function ElementsPanel({
               const count = element.stop > element.start ? element.stop - element.start : 0;
               const length = formatNodeLength(count, light.spacingMm);
               const selected = state.sel.includes(element.id);
-              const hue = word ? "#e07070" : (hues[element.id] ?? "#d4a574");
+              const hue = word ? "#e07070" : (hues[element.id] ?? ELEMENT_HUES[0]);
               return (
                 <button
                   key={element.id}
@@ -497,12 +537,12 @@ export function ElementsPanel({
       </div>
 
       {notice ? <p className="text-[13px] text-destructive">{notice}</p> : null}
-      {!bannerOwnsReason && applyReason ? (
-        <p className="text-[13px] text-destructive">{applyReason}</p>
+      {!bannerOwnsReason && applyReadyReason ? (
+        <p className="text-[13px] text-destructive">{applyReadyReason}</p>
       ) : null}
 
       {dirtyCount > 0 ? (
-        <div className="fixed bottom-5 left-1/2 z-20 flex w-[min(1020px,calc(100%-48px))] -translate-x-1/2 items-center gap-2.5 rounded-xl border border-input bg-[#12141a] px-3.5 py-3 shadow-[0_-12px_40px_rgba(0,0,0,0.5)]">
+        <div className="fixed bottom-5 left-1/2 z-20 flex w-[min(1020px,calc(100%-48px))] -translate-x-1/2 flex-wrap items-center gap-2.5 rounded-xl border border-input bg-[#12141a] px-3.5 py-3 shadow-[0_-12px_40px_rgba(0,0,0,0.5)]">
           <span className="text-[14px] text-primary">
             {dirtyCount} unsaved change{dirtyCount === 1 ? "" : "s"}
           </span>
@@ -515,19 +555,20 @@ export function ElementsPanel({
             Revert
           </button>
           <Button variant="outline" className="h-[34px] px-3 text-[13px]" onClick={() => void save()} disabled={!canSave}>
-            {busy === "save" ? "Saving…" : "Save"}
+            {busy === "save" ? "Saving…" : "Save Segments"}
           </Button>
           <Button
             className="h-[34px] px-3 text-[13px]"
             onClick={() => void applyRanges()}
             disabled={!canApply}
-            title={applyReason ?? undefined}
+            title={applyReadyReason ?? undefined}
           >
             {busy === "apply" ? "Applying…" : "Save & Apply"}
           </Button>
+          {live ? <span className="basis-full text-[12px] text-muted-foreground">Save Segments keeps Preview on. Save & Apply ends Preview first.</span> : null}
         </div>
       ) : (
-        <Button className="sr-only" aria-label="Apply" onClick={() => void applyRanges()} disabled={!canApply} title={applyReason ?? undefined}>
+        <Button className="sr-only" aria-label="Apply" onClick={() => void applyRanges()} disabled={!canApply} title={applyReadyReason ?? undefined}>
           Apply
         </Button>
       )}

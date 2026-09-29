@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { LightsHome } from "@/components/lights-home";
 import {
@@ -18,6 +18,26 @@ function fetchSpy() {
 }
 
 describe("LightsHome cached beads", () => {
+  it("ends a Lights-card Blink after the pulse instead of leaving the Light changed", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetch = vi.fn(async (_url: string, _init?: RequestInit) => ({
+        ok: true, status: 200, json: async () => ({}),
+      }));
+      vi.stubGlobal("fetch", fetch);
+      render(<LightsHome unenrolled={[]} lights={[lightView({ reachability: "online", on: true })]} />);
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Blink" })); });
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(String(fetch.mock.calls[0]?.[0])).toMatch(/\/blink$/);
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(String(fetch.mock.calls[1]?.[0])).toMatch(/\/blink\/end$/);
+      expect(screen.getByRole("button", { name: "Blink" }).hasAttribute("disabled")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("renders last-seen copy and grey beads — never a stored last colour", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-26T20:00:00.000Z"));

@@ -41,6 +41,7 @@ const light: Light = {
 
 function engineWithWrites(writes: WledStateWrite[], reads: number[] = []) {
   return createLiveEngine({
+    wait: async () => undefined,
     write: async (_target, body) => {
       writes.push(body);
       return true;
@@ -265,7 +266,7 @@ describe("Preview restore honesty", () => {
     expect(writes[0]).not.toHaveProperty("seg");
   });
 
-  it("identifyHost restore omits on from an info-only snapshot", async () => {
+  it("refuses to Blink a discovered Light when its original state cannot be restored", async () => {
     const writes: WledStateWrite[] = [];
     const engine = engineWithWrites(writes);
     const result = await engine.identifyHost(
@@ -273,13 +274,8 @@ describe("Preview restore honesty", () => {
       light.ledCount,
       infoOnly,
     );
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.restored).toBe(true);
-    expect(writes).toHaveLength(2);
-    expect(writes[0]?.on).toBe(true);
-    expect(writes[1]).not.toHaveProperty("on");
-    expect(writes[1]).not.toHaveProperty("bri");
-    expect(writes[1]).not.toHaveProperty("seg");
+    expect(result).toMatchObject({ ok: false, error: "restore-unavailable", sent: false });
+    expect(writes).toHaveLength(0);
   });
 
   it("does not invent a whole-strip segment from colour when segments are unknown", async () => {
@@ -329,7 +325,7 @@ describe("Preview restore honesty", () => {
     expect(writes[0]?.seg).toEqual([{ start: 0, stop: 10, col: [[255, 160, 0]] }]);
   });
 
-  it("identifyHost restore omits seg from unknown segments even when colour is known", async () => {
+  it("refuses discovered Blink with unknown segments even when power and colour are known", async () => {
     const writes: WledStateWrite[] = [];
     const engine = engineWithWrites(writes);
     const result = await engine.identifyHost(
@@ -337,12 +333,40 @@ describe("Preview restore honesty", () => {
       light.ledCount,
       { ...infoOnly, on: true, brightness: 40, segmentColor: "#ffa000" },
     );
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.restored).toBe(true);
-    expect(writes).toHaveLength(2);
-    expect(writes[1]?.on).toBe(true);
-    expect(writes[1]?.bri).toBe(40);
-    expect(writes[1]).not.toHaveProperty("seg");
+    expect(result).toMatchObject({ ok: false, sent: false });
+    expect(writes).toHaveLength(0);
+  });
+
+  it.each([true, false])("holds discovered Blink then restores original power %s and native segments", async (on) => {
+    const writes: WledStateWrite[] = [];
+    let release!: () => void;
+    let entered!: () => void;
+    const waiting = new Promise<void>((resolve) => { entered = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const nativeRestore = { on, bri: 71, seg: [
+      { id: 2, start: 0, stop: 5, on: false, bri: 88, fx: 42, col: [[12, 34, 56]], frz: false },
+      { id: 3, start: 5, stop: 10, on: true, bri: 90, col: [[60, 70, 80]], frz: false },
+    ] };
+    const engine = createLiveEngine({
+      write: async (_target, body) => { writes.push(body); return true; },
+      readLive: async () => null,
+      findLight: () => light,
+      wait: async (ms) => { expect(ms).toBe(3000); entered(); await gate; },
+    });
+    const result = engine.identifyHost(
+      { hostname: light.hostname, port: light.port }, light.ledCount,
+      { ...infoOnly, on, nativeRestore },
+    );
+    await waiting;
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ on: true, bri: 220, seg: [
+      { id: 2, stop: 0 }, { id: 3, stop: 0 }, { id: 0, on: true, fx: 0, stop: 10 },
+    ] });
+    release();
+    expect(await result).toMatchObject({ ok: true, restored: true });
+    expect(writes[1]).toMatchObject({ on, bri: 71, seg: [
+      { id: 0, stop: 0 }, ...nativeRestore.seg,
+    ] });
   });
 
   it("does not invent brightness 128 or colour #ffa000 from info-only restore", async () => {

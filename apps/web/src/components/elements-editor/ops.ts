@@ -2,13 +2,14 @@ import type { Element } from "@nightplot/shared";
 
 /** Display-only. Not stored on the Element and not sent to the API. */
 export const ELEMENT_HUES = [
-  "#d4a574",
-  "#7ee0d0",
-  "#b48cff",
-  "#8fb8ff",
-  "#e7a0b4",
-  "#c8d98a",
+  "#e8ae66",
+  "#4fd3c1",
+  "#b498f2",
+  "#70aaff",
+  "#f28f83",
+  "#b5d568",
 ] as const;
+const LEGACY_HUES = ["#d4a574", "#7ee0d0", "#b48cff", "#8fb8ff", "#e7a0b4", "#c8d98a"] as const;
 
 export const LOCATE_LIT = "#fff4dc";
 export const LOCATE_OFF = "#000000";
@@ -90,7 +91,9 @@ export function assignHues(
   const next: Record<string, string> = {};
   const used: string[] = [];
   for (const element of elements) {
-    const kept = stored[element.id];
+    const storedHue = stored[element.id];
+    const oldIndex = LEGACY_HUES.findIndex((hue) => hue === storedHue);
+    const kept = oldIndex < 0 ? storedHue : ELEMENT_HUES[oldIndex];
     const hue =
       kept && (ELEMENT_HUES as readonly string[]).includes(kept) && !used.includes(kept)
         ? kept

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BLINK_PULSE_MS,
   formatNodeLength,
   PHYSICAL_LENGTH_CAPTION,
   stripBeadCaption,
@@ -97,14 +98,28 @@ function LightCard({ light }: { light: LightView }) {
   const drifted = light.declared.filter((span) => span.differs);
   const length = formatNodeLength(light.ledCount, light.spacingMm);
   const [blinkBusy, setBlinkBusy] = useState(false);
+  const [blinkNotice, setBlinkNotice] = useState<string | null>(null);
 
   async function blink(event: MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
     if (unreachable || blinkBusy) return;
     setBlinkBusy(true);
-    await postJson(`/api/lights/${light.id}/blink`, {});
-    setBlinkBusy(false);
+    setBlinkNotice(null);
+    try {
+      const started = await postJson(`/api/lights/${light.id}/blink`, {});
+      if (started.ok) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, BLINK_PULSE_MS));
+        const ended = await postJson(`/api/lights/${light.id}/blink/end`, {});
+        if (!ended.ok) setBlinkNotice(ended.data.message ?? "Blink could not restore this Light.");
+      } else {
+        setBlinkNotice(started.data.message ?? "Blink did not run.");
+      }
+    } catch {
+      setBlinkNotice("Blink could not reach the Light. Refresh to check its state.");
+    } finally {
+      setBlinkBusy(false);
+    }
   }
 
   return (
@@ -133,6 +148,7 @@ function LightCard({ light }: { light: LightView }) {
           Blink
         </Button>
       </div>
+      {blinkNotice ? <p className="pointer-events-none text-[13px] text-destructive">{blinkNotice}</p> : null}
       <div className="pointer-events-none overflow-x-auto">
         <StripBeads
           id={`rack-${light.id}`}
