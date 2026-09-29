@@ -9,6 +9,7 @@ import {
   type CatalogDeleteCheck,
 } from "@nightplot/shared";
 import { useEffect, useState } from "react";
+import { GlowingLedLoader } from "@/components/glowing-led-loader";
 import { Button } from "@/components/ui/button";
 import { deleteJson, fetchJson } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -181,6 +182,7 @@ export function CatalogDelete({
             </span>
           </div>
         )}
+        {busy === "delete" ? <GlowingLedLoader label="Removing recipe" /> : null}
         {!unlocked ? (
           <span className="text-[13px] text-primary sm:ml-1">
             Unlocks when no Light attaches this recipe.

@@ -37,7 +37,7 @@ docker compose up --build
 | `43180` | Web |
 | `43181` | API |
 
-Volume `lights-store` → `/data` (`NIGHTPLOT_STORE_PATH` lights, `NIGHTPLOT_LED_PRODUCTS_PATH` LED products).
+Volume `lights-store` → `/data` (`NIGHTPLOT_STORE_PATH` lights, `NIGHTPLOT_LED_PRODUCTS_PATH` LED products, Activity beside the store, `backups/` for managed Nightplot backups).
 
 Compose **does not** `env_file` [`.env.example`](../.env.example). That file is the loopback `pnpm dev` default. A loopback *bind* inside the container is not reachable from the published port — compose sets `NIGHTPLOT_API_HOST=0.0.0.0`. The web→API URL stays `http://127.0.0.1:43181` because the two services share a network namespace.
 

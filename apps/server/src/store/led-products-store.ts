@@ -21,6 +21,10 @@ type FileShape = {
 export class FileLedProductsStore {
   constructor(private readonly filePath: string) {}
 
+  get path(): string {
+    return this.filePath;
+  }
+
   list(): LedProduct[] {
     return this.read();
   }
@@ -48,6 +52,10 @@ export class FileLedProductsStore {
     if (!found) return undefined;
     this.write(products.filter((row) => row.id !== id));
     return found;
+  }
+
+  replaceAll(products: LedProduct[]): void {
+    this.write(products);
   }
 
   private read(): LedProduct[] {

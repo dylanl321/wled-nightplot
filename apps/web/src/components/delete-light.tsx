@@ -8,6 +8,7 @@ import {
 } from "@nightplot/shared";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { GlowingLedLoader } from "@/components/glowing-led-loader";
 import { Button } from "@/components/ui/button";
 import { deleteJson, fetchJson } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -175,6 +176,7 @@ export function DeleteLight({
             </span>
           </div>
         )}
+        {busy === "delete" ? <GlowingLedLoader label="Removing Light" /> : null}
         {!unlocked ? (
           <span className="text-[13px] text-primary sm:ml-1">
             Unlocks when every check is complete.

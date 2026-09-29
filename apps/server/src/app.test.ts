@@ -12,6 +12,7 @@ import { createApp, type AppDeps } from "./app.ts";
 import { ALL_OFF_PROBE_CONCURRENCY, FIND_PROBE_CONCURRENCY } from "./discovery/map-limit.ts";
 import { FileLedProductsStore } from "./store/led-products-store.ts";
 import { FileActivityStore } from "./store/activity-store.ts";
+import { FileBackupStore } from "./store/backup-store.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
 import { createFixtureBox } from "./wled-fixture-box.ts";
 import { createWledCfgReader, createWledCfgWriter } from "./wled/cfg.ts";
@@ -159,12 +160,14 @@ function testApp(overrides: Partial<AppDeps> = {}) {
   const store = overrides.store ?? new FileLightsStore(join(dir, "lights.json"));
   const activity = overrides.activity ?? new FileActivityStore(join(dir, "activity.json"));
   const products = overrides.products ?? new FileLedProductsStore(join(dir, "led-products.json"));
+  const backups = overrides.backups ?? new FileBackupStore(join(dir, "backups"));
   const box = memoryBox();
   const cfg = memoryCfg();
   const probe: ProbeFn = overrides.probe ?? box.probe;
   const app = createApp({
     store,
     activity,
+    backups,
     products,
     probe,
     write: overrides.write ?? box.write,
@@ -174,7 +177,7 @@ function testApp(overrides: Partial<AppDeps> = {}) {
     collect: overrides.collect ?? (async () => []),
     now: overrides.now ?? (() => new Date("2026-09-26T18:00:00.000Z")),
   });
-  return { app, store, activity, products, dir, box, cfg };
+  return { app, store, activity, backups, products, dir, box, cfg };
 }
 
 describe("Segment backup and restore", () => {
@@ -244,6 +247,179 @@ describe("Segment backup and restore", () => {
     expect(store.elementsFor(id)[0]?.label).toBe("Different");
     store.replaceElements(id, [{ ...store.elementsFor(id)[0]!, stop: 61 }]);
     expect((await app.request(`/api/lights/${id}/segments/backup`)).status).toBe(409);
+  });
+});
+
+describe("managed Nightplot backups", () => {
+  class FailingBackupStore extends FileBackupStore {
+    create(): never {
+      throw new Error("disk full");
+    }
+  }
+
+  async function enroll(app: ReturnType<typeof testApp>["app"], host = "192.168.1.90") {
+    const res = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host }),
+    });
+    const id = ((await res.json()) as { light: { id: string } }).light.id;
+    await app.request(`/api/lights/${id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: [{ label: "Eave", start: 0, stop: 20 }] }),
+    });
+    return id;
+  }
+
+  it("creates, lists, downloads, and deletes a Nightplot data backup with explicit confirm", async () => {
+    const { app } = testApp();
+    await enroll(app);
+    const created = await app.request("/api/backups", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note: "Before a change" }),
+    });
+    expect(created.status).toBe(201);
+    const createdBody = (await created.json()) as { backup: { id: string; reason: string; completeness: string } };
+    expect(createdBody.backup.reason).toBe("manual");
+    expect(createdBody.backup.completeness).toBe("complete");
+    const listed = (await (await app.request("/api/backups")).json()) as { backups: { id: string }[] };
+    expect(listed.backups[0]?.id).toBe(createdBody.backup.id);
+    const download = await app.request(`/api/backups/${createdBody.backup.id}/download`);
+    expect(download.status).toBe(200);
+    expect((await download.json() as { kind: string }).kind).toBe("nightplot-data");
+    expect((await app.request(`/api/backups/${createdBody.backup.id}`, { method: "DELETE" })).status).toBe(400);
+    const removed = await app.request(`/api/backups/${createdBody.backup.id}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: true }),
+    });
+    expect(removed.status).toBe(200);
+    expect(((await (await app.request("/api/backups")).json()) as { backups: unknown[] }).backups).toHaveLength(0);
+  });
+
+  it("restores Nightplot data after a review diff and a safety backup, without writing WLED", async () => {
+    const write = vi.fn(async () => true);
+    const writeCfg = vi.fn(async () => true);
+    const { app, store } = testApp({ write, writeCfg });
+    const id = await enroll(app);
+    write.mockClear();
+    writeCfg.mockClear();
+    const created = await app.request("/api/backups", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    const backupId = ((await created.json()) as { backup: { id: string } }).backup.id;
+    store.remove(id);
+    expect(store.findById(id)).toBeUndefined();
+    const diff = await app.request(`/api/backups/${backupId}/diff`);
+    expect(diff.status).toBe(200);
+    expect(((await diff.json()) as { diff: { summary: string } }).diff.summary).toMatch(/Nothing is sent to a controller/);
+    expect((await app.request(`/api/backups/${backupId}/restore`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+    })).status).toBe(400);
+    const restore = await app.request(`/api/backups/${backupId}/restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: true }),
+    });
+    expect(restore.status).toBe(200);
+    const body = (await restore.json()) as { restored: boolean; safetyBackupId: string; message: string };
+    expect(body.restored).toBe(true);
+    expect(body.safetyBackupId).toMatch(/-/);
+    expect(body.message).toMatch(/Nothing was sent/);
+    expect(store.findById(id)?.name).toBeTruthy();
+    expect(write).not.toHaveBeenCalled();
+    expect(writeCfg).not.toHaveBeenCalled();
+  });
+
+  it("captures a controller reference before Apply and refuses the write when the backup cannot persist", async () => {
+    const working = testApp();
+    const id = await enroll(working.app);
+    const applyOk = await working.app.request(`/api/lights/${id}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: [{ label: "Eave", start: 0, stop: 20 }] }),
+    });
+    expect(applyOk.status).toBe(200);
+    const listed = (await (await working.app.request("/api/backups")).json()) as {
+      backups: { reason: string; completeness: string; hasControllerCapture: boolean }[];
+    };
+    expect(listed.backups.some((row) => row.reason === "pre-apply" && row.hasControllerCapture)).toBe(true);
+
+    const write = vi.fn(async () => true);
+    const failing = testApp({
+      backups: new FailingBackupStore(join(working.dir, "failing-backups")),
+      write,
+    });
+    const failId = await enroll(failing.app, "192.168.1.91");
+    write.mockClear();
+    const refused = await failing.app.request(`/api/lights/${failId}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: [{ label: "Eave", start: 0, stop: 20 }] }),
+    });
+    expect(refused.status).toBe(422);
+    const refusedBody = (await refused.json()) as { error: string; message: string; sent: boolean };
+    expect(refusedBody.sent).toBe(false);
+    expect(refusedBody.message).toMatch(/Apply was not sent/);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("snapshots Nightplot data before catalog mutation and Light delete, not Preview, Blink, or All Off", async () => {
+    const { app } = testApp();
+    const id = await enroll(app);
+    await app.request(`/api/lights/${id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ color: "#4f7dff", brightness: 180 }),
+    });
+    await app.request(`/api/lights/${id}/preview/end`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    await app.request(`/api/lights/${id}/blink`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    await app.request(`/api/lights/${id}/blink/end`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    await app.request("/api/all-off", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    expect(((await (await app.request("/api/backups")).json()) as { backups: unknown[] }).backups).toHaveLength(0);
+
+    const created = await app.request("/api/led-products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "eave-test",
+        label: "Eave test",
+        formFactor: "discrete",
+        driverId: "ws281x",
+        notes: "Operator SKU. Not written to WLED.",
+      }),
+    });
+    expect(created.status).toBe(201);
+    const afterCatalog = (await (await app.request("/api/backups")).json()) as { backups: { reason: string }[] };
+    expect(afterCatalog.backups.some((row) => row.reason === "pre-catalog")).toBe(true);
+
+    const deleted = await app.request(`/api/lights/${id}`, { method: "DELETE" });
+    expect(deleted.status).toBe(200);
+    const afterDelete = (await (await app.request("/api/backups")).json()) as { backups: { reason: string }[] };
+    expect(afterDelete.backups.some((row) => row.reason === "pre-delete-light")).toBe(true);
+  });
+
+  it("refuses restore while Preview is open and refuses an invalid backup file", async () => {
+    const { app } = testApp();
+    const id = await enroll(app);
+    const created = await app.request("/api/backups", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    const backupId = ((await created.json()) as { backup: { id: string } }).backup.id;
+    await app.request(`/api/lights/${id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ color: "#4f7dff" }),
+    });
+    const blocked = await app.request(`/api/backups/${backupId}/restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: true }),
+    });
+    expect(blocked.status).toBe(409);
+    expect((await app.request("/api/backups/not-a-uuid")).status).toBe(400);
   });
 });
 

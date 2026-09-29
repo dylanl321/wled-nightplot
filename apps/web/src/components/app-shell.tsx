@@ -9,7 +9,7 @@ type AppShellProps = {
   children: ReactNode;
   lights?: LightView[];
   lightCount: number;
-  nav: "lights" | "discover" | "light" | "catalog";
+  nav: "lights" | "discover" | "light" | "catalog" | "backups";
   activeLightId?: string;
   sessions?: LiveHint[];
 };
@@ -33,6 +33,9 @@ export function AppShell({
           </NavLink>
           <NavLink href="/led-products" active={nav === "catalog"}>
             LED products
+          </NavLink>
+          <NavLink href="/backups" active={nav === "backups"}>
+            Backups
           </NavLink>
         </nav>
         <div className="ml-auto">
