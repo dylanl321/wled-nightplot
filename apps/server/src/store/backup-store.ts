@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   deviceCaptureOf,
   nativeFilesComplete,
+  parseBackupDocument,
   type BackupData,
   type BackupDocument,
   type BackupReason,
@@ -72,16 +73,7 @@ export class FileBackupStore {
   read(id: string): BackupDocument | null {
     if (!BACKUP_ID.test(id)) return null;
     try {
-      const value = JSON.parse(readFileSync(this.path(id), "utf8")) as BackupDocument;
-      if (value.version !== 1 || value.id !== id || !value.data ||
-        !Array.isArray(value.data.lights) || !Array.isArray(value.data.elements) ||
-        !Array.isArray(value.data.products) || !Array.isArray(value.data.activity) ||
-        typeof value.at !== "string" || typeof value.reason !== "string" ||
-        (value.deviceFiles != null && (typeof value.deviceFiles.cfgJson !== "string" ||
-          typeof value.deviceFiles.presetsJson !== "string"))) {
-        throw new Error(`Invalid backup ${id}; it was not ignored or overwritten.`);
-      }
-      return value;
+      return parseBackupDocument(JSON.parse(readFileSync(this.path(id), "utf8")), id);
     } catch (error) {
       if (isMissing(error)) return null;
       throw error;

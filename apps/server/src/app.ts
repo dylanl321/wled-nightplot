@@ -232,7 +232,13 @@ export function createApp(deps: AppDeps) {
 
   app.get("/api/catalogs", (c) => c.json(catalogSnapshot(products.list())));
 
-  app.get("/api/backups", (c) => c.json({ backups: backups.list() }));
+  app.get("/api/backups", (c) => {
+    try { return c.json({ backups: backups.list() }); }
+    catch (error) {
+      return c.json({ error: "invalid-backup",
+        message: error instanceof Error ? error.message : "A stored backup could not be read; nothing was ignored or overwritten." }, 500);
+    }
+  });
   app.post("/api/backups", (c) => {
     try { return c.json({ backup: capture("manual") }, 201); }
     catch (error) { return c.json(backupFailure(error), 503); }

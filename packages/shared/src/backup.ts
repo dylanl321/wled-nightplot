@@ -99,6 +99,102 @@ export type WledRestoreReview = {
   message: string;
 };
 
+export function parseBackupDocument(value: unknown, expectedId?: string): BackupDocument {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid backup; it was not ignored or overwritten.");
+  }
+  const raw = value as Record<string, unknown>;
+  const current = parseCurrentBackupDocument(raw, expectedId);
+  if (current) return current;
+  const foundation = parseFoundationBackupDocument(raw, expectedId);
+  if (foundation) return foundation;
+  throw new Error(`Invalid backup ${expectedId ?? ""}; it was not ignored or overwritten.`);
+}
+
+function parseCurrentBackupDocument(raw: Record<string, unknown>, expectedId?: string): BackupDocument | null {
+  const data = raw.data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const pack = data as Record<string, unknown>;
+  if (raw.version !== 1 || typeof raw.id !== "string" || typeof raw.at !== "string" ||
+    typeof raw.reason !== "string" || !Array.isArray(pack.lights) || !Array.isArray(pack.elements) ||
+    !Array.isArray(pack.products) || !Array.isArray(pack.activity)) return null;
+  if (expectedId && raw.id !== expectedId) return null;
+  if (raw.deviceFiles != null) {
+    const files = raw.deviceFiles as Record<string, unknown>;
+    if (typeof files.cfgJson !== "string" || typeof files.presetsJson !== "string") return null;
+  }
+  return {
+    version: 1,
+    id: raw.id,
+    at: raw.at,
+    reason: raw.reason as BackupReason,
+    lightId: typeof raw.lightId === "string" ? raw.lightId : null,
+    lightName: typeof raw.lightName === "string" ? raw.lightName : null,
+    data: {
+      lights: pack.lights as BackupData["lights"],
+      elements: pack.elements as BackupData["elements"],
+      products: pack.products as BackupData["products"],
+      activity: pack.activity as BackupData["activity"],
+    },
+    controller: (raw.controller ?? null) as ControllerReference | null,
+    deviceFiles: (raw.deviceFiles ?? null) as WledBackupFiles | null,
+    deviceCaptureStatus: raw.deviceCaptureStatus === "complete" || raw.deviceCaptureStatus === "incomplete" ||
+      raw.deviceCaptureStatus === "none" ? raw.deviceCaptureStatus : undefined,
+    deviceCaptureError: typeof raw.deviceCaptureError === "string" ? raw.deviceCaptureError : null,
+  };
+}
+
+function parseFoundationBackupDocument(raw: Record<string, unknown>, expectedId?: string): BackupDocument | null {
+  const nightplot = raw.nightplot;
+  if (raw.version !== 1 || raw.kind !== "nightplot-data" || typeof raw.id !== "string" ||
+    typeof raw.createdAt !== "string" || typeof raw.reason !== "string" ||
+    !nightplot || typeof nightplot !== "object" || Array.isArray(nightplot)) return null;
+  if (expectedId && raw.id !== expectedId) return null;
+  const pack = nightplot as Record<string, unknown>;
+  if (!Array.isArray(pack.lights) || !Array.isArray(pack.elements) ||
+    !Array.isArray(pack.activity) || !(Array.isArray(pack.products) || Array.isArray(pack.ledProducts))) {
+    return null;
+  }
+  return {
+    version: 1,
+    id: raw.id,
+    at: raw.createdAt,
+    reason: raw.reason as BackupReason,
+    lightId: typeof raw.lightId === "string" ? raw.lightId : null,
+    lightName: typeof raw.lightName === "string" ? raw.lightName : null,
+    data: {
+      lights: pack.lights as BackupData["lights"],
+      elements: pack.elements as BackupData["elements"],
+      products: (Array.isArray(pack.products) ? pack.products : pack.ledProducts) as BackupData["products"],
+      activity: pack.activity as BackupData["activity"],
+    },
+    controller: foundationController(raw.controller),
+    deviceFiles: null,
+    deviceCaptureStatus: "none",
+    deviceCaptureError: null,
+  };
+}
+
+function foundationController(value: unknown): ControllerReference | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const state = raw.state && typeof raw.state === "object" && !Array.isArray(raw.state)
+    ? raw.state as Record<string, unknown> : null;
+  const host = typeof raw.hostKey === "string" ? raw.hostKey : typeof raw.host === "string" ? raw.host : "";
+  if (!host) return null;
+  return {
+    hostKey: host,
+    mac: typeof raw.mac === "string" ? raw.mac : null,
+    ledCount: typeof state?.ledCount === "number" ? state.ledCount : 0,
+    reported: {
+      on: typeof state?.on === "boolean" ? state.on : null,
+      brightness: typeof state?.brightness === "number" ? state.brightness : null,
+      segments: Array.isArray(state?.segments) ? state.segments as ControllerReference["reported"]["segments"] : null,
+      segmentColor: typeof state?.segmentColor === "string" ? state.segmentColor : null,
+    },
+  };
+}
+
 export function nativeFilesComplete(files: WledBackupFiles | null | undefined): boolean {
   return Boolean(files && files.cfgJson && files.presetsJson);
 }

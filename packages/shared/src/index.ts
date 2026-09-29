@@ -19,6 +19,7 @@ export {
   capturedWledIdentity,
   deviceCaptureOf,
   nativeFilesComplete,
+  parseBackupDocument,
   reviewWledNativeRestore,
   stripWledBackupSecrets,
 } from "./backup.ts";

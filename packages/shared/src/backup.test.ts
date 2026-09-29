@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildWledBackupFiles,
   deviceCaptureOf,
+  parseBackupDocument,
   reviewWledNativeRestore,
   stripWledBackupSecrets,
   type BackupDocument,
@@ -99,6 +100,22 @@ describe("WLED native backup files", () => {
     });
     expect(missing.ok).toBe(false);
     expect(missing.error).toBe("missing-device-files");
+  });
+
+  it("reads the earlier nightplot-data v1 documents without treating /json/cfg as a device backup", () => {
+    const parsed = parseBackupDocument({
+      kind: "nightplot-data", version: 1, id: "03c75c3e-9846-458e-b458-8739f0bff750",
+      createdAt: "2026-09-29T00:46:38.735Z", reason: "pre-apply",
+      nightplot: { lights: [{ id: "porch" }], elements: [], ledProducts: [], activity: [] },
+      controller: { host: "127.0.0.1:48210", mac: "02:00:00:00:00:01",
+        state: { ledCount: 60, on: true, brightness: 140, segments: [], segmentColor: "#ffa000" },
+        cfg: { id: { name: "WLED" } } },
+    }, "03c75c3e-9846-458e-b458-8739f0bff750");
+    expect(parsed.at).toBe("2026-09-29T00:46:38.735Z");
+    expect(parsed.data.lights[0]?.id).toBe("porch");
+    expect(parsed.deviceFiles).toBeNull();
+    expect(parsed.deviceCaptureStatus).toBe("none");
+    expect(parsed.controller).toMatchObject({ hostKey: "127.0.0.1:48210", mac: "02:00:00:00:00:01", ledCount: 60 });
   });
 
   it("reports an explicit incomplete capture without treating it as a restore source", () => {

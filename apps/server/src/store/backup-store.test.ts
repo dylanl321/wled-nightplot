@@ -46,4 +46,17 @@ describe("managed backup storage", () => {
     expect(() => store.create({ at: new Date().toISOString(), reason: "manual",
       data: { lights: [], elements: [], products: [], activity: [] } })).toThrow();
   });
+
+  it("lists an earlier nightplot-data v1 file as Nightplot data, not a native WLED export", () => {
+    const directory = mkdtempSync(join(tmpdir(), "nightplot-backups-"));
+    const id = "03c75c3e-9846-458e-b458-8739f0bff750";
+    writeFileSync(join(directory, `${id}.json`), `${JSON.stringify({
+      kind: "nightplot-data", version: 1, id, createdAt: "2026-09-29T00:46:38.735Z",
+      reason: "manual", nightplot: { lights: [], elements: [], ledProducts: [], activity: [] },
+      controller: null,
+    })}\n`);
+    const store = new FileBackupStore(directory);
+    expect(store.list()).toMatchObject([{ id, reason: "manual", hasDeviceFiles: false,
+      deviceCaptureStatus: "none", lightCount: 0 }]);
+  });
 });
