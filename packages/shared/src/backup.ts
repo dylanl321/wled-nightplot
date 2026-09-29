@@ -23,6 +23,9 @@ export type ControllerReference = {
   stripSettings?: Record<string, unknown>;
 };
 
+/** Exact WLED Security & Updates exports, passwords excluded by WLED. */
+export type WledBackupFiles = { cfgJson: string; presetsJson: string };
+
 export type BackupDocument = {
   version: 1;
   id: string;
@@ -32,6 +35,7 @@ export type BackupDocument = {
   lightName: string | null;
   data: BackupData;
   controller: ControllerReference | null;
+  deviceFiles?: WledBackupFiles | null;
 };
 
 export type BackupSummary = Pick<BackupDocument, "id" | "at" | "reason" | "lightId" | "lightName"> & {
@@ -39,4 +43,5 @@ export type BackupSummary = Pick<BackupDocument, "id" | "at" | "reason" | "light
   segmentCount: number;
   productCount: number;
   hasControllerReference: boolean;
+  hasDeviceFiles: boolean;
 };

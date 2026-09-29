@@ -16,6 +16,6 @@ export default async function BackupsPage() {
   }
   return <AppShell lights={lights.value.lights} lightCount={lights.value.lights.length}
     nav="backups" sessions={lights.value.sessions}>
-    <BackupsPanel initial={backups.value.backups} />
+    <BackupsPanel initial={backups.value.backups} lights={lights.value.lights} />
   </AppShell>;
 }

@@ -1,5 +1,5 @@
 export type { ActivityEntry } from "./activity.ts";
-export type { BackupData, BackupDocument, BackupReason, BackupSummary, ControllerReference } from "./backup.ts";
+export type { BackupData, BackupDocument, BackupReason, BackupSummary, ControllerReference, WledBackupFiles } from "./backup.ts";
 export { backupNeedsControllerConfirmation, parseSegmentBackup, type SegmentBackup } from "./segment-backup.ts";
 export {
   APPLY_ADOPT_EMPTY_REASON,

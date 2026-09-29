@@ -108,6 +108,7 @@ import { FileLedProductsStore } from "./store/led-products-store.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
 import type { ProbeFn } from "./wled/client.ts";
 import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
+import { createWledNativeFilesReader, type ReadWledNativeFiles } from "./wled/native-backup.ts";
 import { applyRangesWrite, type ReadLiveFn, type WriteStateFn } from "./wled/live.ts";
 
 export type AppDeps = {
@@ -120,6 +121,7 @@ export type AppDeps = {
   write: WriteStateFn;
   readLive: ReadLiveFn;
   readCfg: ReadCfgFn;
+  readNativeFiles?: ReadWledNativeFiles;
   writeCfg: WriteCfgFn;
   now?: () => Date;
 };
@@ -131,6 +133,7 @@ export function createApp(deps: AppDeps) {
     new FileLedProductsStore(join(tmpdir(), `nightplot-led-products-${randomUUID()}.json`));
   const activity = deps.activity ?? new FileActivityStore(join(tmpdir(), `nightplot-activity-${randomUUID()}.json`));
   const backups = deps.backups ?? new FileBackupStore(join(tmpdir(), `nightplot-backups-${randomUUID()}`));
+  const readNativeFiles = deps.readNativeFiles ?? createWledNativeFilesReader();
   const session: { rows: DiscoverRow[] } = { rows: [] };
   const nowIso = () => (deps.now ?? (() => new Date()))().toISOString();
   function record(light: Pick<Light, "id" | "name">, action: ActivityEntry["action"],
@@ -147,6 +150,15 @@ export function createApp(deps: AppDeps) {
   function capture(reason: BackupReason, light?: Light, controller?: ControllerReference) {
     return backups.create({ at: nowIso(), reason, lightId: light?.id, lightName: light?.name,
       data: currentBackupData(), controller });
+  }
+
+  async function captureDevice(reason: BackupReason, light: Light, snap: WledSnapshot,
+    settings?: { safe?: Record<string, unknown>; strip?: Record<string, unknown> }) {
+    if (light.mac && snap.mac && !macsMatch(light.mac, snap.mac))
+      throw new Error("Controller MAC changed; no device backup was saved.");
+    const deviceFiles = await readNativeFiles({ hostname: light.hostname, port: light.port });
+    return backups.create({ at: nowIso(), reason, lightId: light.id, lightName: light.name,
+      data: currentBackupData(), controller: controllerReference(light, snap, settings), deviceFiles });
   }
 
   function controllerReference(light: Light, snap: WledSnapshot,
@@ -195,6 +207,15 @@ export function createApp(deps: AppDeps) {
   app.get("/api/backups", (c) => c.json({ backups: backups.list() }));
   app.post("/api/backups", (c) => {
     try { return c.json({ backup: capture("manual") }, 201); }
+    catch (error) { return c.json(backupFailure(error), 503); }
+  });
+  app.post("/api/lights/:id/backups", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    const { light, live: snap } = await refreshOne(stored);
+    if (!snap || light.reachability !== "online") return c.json({ error: "unreachable",
+      message: "WLED did not answer. A complete device backup was not saved." }, 503);
+    try { return c.json({ backup: await captureDevice("manual", light, snap) }, 201); }
     catch (error) { return c.json(backupFailure(error), 503); }
   });
   app.get("/api/backups/:id", (c) => {
@@ -693,7 +714,7 @@ export function createApp(deps: AppDeps) {
     if (!planned.ok) {
       return c.json({ error: "refused", message: APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE }, 422);
     }
-    try { capture("pre-apply", light, controllerReference(light, snap!)); }
+    try { await captureDevice("pre-apply", light, snap!); }
     catch (error) { return c.json(backupFailure(error), 503); }
     const written = await deps.write(dest, planned.body);
     if (!written) {
@@ -1209,7 +1230,7 @@ export function createApp(deps: AppDeps) {
     if (!built.ok) {
       return c.json(refusedSafeBody(safe, draft, built.message), 422);
     }
-    try { capture("pre-safe", light, controllerReference(light, snap!, { safe: { ...safe.settings } })); }
+    try { await captureDevice("pre-safe", light, snap!, { safe: { ...safe.settings } }); }
     catch (error) { return c.json(backupFailure(error), 503); }
     const written = await deps.writeCfg(dest, built.body);
     if (!written) {
@@ -1372,7 +1393,7 @@ export function createApp(deps: AppDeps) {
         422,
       );
     }
-    try { capture("pre-provision", light, controllerReference(light, snap!, { strip: { ...provision.settings } })); }
+    try { await captureDevice("pre-provision", light, snap!, { strip: { ...provision.settings } }); }
     catch (error) { return c.json(backupFailure(error), 503); }
     const written = await deps.writeCfg(dest, built.body);
     if (!written) {

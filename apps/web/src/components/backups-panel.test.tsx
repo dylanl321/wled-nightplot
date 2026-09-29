@@ -5,7 +5,7 @@ import { BackupsPanel } from "./backups-panel";
 
 const id = "03c75c3e-9846-458e-b458-8739f0bff750";
 const summary: BackupSummary = { id, at: "2026-09-28T18:00:00.000Z", reason: "manual", lightId: null,
-  lightName: null, lightCount: 1, segmentCount: 1, productCount: 0, hasControllerReference: false };
+  lightName: null, lightCount: 1, segmentCount: 1, productCount: 0, hasControllerReference: false, hasDeviceFiles: false };
 const document = { version: 1, ...summary, data: {
   lights: [{ id: "porch", name: "Porch", hostname: "192.168.1.40", port: 80 }],
   elements: [{ id: "door" }], products: [], activity: [],

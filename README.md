@@ -123,6 +123,7 @@ Enrolled Lights and declared Segments persist in `data/lights.json` (override wi
 | GET | `/api/lights` | Saved Lights and Segments, last-seen state, unenrolled tray. No controller probe or store write; beads are grey without a current snapshot. Inspect and live Refresh probe one Light. |
 | GET | `/api/activity?lightId=…` | Saved Activity (newest first; optional Light filter): Apply readback, Preview start/end, per-Light All Off results, and controller replacement boundaries. `match` is controller/software readback, not Hardware Done. |
 | GET/POST | `/api/backups` | List saved backup summaries / create a versioned Nightplot data snapshot. Stored locally beside the Lights store (override with `NIGHTPLOT_BACKUPS_PATH`); up to 100, no silent pruning. |
+| POST | `/api/lights/:id/backups` | Capture both native WLED `cfg.json` and `presets.json` plus Nightplot data for one online Light. The Backups page can download each native file. WLED excludes passwords; keep exports private. |
 | GET/DELETE | `/api/backups/:id` | Inspect/download the JSON backup / clear that exact backup with `{ confirmId }`. Clearing cannot be undone without a downloaded copy. |
 | POST | `/api/backups/:id/restore/check` | Validate backup and compare counts/digests with current Nightplot data. No writes. |
 | POST | `/api/backups/:id/restore` | `{ confirmId, expectedDigest, expectedCurrentDigest }` — refuse stale review or active Preview/Blink, create a safety backup, restore only Nightplot data; never write WLED. |

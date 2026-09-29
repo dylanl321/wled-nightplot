@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { BackupData, BackupDocument, BackupReason, BackupSummary, ControllerReference } from "@nightplot/shared";
+import type { BackupData, BackupDocument, BackupReason, BackupSummary, ControllerReference, WledBackupFiles } from "@nightplot/shared";
 
 const BACKUP_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const MAX_MANAGED_BACKUPS = 100;
@@ -14,13 +14,14 @@ export class FileBackupStore {
   constructor(private readonly directory: string) {}
 
   create(input: { at: string; reason: BackupReason; lightId?: string | null;
-    lightName?: string | null; data: BackupData; controller?: ControllerReference | null }): BackupDocument {
+    lightName?: string | null; data: BackupData; controller?: ControllerReference | null;
+    deviceFiles?: WledBackupFiles | null }): BackupDocument {
     if (this.list().length >= MAX_MANAGED_BACKUPS) {
       throw new Error("Backup storage is full. Download and clear an older backup first. Nothing was changed.");
     }
     const backup: BackupDocument = { version: 1, id: randomUUID(), at: input.at,
       reason: input.reason, lightId: input.lightId ?? null, lightName: input.lightName ?? null,
-      data: input.data, controller: input.controller ?? null };
+      data: input.data, controller: input.controller ?? null, deviceFiles: input.deviceFiles ?? null };
     mkdirSync(this.directory, { recursive: true });
     const path = this.path(backup.id);
     const tmp = `${path}.tmp`;
@@ -41,7 +42,8 @@ export class FileBackupStore {
       .map((backup) => ({ id: backup.id, at: backup.at, reason: backup.reason,
         lightId: backup.lightId, lightName: backup.lightName,
         lightCount: backup.data.lights.length, segmentCount: backup.data.elements.length,
-        productCount: backup.data.products.length, hasControllerReference: backup.controller !== null }))
+        productCount: backup.data.products.length, hasControllerReference: backup.controller !== null,
+        hasDeviceFiles: Boolean(backup.deviceFiles?.cfgJson && backup.deviceFiles?.presetsJson) }))
       .sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
   }
 
@@ -52,7 +54,9 @@ export class FileBackupStore {
       if (value.version !== 1 || value.id !== id || !value.data ||
         !Array.isArray(value.data.lights) || !Array.isArray(value.data.elements) ||
         !Array.isArray(value.data.products) || !Array.isArray(value.data.activity) ||
-        typeof value.at !== "string" || typeof value.reason !== "string") {
+        typeof value.at !== "string" || typeof value.reason !== "string" ||
+        (value.deviceFiles != null && (typeof value.deviceFiles.cfgJson !== "string" ||
+          typeof value.deviceFiles.presetsJson !== "string"))) {
         throw new Error(`Invalid backup ${id}; it was not ignored or overwritten.`);
       }
       return value;

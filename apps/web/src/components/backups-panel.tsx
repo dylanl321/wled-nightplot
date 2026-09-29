@@ -1,6 +1,6 @@
 "use client";
 
-import type { BackupDocument, BackupSummary } from "@nightplot/shared";
+import type { BackupDocument, BackupSummary, LightView } from "@nightplot/shared";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,12 +14,13 @@ type RestoreCheck = {
   expectedCurrentDigest: string;
 };
 
-export function BackupsPanel({ initial }: { initial: BackupSummary[] }) {
+export function BackupsPanel({ initial, lights = [] }: { initial: BackupSummary[]; lights?: LightView[] }) {
   const [backups, setBackups] = useState(initial);
   const [selected, setSelected] = useState<BackupDocument | null>(null);
   const [review, setReview] = useState<RestoreCheck | null>(null);
   const [clearId, setClearId] = useState<string | null>(null);
   const [typedId, setTypedId] = useState("");
+  const [deviceLightId, setDeviceLightId] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -50,6 +51,16 @@ export function BackupsPanel({ initial }: { initial: BackupSummary[] }) {
     });
   }
 
+  async function createDevice() {
+    if (!deviceLightId) return;
+    await run("Backing up WLED…", async () => {
+      const res = await postJson<{ backup: BackupDocument }>(`/api/lights/${deviceLightId}/backups`, {});
+      if (!res.ok) throw new Error(res.data.message ?? "WLED backup was not saved.");
+      await reload(); setSelected(res.data.backup); resetReview();
+      setNotice("WLED configuration and presets saved with Nightplot data. Passwords are excluded by WLED.");
+    });
+  }
+
   async function open(id: string) {
     await run("Opening backup…", async () => {
       const result = await fetchJson<{ backup: BackupDocument }>(`/api/backups/${id}`);
@@ -59,17 +70,18 @@ export function BackupsPanel({ initial }: { initial: BackupSummary[] }) {
     });
   }
 
-  function download() {
-    if (!selected) return;
-    const blob = new Blob([`${JSON.stringify(selected, null, 2)}\n`], { type: "application/json" });
+  function downloadFile(content: string, name: string) {
+    const blob = new Blob([content], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = url;
-    link.download = `nightplot-backup-${selected.id}.json`;
-    document.body.append(link);
-    link.click();
-    link.remove();
+    link.href = url; link.download = name;
+    document.body.append(link); link.click(); link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function download() {
+    if (!selected) return;
+    downloadFile(`${JSON.stringify(selected, null, 2)}\n`, `nightplot-backup-${selected.id}.json`);
   }
 
   async function checkRestore() {
@@ -113,13 +125,22 @@ export function BackupsPanel({ initial }: { initial: BackupSummary[] }) {
   return <div className="mx-auto flex w-full max-w-[1050px] flex-col gap-5 px-5 py-7 sm:px-10">
     <header className="flex flex-wrap items-center justify-between gap-3">
       <div><h1 className="text-[28px] font-semibold">Backups</h1>
-        <p className="text-[13px] text-muted-foreground">Each backup contains all Nightplot data. Before a WLED write, it also includes a read-only reference for that one Light—not a full device restore file.</p></div>
+        <p className="text-[13px] text-muted-foreground">Each backup contains Nightplot data. A WLED backup also includes that Light’s native configuration and presets files; WLED excludes passwords.</p></div>
       <Button disabled={busy !== null} onClick={() => void create()}>Back up Nightplot now</Button>
     </header>
+    <div className="flex flex-wrap items-end gap-3">
+      <label className="text-[13px]">Light for device backup
+        <select className="mt-1 block rounded-lg border border-border bg-card p-2" value={deviceLightId} onChange={(event) => setDeviceLightId(event.target.value)}>
+          <option value="">Choose a Light</option>
+          {lights.map((light) => <option key={light.id} value={light.id}>{light.name}</option>)}
+        </select>
+      </label>
+      <Button variant="outline" disabled={busy !== null || !deviceLightId} onClick={() => void createDevice()}>Back up WLED</Button>
+    </div>
     {busy ? <LedLoader label={busy} /> : null}
     {error ? <p role="alert" className="text-destructive">{error}</p> : null}
     {notice ? <p role="status" className="text-online">{notice}</p> : null}
-    <p className="text-[12px] text-muted-foreground">Before Apply, Strip provision and Safe settings, Nightplot saves a reference to the reported controller fields plus its own data. Before Delete, replacement and LED product changes, it saves Nightplot data. Preview, Blink and All Off do not create automatic backups. Up to 100 backups are kept; download or clear older ones to make room.</p>
+    <p className="text-[12px] text-muted-foreground">Before Apply, Strip provision and Safe settings, Nightplot saves both WLED export files plus Nightplot data or refuses the write. Before Delete, replacement and LED product changes, it saves Nightplot data. Preview, Blink and All Off do not create automatic backups. Up to 100 backups are kept; download or clear older ones to make room.</p>
     <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
       <section aria-label="Saved backups" className="rounded-xl border border-border bg-card p-4">
         <h2 className="font-medium">Saved backups ({backups.length})</h2>
@@ -128,7 +149,7 @@ export function BackupsPanel({ initial }: { initial: BackupSummary[] }) {
           <button type="button" onClick={() => void open(item.id)} disabled={busy !== null}
             className="w-full rounded-lg border border-border p-3 text-left hover:bg-secondary">
             <span className="block font-medium">{item.reason.replaceAll("-", " ")}{item.lightName ? ` · ${item.lightName}` : ""}</span>
-            <span className="text-[12px] text-muted-foreground">{new Date(item.at).toLocaleString()} · {item.lightCount} Lights · {item.segmentCount} Segments {item.hasControllerReference ? "· controller reference" : ""}</span>
+            <span className="text-[12px] text-muted-foreground">{new Date(item.at).toLocaleString()} · {item.lightCount} Lights · {item.segmentCount} Segments {item.hasDeviceFiles ? "· WLED configuration + presets" : item.hasControllerReference ? "· controller reference" : ""}</span>
           </button>
         </li>)}</ul>
       </section>
@@ -143,6 +164,13 @@ export function BackupsPanel({ initial }: { initial: BackupSummary[] }) {
             <p className="mt-2 text-muted-foreground">Reported fields may be incomplete. This cannot be replayed as a full WLED restore.</p>
             <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-all text-[11px]">{JSON.stringify(selected.controller, null, 2)}</pre>
           </details> : null}
+          {selected.deviceFiles ? <div className="rounded-lg border border-border p-3">
+            <p>WLED configuration and presets are both saved. Passwords are excluded by WLED. Restoring these files on a device is a separate operation and may overwrite its settings.</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => downloadFile(selected.deviceFiles!.cfgJson, `wled-cfg-${selected.id}.json`)}>Download WLED configuration</Button>
+              <Button variant="outline" onClick={() => downloadFile(selected.deviceFiles!.presetsJson, `wled-presets-${selected.id}.json`)}>Download WLED presets</Button>
+            </div>
+          </div> : null}
           <ul className="text-muted-foreground">{selected.data.lights.map((light) => <li key={light.id}>{light.name} · {light.hostname}:{light.port}</li>)}</ul>
           <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={download}>Download JSON</Button>
             <Button variant="outline" disabled={busy !== null} onClick={() => void checkRestore()}>Review restore</Button>

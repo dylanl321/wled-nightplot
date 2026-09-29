@@ -173,6 +173,9 @@ function testApp(overrides: Partial<AppDeps> = {}) {
     write: overrides.write ?? box.write,
     readLive: overrides.readLive ?? box.readLive,
     readCfg: overrides.readCfg ?? cfg.read,
+    readNativeFiles: overrides.readNativeFiles ?? (async () => ({
+      cfgJson: JSON.stringify(await cfg.read()), presetsJson: JSON.stringify({ "1": { n: "Test" } }),
+    })),
     writeCfg: overrides.writeCfg ?? cfg.write,
     collect: overrides.collect ?? (async () => []),
     now: overrides.now ?? (() => new Date("2026-09-26T18:00:00.000Z")),
@@ -234,6 +237,9 @@ describe("managed Backups", () => {
     const controller = backed.backups.read(saved.id)!.controller;
     expect(controller).toMatchObject({ hostKey: "192.168.1.80:80", reported: { on: true } });
     expect(controller).not.toHaveProperty("wifi");
+    expect(backed.backups.read(saved.id)?.deviceFiles).toMatchObject({
+      presetsJson: '{"1":{"n":"Test"}}',
+    });
     vi.spyOn(first.backups, "create").mockImplementation(() => { throw new Error("disk full"); });
     const refusedWrite = vi.fn(first.box.write);
     const refused = testApp({ store: first.store, products: first.products,
@@ -243,6 +249,25 @@ describe("managed Backups", () => {
     });
     expect(response.status).toBe(503);
     expect(refusedWrite).not.toHaveBeenCalled();
+  });
+
+  it("saves a manual per-Light native export and refuses Apply when a native file cannot be captured", async () => {
+    const first = testApp();
+    const id = await enroll(first.app);
+    const saved = await first.app.request(`/api/lights/${id}/backups`, { method: "POST" });
+    expect(saved.status).toBe(201);
+    const backups = first.backups.list();
+    expect(backups[0]?.hasDeviceFiles).toBe(true);
+    const write = vi.fn(first.box.write);
+    const unavailable = testApp({ store: first.store, products: first.products, activity: first.activity,
+      readNativeFiles: async () => { throw new Error("presets.json not available"); }, write });
+    const response = await unavailable.app.request(`/api/lights/${id}/apply`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: [{ label: "Door", start: 0, stop: 60 }] }),
+    });
+    expect(response.status).toBe(503);
+    expect(write).not.toHaveBeenCalled();
+    expect(unavailable.backups.list()).toHaveLength(0);
   });
 
   it("reviews a restore, refuses stale or wrong confirmation, and saves a recoverable pre-restore backup", async () => {

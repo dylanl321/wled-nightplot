@@ -298,6 +298,14 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       res.end(JSON.stringify({ info, state: reportedState(), nightplot: kind }));
       return;
     }
+    if (url === "/cfg.json") {
+      res.end(JSON.stringify(cfg));
+      return;
+    }
+    if (url === "/presets.json") {
+      res.end(JSON.stringify({ "1": { n: "Fixture preset", on: true, bri: 128, seg: state.seg } }));
+      return;
+    }
     if (url === "/json/info") {
       res.end(JSON.stringify({ ...info, nightplot: kind }));
       return;
