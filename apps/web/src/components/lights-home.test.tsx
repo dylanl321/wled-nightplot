@@ -18,6 +18,27 @@ function fetchSpy() {
 }
 
 describe("LightsHome cached beads", () => {
+  it("shows a ticking last-answer age even on an Online cached Light, without probing", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-09-26T18:00:12.000Z"));
+      const fetch = fetchSpy();
+      render(<LightsHome unenrolled={[]} lights={[lightView({ reachability: "online", on: true,
+        lastSeenAt: "2026-09-26T18:00:00.000Z" })]} />);
+      expect(screen.getByText("Answered 12s ago")).toBeTruthy();
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+      expect(screen.getByText("Answered 17s ago")).toBeTruthy();
+      expect(fetch).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("does not invent an answer when lastSeenAt is missing", () => {
+    const fetch = fetchSpy();
+    render(<LightsHome unenrolled={[]} lights={[lightView({ reachability: "online", lastSeenAt: null })]} />);
+    expect(screen.getByText("Answer time unknown")).toBeTruthy();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("ends a Lights-card Blink after the pulse instead of leaving the Light changed", async () => {
     vi.useFakeTimers();
     try {

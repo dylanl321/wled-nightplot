@@ -17,6 +17,7 @@ import {
   buildDeleteChecks,
   canDelete,
   catalogSnapshot,
+  compareLastApply,
   LED_CATALOG_DELETE_CAPTION,
   LED_CATALOG_DELETE_CLEARED,
   ledProductDeleteImpact,
@@ -870,6 +871,8 @@ export function createApp(deps: AppDeps) {
     if (outcome.matched) {
       next.lastSnapshot = reread.snapshot;
       next.lastSnapshotAt = next.lastSeenAt;
+      next.lastApply = next.mac ? { at: next.lastSeenAt ?? nowIso(), mac: next.mac,
+        ledCount: next.ledCount, ranges: sent.map(({ start, stop }) => ({ start, stop })), color } : null;
       deps.store.replace(next);
       const elements = persistDrafts(light.id, drafts);
       record(next, "apply", "match", `Applied ${sentDescription}; reported ranges match. ${outcome.caption}`);
@@ -1031,6 +1034,7 @@ export function createApp(deps: AppDeps) {
       // A snapshot from the old controller is not a baseline for this one.
       next.lastSnapshot = null;
       next.lastSnapshotAt = null;
+      next.lastApply = null;
       try {
         const raw = await readNativeFiles({ hostname: stored.hostname, port: stored.port });
         backups.create({
@@ -1548,6 +1552,7 @@ export function createApp(deps: AppDeps) {
     if (matched && nextSnap) {
       next.lastSnapshot = nextSnap;
       next.lastSnapshotAt = next.lastSeenAt;
+      next.lastApply = null; // Strip Apply intentionally changes the controller baseline.
       deps.store.replace(next);
     } else if (nextSnap) {
       deps.store.replace(next);
@@ -1949,6 +1954,7 @@ export function createApp(deps: AppDeps) {
     return {
       ...detail,
       session: current ?? null,
+      applyConflict: current ? null : compareLastApply(light.lastApply, snap),
       frozenPreview: !current && snap?.nativeRestoreUnavailable === "frozen",
       deleteChecks: buildDeleteChecks({
         elementLabels: elems.map((element) => element.label),

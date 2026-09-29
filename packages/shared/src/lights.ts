@@ -1,4 +1,5 @@
 import type { ApplyResult } from "./apply.ts";
+import type { ApplyConflict, LastApply } from "./apply-conflict.ts";
 import type { BeadColor } from "./bead.ts";
 import type { RangeDisplay, ReportedRail } from "./drift.ts";
 import type { LiveMatch, LiveSession } from "./live.ts";
@@ -48,6 +49,8 @@ export type Light = {
   ledProductId: string | null;
   lastSnapshot?: WledSnapshot | null;
   lastSnapshotAt?: string | null;
+  /** Last confirmed Segment Apply; not rewritten by Inspect or readdressing. */
+  lastApply?: LastApply | null;
 };
 
 /** Missing or blank store values are manual fields. */
@@ -100,6 +103,8 @@ export type LightView = Light & {
 };
 
 export type LightDetail = {
+  /** Fresh same-controller comparison only, suppressed during Preview/Blink. */
+  applyConflict?: ApplyConflict | null;
   /** Live /json/info health only; never cached as current while unreachable. */
   health?: import("./wled/health.ts").WledHealth | null;
   /** Frozen controller pixels without a live session that can restore them. */

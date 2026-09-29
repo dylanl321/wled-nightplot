@@ -7,6 +7,10 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- CONFIG-162: A Light now keeps a separate last-successful-Segment-Apply baseline. Fresh same-controller readback that differs in known Segment ranges or colour gets a conflict banner; missing reads, offline Lights and active Preview/Blink do not invent a conflict. Readdressing does not rewrite the Apply baseline, while controller replacement and successful Strip provision clear it. The banner cannot identify who caused the change. Tests and docs land with code; fixture is not Hardware Done.
+
+- CONFIG-161: Every Online-looking Light card shows a ticking “Answered Ns ago” age from its persisted last answer, so cached power does not look like a fresh probe. Missing/invalid/future timestamps say “Answer time unknown”; unreachable cards retain grey beads and last-seen copy. The timer pauses while hidden and never probes WLED.
+
 - CONFIG-160: Settings now has a per-Segment power-budget scenario for WS281x RGB and SK6812 RGBW. Choose colours, RGBW white and brightness; the model shows estimated mA per Segment and total versus the live WLED Safe current limit when known. Missing limit, invalid/overlapping ranges or unsupported drivers do not claim safety. Uncovered LEDs, WLED limiter, supply/wiring and non-measured real draw are called out; no controller write.
 
 - CONFIG-159: Settings shows live WLED version, uptime, Wi-Fi signal/RSSI and free memory from `/json/info`. Missing metrics remain “Not reported” and unreachable Lights show last-seen copy, never stale readings. Older-than-verified Strip firmware warns; unlisted firmware is marked unverified rather than assumed too old. Fixture readings and tests are software-only, not Hardware Done.

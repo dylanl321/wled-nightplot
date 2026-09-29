@@ -110,6 +110,10 @@ WLED-native captures GET `/cfg.json` and `/presets.json` from the enrolled host:
 
 Light Settings health is derived only from the current `/json/info` snapshot (uptime seconds, Wi-Fi signal/RSSI and free heap bytes). Missing values stay null and unreachable Lights never reuse cached health as current. Compatibility messaging uses the Strip provision firmware table: versions older than its 0.14.0 baseline warn as too old; other unlisted versions are unverified, not declared too old. No health reading proves a physical strip is lit.
 
+Lights cards derive the heartbeat text from persisted `lastSeenAt`, never from rendering time or a fresh list probe. Online-looking cached rows show elapsed seconds/minutes/hours; missing/invalid/future timestamps are unknown. A card-local timer ticks only while the tab is visible, and unreachable cards keep the older grey-bead/last-seen treatment.
+
+`Light.lastApply` is a distinct persisted baseline written only after a matched Segment Apply (timestamp, MAC, LED count, applied exclusive ranges and colour). It is not `lastSnapshot`, which readdress/Strip operations also update. A live same-MAC/LED-count detail read compares known reported spans and colour; an active Preview/Blink suppresses the banner. Unknown/offline data never proves a match or a conflict. Explicit replacement and successful Strip provision clear the baseline; a same-MAC address change preserves it. The banner says only that the controller differs from last Apply, not who changed it. No automatic Apply or silent adoption.
+
 Power budget uses a pure shared per-Segment scenario model: saved exclusive ranges, user-selected RGB (plus RGBW white), 0–255 brightness, 20 mA maximum per full channel. It refuses invalid/overlapping ranges and unsupported drivers. Settings reads the live `/json/cfg` Safe current limit for a comparison; `maxpwr: 0` means the WLED limiter is disabled, not a 0 mA ceiling. Uncovered LEDs are excluded. This is neither the actual live draw nor a supply/wiring/fuse calculation, and it does not send a WLED write.
 
 ## Stubs / NYI (honest)
