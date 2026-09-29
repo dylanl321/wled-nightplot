@@ -29,6 +29,7 @@ vi.mock("next/link", () => ({
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });

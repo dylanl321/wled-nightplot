@@ -1,14 +1,16 @@
 import type { Element } from "@nightplot/shared";
 import { act, renderHook } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { beadCenterY, boundaryX, hitFromSvg } from "./ops";
 import { editorReducer, initialEditorState, useEditorState } from "./use-editor-state";
+import { readDraft, writeDraft } from "./draft-storage";
 
 function door(start = 10, stop = 20): Element {
   return { id: "a", lightId: "l", label: "Door", start, stop };
 }
 
 describe("editor reducer", () => {
+  beforeEach(() => window.localStorage.clear());
   function hit(index: number) {
     const row = Math.floor(index / 100);
     return hitFromSvg(boundaryX(index, row) + 4.6, beadCenterY(row), 100);
@@ -208,7 +210,7 @@ describe("editor reducer", () => {
     input.remove();
   });
 
-  it("keeps a dirty draft when saved Segments are unchanged, and adopts a new strip length", () => {
+  it("keeps a dirty draft when saved Segments are unchanged, and flags a new strip length", () => {
     const saved = [door(0, 10)];
     let state = initialEditorState(saved, 30, "l");
     state = editorReducer(state, { type: "nudge", delta: 1 });
@@ -229,8 +231,55 @@ describe("editor reducer", () => {
       lengthChanged: true,
       ledCount: 8,
     });
-    expect(state.els).toEqual(clipped);
+    expect(state.els[0]?.start).toBe(1);
     expect(state.ledCount).toBe(8);
-    expect(state.hist).toHaveLength(0);
+    expect(state.draftConflict).toBe(true);
+  });
+
+  it("restores a Light's dirty Segments after reload and removes the draft after revert", () => {
+    const first = renderHook(() => useEditorState([door()], 100, "l"));
+    act(() => first.result.current.dispatch({ type: "nudge", delta: 1 }));
+    expect(readDraft("l")?.draft[0]?.start).toBe(11);
+    expect(readDraft("another-light")).toBeNull();
+    first.unmount();
+    const reloaded = renderHook(() => useEditorState([door()], 100, "l"));
+    expect(reloaded.result.current.state.els[0]?.start).toBe(11);
+    expect(reloaded.result.current.dirtyCount).toBe(1);
+    expect(reloaded.result.current.state.draftConflict).toBe(false);
+    act(() => reloaded.result.current.dispatch({ type: "revert" }));
+    expect(readDraft("l")).toBeNull();
+  });
+
+  it("requires review if the saved Segments changed while the draft was away", () => {
+    writeDraft("l", { saved: [door()], draft: [door(11, 20)], ledCount: 100 });
+    const { result } = renderHook(() => useEditorState([door(12, 20)], 100, "l"));
+    expect(result.current.state.els[0]?.start).toBe(11);
+    expect(result.current.state.saved[0]?.start).toBe(12);
+    expect(result.current.state.draftConflict).toBe(true);
+    act(() => result.current.dispatch({ type: "resolve-draft" }));
+    expect(result.current.state.draftConflict).toBe(false);
+    expect(readDraft("l")?.draft[0]?.start).toBe(11);
+  });
+
+  it("preserves a colour-only edit and clears the draft when the server saves it", () => {
+    const first = renderHook(() => useEditorState([door()], 100, "l"));
+    act(() => first.result.current.dispatch({ type: "color", hex: "#aabbcc", white: 12 }));
+    expect(first.result.current.dirtyCount).toBe(1);
+    expect(readDraft("l")?.draft[0]?.color).toEqual({ hex: "#aabbcc", white: 12 });
+    const saved = [door()];
+    const next = [{ ...door(), color: { hex: "#aabbcc", white: 12 } }];
+    act(() => first.result.current.dispatch({ type: "server", previous: saved, next,
+      lengthChanged: false, ledCount: 100 }));
+    expect(first.result.current.dirtyCount).toBe(0);
+    expect(readDraft("l")).toBeNull();
+  });
+
+  it("rejects corrupt or wrong-Light draft data", () => {
+    window.localStorage.setItem("nightplot:segment-draft:v1:l", "{broken");
+    expect(readDraft("l")).toBeNull();
+    writeDraft("l", { saved: [door()], draft: [door(11, 20)], ledCount: 100 });
+    const data = readDraft("l")!;
+    writeDraft("other", data);
+    expect(readDraft("other")).toBeNull();
   });
 });

@@ -84,7 +84,7 @@ export function ElementsPanel({
   onRefresh: () => void;
 }) {
   const light = detail.light;
-  const { state, dispatch, dirtyCount } = useEditorState(detail.elements, light.ledCount, light.id);
+  const { state, dispatch, dirtyCount, draftReady, storageAvailable } = useEditorState(detail.elements, light.ledCount, light.id);
   const elsRef = useRef(state.els);
   elsRef.current = state.els;
   const [apply, setApply] = useState<ApplyResult | null>(null);
@@ -183,8 +183,8 @@ export function ElementsPanel({
     segmentColor: state.els.every((element) => element.color) ? state.els[0]?.color?.hex :
       typeof light.bead === "string" ? light.bead : null,
   });
-  const canSave = dirtyCount > 0 && issues.length === 0 && busy === null;
-  const canApply = applyReadyReason === null && busy === null && !locate.stopping && locate.error?.kind !== "end";
+  const canSave = draftReady && !state.draftConflict && dirtyCount > 0 && issues.length === 0 && busy === null;
+  const canApply = draftReady && !state.draftConflict && applyReadyReason === null && busy === null && !locate.stopping && locate.error?.kind !== "end";
   const liveReason = unreachable
     ? previewRefuseReason({ reachable: false, hasTarget: true })
     : null;
@@ -230,6 +230,10 @@ export function ElementsPanel({
   }
 
   async function applyRanges() {
+    if (state.draftConflict || !draftReady) {
+      onNotice("Review the recovered Segment draft before Apply.");
+      return;
+    }
     if (applyReadyReason) {
       onNotice(applyReadyReason);
       return;
@@ -567,6 +571,14 @@ export function ElementsPanel({
           <span className="text-[14px] text-primary">
             {dirtyCount} unsaved change{dirtyCount === 1 ? "" : "s"}
           </span>
+          <span className="text-[12px] text-muted-foreground">{storageAvailable ? "Draft kept in this browser until saved or reverted." : "Browser storage unavailable; this draft may be lost on reload."}</span>
+          {state.draftConflict ? (
+            <div className="basis-full text-[13px] text-[#e9ba75]" role="alert">
+              Saved Segments or strip length changed since this draft. Review the ranges before replacing saved Segments.
+              <button type="button" className="ml-2 underline" onClick={() => dispatch({ type: "resolve-draft" })}>Keep draft for review</button>
+              <button type="button" className="ml-2 underline" onClick={() => dispatch({ type: "revert" })}>Use saved Segments</button>
+            </div>
+          ) : null}
           {barIssue ? <span className="text-[13px] text-destructive">{barIssue}</span> : null}
           <button
             type="button"

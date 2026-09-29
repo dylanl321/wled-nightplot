@@ -15,6 +15,7 @@ import {
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { LightDetail } from "@/components/light-detail";
+import { writeDraft } from "@/components/elements-editor/draft-storage";
 import {
   isLightsListPath,
   isOneLightProbe,
@@ -31,6 +32,26 @@ describe("last Apply conflict banner", () => {
     expect(screen.getByText("Controller differs from the last Apply")).toBeTruthy();
     expect(screen.getByText(/Reported Segment ranges changed/)).toBeTruthy();
     expect(screen.getByText(/Nightplot cannot tell what changed it/)).toBeTruthy();
+  });
+});
+
+describe("reload-safe Segment drafts", () => {
+  it("shows a stale draft without letting Save or Apply write before review", async () => {
+    const initial = lightDetail({ light: lightView({ reachability: "online", on: true }) });
+    const saved = initial.elements;
+    const draft = saved.map((element, index) => index === 0 ? { ...element, label: "Recovered name" } : element);
+    writeDraft(initial.light.id, { saved: saved.map((element, index) => index === 0 ?
+      { ...element, label: "Older name" } : element), draft, ledCount: initial.light.ledCount });
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    render(<LightDetail initial={initial} tab="elements" />);
+    expect(await screen.findByText(/Saved Segments or strip length changed since this draft/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Save Segments" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Save & Apply" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(fetch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Use saved Segments" }));
+    expect(screen.queryByText(/Saved Segments or strip length changed since this draft/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save Segments" })).toBeNull();
   });
 });
 

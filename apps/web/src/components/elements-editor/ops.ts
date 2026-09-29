@@ -479,7 +479,9 @@ export function changeCount(draft: readonly Element[], saved: readonly Element[]
       !right ||
       left.label !== right.label ||
       left.start !== right.start ||
-      left.stop !== right.stop
+      left.stop !== right.stop ||
+      left.color?.hex !== right.color?.hex ||
+      left.color?.white !== right.color?.white
     ) {
       count += 1;
     }
@@ -497,7 +499,9 @@ export function elementsEqual(left: readonly Element[], right: readonly Element[
       element.lightId === other.lightId &&
       element.label === other.label &&
       element.start === other.start &&
-      element.stop === other.stop
+      element.stop === other.stop &&
+      element.color?.hex === other.color?.hex &&
+      element.color?.white === other.color?.white
     );
   });
 }

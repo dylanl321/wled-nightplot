@@ -2,6 +2,7 @@
 
 import type { Element } from "@nightplot/shared";
 import { useEffect, useReducer, useRef } from "react";
+import { readDraft, sameSegments, writeDraft, type StoredDraft } from "./draft-storage";
 import {
   carve,
   changeCount,
@@ -52,6 +53,11 @@ export type EditorState = {
   lastNudge: { key: string; at: number } | null;
   els: Element[];
   saved: Element[];
+  draftBaseline: Element[];
+  draftLedCount: number;
+  draftConflict: boolean;
+  draftReady: boolean;
+  storageAvailable: boolean;
   sel: string[];
   ledSel: LedSelection | null;
   mode: Tool;
@@ -107,7 +113,10 @@ export type EditorAction =
   | { type: "toast-clear" }
   | { type: "select-row"; id: string; shift: boolean }
   | { type: "replace"; elements: Element[] }
-  | { type: "server"; previous: Element[]; next: Element[]; lengthChanged: boolean; ledCount: number };
+  | { type: "server"; previous: Element[]; next: Element[]; lengthChanged: boolean; ledCount: number }
+  | { type: "recover"; stored: StoredDraft | null }
+  | { type: "resolve-draft" }
+  | { type: "draft-storage"; available: boolean };
 
 const HISTORY = 80;
 
@@ -226,6 +235,11 @@ export function initialEditorState(
     lastNudge: null,
     els: elements,
     saved: elements,
+    draftBaseline: elements,
+    draftLedCount: ledCount,
+    draftConflict: false,
+    draftReady: false,
+    storageAvailable: true,
     sel: elements[0] ? [elements[0].id] : [],
     ledSel: null,
     mode: "select",
@@ -476,7 +490,8 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       };
     }
     case "revert":
-      return commit(state, state.saved, { sel: [], ledSel: null, toast: null });
+      return commit(state, state.saved, { sel: [], ledSel: null, toast: null,
+        draftBaseline: state.saved, draftLedCount: state.ledCount, draftConflict: false });
     case "label": {
       const element = one(state);
       if (!element) return state;
@@ -618,15 +633,32 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         sel: action.elements[0] ? [action.elements[0].id] : [],
         ledSel: null,
       });
+    case "recover": {
+      if (!action.stored) return { ...state, draftReady: true };
+      const conflict = action.stored.ledCount !== state.ledCount ||
+        !sameSegments(action.stored.saved, state.saved);
+      const els = action.stored.draft;
+      return { ...state, els, draftBaseline: action.stored.saved,
+        draftLedCount: action.stored.ledCount, draftConflict: conflict, draftReady: true,
+        sel: els[0] ? [els[0].id] : [], focus: els[0] ? { kind: "seg", id: els[0].id } : { kind: "cursor" },
+        cursor: state.ledCount > 0 ? clamp(els[0]?.start ?? 0, 0, state.ledCount - 1) : null };
+    }
+    case "resolve-draft":
+      return { ...state, draftConflict: false, draftBaseline: state.saved, draftLedCount: state.ledCount };
+    case "draft-storage":
+      return state.storageAvailable === action.available ? state : { ...state, storageAvailable: action.available };
     case "server": {
       const dirty = changeCount(state.els, action.previous) > 0;
-      if (!dirty || action.lengthChanged || changeCount(state.els, action.next) === 0) {
-        const adopt = action.lengthChanged || !dirty;
+      if (!dirty || sameSegments(state.els, action.next)) {
+        const adopt = !dirty;
         const sel = state.sel.filter((id) => action.next.some((element) => element.id === id));
         return {
           ...state,
           els: action.next,
           saved: action.next,
+          draftBaseline: action.next,
+          draftLedCount: action.ledCount,
+          draftConflict: false,
           ledCount: action.ledCount,
           cursor: state.cursor === null || action.ledCount < 1
             ? null : Math.min(state.cursor, action.ledCount - 1),
@@ -641,7 +673,9 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
           ...(adopt && state.focus.kind === "sel" ? { focus: { kind: "cursor" as const } } : {}),
         };
       }
-      return { ...state, saved: action.next, ledCount: action.ledCount };
+      return { ...state, saved: action.next, ledCount: action.ledCount,
+        draftConflict: state.draftConflict || action.lengthChanged ||
+          !sameSegments(state.draftBaseline, action.next) };
     }
     default:
       return state;
@@ -667,6 +701,18 @@ export function useEditorState(elements: Element[], ledCount: number, lightId: s
     (seed) => initialEditorState(seed.elements, seed.ledCount, seed.lightId),
   );
   const seen = useRef({ elements, ledCount });
+
+  useEffect(() => {
+    dispatch({ type: "recover", stored: readDraft(lightId) });
+  }, [lightId]);
+
+  useEffect(() => {
+    if (!state.draftReady || state.lightId !== lightId) return;
+    const dirty = !sameSegments(state.els, state.saved);
+    const stored = dirty ? { saved: state.draftBaseline, draft: state.els,
+      ledCount: state.draftLedCount } : null;
+    dispatch({ type: "draft-storage", available: writeDraft(lightId, stored) });
+  }, [state.draftReady, lightId, state.els, state.saved, state.draftBaseline, state.draftLedCount, state.lightId]);
 
   useEffect(() => {
     const previous = seen.current;
@@ -745,5 +791,6 @@ export function useEditorState(elements: Element[], ledCount: number, lightId: s
     return () => window.clearTimeout(timer);
   }, [state.toast]);
 
-  return { state, dispatch, dirtyCount: changeCount(state.els, state.saved) };
+  return { state, dispatch, dirtyCount: changeCount(state.els, state.saved),
+    draftReady: state.draftReady, storageAvailable: state.storageAvailable };
 }

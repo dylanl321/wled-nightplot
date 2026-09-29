@@ -135,6 +135,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 - Discover loads enrolled Lights and Find separately. A Find-only miss keeps the enrolled list and says Find did not load, with Find Lights as retry — it does not claim the configure server or the list is down. Lights-only outage still uses ServerDown (CONFIG-49).
 - ServerDown recovery copy names both the local `pnpm dev` path and Docker compose / `docker run` restart (`docs/deploy.md`). It no longer tells a compose operator to run host `pnpm dev` (CONFIG-46).
 
+- CONFIG-164: Unsaved Segment drafts survive reload in the same browser, scoped to the Light. A changed saved layout or strip length pauses Save and Apply for explicit draft review; Revert clears the local draft. Storage failures are named. This does not send Preview or Apply to a controller; software checks are not Hardware Done.
+
 ## 0.7.11 — Elements after strip length change (CONFIG-43)
 
 - After a successful length-changing Strip Apply, declared Elements are reconciled against the new `ledCount`. Ranges that run past the new strip are clipped; ranges that start past it are dropped. Grow does not invent Elements — leftover coverage is flagged.
