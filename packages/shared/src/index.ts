@@ -1,4 +1,5 @@
 export type { ActivityEntry } from "./activity.ts";
+export { estimatePowerScenario, type PowerScenario, type SegmentPowerColour } from "./power-budget.ts";
 export type { BackupData, BackupDocument, BackupReason, BackupSummary, ControllerReference, WledBackupFiles } from "./backup.ts";
 export { backupNeedsControllerConfirmation, parseSegmentBackup, type SegmentBackup } from "./segment-backup.ts";
 export {

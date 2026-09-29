@@ -7,6 +7,7 @@ vi.mock("@/components/safe-settings", () => ({ SafeSettingsPanel: () => null }))
 vi.mock("@/components/strip-provision", () => ({ StripProvisionPanel: () => null }));
 vi.mock("@/components/delete-light", () => ({ DeleteLight: () => null }));
 vi.mock("@/components/controller-replacement", () => ({ ControllerReplacement: () => null }));
+vi.mock("@/components/power-budget", () => ({ PowerBudgetPanel: () => null }));
 
 function panel(detail = lightDetail()) {
   return <SettingsPanel detail={detail} addressOpen={false} addressHost="" addressSteps={null}

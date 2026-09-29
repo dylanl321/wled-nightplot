@@ -7,6 +7,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- CONFIG-160: Settings now has a per-Segment power-budget scenario for WS281x RGB and SK6812 RGBW. Choose colours, RGBW white and brightness; the model shows estimated mA per Segment and total versus the live WLED Safe current limit when known. Missing limit, invalid/overlapping ranges or unsupported drivers do not claim safety. Uncovered LEDs, WLED limiter, supply/wiring and non-measured real draw are called out; no controller write.
+
 - CONFIG-159: Settings shows live WLED version, uptime, Wi-Fi signal/RSSI and free memory from `/json/info`. Missing metrics remain “Not reported” and unreachable Lights show last-seen copy, never stale readings. Older-than-verified Strip firmware warns; unlisted firmware is marked unverified rather than assumed too old. Fixture readings and tests are software-only, not Hardware Done.
 
 - CONFIG-181 continuation: Per-Light Back up WLED and automatic pre-Apply/Strip/Safe captures now save WLED's native `cfg.json` and `presets.json` together with Nightplot data, refusing the write if either export fails. Backups can download each native file. WLED excludes passwords; no automatic controller restore or hardware validation is claimed. The earlier reference-only implementation was insufficient for device backup.

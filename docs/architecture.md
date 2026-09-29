@@ -109,6 +109,8 @@ WLED-native captures now GET `/cfg.json` and `/presets.json` from the enrolled h
 
 Light Settings health is derived only from the current `/json/info` snapshot (uptime seconds, Wi-Fi signal/RSSI and free heap bytes). Missing values stay null and unreachable Lights never reuse cached health as current. Compatibility messaging uses the Strip provision firmware table: versions older than its 0.14.0 baseline warn as too old; other unlisted versions are unverified, not declared too old. No health reading proves a physical strip is lit.
 
+Power budget uses a pure shared per-Segment scenario model: saved exclusive ranges, user-selected RGB (plus RGBW white), 0–255 brightness, 20 mA maximum per full channel. It refuses invalid/overlapping ranges and unsupported drivers. Settings reads the live `/json/cfg` Safe current limit for a comparison; `maxpwr: 0` means the WLED limiter is disabled, not a 0 mA ceiling. Uncovered LEDs are excluded. This is neither the actual live draw nor a supply/wiring/fuse calculation, and it does not send a WLED write.
+
 ## Stubs / NYI (honest)
 
 | Thing | Status |

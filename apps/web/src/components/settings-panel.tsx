@@ -6,6 +6,7 @@ import { DeleteLight } from "@/components/delete-light";
 import { ControllerReplacement } from "@/components/controller-replacement";
 import { SafeSettingsPanel } from "@/components/safe-settings";
 import { StripProvisionPanel } from "@/components/strip-provision";
+import { PowerBudgetPanel } from "@/components/power-budget";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -75,6 +76,12 @@ export function SettingsPanel({
             {detail.health.compatibilityNotice ? <p role="status" className="rounded-lg border border-amber-500/40 p-3 text-amber-200">{detail.health.compatibilityNotice}</p> : null}
           </div>
         )}
+      </Section>
+      <Section
+        title="Power budget"
+        blurb="Explore Segment colours against WLED’s Safe current limit; no controller write."
+      >
+        <PowerBudgetPanel detail={detail} />
       </Section>
       <Section
         title="Network"
