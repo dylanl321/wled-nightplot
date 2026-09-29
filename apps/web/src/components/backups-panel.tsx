@@ -5,11 +5,11 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LedLoader } from "@/components/ui/led-loader";
-import { deleteJson, fetchJson, postJson } from "@/lib/api";
+import { deleteJson, fetchJson, patchJson, postJson } from "@/lib/api";
 
 type RestoreCheck = {
-  backup: { id: string; at: string; reason: string; lights: number; segments: number; products: number; activity: number };
-  current: { lights: number; segments: number; products: number; activity: number };
+  backup: { id: string; at: string; reason: string; lights: number; segments: number; products: number; activity: number; settings?: boolean };
+  current: { lights: number; segments: number; products: number; activity: number; settings?: boolean };
   expectedDigest: string;
   expectedCurrentDigest: string;
 };
@@ -175,6 +175,15 @@ export function BackupsPanel({ initial, lights = [] }: { initial: BackupSummary[
       setNotice("Backup cleared from local storage. It cannot be recovered unless you downloaded a copy.");
     });
   }
+  async function pin() {
+    if (!selected) return;
+    await run("Updating backup pin…", async () => {
+      const result = await patchJson<{ backup: BackupSummary }>(`/api/backups/${selected.id}/pin`, { pinned: !selected.pinned });
+      if (!result.ok) throw new Error(result.data.message ?? "Pin could not be saved.");
+      setSelected({ ...selected, pinned: result.data.backup.pinned });
+      await reload();
+    });
+  }
 
   return <div className="mx-auto flex w-full max-w-[1050px] flex-col gap-5 px-5 py-7 sm:px-10">
     <header className="flex flex-wrap items-center justify-between gap-3">
@@ -207,7 +216,7 @@ export function BackupsPanel({ initial, lights = [] }: { initial: BackupSummary[
     {busy ? <LedLoader label={busy} /> : null}
     {error ? <p role="alert" className="text-destructive">{error}</p> : null}
     {notice ? <p role="status" className="text-online">{notice}</p> : null}
-    <p className="text-[12px] text-muted-foreground">Before Apply, Strip provision and Safe settings, Nightplot saves both WLED export files plus Nightplot data or refuses the write. Before Delete, replacement and LED product changes, it saves Nightplot data. Preview, Blink and All Off do not create automatic backups. Up to 100 backups are kept; download or clear older ones to make room.</p>
+    <p className="text-[12px] text-muted-foreground">Before Apply, Strip provision and Safe settings, Nightplot saves both WLED export files plus Nightplot data or refuses the write. Before Delete, replacement and LED product changes, it saves Nightplot data. Preview, Blink and All Off do not create automatic backups. Retention is Off by default; with opt-in rotation, pinned and latest recovery copies are protected. Storage is capped at 100 backups.</p>
     <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
       <section aria-label="Saved backups" className="rounded-xl border border-border bg-card p-4">
         <h2 className="font-medium">Saved backups ({backups.length})</h2>
@@ -216,7 +225,7 @@ export function BackupsPanel({ initial, lights = [] }: { initial: BackupSummary[
           <button type="button" onClick={() => void open(item.id)} disabled={busy !== null}
             className="w-full rounded-lg border border-border p-3 text-left hover:bg-secondary">
             <span className="block font-medium">{item.reason.replaceAll("-", " ")}{item.lightName ? ` · ${item.lightName}` : ""}</span>
-            <span className="text-[12px] text-muted-foreground">{new Date(item.at).toLocaleString()} · {item.lightCount} Lights · {item.segmentCount} Segments {item.hasDeviceFiles || item.deviceCaptureStatus === "complete" ? "· WLED configuration + presets" : item.deviceCaptureStatus === "incomplete" ? "· WLED export incomplete" : item.hasControllerReference ? "· controller reference only" : "· Nightplot data only"}{item.deviceFirmware ? ` · ${item.deviceFirmware}` : ""}</span>
+            <span className="text-[12px] text-muted-foreground">{new Date(item.at).toLocaleString()} · {item.lightCount} Lights · {item.segmentCount} Segments{item.pinned ? " · pinned" : ""} {item.hasDeviceFiles || item.deviceCaptureStatus === "complete" ? "· WLED configuration + presets" : item.deviceCaptureStatus === "incomplete" ? "· WLED export incomplete" : item.hasControllerReference ? "· controller reference only" : "· Nightplot data only"}{item.deviceFirmware ? ` · ${item.deviceFirmware}` : ""}</span>
           </button>
         </li>)}</ul>
       </section>
@@ -224,7 +233,7 @@ export function BackupsPanel({ initial, lights = [] }: { initial: BackupSummary[
         <h2 className="font-medium">Details</h2>
         {!selected ? <p className="mt-3 text-muted-foreground">Select a backup to inspect, download, restore or clear it.</p> : <div className="mt-3 flex flex-col gap-3 text-[13px]">
           <p>{selected.reason.replaceAll("-", " ")} · {new Date(selected.at).toLocaleString()}</p>
-          <p>{selected.data.lights.length} Lights · {selected.data.elements.length} Segments · {selected.data.products.length} LED products · {selected.data.activity.length} Activity entries</p>
+          <p>{selected.data.lights.length} Lights · {selected.data.elements.length} Segments · {selected.data.products.length} LED products · {selected.data.activity.length} Activity entries{selected.data.settings ? " · Nightplot preferences" : " · no Nightplot preferences"}</p>
           <p className="font-mono text-[11px] break-all text-muted-foreground">ID: {selected.id}</p>
           {selected.controller ? <details className="rounded-lg border border-border p-3">
             <summary className="cursor-pointer">Controller reference: {selected.controller.hostKey} · MAC {selected.controller.mac ?? "unknown"} · {selected.controller.ledCount} LEDs</summary>
@@ -244,13 +253,16 @@ export function BackupsPanel({ initial, lights = [] }: { initial: BackupSummary[
             : "No complete WLED configuration + presets in this backup. A small cfg/state reference is not a device backup."}</p>}
           <ul className="text-muted-foreground">{selected.data.lights.map((light) => <li key={light.id}>{light.name} · {light.hostname}:{light.port}</li>)}</ul>
           <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={download}>Download JSON</Button>
+            <Button variant="outline" disabled={busy !== null} onClick={() => void pin()}>{selected.pinned ? "Unpin" : "Pin"} backup</Button>
             <Button variant="outline" disabled={busy !== null} onClick={() => void checkRestore()}>Review Nightplot restore</Button>
             <Button variant="outline" disabled={busy !== null || !selected.deviceFiles} onClick={() => void checkWledRestore()}>Review WLED restore</Button>
             <Button variant="outline" disabled={busy !== null} onClick={() => { setClearId(selected.id); setReview(null); setWledReview(null); setTypedId(""); }}>Clear backup…</Button></div>
           {review ? <div className="space-y-3 rounded-lg border border-primary/50 p-3">
-            <p>Restore: {review.backup.lights} Lights, {review.backup.segments} Segments, {review.backup.products} products, {review.backup.activity} Activity entries.</p>
+            <p>Restore: {review.backup.lights} Lights, {review.backup.segments} Segments, {review.backup.products} products, {review.backup.activity} Activity entries{review.backup.settings ? " · Nightplot preferences" : ""}.</p>
             <p>Current: {review.current.lights} Lights, {review.current.segments} Segments, {review.current.products} products, {review.current.activity} Activity entries.</p>
-            <p className="text-muted-foreground">All current Nightplot data will be replaced. A safety backup is saved first. Nothing is Applied to WLED.</p>
+            <p className="text-muted-foreground">{review.backup.settings
+              ? "All current Nightplot data will be replaced, including Settings. A safety backup is saved first. Nothing is Applied to WLED."
+              : "All current Nightplot data will be replaced. This backup has no preferences, so current Settings stay. A safety backup is saved first. Nothing is Applied to WLED."}</p>
             <label className="block">Type the full backup ID to restore<Input className="mt-1 font-mono" aria-label="Confirm backup ID" value={typedId} onChange={(event) => setTypedId(event.target.value)} /></label>
             <Button disabled={busy !== null || typedId !== selected.id} onClick={() => void restore()}>Restore Nightplot data</Button>
           </div> : null}

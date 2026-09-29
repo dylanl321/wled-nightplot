@@ -118,6 +118,17 @@ describe("WLED native backup files", () => {
     expect(parsed.controller).toMatchObject({ hostKey: "127.0.0.1:48210", mac: "02:00:00:00:00:01", ledCount: 60 });
   });
 
+  it("keeps Nightplot preferences and pin when reading a current backup", () => {
+    const parsed = parseBackupDocument({
+      version: 1, id: "03c75c3e-9846-458e-b458-8739f0bff750", at: "2026-09-29T00:46:38.735Z",
+      reason: "manual", lightId: null, lightName: null, controller: null, pinned: true,
+      data: { lights: [], elements: [], products: [], activity: [],
+        settings: { version: 1, revision: 2, appearance: "light" } },
+    }, "03c75c3e-9846-458e-b458-8739f0bff750");
+    expect(parsed.pinned).toBe(true);
+    expect(parsed.data.settings).toMatchObject({ appearance: "light", revision: 2 });
+  });
+
   it("reports an explicit incomplete capture without treating it as a restore source", () => {
     expect(deviceCaptureOf(backupWithFiles(null))).toEqual({ status: "none", error: null });
     expect(deviceCaptureOf({

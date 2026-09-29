@@ -67,6 +67,8 @@ export type Element = {
   label: string;
   start: number;
   stop: number;
+  /** Optional saved RGBW colour; absent on older saved Segments. */
+  color?: { hex: string; white: number };
 };
 
 /** Live view: bead colour comes from the current snapshot, never a stored last colour. */

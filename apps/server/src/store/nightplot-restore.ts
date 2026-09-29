@@ -6,6 +6,8 @@ export type NightplotRestorePaths = {
   lights: string;
   products: string;
   activity: string;
+  /** Present when this Nightplot restore should also replace preferences. */
+  settings?: string;
 };
 
 export type RestoreIntent = {
@@ -17,7 +19,8 @@ export function restoreIntentPath(storePath: string): string {
   return join(dirname(storePath), ".nightplot-restore-intent.json");
 }
 
-/** Stage all three Nightplot files, then rename. A crash after the intent is ready finishes on boot. */
+/** Stage Nightplot files, then rename. A crash after the intent is ready finishes on boot.
+ * Settings is included only when the backup carried preferences — older copies leave current Settings intact. */
 export function writeNightplotStoresConsistent(paths: NightplotRestorePaths, data: BackupData): void {
   const files = [
     {
@@ -32,6 +35,10 @@ export function writeNightplotStoresConsistent(paths: NightplotRestorePaths, dat
       dest: paths.activity,
       body: `${JSON.stringify({ version: 1, entries: data.activity }, null, 2)}\n`,
     },
+    ...(paths.settings && data.settings ? [{
+      dest: paths.settings,
+      body: `${JSON.stringify(data.settings, null, 2)}\n`,
+    }] : []),
   ];
   const staged = files.map((file) => ({ dest: file.dest, staged: `${file.dest}.restore-new`, body: file.body }));
   const intent = restoreIntentPath(paths.lights);

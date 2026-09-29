@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { defaultNightplotSettings } from "@nightplot/shared";
 import { recoverInterruptedRestore, writeNightplotStoresConsistent } from "./nightplot-restore.ts";
 
 describe("crash-consistent Nightplot restore", () => {
@@ -24,6 +25,34 @@ describe("crash-consistent Nightplot restore", () => {
     expect(JSON.parse(readFileSync(paths.lights, "utf8")).elements[0].label).toBe("Door");
     expect(JSON.parse(readFileSync(paths.products, "utf8")).products[0].id).toBe("ws");
     expect(JSON.parse(readFileSync(paths.activity, "utf8")).entries).toEqual([]);
+  });
+
+  it("replaces preferences only when the backup carried them", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-restore-settings-"));
+    const settings = join(dir, "settings.json");
+    const paths = {
+      lights: join(dir, "lights.json"),
+      products: join(dir, "led-products.json"),
+      activity: join(dir, "activity.json"),
+      settings,
+    };
+    writeFileSync(settings, `${JSON.stringify({ version: 1, appearance: "dark" })}\n`);
+    writeNightplotStoresConsistent(paths, {
+      lights: [],
+      elements: [],
+      products: [],
+      activity: [],
+    });
+    expect(JSON.parse(readFileSync(settings, "utf8")).appearance).toBe("dark");
+    writeNightplotStoresConsistent(paths, {
+      lights: [],
+      elements: [],
+      products: [],
+      activity: [],
+      settings: { ...defaultNightplotSettings(), revision: 3, appearance: "light" },
+    });
+    expect(JSON.parse(readFileSync(settings, "utf8")).appearance).toBe("light");
+    expect(JSON.parse(readFileSync(settings, "utf8")).revision).toBe(3);
   });
 
   it("finishes a ready intent after a crash between staged files and dest", () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import type { DiscoverRow } from "@nightplot/shared";
+import type { NightplotSettings } from "@nightplot/shared";
 import {
   createContext,
   useContext,
@@ -9,12 +10,12 @@ import {
   type ReactNode,
 } from "react";
 import {
-  DISCOVERY_SCAN_INTERVAL_MS,
   discoveryScanInFlight,
   runDiscoveryScan,
   shouldStartDiscoveryScan,
   subscribeDiscoveryScan,
 } from "@/lib/discovery-scan";
+import { fetchJson } from "@/lib/api";
 
 const DiscoveryContext = createContext<DiscoverRow[] | null>(null);
 
@@ -27,12 +28,21 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    let interval = 60_000;
+    let lastScan = 0;
+    void fetchJson<{ settings: NightplotSettings }>("/api/settings").then(({ settings }) => {
+      if (cancelled) return;
+      interval = settings.findIntervalSeconds * 1000;
+      document.documentElement.dataset.theme = settings.appearance;
+      tick();
+    }).catch(() => { tick(); });
     const unsub = subscribeDiscoveryScan((rows) => {
       if (!cancelled) setCandidates(rows);
     });
 
     function tick() {
       if (cancelled) return;
+      if (!interval || (lastScan && Date.now() - lastScan < interval)) return;
       if (
         !shouldStartDiscoveryScan({
           visibility: document.visibilityState,
@@ -41,13 +51,13 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
       ) {
         return;
       }
+      lastScan = Date.now();
       void runDiscoveryScan();
     }
 
-    tick();
-    const id = window.setInterval(tick, DISCOVERY_SCAN_INTERVAL_MS);
+    const id = window.setInterval(tick, 1000);
     function onVisible() {
-      if (document.visibilityState === "visible") tick();
+      if (document.visibilityState === "visible") { lastScan = 0; tick(); }
     }
     document.addEventListener("visibilitychange", onVisible);
     return () => {

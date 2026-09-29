@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  DEFAULT_PALETTE,
+  isNightplotSettings,
   APPLY_UNKNOWN_SEGMENTS_MESSAGE,
   PHYSICAL_LENGTH_CAPTION,
   adoptControllerRangesReason,
@@ -15,6 +17,7 @@ import {
   type ApplyResult,
   type Element,
   type LightDetail as LightDetailPayload,
+  type NightplotSettings,
   type RangeIssue,
 } from "@nightplot/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -55,7 +58,7 @@ import { StripZoom } from "@/components/elements-editor/zoom";
 import { LedLoader } from "@/components/ui/led-loader";
 import { SegmentBackupPanel } from "@/components/segment-backup";
 import { Button } from "@/components/ui/button";
-import { patchJson, postJson } from "@/lib/api";
+import { fetchJson, patchJson, postJson } from "@/lib/api";
 import { displayBead, inspectPowerHow } from "@/lib/power-status";
 import { cn } from "@/lib/utils";
 
@@ -96,11 +99,13 @@ export function ElementsPanel({
   const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    setHues(readHues(light.id));
+    setHues({ ...readHues(light.id), ...Object.fromEntries(state.els.filter((item) => item.color)
+      .map((item) => [item.id, item.color!.hex])) });
   }, [light.id]);
 
   useEffect(() => {
-    const next = assignHues(state.els, hues);
+    const next = { ...assignHues(state.els, hues), ...Object.fromEntries(state.els.filter((item) => item.color)
+      .map((item) => [item.id, item.color!.hex])) };
     const same =
       Object.keys(next).length === Object.keys(hues).length &&
       Object.entries(next).every(([id, hue]) => hues[id] === hue);
@@ -167,7 +172,10 @@ export function ElementsPanel({
   const frozenPreview = detail.frozenPreview === true || (!recoveryNotice && locate.error?.code === "pixel-preview-frozen");
 
   const firstIssue = issues[0] ?? null;
-  const applyReadyReason = frozenPreview ? "Recover the frozen LEDs before Apply." : applyRefuseReason({
+  const colourApplyUnavailable = state.els.some((element) => element.color &&
+    (element.color.white !== 0 || element.color.hex.toLowerCase() !== (typeof light.bead === "string" ? light.bead.toLowerCase() : "")));
+  const applyReadyReason = colourApplyUnavailable ? "Saved Segment colours differ from the reported Light. Per-Segment colour Apply is not available yet." :
+    frozenPreview ? "Recover the frozen LEDs before Apply." : applyRefuseReason({
     reachable: !unreachable,
     issueMessage: firstIssue?.message ?? null,
     elementCount: state.els.length,
@@ -202,8 +210,15 @@ export function ElementsPanel({
     if (!canSave) return false;
     onBusy("save");
     onNotice(null);
+    let palette: { hex: string }[] = DEFAULT_PALETTE;
+    if (elsRef.current.some((element) => !state.saved.some((row) => row.id === element.id) && !element.color)) {
+      try {
+        const { settings } = await fetchJson<{ settings: NightplotSettings }>("/api/settings");
+        if (isNightplotSettings(settings)) palette = settings.palette;
+      } catch { /* Existing Save remains available with the built-in palette. */ }
+    }
     const res = await patchJson<LightDetailPayload>(`/api/lights/${light.id}/elements`, {
-      elements: payload(elsRef.current),
+      elements: payload(elsRef.current, state.saved, palette),
     });
     onBusy(null);
     if (!res.ok) {
@@ -775,12 +790,15 @@ function zoomFocus(state: EditorState): { focus: number; edge: boolean; caption:
   return { focus: cursor, edge: false, caption: `around LED ${cursor}` };
 }
 
-function payload(elements: Element[]) {
-  return elements.map((element) => ({
+function payload(elements: Element[], saved: Element[] = elements, palette: { hex: string }[] = DEFAULT_PALETTE) {
+  return elements.map((element, index) => ({
     id: element.id,
     label: element.label,
     start: element.start,
     stop: element.stop,
+    ...(element.color ? { color: element.color } :
+      !saved.some((previous) => previous.id === element.id) ?
+        { color: { hex: palette[index % palette.length]!.hex, white: 0 } } : {}),
   }));
 }
 

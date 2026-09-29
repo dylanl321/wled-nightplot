@@ -3,6 +3,7 @@ import { macsMatch } from "./apply.ts";
 import type { LedProduct } from "./strip/products.ts";
 import type { Element, Light } from "./lights.ts";
 import type { WledSnapshot } from "./wled/snapshot.ts";
+import type { NightplotSettings } from "./settings.ts";
 
 export type BackupReason = "manual" | "pre-apply" | "pre-safe" | "pre-provision" |
   "pre-delete" | "pre-replacement" | "pre-catalog" | "pre-restore";
@@ -15,6 +16,8 @@ export type BackupData = {
   elements: Element[];
   products: LedProduct[];
   activity: ActivityEntry[];
+  /** Missing on backups made before Nightplot preferences existed. */
+  settings?: NightplotSettings;
 };
 
 /** Reference-only. Never sufficient to replay a full WLED configuration. */
@@ -64,6 +67,7 @@ export type BackupDocument = {
   deviceFiles?: WledBackupFiles | null;
   deviceCaptureStatus?: DeviceCaptureStatus;
   deviceCaptureError?: string | null;
+  pinned?: boolean;
 };
 
 export type BackupSummary = Pick<BackupDocument, "id" | "at" | "reason" | "lightId" | "lightName"> & {
@@ -77,6 +81,7 @@ export type BackupSummary = Pick<BackupDocument, "id" | "at" | "reason" | "light
   deviceMac?: string | null;
   deviceFirmware?: string | null;
   secretsRemoved?: boolean;
+  pinned?: boolean;
 };
 
 export type WledNativeIdentity = {
@@ -135,12 +140,14 @@ function parseCurrentBackupDocument(raw: Record<string, unknown>, expectedId?: s
       elements: pack.elements as BackupData["elements"],
       products: pack.products as BackupData["products"],
       activity: pack.activity as BackupData["activity"],
+      ...(pack.settings !== undefined ? { settings: pack.settings as BackupData["settings"] } : {}),
     },
     controller: (raw.controller ?? null) as ControllerReference | null,
     deviceFiles: (raw.deviceFiles ?? null) as WledBackupFiles | null,
     deviceCaptureStatus: raw.deviceCaptureStatus === "complete" || raw.deviceCaptureStatus === "incomplete" ||
       raw.deviceCaptureStatus === "none" ? raw.deviceCaptureStatus : undefined,
     deviceCaptureError: typeof raw.deviceCaptureError === "string" ? raw.deviceCaptureError : null,
+    pinned: raw.pinned === true,
   };
 }
 

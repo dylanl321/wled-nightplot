@@ -19,8 +19,8 @@ describe("Backups management", () => {
       const path = String(input);
       requests.push({ path, method: init?.method, body: String(init?.body ?? "") });
       if (path.endsWith("/restore/check")) return new Response(JSON.stringify({
-        backup: { id, lights: 1, segments: 1, products: 0, activity: 0 },
-        current: { lights: 2, segments: 3, products: 1, activity: 2 },
+        backup: { id, lights: 1, segments: 1, products: 0, activity: 0, settings: true },
+        current: { lights: 2, segments: 3, products: 1, activity: 2, settings: true },
         expectedDigest: "before", expectedCurrentDigest: "current",
       }));
       if (path.endsWith("/restore")) return new Response(JSON.stringify({ safetyBackupId: "safety", message: "Nightplot data restored." }));
@@ -33,6 +33,8 @@ describe("Backups management", () => {
     expect(await screen.findByText(`ID: ${id}`)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Review Nightplot restore" }));
     expect(await screen.findByText(/Current: 2 Lights, 3 Segments/)).toBeTruthy();
+    expect(screen.getByText(/including Settings/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Pin backup" })).toBeTruthy();
     const restore = screen.getByRole("button", { name: "Restore Nightplot data" }) as HTMLButtonElement;
     expect(restore.disabled).toBe(true);
     fireEvent.change(screen.getByRole("textbox", { name: "Confirm backup ID" }), { target: { value: id } });

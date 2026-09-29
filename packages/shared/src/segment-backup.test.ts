@@ -22,4 +22,11 @@ describe("Segment backups", () => {
     expect(parseSegmentBackup({ ...backup, segments: [{ label: "Too far", start: 0, stop: 61 }] })).toBeNull();
     expect(parseSegmentBackup({ ...backup, segments: [...backup.segments, { label: "Overlap", start: 10, stop: 30 }] })).toBeNull();
   });
+
+  it("accepts older unset colours and round-trips RGBW; rejects invalid fourth channels", () => {
+    expect(parseSegmentBackup(backup)?.segments[0]?.color).toBeUndefined();
+    const colored = { ...backup, segments: [{ ...backup.segments[0], color: { hex: "#F1AD61", white: 94 } }] };
+    expect(parseSegmentBackup(colored)?.segments[0]?.color).toEqual({ hex: "#F1AD61", white: 94 });
+    expect(parseSegmentBackup({ ...colored, segments: [{ ...colored.segments[0], color: { hex: "#F1AD61", white: 256 } }] })).toBeNull();
+  });
 });

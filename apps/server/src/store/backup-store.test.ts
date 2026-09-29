@@ -12,7 +12,7 @@ describe("managed backup storage", () => {
       store.create({ at: new Date(index * 1000).toISOString(), reason: "manual", data });
     }
     expect(store.list()).toHaveLength(MAX_MANAGED_BACKUPS);
-    expect(() => store.create({ at: new Date().toISOString(), reason: "manual", data })).toThrow(/storage is full/);
+    expect(() => store.create({ at: new Date().toISOString(), reason: "manual", data })).toThrow(/no eligible room/);
     expect(store.list()).toHaveLength(MAX_MANAGED_BACKUPS);
     expect(store.read("../../lights.json")).toBeNull();
     expect(store.remove("../../lights.json")).toBe(false);
@@ -58,5 +58,29 @@ describe("managed backup storage", () => {
     const store = new FileBackupStore(directory);
     expect(store.list()).toMatchObject([{ id, reason: "manual", hasDeviceFiles: false,
       deviceCaptureStatus: "none", lightCount: 0 }]);
+  });
+
+  it("rotates only unpinned older copies, preserving latest recovery and complete WLED copies", () => {
+    const policy = { enabled: true, limit: 4 };
+    const store = new FileBackupStore(mkdtempSync(join(tmpdir(), "nightplot-retention-")), () => policy);
+    const data = { lights: [], elements: [], products: [], activity: [] };
+    const add = (at: number, lightId?: string, device = false) => store.create({
+      at: new Date(at * 1000).toISOString(), reason: "manual", lightId, data,
+      deviceFiles: device ? { cfgJson: "{}", presetsJson: "{}" } : undefined,
+    });
+    const first = add(1);
+    const device = add(2, "light-1", true);
+    const pinned = add(3);
+    store.setPinned(pinned.id, true);
+    add(4);
+    expect(store.rotationPreview().remove.map((row) => row.id)).toEqual([first.id]);
+    add(5);
+    expect(store.read(first.id)).toBeNull();
+    expect(store.read(device.id)).not.toBeNull();
+    expect(store.read(pinned.id)?.pinned).toBe(true);
+    expect(store.list()).toHaveLength(4);
+    policy.limit = 1;
+    expect(store.rotationPreview().room).toBe(false);
+    expect(() => add(6)).toThrow(/no eligible room/);
   });
 });

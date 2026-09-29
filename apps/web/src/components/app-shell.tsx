@@ -9,7 +9,7 @@ type AppShellProps = {
   children: ReactNode;
   lights?: LightView[];
   lightCount: number;
-  nav: "lights" | "discover" | "light" | "catalog" | "backups";
+  nav: "lights" | "discover" | "light" | "catalog" | "backups" | "settings";
   activeLightId?: string;
   sessions?: LiveHint[];
 };
@@ -37,6 +37,7 @@ export function AppShell({
           <NavLink href="/backups" active={nav === "backups"}>
             Backups
           </NavLink>
+          <NavLink href="/settings" active={nav === "settings"}>Settings</NavLink>
         </nav>
         <div className="ml-auto">
           <AllOffControl size="bar" lights={lights} sessions={sessions} />
@@ -45,7 +46,7 @@ export function AppShell({
 
       <header className="flex h-[52px] items-center gap-2.5 border-b border-border px-5 lg:hidden">
         <Brand markClassName="h-2.5 w-9" />
-        <Link href="/backups" className="ml-auto text-[13px] text-muted-foreground">Backups</Link>
+        <Link href="/settings" className="ml-auto text-[13px] text-muted-foreground">Settings</Link>
       </header>
 
       <main className="flex min-h-0 flex-1 flex-col">{children}</main>
