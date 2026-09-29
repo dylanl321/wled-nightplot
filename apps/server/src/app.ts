@@ -55,6 +55,7 @@ import {
   type AllOffCancelled,
   type AllOffResult,
   type AllOffRow,
+  type ActivityEntry,
   type DiscoverRow,
   type DraftRange,
   type Element,
@@ -93,6 +94,7 @@ import {
   rowFromProbe,
 } from "./domain.ts";
 import { createLiveEngine, previewDisplaySnapshot } from "./live/engine.ts";
+import { FileActivityStore } from "./store/activity-store.ts";
 import { FileLedProductsStore } from "./store/led-products-store.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
 import type { ProbeFn } from "./wled/client.ts";
@@ -101,6 +103,7 @@ import { applyRangesWrite, type ReadLiveFn, type WriteStateFn } from "./wled/liv
 
 export type AppDeps = {
   store: FileLightsStore;
+  activity?: FileActivityStore;
   products?: FileLedProductsStore;
   probe: ProbeFn;
   collect: CollectFn;
@@ -116,8 +119,14 @@ export function createApp(deps: AppDeps) {
   const products =
     deps.products ??
     new FileLedProductsStore(join(tmpdir(), `nightplot-led-products-${randomUUID()}.json`));
+  const activity = deps.activity ?? new FileActivityStore(join(tmpdir(), `nightplot-activity-${randomUUID()}.json`));
   const session: { rows: DiscoverRow[] } = { rows: [] };
   const nowIso = () => (deps.now ?? (() => new Date()))().toISOString();
+  function record(light: Pick<Light, "id" | "name">, action: ActivityEntry["action"],
+    readback: ActivityEntry["readback"], detail: string) {
+    activity.append({ id: randomUUID(), at: nowIso(), lightId: light.id,
+      lightName: light.name, action, readback, detail });
+  }
   const live = createLiveEngine({
     write: deps.write,
     readLive: deps.readLive,
@@ -146,6 +155,8 @@ export function createApp(deps: AppDeps) {
   );
 
   app.get("/api/catalogs", (c) => c.json(catalogSnapshot(products.list())));
+
+  app.get("/api/activity", (c) => c.json({ entries: activity.list(c.req.query("lightId")) }));
 
   app.get("/api/led-products", (c) => c.json({ products: products.list() }));
 
@@ -506,6 +517,7 @@ export function createApp(deps: AppDeps) {
       start: row.start,
       stop: row.stop,
     }));
+    const sentDescription = sent.map((row) => `${row.label} (${row.start}–${row.stop})`).join(", ");
     const dest: HostPort = { hostname: light.hostname, port: light.port };
     const planned = applyRangesWrite(sent, previousSegmentCount, color);
     if (!planned.ok) {
@@ -513,6 +525,7 @@ export function createApp(deps: AppDeps) {
     }
     const written = await deps.write(dest, planned.body);
     if (!written) {
+      record(light, "apply", "unknown", `Apply write was not confirmed for ${sentDescription}; ranges were not read back.`);
       const outcome = applyUnreadFailed(
         sent,
         "The controller did not take the ranges. Nothing else changed.",
@@ -529,6 +542,7 @@ export function createApp(deps: AppDeps) {
     }
     const reread = await deps.probe(dest);
     if (reread.kind !== "found") {
+      record(light, "apply", "unknown", `Apply sent ${sentDescription}, but the controller did not answer the readback.`);
       const outcome = applyUnreadFailed(
         sent,
         "Wrote, but could not re-read. Not treating as success.",
@@ -550,6 +564,7 @@ export function createApp(deps: AppDeps) {
     if (read === null) {
       const outcome = applyUnknownSegments(sent, source);
       deps.store.replace(next);
+      record(next, "apply", "unknown", `Apply sent ${sentDescription}; controller Segments were not reported. ${outcome.caption}`);
       return c.json(
         {
           error: "reread-unknown-segments",
@@ -566,12 +581,14 @@ export function createApp(deps: AppDeps) {
       next.lastSnapshotAt = next.lastSeenAt;
       deps.store.replace(next);
       const elements = persistDrafts(light.id, drafts);
+      record(next, "apply", "match", `Applied ${sentDescription}; reported ranges match. ${outcome.caption}`);
       return c.json({
         ...(await decorateDetail(next, reread.snapshot, elements)),
         apply: outcome,
       });
     }
     deps.store.replace(next);
+    record(next, "apply", "mismatch", `Applied ${sentDescription}; reported ranges differ. ${outcome.caption}`);
     return c.json(
       {
         ...(await decorateDetail(next, reread.snapshot)),
@@ -719,6 +736,10 @@ export function createApp(deps: AppDeps) {
       revision,
     });
     if (!result.ok) return c.json(result, result.status);
+    const target = result.session?.target;
+    if (!updating) record(light, "preview", "not-checked",
+      `Preview${target ? ` ${target.label} (${target.start}–${target.stop})` : ""} started; ` +
+      (result.wrote ? "temporary look sent. Not Apply." : "no new look was sent. Not Apply."));
     if (updating) {
       const detail = lightDetail(
         light,
@@ -852,12 +873,22 @@ export function createApp(deps: AppDeps) {
         { status: 404, headers: { "Content-Type": "application/json" } },
       );
     }
+    const active = live.get(id);
     const result = await live.end(id, kind);
     if (!result.ok) {
+      if (active?.kind === "preview") {
+        record(stored, "preview", "unknown", `End Preview did not finish: ${result.message}`);
+      }
       return new Response(JSON.stringify(result), {
         status: result.status,
         headers: { "Content-Type": "application/json" },
       });
+    }
+    if (active?.kind === "preview") {
+      record(stored, "preview", "not-checked",
+        kind === "cancel-without-restore" ? "Preview cancelled without restoration."
+          : result.restored ? "Preview ended; restore write accepted. Pixel match was not checked."
+            : "Preview ended; restoration was not confirmed.");
     }
     const { light, live: snap } = await refreshOne(stored);
     const detail = await decorateDetail(light, snap);
@@ -1274,7 +1305,10 @@ export function createApp(deps: AppDeps) {
       for (const session of live.list()) {
         if (lightIds?.length && !lightIds.includes(session.lightId)) continue;
         const owner = enrolled.find((light) => light.id === session.lightId);
-        await live.end(session.lightId, "cancel-without-restore");
+        const ended = await live.end(session.lightId, "cancel-without-restore");
+        if (ended.ok && session.kind === "preview" && owner) {
+          record(owner, "preview", "not-checked", "Preview cancelled by All Off without restoration.");
+        }
         cancelled.push({
           lightId: session.lightId,
           kind: session.kind,
@@ -1299,6 +1333,15 @@ export function createApp(deps: AppDeps) {
         // Throw / unmeasured wait — generic refuse, not a claimed 3 s.
         return allOffUnknownRow(next);
       });
+      for (const row of rows) {
+        const owner = targets.find((light) => light.id === row.lightId);
+        if (!owner) continue;
+        const readback: ActivityEntry["readback"] = row.status === "off" || row.status === "already-off"
+          ? "match" : row.status === "unknown" ? "unknown" :
+            row.detail === "still reports on" ? "mismatch" : "unknown";
+        record(owner, "all-off", readback,
+          `${row.status === "already-off" ? "Already off" : "All Off"}: ${row.detail}.`);
+      }
       const failedIds = rows
         .filter((row) => row.status === "failed" || row.status === "unknown")
         .map((row) => row.lightId);

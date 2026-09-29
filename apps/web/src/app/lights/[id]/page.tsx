@@ -18,7 +18,7 @@ export default async function LightPage({
   const { id } = await params;
   const query = await searchParams;
   const tab =
-    query.tab === "settings" || query.tab === "elements"
+    query.tab === "settings" || query.tab === "elements" || query.tab === "activity"
       ? query.tab
       : query.mode === "ranges" || query.mode === "live"
         ? "elements"

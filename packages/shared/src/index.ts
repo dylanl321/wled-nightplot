@@ -1,3 +1,4 @@
+export type { ActivityEntry } from "./activity.ts";
 export {
   APPLY_ADOPT_EMPTY_REASON,
   APPLY_ADOPT_UNKNOWN_REASON,

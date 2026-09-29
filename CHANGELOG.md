@@ -7,6 +7,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- CONFIG-156: Each Light now has a durable Activity tab for Apply, Preview, and All Off. Apply records matched, differing, or unknown controller readback; Preview records start and end separately without claiming Apply or pixel proof; All Off records each Light's result, including unknown. History survives restarts in `data/activity.json` beside the Lights store (latest 1000 entries). Software readback is not Hardware Done.
+
 - CONFIG-69: The Lights list now reads saved Lights, Segments, and last-seen state without probing each controller. List beads are grey without a current snapshot; Inspect and explicit Refresh still check one Light live. An unreachable Light no longer delays list loading.
 
 - Blink it now holds a three-second pulse and restores a complete WLED state; an incomplete snapshot refuses before writing. The Lights-card Blink also ends its session. In Segments, Safari drag selection no longer selects SVG text, a drawn range lights during Preview, and the display-only Segment colours are refreshed. Naming is available beside the strip; Save Segments works during Preview. Controller differences are summarized with optional Details. Save & Apply now waits for Preview to end and restore before writing ranges; a failed restore, All Off cancellation, or stale Fast Refresh sender sends no Apply. Fixture and UI checks are software-only, not Hardware Done.

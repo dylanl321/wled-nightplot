@@ -121,6 +121,7 @@ Enrolled Lights and declared Segments persist in `data/lights.json` (override wi
 | GET | `/api/led-products/:id/delete-checks` | Lights-attach check. Unknown or partial refs are not zero and are not safe. Does not write WLED. |
 | DELETE | `/api/led-products/:id` | Remove a catalog recipe. 409 while any Light still attaches that `ledProductId`. 422 when the attach count is unknown or partial. No override. Does not write WLED. Not Apply. |
 | GET | `/api/lights` | Saved Lights and Segments, last-seen state, unenrolled tray. No controller probe or store write; beads are grey without a current snapshot. Inspect and live Refresh probe one Light. |
+| GET | `/api/activity?lightId=…` | Saved Activity (newest first; optional Light filter): Apply readback, Preview start/end, and per-Light All Off results. `match` is controller/software readback, not Hardware Done. |
 | GET | `/api/lights/:id` | Inspect payload: identity, declared Segments, reported segments, drift, live session. When `stripKind` is still the default and no LED product is attached, a live Inspect may persist a known `/json/cfg` bus type. An open first-locate Preview with unknown restore segment count keeps that leftover caption — Inspect does not replace it with a live-read / fixture line. |
 | GET | `/api/lights/:id/live` | Same Light plus current `/json/live` beads. First-locate unknown leftover caption is kept the same way as Inspect. |
 | PATCH | `/api/lights/:id/elements` | Save declared ranges. 422 on invert / overlap / over-ledCount. Does not write WLED. |

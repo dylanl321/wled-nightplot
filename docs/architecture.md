@@ -99,6 +99,8 @@ Find must use an advertised port (SSDP `LOCATION` in `apps/server/src/discovery/
 
 `FileLightsStore` writes `{ version: 1, lights, elements }` to `data/lights.json` (or `NIGHTPLOT_STORE_PATH`). A Light may carry `ledProductId` (null if the operator keeps manual Strip fields). `FileLedProductsStore` writes `{ version: 1, products }` to `data/led-products.json` (or `NIGHTPLOT_LED_PRODUCTS_PATH`). First boot seeds from `STRIP_PRESETS`. Neither file is a WLED write.
 
+`FileActivityStore` writes `{ version: 1, entries }` atomically to `data/activity.json` beside the Lights store (or `NIGHTPLOT_ACTIVITY_PATH`). The latest 1000 entries survive server restarts and appear newest first on a Light's Activity tab. Apply logs controller readback match/difference/unknown after a write attempt; Preview logs its initial start and end (not every cursor hop), with restore write acceptance explicitly distinct from pixel verification. All Off logs each targeted Light and Preview cancellation without restoration. A controller/software readback match is not Hardware Done.
+
 ## Stubs / NYI (honest)
 
 | Thing | Status |

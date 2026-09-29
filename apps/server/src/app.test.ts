@@ -11,6 +11,7 @@ import {
 import { createApp, type AppDeps } from "./app.ts";
 import { ALL_OFF_PROBE_CONCURRENCY, FIND_PROBE_CONCURRENCY } from "./discovery/map-limit.ts";
 import { FileLedProductsStore } from "./store/led-products-store.ts";
+import { FileActivityStore } from "./store/activity-store.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
 import { createFixtureBox } from "./wled-fixture-box.ts";
 import { createWledCfgReader, createWledCfgWriter } from "./wled/cfg.ts";
@@ -156,12 +157,14 @@ function memoryCfg(name = "WLED") {
 function testApp(overrides: Partial<AppDeps> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "nightplot-"));
   const store = overrides.store ?? new FileLightsStore(join(dir, "lights.json"));
+  const activity = overrides.activity ?? new FileActivityStore(join(dir, "activity.json"));
   const products = overrides.products ?? new FileLedProductsStore(join(dir, "led-products.json"));
   const box = memoryBox();
   const cfg = memoryCfg();
   const probe: ProbeFn = overrides.probe ?? box.probe;
   const app = createApp({
     store,
+    activity,
     products,
     probe,
     write: overrides.write ?? box.write,
@@ -171,8 +174,90 @@ function testApp(overrides: Partial<AppDeps> = {}) {
     collect: overrides.collect ?? (async () => []),
     now: overrides.now ?? (() => new Date("2026-09-26T18:00:00.000Z")),
   });
-  return { app, store, products, dir, box, cfg };
+  return { app, store, activity, products, dir, box, cfg };
 }
+
+describe("durable Activity", () => {
+  it("records Apply readback, Preview start/end, and All Off across a restart without duplicate hop entries", async () => {
+    const { app, activity, store } = testApp();
+    const enroll = await app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.40" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const drafts = [{ label: "Door", start: 0, stop: 60 }];
+    const apply = await app.request(`/api/lights/${id}/apply`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: drafts }),
+    });
+    expect(apply.status).toBe(200);
+    expect(activity.list(id)[0]).toMatchObject({ action: "apply", readback: "match" });
+
+    const previewBody = { start: 0, stop: 1, color: "#4f7dff", brightness: 180 };
+    const start = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(previewBody),
+    });
+    expect(start.status).toBe(200);
+    const hop = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...previewBody, start: 1, stop: 2 }),
+    });
+    expect(hop.status).toBe(200);
+    expect(activity.list(id).filter((entry) => entry.action === "preview")).toHaveLength(1);
+    const end = await app.request(`/api/lights/${id}/preview/end`, { method: "POST" });
+    expect(end.status).toBe(200);
+    expect(activity.list(id).slice(0, 2)).toMatchObject([
+      { action: "preview", readback: "not-checked", detail: expect.stringContaining("restore write") },
+      { action: "preview", readback: "not-checked", detail: expect.stringContaining("started") },
+    ]);
+
+    const off = await app.request("/api/all-off", { method: "POST" });
+    expect(off.status).toBe(200);
+    expect(activity.list(id)[0]).toMatchObject({ action: "all-off", readback: "match" });
+    const restarted = testApp({ store, activity });
+    const read = await restarted.app.request(`/api/activity?lightId=${id}`);
+    expect(read.status).toBe(200);
+    const entries = (await read.json()) as { entries: { action: string }[] };
+    expect(entries.entries.map((entry) => entry.action)).toEqual(["all-off", "preview", "preview", "apply"]);
+    expect((await (await restarted.app.request("/api/activity?lightId=other")).json()) as { entries: unknown[] })
+      .toEqual({ entries: [] });
+  });
+
+  it("marks failed Apply readback unknown, not matched", async () => {
+    const box = memoryBox();
+    const { app, activity } = testApp({ write: async () => false, readLive: box.readLive });
+    const enroll = await app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.41" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const res = await app.request(`/api/lights/${id}/apply`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: [{ label: "Door", start: 0, stop: 60 }] }),
+    });
+    expect(res.status).toBe(422);
+    expect(activity.list(id)[0]).toMatchObject({ action: "apply", readback: "unknown" });
+  });
+
+  it("records All Off cancellation without claiming the Preview was restored", async () => {
+    const { app, activity } = testApp();
+    const enroll = await app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.42" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const preview = await app.request(`/api/lights/${id}/preview`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start: 0, stop: 1, color: "#4f7dff", brightness: 180 }),
+    });
+    expect(preview.status).toBe(200);
+    const off = await app.request("/api/all-off", { method: "POST" });
+    expect(off.status).toBe(200);
+    expect(activity.list(id).map((entry) => entry.action)).toEqual(["all-off", "preview", "preview"]);
+    expect(activity.list(id)[1]).toMatchObject({ readback: "not-checked",
+      detail: "Preview cancelled by All Off without restoration." });
+  });
+});
 
 describe("configure server", () => {
   it("reports health for R6", async () => {

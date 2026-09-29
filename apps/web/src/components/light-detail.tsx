@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ElementsPanel } from "@/components/elements-panel";
+import { ActivityPanel } from "@/components/activity-panel";
 import { SettingsPanel } from "@/components/settings-panel";
 import { Button } from "@/components/ui/button";
 import { fetchJson, postJson } from "@/lib/api";
@@ -19,7 +20,7 @@ import { inspectPowerHow } from "@/lib/power-status";
 import { brightnessPct, lastSeenLabel, snapshotLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
-type DetailTab = "elements" | "settings";
+type DetailTab = "elements" | "settings" | "activity";
 type LegacyMode = "inspect" | "ranges" | "live" | "safe" | "strip";
 
 export function LightDetail({
@@ -48,7 +49,7 @@ export function LightDetail({
   useEffect(() => {
     if (!mode) return;
     const path =
-      tab === "settings" ? `/lights/${initial.light.id}?tab=settings` : `/lights/${initial.light.id}`;
+      tab === "elements" ? `/lights/${initial.light.id}` : `/lights/${initial.light.id}?tab=${tab}`;
     if (window.location.search.includes("mode=")) {
       window.history.replaceState(null, "", path);
     }
@@ -81,7 +82,7 @@ export function LightDetail({
   function goTab(next: DetailTab) {
     setTab(next);
     const path =
-      next === "settings" ? `/lights/${light.id}?tab=settings` : `/lights/${light.id}`;
+      next === "elements" ? `/lights/${light.id}` : `/lights/${light.id}?tab=${next}`;
     window.history.replaceState(null, "", path);
   }
 
@@ -212,10 +213,13 @@ export function LightDetail({
           <TabButton active={tab === "settings"} onClick={() => goTab("settings")}>
             Settings
           </TabButton>
+          <TabButton active={tab === "activity"} onClick={() => goTab("activity")}>
+            Activity
+          </TabButton>
         </div>
       </header>
 
-      {tab === "settings" ? (
+      {tab === "activity" ? <ActivityPanel lightId={light.id} /> : tab === "settings" ? (
         <SettingsPanel
           detail={detail}
           addressOpen={addressOpen}
