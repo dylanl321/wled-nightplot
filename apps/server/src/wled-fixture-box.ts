@@ -45,6 +45,9 @@ type BusIns = {
  * `busMismatch` accepts a bus write but leaves `hw.led.ins` / `leds.count` stale.
  */
 export function createFixtureBox(options: FixtureBoxOptions = {}) {
+  let exportedCfg: string | null = null;
+  let exportedPresets: string | null = null;
+  let lastUploadName: string | null = null;
   let ledCount = options.ledCount ?? 60;
   const gpio = options.gpio ?? 16;
   const nativeType = options.nativeType ?? WLED_WS281X_NATIVE_TYPE;
@@ -302,11 +305,36 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       return;
     }
     if (url === "/cfg.json") {
-      res.end(JSON.stringify(cfg));
+      res.end(exportedCfg ?? JSON.stringify(cfg));
       return;
     }
     if (url === "/presets.json") {
-      res.end(JSON.stringify({ "1": { n: "Fixture preset", on: true, bri: 128, seg: state.seg } }));
+      res.end(exportedPresets ?? JSON.stringify({ "1": { n: "Fixture preset", on: true, bri: 128, seg: state.seg } }));
+      return;
+    }
+    if (url === "/upload" && (req.method === "POST" || req.method === "PUT")) {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk) => chunks.push(chunk as Buffer));
+      req.on("end", () => {
+        const raw = Buffer.concat(chunks).toString("utf8");
+        const name = /filename="([^"]+)"/.exec(raw)?.[1] ?? "";
+        const start = raw.indexOf("\r\n\r\n");
+        const body = start >= 0 ? raw.slice(start + 4).replace(/\r\n--[\s\S]*$/, "") : raw;
+        lastUploadName = name;
+        if (name.includes("presets.json")) exportedPresets = body;
+        if (name.includes("cfg.json")) {
+          exportedCfg = body;
+          try {
+            const parsed = JSON.parse(body) as Record<string, unknown>;
+            applyCfg(parsed);
+          } catch { /* keep the exact uploaded text */ }
+        }
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "text/plain");
+        res.end(name.includes("cfg.json")
+          ? "Configuration restore successful.\nRebooting..."
+          : "File Uploaded!");
+      });
       return;
     }
     if (url === "/json/info") {
@@ -452,6 +480,9 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     setInfoNameLag,
     setBusMismatch(on: boolean) {
       busMismatch = on;
+    },
+    get lastUploadName() {
+      return lastUploadName;
     },
     handle,
     listen(port = 0, hostname = "127.0.0.1"): Server {

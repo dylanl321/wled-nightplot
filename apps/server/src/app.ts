@@ -64,6 +64,10 @@ import {
   type AllOffResult,
   type AllOffRow,
   type ActivityEntry,
+  buildWledBackupFiles,
+  reviewWledNativeRestore,
+  WLED_NATIVE_BACKUP_CAPTION,
+  WLED_NATIVE_RESTORE_CAPTION,
   type BackupData,
   type BackupReason,
   type ControllerReference,
@@ -88,7 +92,7 @@ import {
   type WledSnapshot,
   type WledStripProvisionDraft,
 } from "@nightplot/shared";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { resolveCorsOrigins } from "./cors-origins.ts";
 import type { CollectFn } from "./discovery/collect.ts";
@@ -109,12 +113,20 @@ import {
 import { createLiveEngine, previewDisplaySnapshot } from "./live/engine.ts";
 import { FileActivityStore } from "./store/activity-store.ts";
 import { backupDigest, FileBackupStore } from "./store/backup-store.ts";
+import { writeNightplotStoresConsistent } from "./store/nightplot-restore.ts";
 import { FileLedProductsStore } from "./store/led-products-store.ts";
 import { FileSettingsStore } from "./store/settings-store.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
 import type { ProbeFn } from "./wled/client.ts";
 import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
-import { createWledConfigExportReader, createWledNativeFilesReader, type ReadWledConfigExport, type ReadWledNativeFiles } from "./wled/native-backup.ts";
+import {
+  createWledConfigExportReader,
+  createWledNativeFilesReader,
+  createWledNativeFilesWriter,
+  type ReadWledConfigExport,
+  type ReadWledNativeFiles,
+  type WriteWledNativeFiles,
+} from "./wled/native-backup.ts";
 import { applyRangesWrite, type ReadLiveFn, type WriteStateFn } from "./wled/live.ts";
 
 export type AppDeps = {
@@ -129,6 +141,7 @@ export type AppDeps = {
   readLive: ReadLiveFn;
   readCfg: ReadCfgFn;
   readNativeFiles?: ReadWledNativeFiles;
+  writeNativeFiles?: WriteWledNativeFiles;
   readConfigExport?: ReadWledConfigExport;
   writeCfg: WriteCfgFn;
   now?: () => Date;
@@ -143,6 +156,7 @@ export function createApp(deps: AppDeps) {
   const settings = deps.settings ?? new FileSettingsStore(join(tmpdir(), `nightplot-settings-${randomUUID()}.json`));
   const backups = deps.backups ?? new FileBackupStore(join(tmpdir(), `nightplot-backups-${randomUUID()}`), () => settings.read().backupRetention);
   const readNativeFiles = deps.readNativeFiles ?? createWledNativeFilesReader();
+  const writeNativeFiles = deps.writeNativeFiles ?? createWledNativeFilesWriter();
   const readConfigExport = deps.readConfigExport ?? createWledConfigExportReader();
   const session: { rows: DiscoverRow[] } = { rows: [] };
   const nowIso = () => (deps.now ?? (() => new Date()))().toISOString();
@@ -166,7 +180,15 @@ export function createApp(deps: AppDeps) {
     settings?: { safe?: Record<string, unknown>; strip?: Record<string, unknown> }) {
     if (light.mac && snap.mac && !macsMatch(light.mac, snap.mac))
       throw new Error("Controller MAC changed; no device backup was saved.");
-    const deviceFiles = await readNativeFiles({ hostname: light.hostname, port: light.port });
+    const raw = await readNativeFiles({ hostname: light.hostname, port: light.port });
+    const deviceFiles = buildWledBackupFiles({
+      cfgJson: raw.cfgJson,
+      presetsJson: raw.presetsJson,
+      light,
+      liveMac: snap.mac,
+      liveFirmware: snap.firmware,
+      capturedAt: nowIso(),
+    });
     return backups.create({ at: nowIso(), reason, lightId: light.id, lightName: light.name,
       data: currentBackupData(), controller: controllerReference(light, snap, settings), deviceFiles });
   }
@@ -178,6 +200,13 @@ export function createApp(deps: AppDeps) {
         segments: snap.segments, segmentColor: snap.segmentColor },
       ...(settings?.safe ? { safeSettings: settings.safe } : {}),
       ...(settings?.strip ? { stripSettings: settings.strip } : {}) };
+  }
+
+  function departingControllerReference(light: Light): ControllerReference {
+    return light.lastSnapshot
+      ? controllerReference(light, light.lastSnapshot)
+      : { hostKey: light.hostKey, mac: light.mac, ledCount: light.ledCount,
+        reported: { on: light.on, brightness: light.brightness, segments: null, segmentColor: null } };
   }
 
   function backupFailure(error: unknown) {
@@ -249,7 +278,13 @@ export function createApp(deps: AppDeps) {
     return c.json({ settings: result.settings, message: "Nightplot preferences saved. Nothing was sent to WLED." });
   });
 
-  app.get("/api/backups", (c) => c.json({ backups: backups.list() }));
+  app.get("/api/backups", (c) => {
+    try { return c.json({ backups: backups.list() }); }
+    catch (error) {
+      return c.json({ error: "invalid-backup",
+        message: error instanceof Error ? error.message : "A stored backup could not be read; nothing was ignored or overwritten." }, 500);
+    }
+  });
   app.get("/api/backups/rotation-preview", (c) => c.json(backups.rotationPreview()));
   app.post("/api/backups/rotation-preview", async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -274,10 +309,24 @@ export function createApp(deps: AppDeps) {
     const backup = backups.read(c.req.param("id"));
     return backup ? c.json({ backup }) : c.json({ error: "not_found", message: "Backup not found." }, 404);
   });
+  app.get("/api/backups/:id/cfg.json", (c) => nativeFileDownload(c, "cfgJson", "cfg.json"));
+  app.get("/api/backups/:id/presets.json", (c) => nativeFileDownload(c, "presetsJson", "presets.json"));
+
+  function nativeFileDownload(c: Context, field: "cfgJson" | "presetsJson", filename: string) {
+    const backup = backups.read(c.req.param("id") ?? "");
+    if (!backup) return c.json({ error: "not_found", message: "Backup not found." }, 404);
+    const text = backup.deviceFiles?.[field];
+    if (!text) return c.json({ error: "missing-device-files",
+      message: "This backup has no complete WLED configuration and presets files." }, 404);
+    return c.body(text, { headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+    } });
+  }
   app.patch("/api/backups/:id/pin", async (c) => {
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body.pinned !== "boolean") return c.json({ error: "invalid", message: "Choose pinned or unpinned." }, 422);
-    const backup = backups.setPinned(c.req.param("id"), body.pinned);
+    const backup = backups.setPinned(c.req.param("id") ?? "", body.pinned);
     return backup ? c.json({ backup }) : c.json({ error: "not_found", message: "Backup not found." }, 404);
   });
   app.delete("/api/backups/:id", async (c) => {
@@ -307,11 +356,13 @@ export function createApp(deps: AppDeps) {
     const current = currentBackupData();
     return c.json({ backup: { id: reviewed.backup.id, at: reviewed.backup.at, reason: reviewed.backup.reason,
       lights: reviewed.data.lights.length, segments: reviewed.data.elements.length,
-      products: reviewed.data.products.length, activity: reviewed.data.activity.length },
+      products: reviewed.data.products.length, activity: reviewed.data.activity.length,
+      settings: Boolean(reviewed.data.settings) },
       current: { lights: current.lights.length, segments: current.elements.length,
-        products: current.products.length, activity: current.activity.length },
+        products: current.products.length, activity: current.activity.length,
+        settings: Boolean(current.settings) },
       expectedDigest: backupDigest(reviewed.data), expectedCurrentDigest: backupDigest(current),
-      message: "Review these counts. Restore replaces Nightplot data only; it does not write any controller. A safety backup is created first." });
+      message: "Review these counts. Restore replaces Nightplot data only; it does not write any controller. Preferences in this backup replace Settings; an older backup without them leaves current Settings in place. A safety backup is created first." });
   });
 
   app.post("/api/backups/:id/restore", async (c) => {
@@ -336,24 +387,101 @@ export function createApp(deps: AppDeps) {
       try { safety = capture("pre-restore"); }
       catch (error) { return c.json(backupFailure(error), 503); }
       try {
-        deps.store.restoreBackup(reviewed.data);
-        products.restoreBackup(reviewed.data.products);
-        activity.restoreBackup(reviewed.data.activity);
-        if (reviewed.data.settings) settings.restore(reviewed.data.settings);
+        writeNightplotStoresConsistent({
+          lights: deps.store.path,
+          products: products.path,
+          activity: activity.path,
+          settings: settings.path,
+        }, reviewed.data);
       } catch (error) {
-        try {
-          deps.store.restoreBackup(current);
-          products.restoreBackup(current.products);
-          activity.restoreBackup(current.activity);
-          if (current.settings) settings.restore(current.settings);
-        } catch { return c.json({ error: "restore-partial",
-          message: `Restore and rollback failed. Safety backup ${safety.id} is kept; inspect Nightplot data before further changes.` }, 500); }
         return c.json({ error: "restore-failed",
-          message: `Restore failed and was rolled back. Safety backup ${safety.id} is kept. ${error instanceof Error ? error.message : ""}` }, 500);
+          message: `Restore did not finish. Nightplot data was not replaced. Safety backup ${safety.id} is kept. ${error instanceof Error ? error.message : ""}` }, 500);
       }
       return c.json({ restored: true, safetyBackupId: safety.id,
         message: "Nightplot data restored. No WLED controller was changed; inspect Lights and use Apply separately." });
     } finally { releases.forEach((release) => release()); }
+  });
+
+  app.post("/api/backups/:id/restore-wled/check", async (c) => {
+    const backup = backups.read(c.req.param("id"));
+    if (!backup) return c.json({ error: "not_found", message: "Backup not found." }, 404);
+    const body = await c.req.json().catch(() => null);
+    const lightId = body && typeof body === "object" && typeof (body as { lightId?: unknown }).lightId === "string"
+      ? (body as { lightId: string }).lightId
+      : backup.lightId;
+    if (!lightId) return c.json({ error: "light-required",
+      message: "Choose the Light that should receive these WLED files. Nothing was sent." }, 400);
+    const stored = deps.store.findById(lightId);
+    if (!stored) return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    const { light, live: snap } = await refreshOne(stored);
+    if (!snap || light.reachability !== "online") return c.json({ error: "unreachable",
+      message: "WLED did not answer. Native files were not uploaded." }, 503);
+    const review = reviewWledNativeRestore({
+      backup, light, liveMac: snap.mac, liveFirmware: snap.firmware,
+    });
+    return c.json({
+      ...review,
+      backupId: backup.id,
+      lightId: light.id,
+      lightName: light.name,
+      caption: WLED_NATIVE_BACKUP_CAPTION,
+    }, review.ok ? 200 : review.error === "missing-device-files" ? 422 : 409);
+  });
+
+  app.post("/api/backups/:id/restore-wled", async (c) => {
+    const id = c.req.param("id");
+    const body = await c.req.json().catch(() => null);
+    const typed = body && typeof body === "object" ? body as {
+      lightId?: unknown; confirmId?: unknown; confirmFirmwareMismatch?: unknown;
+    } : null;
+    if (!typed || typed.confirmId !== id || typeof typed.lightId !== "string") {
+      return c.json({ error: "confirmation-required",
+        message: "Review this WLED export and confirm the backup id and Light first. Nothing was sent." }, 400);
+    }
+    const backup = backups.read(id);
+    if (!backup) return c.json({ error: "not_found", message: "Backup not found." }, 404);
+    const stored = deps.store.findById(typed.lightId);
+    if (!stored) return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    if (live.get(stored.id)) return c.json({ error: "busy",
+      message: "End Preview or Blink before uploading WLED files. Nothing was sent." }, 409);
+    const release = live.block(stored.id);
+    try {
+      await live.settle(stored.id);
+      if (live.get(stored.id)) return c.json({ error: "busy",
+        message: "End Preview or Blink before uploading WLED files. Nothing was sent." }, 409);
+      const { light, live: snap } = await refreshOne(stored);
+      if (!snap || light.reachability !== "online") return c.json({ error: "unreachable",
+        message: "WLED did not answer. Native files were not uploaded." }, 503);
+      const review = reviewWledNativeRestore({
+        backup, light, liveMac: snap.mac, liveFirmware: snap.firmware,
+      });
+      if (!review.ok) {
+        return c.json(review, review.error === "missing-device-files" ? 422 : 409);
+      }
+      if (review.requiresFirmwareConfirm && typed.confirmFirmwareMismatch !== true) {
+        return c.json({ ...review, error: "firmware-mismatch",
+          message: "Firmware differs from the export. Confirm that before uploading. Nothing was sent." }, 409);
+      }
+      let safety;
+      try { safety = await captureDevice("pre-restore", light, snap); }
+      catch (error) { return c.json(backupFailure(error), 503); }
+      try {
+        await writeNativeFiles(
+          { hostname: light.hostname, port: light.port },
+          { cfgJson: backup.deviceFiles!.cfgJson, presetsJson: backup.deviceFiles!.presetsJson },
+        );
+      } catch (error) {
+        return c.json({ error: "wled-restore-failed",
+          message: `WLED did not accept the uploaded files. Nightplot data is unchanged. Safety backup ${safety.id} is kept. ${error instanceof Error ? error.message : ""}` }, 502);
+      }
+      return c.json({
+        restored: true,
+        kind: "wled-native",
+        safetyBackupId: safety.id,
+        lightId: light.id,
+        message: WLED_NATIVE_RESTORE_CAPTION,
+      });
+    } finally { release(); }
   });
 
   app.get("/api/activity", (c) => c.json({ entries: activity.list(c.req.query("lightId")) }));
@@ -1022,8 +1150,42 @@ export function createApp(deps: AppDeps) {
       next.lastSnapshot = null;
       next.lastSnapshotAt = null;
       next.lastApply = null;
-      try { capture("pre-replacement", stored); }
-      catch (error) { return c.json(backupFailure(error), 503); }
+      try {
+        const raw = await readNativeFiles({ hostname: stored.hostname, port: stored.port });
+        backups.create({
+          at: nowIso(),
+          reason: "pre-replacement",
+          lightId: stored.id,
+          lightName: stored.name,
+          data: currentBackupData(),
+          controller: departingControllerReference(stored),
+          deviceFiles: buildWledBackupFiles({
+            cfgJson: raw.cfgJson,
+            presetsJson: raw.presetsJson,
+            light: stored,
+            liveMac: stored.mac,
+            liveFirmware: stored.firmware,
+            capturedAt: nowIso(),
+          }),
+          deviceCaptureStatus: "complete",
+        });
+      } catch (error) {
+        try {
+          backups.create({
+            at: nowIso(),
+            reason: "pre-replacement",
+            lightId: stored.id,
+            lightName: stored.name,
+            data: currentBackupData(),
+            controller: departingControllerReference(stored),
+            deviceFiles: null,
+            deviceCaptureStatus: "incomplete",
+            deviceCaptureError: error instanceof Error
+              ? error.message
+              : "WLED did not return both native configuration and presets files.",
+          });
+        } catch (persistError) { return c.json(backupFailure(persistError), 503); }
+      }
       deps.store.replace(next);
       record(next, "replacement", "not-checked",
         `Controller changed from ${stored.hostKey} (${shortMac(stored.mac)}) to ${targetKey} (${shortMac(next.mac)}). Saved Segments stayed on this Light; nothing was Applied.`);

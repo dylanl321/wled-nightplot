@@ -3,11 +3,15 @@ import { dirname } from "node:path";
 import { defaultNightplotSettings, isNightplotSettings, type NightplotSettings } from "@nightplot/shared";
 
 export class FileSettingsStore {
-  constructor(private readonly path: string) {}
+  constructor(private readonly filePath: string) {}
+
+  get path(): string {
+    return this.filePath;
+  }
 
   read(): NightplotSettings {
     try {
-      const value: unknown = JSON.parse(readFileSync(this.path, "utf8"));
+      const value: unknown = JSON.parse(readFileSync(this.filePath, "utf8"));
       if (!isNightplotSettings(value)) throw new Error("Invalid Nightplot settings; nothing was overwritten.");
       return value;
     } catch (error) {
@@ -28,9 +32,9 @@ export class FileSettingsStore {
 
   restore(settings: NightplotSettings): void {
     if (!isNightplotSettings(settings)) throw new Error("Invalid backup preferences; nothing was restored.");
-    mkdirSync(dirname(this.path), { recursive: true });
-    const tmp = `${this.path}.tmp`;
+    mkdirSync(dirname(this.filePath), { recursive: true });
+    const tmp = `${this.filePath}.tmp`;
     writeFileSync(tmp, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });
-    renameSync(tmp, this.path);
+    renameSync(tmp, this.filePath);
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createWledConfigExportReader, createWledNativeFilesReader } from "./native-backup.ts";
+import { createWledConfigExportReader, createWledNativeFilesReader, createWledNativeFilesWriter } from "./native-backup.ts";
 
 describe("WLED native backup", () => {
   it("reads one fresh cfg.json without touching presets or sending a write", async () => {
@@ -28,5 +28,23 @@ describe("WLED native backup", () => {
       url.endsWith("cfg.json") ? "{}" : "not found", { status: url.endsWith("cfg.json") ? 200 : 404 }));
     await expect(createWledNativeFilesReader(fetchFn as unknown as typeof fetch)(
       { hostname: "example.local", port: 80 })).rejects.toThrow("presets.json returned HTTP 404");
+  });
+
+  it("uploads presets then configuration to /upload using the native filenames", async () => {
+    const calls: { url: string; filename: string }[] = [];
+    const fetchFn = vi.fn(async (url: string, init?: RequestInit) => {
+      const form = init?.body as FormData;
+      const file = form.get("data") as File;
+      calls.push({ url, filename: file.name });
+      return new Response(url.includes("cfg") ? "Rebooting..." : "File Uploaded!");
+    });
+    await createWledNativeFilesWriter(fetchFn as unknown as typeof fetch)(
+      { hostname: "192.168.1.20", port: 8080 },
+      { cfgJson: '{"id":{}}', presetsJson: '{"1":{}}' },
+    );
+    expect(calls).toEqual([
+      { url: "http://192.168.1.20:8080/upload", filename: "presets.json" },
+      { url: "http://192.168.1.20:8080/upload", filename: "cfg.json" },
+    ]);
   });
 });

@@ -24,6 +24,7 @@ import {
 } from "@nightplot/shared";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { LedLoader } from "@/components/ui/led-loader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { fetchJson, patchJson, postJson } from "@/lib/api";
@@ -417,6 +418,7 @@ export function StripProvisionPanel({
         >
           {busy === "apply" ? "Applying…" : "Apply hardware"}
         </Button>
+        {busy === "apply" ? <LedLoader label="Applying strip hardware" /> : null}
       </div>
     </div>
   );

@@ -3,7 +3,28 @@ export { defaultNightplotSettings, isNightplotSettings, DEFAULT_PALETTE, type Ni
 export { resolveApplyColors, reportedColorsMatch, type SegmentColor } from "./segment-colors.ts";
 export { compareLastApply, type ApplyConflict, type LastApply } from "./apply-conflict.ts";
 export { estimatePowerScenario, type PowerScenario, type SegmentPowerColour } from "./power-budget.ts";
-export type { BackupData, BackupDocument, BackupReason, BackupSummary, ControllerReference, WledBackupFiles } from "./backup.ts";
+export type {
+  BackupData,
+  BackupDocument,
+  BackupReason,
+  BackupSummary,
+  ControllerReference,
+  DeviceCaptureStatus,
+  WledBackupFiles,
+  WledNativeIdentity,
+  WledRestoreReview,
+} from "./backup.ts";
+export {
+  WLED_NATIVE_BACKUP_CAPTION,
+  WLED_NATIVE_RESTORE_CAPTION,
+  buildWledBackupFiles,
+  capturedWledIdentity,
+  deviceCaptureOf,
+  nativeFilesComplete,
+  parseBackupDocument,
+  reviewWledNativeRestore,
+  stripWledBackupSecrets,
+} from "./backup.ts";
 export { backupNeedsControllerConfirmation, parseSegmentBackup, type SegmentBackup } from "./segment-backup.ts";
 export {
   APPLY_ADOPT_EMPTY_REASON,

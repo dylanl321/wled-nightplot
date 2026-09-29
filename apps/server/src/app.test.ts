@@ -178,6 +178,7 @@ function testApp(overrides: Partial<AppDeps> = {}) {
     readNativeFiles: overrides.readNativeFiles ?? (async () => ({
       cfgJson: JSON.stringify(await cfg.read()), presetsJson: JSON.stringify({ "1": { n: "Test" } }),
     })),
+    writeNativeFiles: overrides.writeNativeFiles,
     readConfigExport: overrides.readConfigExport,
     writeCfg: overrides.writeCfg ?? cfg.write,
     collect: overrides.collect ?? (async () => []),
@@ -325,7 +326,7 @@ describe("managed Backups", () => {
     expect(restarted.backups.read(backup.id)).toBeNull();
   });
 
-  it("captures the reported controller before Apply, not raw cfg, and refuses WLED writes when backups fail", async () => {
+  it("captures native WLED files plus Nightplot data before Apply, and refuses the write when that backup fails", async () => {
     const first = testApp();
     const id = await enroll(first.app);
     const write = vi.fn(first.box.write);
@@ -345,6 +346,7 @@ describe("managed Backups", () => {
     expect(backed.backups.read(saved.id)?.deviceFiles).toMatchObject({
       presetsJson: '{"1":{"n":"Test"}}',
     });
+    expect(saved.deviceCaptureStatus).toBe("complete");
     vi.spyOn(first.backups, "create").mockImplementation(() => { throw new Error("disk full"); });
     const refusedWrite = vi.fn(first.box.write);
     const refused = testApp({ store: first.store, products: first.products,
@@ -414,6 +416,134 @@ describe("managed Backups", () => {
     expect(activity.list()).toEqual([]);
   });
 
+  it("restores Nightplot preferences when present and leaves current Settings when they are missing", async () => {
+    const settings = new FileSettingsStore(join(mkdtempSync(join(tmpdir(), "nightplot-settings-restore-")), "settings.json"));
+    const { app, backups, store, products, activity } = testApp({ settings });
+    expect((await app.request("/api/settings", { method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { ...settings.read(), appearance: "light" } }) })).status).toBe(200);
+    const created = (await (await app.request("/api/backups", { method: "POST" })).json()) as { backup: { id: string } };
+    expect((await app.request("/api/settings", { method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { ...settings.read(), appearance: "dark" } }) })).status).toBe(200);
+    const review = (await (await app.request(`/api/backups/${created.backup.id}/restore/check`, {
+      method: "POST" })).json()) as { expectedDigest: string; expectedCurrentDigest: string; backup: { settings: boolean } };
+    expect(review.backup.settings).toBe(true);
+    expect((await app.request(`/api/backups/${created.backup.id}/restore`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmId: created.backup.id, ...review }),
+    })).status).toBe(200);
+    expect(settings.read().appearance).toBe("light");
+
+    const older = backups.create({
+      at: new Date().toISOString(), reason: "manual",
+      data: { lights: store.snapshotForBackup().lights, elements: store.snapshotForBackup().elements,
+        products: products.snapshotForBackup(), activity: activity.list() },
+    });
+    expect((await app.request("/api/settings", { method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { ...settings.read(), appearance: "dark" } }) })).status).toBe(200);
+    const olderReview = (await (await app.request(`/api/backups/${older.id}/restore/check`, {
+      method: "POST" })).json()) as { expectedDigest: string; expectedCurrentDigest: string; backup: { settings: boolean } };
+    expect(olderReview.backup.settings).toBe(false);
+    expect((await app.request(`/api/backups/${older.id}/restore`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmId: older.id, ...olderReview }),
+    })).status).toBe(200);
+    expect(settings.read().appearance).toBe("dark");
+  });
+
+  it("pins a stored backup", async () => {
+    const { app } = testApp();
+    const created = (await (await app.request("/api/backups", { method: "POST" })).json()) as { backup: { id: string } };
+    const pinned = await app.request(`/api/backups/${created.backup.id}/pin`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned: true }),
+    });
+    expect(pinned.status).toBe(200);
+    expect(((await pinned.json()) as { backup: { pinned: boolean } }).backup.pinned).toBe(true);
+  });
+
+  it("uploads native WLED files only through the explicit restore, after identity review and a safety backup", async () => {
+    const uploads: { host: string; files: { cfgJson: string; presetsJson: string } }[] = [];
+    const { app, store, backups } = testApp({
+      writeNativeFiles: async (target, files) => {
+        uploads.push({ host: `${target.hostname}:${target.port}`, files });
+      },
+    });
+    const id = await enroll(app);
+    store.replaceElements(id, [{ id: "door", lightId: id, label: "Door", start: 0, stop: 20 }]);
+    const saved = (await (await app.request(`/api/lights/${id}/backups`, { method: "POST" })).json()) as {
+      backup: { id: string; deviceFiles: { mac: string; firmware: string; cfgJson: string } };
+    };
+    expect(saved.backup.deviceFiles.mac).toBe("e8:9f:6d:7f:2a:04");
+    expect(saved.backup.deviceFiles.firmware).toBe("WLED 0.15.4");
+    expect((await app.request(`/api/backups/${saved.backup.id}/restore-wled`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightId: id }),
+    })).status).toBe(400);
+    const check = await app.request(`/api/backups/${saved.backup.id}/restore-wled/check`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightId: id }),
+    });
+    expect(check.status).toBe(200);
+    const uploaded = await app.request(`/api/backups/${saved.backup.id}/restore-wled`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightId: id, confirmId: saved.backup.id }),
+    });
+    expect(uploaded.status).toBe(200);
+    expect(uploads).toHaveLength(1);
+    expect(uploads[0]?.files.cfgJson).toBe(saved.backup.deviceFiles.cfgJson);
+    expect(backups.list().some((row) => row.reason === "pre-restore")).toBe(true);
+    expect(store.elementsFor(id)[0]?.label).toBe("Door");
+
+    const nightplot = (await (await app.request("/api/backups", { method: "POST" })).json()) as {
+      backup: { id: string };
+    };
+    const review = (await (await app.request(`/api/backups/${nightplot.backup.id}/restore/check`, {
+      method: "POST" })).json()) as { expectedDigest: string; expectedCurrentDigest: string };
+    uploads.length = 0;
+    expect((await app.request(`/api/backups/${nightplot.backup.id}/restore`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmId: nightplot.backup.id, ...review }),
+    })).status).toBe(200);
+    expect(uploads).toEqual([]);
+  });
+
+  it("refuses a WLED upload when firmware differs until that mismatch is confirmed", async () => {
+    const first = testApp();
+    const id = await enroll(first.app);
+    const saved = (await (await first.app.request(`/api/lights/${id}/backups`, { method: "POST" })).json()) as {
+      backup: { id: string };
+    };
+    const uploads: string[] = [];
+    const older = testApp({
+      store: first.store, products: first.products, activity: first.activity, backups: first.backups,
+      probe: async () => {
+        const result = await first.box.probe();
+        if (result.kind !== "found") return result;
+        return { ...result, snapshot: { ...result.snapshot, firmware: "WLED 0.14.4" } };
+      },
+      writeNativeFiles: async () => { uploads.push("sent"); },
+    });
+    const check = await older.app.request(`/api/backups/${saved.backup.id}/restore-wled/check`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightId: id }),
+    });
+    expect(check.status).toBe(200);
+    expect(((await check.json()) as { requiresFirmwareConfirm: boolean }).requiresFirmwareConfirm).toBe(true);
+    expect((await older.app.request(`/api/backups/${saved.backup.id}/restore-wled`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightId: id, confirmId: saved.backup.id }),
+    })).status).toBe(409);
+    expect(uploads).toEqual([]);
+    expect((await older.app.request(`/api/backups/${saved.backup.id}/restore-wled`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightId: id, confirmId: saved.backup.id, confirmFirmwareMismatch: true }),
+    })).status).toBe(200);
+    expect(uploads).toEqual(["sent"]);
+  });
+
   it("does not auto-back up temporary Preview or All Off, but backs up before deleting a Light", async () => {
     const { app, backups, store } = testApp();
     const id = await enroll(app);
@@ -430,6 +560,70 @@ describe("managed Backups", () => {
     expect(store.findById(id)).toBeUndefined();
     expect(backups.list()[0]?.reason).toBe("pre-delete");
     expect(backups.read(backups.list()[0]!.id)?.data.lights[0]?.id).toBe(id);
+  });
+
+  it("serves saved native files as downloads and refuses Safe settings without them", async () => {
+    const first = testApp();
+    const id = await enroll(first.app);
+    const saved = (await (await first.app.request(`/api/lights/${id}/backups`, { method: "POST" })).json()) as {
+      backup: { id: string; deviceFiles: { cfgJson: string; presetsJson: string } };
+    };
+    const cfg = await first.app.request(`/api/backups/${saved.backup.id}/cfg.json`);
+    expect(cfg.status).toBe(200);
+    expect(await cfg.text()).toBe(saved.backup.deviceFiles.cfgJson);
+    expect(cfg.headers.get("content-disposition")).toContain("cfg.json");
+    const presets = await first.app.request(`/api/backups/${saved.backup.id}/presets.json`);
+    expect(presets.status).toBe(200);
+    expect(await presets.text()).toBe(saved.backup.deviceFiles.presetsJson);
+    const nightplot = (await (await first.app.request("/api/backups", { method: "POST" })).json()) as {
+      backup: { id: string };
+    };
+    expect((await first.app.request(`/api/backups/${nightplot.backup.id}/cfg.json`)).status).toBe(404);
+
+    const writeCfg = vi.fn(first.cfg.write);
+    const blocked = testApp({ store: first.store, products: first.products, activity: first.activity,
+      writeCfg, readNativeFiles: async () => { throw new Error("cfg.json returned HTTP 404"); } });
+    const safe = await blocked.app.request(`/api/lights/${id}/safe`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { displayName: "Porch rail", turnOnAtBoot: false,
+        bootBrightness: 180, bootPreset: 2, defaultTransition: 10, currentLimitMa: 1200 } }),
+    });
+    expect(safe.status).toBe(503);
+    expect(writeCfg).not.toHaveBeenCalled();
+  });
+
+  it("marks a departing WLED capture incomplete when native files fail, and still replaces the controller", async () => {
+    const first = testApp();
+    const id = await enroll(first.app);
+    const stored = first.store.findById(id)!;
+    first.store.replace({ ...stored, lastSnapshot: snapshot, lastSnapshotAt: stored.lastSeenAt });
+    const probe = vi.fn(async () => ({ kind: "found" as const,
+      snapshot: { ...snapshot, mac: "aa:bb:cc:dd:ee:ff", name: "New WLED" } }));
+    const { app, backups } = testApp({
+      store: first.store, activity: first.activity, products: first.products, probe,
+      readNativeFiles: async () => { throw new Error("presets.json returned HTTP 404"); },
+    });
+    const check = await app.request(`/api/lights/${id}/replacement/check`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.71:8080" }),
+    });
+    const body = (await check.json()) as {
+      previous: { hostKey: string; mac: string | null };
+      replacement: { hostKey: string; mac: string };
+    };
+    const confirm = await app.request(`/api/lights/${id}/replacement`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.71:8080", confirm: true,
+        expectedHostKey: body.replacement.hostKey, expectedMac: body.replacement.mac,
+        previousHostKey: body.previous.hostKey, previousMac: body.previous.mac }),
+    });
+    expect(confirm.status).toBe(200);
+    const saved = backups.list()[0]!;
+    expect(saved.reason).toBe("pre-replacement");
+    expect(saved.deviceCaptureStatus).toBe("incomplete");
+    expect(saved.deviceCaptureError).toContain("presets.json");
+    expect(saved.hasDeviceFiles).toBe(false);
+    expect(first.store.findById(id)?.hostKey).toBe("192.168.1.71:8080");
   });
 });
 

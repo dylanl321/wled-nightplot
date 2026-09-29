@@ -20,6 +20,22 @@ describe("managed backup storage", () => {
     expect(store.list()).toHaveLength(MAX_MANAGED_BACKUPS - 1);
   });
 
+  it("records an explicit incomplete device capture without inventing native files", () => {
+    const store = new FileBackupStore(mkdtempSync(join(tmpdir(), "nightplot-backups-")));
+    const created = store.create({
+      at: new Date().toISOString(), reason: "pre-replacement",
+      data: { lights: [], elements: [], products: [], activity: [] },
+      deviceCaptureStatus: "incomplete",
+      deviceCaptureError: "WLED did not return both native configuration and presets files.",
+    });
+    expect(created.deviceCaptureStatus).toBe("incomplete");
+    expect(store.list()[0]).toMatchObject({
+      deviceCaptureStatus: "incomplete",
+      hasDeviceFiles: false,
+      deviceCaptureError: "WLED did not return both native configuration and presets files.",
+    });
+  });
+
   it("does not silently ignore a corrupted backup", () => {
     const directory = mkdtempSync(join(tmpdir(), "nightplot-backups-"));
     const store = new FileBackupStore(directory);
@@ -29,6 +45,19 @@ describe("managed backup storage", () => {
     expect(() => store.list()).toThrow();
     expect(() => store.create({ at: new Date().toISOString(), reason: "manual",
       data: { lights: [], elements: [], products: [], activity: [] } })).toThrow();
+  });
+
+  it("lists an earlier nightplot-data v1 file as Nightplot data, not a native WLED export", () => {
+    const directory = mkdtempSync(join(tmpdir(), "nightplot-backups-"));
+    const id = "03c75c3e-9846-458e-b458-8739f0bff750";
+    writeFileSync(join(directory, `${id}.json`), `${JSON.stringify({
+      kind: "nightplot-data", version: 1, id, createdAt: "2026-09-29T00:46:38.735Z",
+      reason: "manual", nightplot: { lights: [], elements: [], ledProducts: [], activity: [] },
+      controller: null,
+    })}\n`);
+    const store = new FileBackupStore(directory);
+    expect(store.list()).toMatchObject([{ id, reason: "manual", hasDeviceFiles: false,
+      deviceCaptureStatus: "none", lightCount: 0 }]);
   });
 
   it("rotates only unpinned older copies, preserving latest recovery and complete WLED copies", () => {

@@ -55,6 +55,7 @@ import {
   type LocateMode,
 } from "@/components/elements-editor/use-live-locate";
 import { StripZoom } from "@/components/elements-editor/zoom";
+import { LedLoader } from "@/components/ui/led-loader";
 import { SegmentBackupPanel } from "@/components/segment-backup";
 import { Button } from "@/components/ui/button";
 import { fetchJson, patchJson, postJson } from "@/lib/api";
@@ -392,6 +393,7 @@ export function ElementsPanel({
             <Button className="h-9 text-[13px]" onClick={() => void applyRanges()} disabled={!canApply} title={applyReadyReason ?? undefined}>
               {busy === "apply" ? "Applying…" : "Apply mine"}
             </Button>
+            {busy === "apply" ? <LedLoader label="Applying" /> : null}
           </div>
         </div>
       ) : null}
@@ -584,6 +586,7 @@ export function ElementsPanel({
           >
             {busy === "apply" ? "Applying…" : "Save & Apply"}
           </Button>
+          {busy === "apply" ? <LedLoader label="Applying" /> : null}
           {live ? <span className="basis-full text-[12px] text-muted-foreground">Save Segments keeps Preview on. Save & Apply ends Preview first.</span> : null}
         </div>
       ) : (
