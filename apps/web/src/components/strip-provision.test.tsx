@@ -614,7 +614,7 @@ describe("Strip provision", () => {
         { provision: { ledType: "sk6812-rgbw", length: 60, gpio: 16 } },
       ]);
     });
-    expect(screen.getByText("Controller reports the strip we sent.")).toBeTruthy();
+    expect(await screen.findByText("Controller reports the strip we sent.")).toBeTruthy();
     expect(screen.getByText("Colour order on this bus: GRBW.")).toBeTruthy();
     expect(screen.getByText("Strip does not pick colour order.")).toBeTruthy();
     expect(screen.queryByText(/not GRBW/)).toBeNull();
