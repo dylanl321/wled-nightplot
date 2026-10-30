@@ -35,6 +35,8 @@ export const LED_IP_RATINGS = ["IP20", "IP30", "IP44", "IP65", "IP67", "IP68"] a
 
 /** Centre-to-centre pitch or one COB section, in millimetres. */
 export const LED_SPACING_MM_MAX = 10_000;
+export const LED_DENSITIES_PER_METER = [30, 60, 120, 144] as const;
+export const LED_DENSITY_PER_METER_MAX = 1000;
 export const LED_WATTS_PER_METER_MAX = 200;
 export const LED_WIDTH_MM_MAX = 200;
 
@@ -75,6 +77,8 @@ export type LedProduct = {
   defaultGpio?: number;
   /** Centre-to-centre millimetres. Used for discrete and diffused. */
   pitchMm?: number;
+  /** Addressable nodes per metre. Exact reciprocal sets pitchMm for discrete/diffused recipes. */
+  ledsPerMeter?: number;
   /** Millimetres of one addressable section. Used for COB. */
   sectionLengthMm?: number;
   voltage?: LedVoltage;
@@ -121,14 +125,15 @@ export function isLedVoltage(value: unknown): value is LedVoltage {
 
 /** Spacing that applies to this form factor. The other field is kept and unused. */
 export function ledProductSpacing(
-  product: Pick<LedProduct, "formFactor" | "pitchMm" | "sectionLengthMm">,
+  product: Pick<LedProduct, "formFactor" | "pitchMm" | "sectionLengthMm" | "ledsPerMeter">,
 ): { mm: number; kind: LedSpacingKind } | null {
   if (product.formFactor === "cob") {
     return product.sectionLengthMm != null
       ? { mm: product.sectionLengthMm, kind: "section" }
       : null;
   }
-  return product.pitchMm != null ? { mm: product.pitchMm, kind: "pitch" } : null;
+  const pitch = product.ledsPerMeter != null ? 1000 / product.ledsPerMeter : product.pitchMm;
+  return pitch != null ? { mm: pitch, kind: "pitch" } : null;
 }
 
 /** Node count times spacing. Null when either side is missing or not positive. */
@@ -609,6 +614,7 @@ function parseOverrides(
           | "defaultGpio"
           | "densityNotes"
           | "pitchMm"
+          | "ledsPerMeter"
           | "sectionLengthMm"
           | "voltage"
           | "wattsPerMeter"
@@ -629,6 +635,7 @@ function parseOverrides(
       | "defaultGpio"
       | "densityNotes"
       | "pitchMm"
+      | "ledsPerMeter"
       | "sectionLengthMm"
       | "voltage"
       | "wattsPerMeter"
@@ -718,6 +725,7 @@ function parsePhysical(
         Pick<
           LedProduct,
           | "pitchMm"
+          | "ledsPerMeter"
           | "sectionLengthMm"
           | "voltage"
           | "wattsPerMeter"
@@ -732,6 +740,7 @@ function parsePhysical(
     Pick<
       LedProduct,
       | "pitchMm"
+      | "ledsPerMeter"
       | "sectionLengthMm"
       | "voltage"
       | "wattsPerMeter"
@@ -744,6 +753,22 @@ function parsePhysical(
   const pitch = parseMm(row.pitchMm, "pitchMm", LED_SPACING_MM_MAX);
   if (!pitch.ok) return pitch;
   if (pitch.value != null) fields.pitchMm = pitch.value;
+
+  if (row.ledsPerMeter !== undefined) {
+    const density = row.ledsPerMeter;
+    if (row.formFactor === "cob" || typeof density !== "number" ||
+      !Number.isFinite(density) || density < 1 || density > LED_DENSITY_PER_METER_MAX) {
+      return { ok: false, error: "bad_defaults",
+        message: `ledsPerMeter is for discrete/diffused recipes, from 1 to ${LED_DENSITY_PER_METER_MAX}.` };
+    }
+    const derivedPitch = 1000 / density;
+    if (pitch.value != null && Math.abs(pitch.value - derivedPitch) > 0.01) {
+      return { ok: false, error: "bad_defaults",
+        message: "ledsPerMeter and pitchMm disagree. Use one spacing value." };
+    }
+    fields.ledsPerMeter = density;
+    fields.pitchMm = derivedPitch;
+  }
 
   const section = parseMm(row.sectionLengthMm, "sectionLengthMm", LED_SPACING_MM_MAX);
   if (!section.ok) return section;

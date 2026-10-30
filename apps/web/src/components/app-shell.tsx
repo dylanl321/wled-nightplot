@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { AllOffControl, type LiveHint } from "@/components/all-off-control";
 import { DiscoveryProvider } from "@/components/discovery-watch";
+import { ShortcutOverlay } from "@/components/shortcut-overlay";
 import { cn } from "@/lib/utils";
 
 type AppShellProps = {
@@ -25,9 +26,9 @@ export function AppShell({
   return (
     <DiscoveryProvider>
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
-      <header className="hidden h-14 items-center gap-7 border-b border-border bg-rail px-6 lg:flex">
-        <Brand markClassName="h-3 w-11" />
-        <nav className="flex items-center gap-1">
+      <header className="flex h-[52px] items-center gap-2.5 border-b border-border px-5 lg:h-14 lg:gap-7 lg:bg-rail lg:px-6">
+        <Brand markClassName="h-2.5 w-9 lg:h-3 lg:w-11" />
+        <nav className="hidden items-center gap-1 lg:flex">
           <NavLink href="/" active={lightsActive}>
             Lights
           </NavLink>
@@ -39,14 +40,13 @@ export function AppShell({
           </NavLink>
           <NavLink href="/settings" active={nav === "settings"}>Settings</NavLink>
         </nav>
-        <div className="ml-auto">
+        <div className="ml-auto"><ShortcutOverlay /></div>
+        <div className="hidden lg:block">
           <AllOffControl size="bar" lights={lights} sessions={sessions} />
         </div>
-      </header>
-
-      <header className="flex h-[52px] items-center gap-2.5 border-b border-border px-5 lg:hidden">
-        <Brand markClassName="h-2.5 w-9" />
-        <Link href="/settings" className="ml-auto text-[13px] text-muted-foreground">Settings</Link>
+        <div className="lg:hidden">
+          <Link href="/settings" className="text-[13px] text-muted-foreground">Settings</Link>
+        </div>
       </header>
 
       <main className="flex min-h-0 flex-1 flex-col">{children}</main>

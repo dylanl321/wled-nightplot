@@ -60,6 +60,7 @@ pnpm dev
 ```bash
 pnpm typecheck
 pnpm test
+pnpm lint
 ```
 
 `pnpm test` includes `apps/web` component tests (Vitest + Testing Library): Espalexa `portWarning` copy on Discover / the unenrolled tray, and Lights last-seen / unknown beads with Inspect Refresh as the one-Light probe. The list component does not re-probe.

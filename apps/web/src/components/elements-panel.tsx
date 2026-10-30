@@ -20,7 +20,7 @@ import {
   type NightplotSettings,
   type RangeIssue,
 } from "@nightplot/shared";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ElementInspector } from "@/components/elements-editor/inspector";
 import { CursorControls } from "@/components/elements-editor/cursor-controls";
 import {
@@ -84,39 +84,37 @@ export function ElementsPanel({
   onRefresh: () => void;
 }) {
   const light = detail.light;
-  const { state, dispatch, dirtyCount } = useEditorState(detail.elements, light.ledCount, light.id);
+  const { state, dispatch, dirtyCount, draftReady, storageAvailable } = useEditorState(detail.elements, light.ledCount, light.id);
   const elsRef = useRef(state.els);
-  elsRef.current = state.els;
+  useLayoutEffect(() => {
+    elsRef.current = state.els;
+  });
   const [apply, setApply] = useState<ApplyResult | null>(null);
   const [live, setLive] = useState(false);
   const [locateMode, setLocateMode] = useState<LocateMode>("hold");
   const [searchRange, setSearchRange] = useState<{ start: number; stop: number } | null>(null);
   const [remoteOpen, setRemoteOpen] = useState(false);
   const [backgroundPercent, setBackgroundPercent] = useState(60);
-  const [hues, setHues] = useState<Record<string, string>>({});
+  const storedHuesRaw = useSyncExternalStore(subscribeHues, () => readHuesRaw(light.id), () => null);
   const unreachable = light.reachability === "no-answer";
   const [scanning, setScanning] = useState<1 | -1 | null>(null);
   const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
 
-  useEffect(() => {
-    setHues({ ...readHues(light.id), ...Object.fromEntries(state.els.filter((item) => item.color)
-      .map((item) => [item.id, item.color!.hex])) });
-  }, [light.id]);
+  const hues = useMemo(
+    () => ({ ...assignHues(state.els, parseHues(storedHuesRaw)), ...Object.fromEntries(state.els.filter((item) => item.color)
+      .map((item) => [item.id, item.color!.hex])) }),
+    [state.els, storedHuesRaw],
+  );
 
   useEffect(() => {
-    const next = { ...assignHues(state.els, hues), ...Object.fromEntries(state.els.filter((item) => item.color)
-      .map((item) => [item.id, item.color!.hex])) };
+    const stored = parseHues(storedHuesRaw);
     const same =
-      Object.keys(next).length === Object.keys(hues).length &&
-      Object.entries(next).every(([id, hue]) => hues[id] === hue);
-    if (same) return;
-    setHues(next);
-    writeHues(light.id, next);
-  }, [state.els, hues, light.id]);
+      Object.keys(hues).length === Object.keys(stored).length &&
+      Object.entries(hues).every(([id, hue]) => stored[id] === hue);
+    if (!same) writeHues(light.id, hues);
+  }, [hues, storedHuesRaw, light.id]);
 
-  useEffect(() => {
-    if (unreachable) setLive(false);
-  }, [unreachable]);
+  if (unreachable && live) setLive(false);
 
   useEffect(() => {
     function stop(event: Event) {
@@ -183,8 +181,8 @@ export function ElementsPanel({
     segmentColor: state.els.every((element) => element.color) ? state.els[0]?.color?.hex :
       typeof light.bead === "string" ? light.bead : null,
   });
-  const canSave = dirtyCount > 0 && issues.length === 0 && busy === null;
-  const canApply = applyReadyReason === null && busy === null && !locate.stopping && locate.error?.kind !== "end";
+  const canSave = draftReady && !state.draftConflict && dirtyCount > 0 && issues.length === 0 && busy === null;
+  const canApply = draftReady && !state.draftConflict && applyReadyReason === null && busy === null && !locate.stopping && locate.error?.kind !== "end";
   const liveReason = unreachable
     ? previewRefuseReason({ reachable: false, hasTarget: true })
     : null;
@@ -230,6 +228,10 @@ export function ElementsPanel({
   }
 
   async function applyRanges() {
+    if (state.draftConflict || !draftReady) {
+      onNotice("Review the recovered Segment draft before Apply.");
+      return;
+    }
     if (applyReadyReason) {
       onNotice(applyReadyReason);
       return;
@@ -567,6 +569,14 @@ export function ElementsPanel({
           <span className="text-[14px] text-primary">
             {dirtyCount} unsaved change{dirtyCount === 1 ? "" : "s"}
           </span>
+          <span className="text-[12px] text-muted-foreground">{storageAvailable ? "Draft kept in this browser until saved or reverted." : "Browser storage unavailable; this draft may be lost on reload."}</span>
+          {state.draftConflict ? (
+            <div className="basis-full text-[13px] text-[#e9ba75]" role="alert">
+              Saved Segments or strip length changed since this draft. Review the ranges before replacing saved Segments.
+              <button type="button" className="ml-2 underline" onClick={() => dispatch({ type: "resolve-draft" })}>Keep draft for review</button>
+              <button type="button" className="ml-2 underline" onClick={() => dispatch({ type: "revert" })}>Use saved Segments</button>
+            </div>
+          ) : null}
           {barIssue ? <span className="text-[13px] text-destructive">{barIssue}</span> : null}
           <button
             type="button"
@@ -819,11 +829,32 @@ function hueKey(lightId: string): string {
   return `nightplot:element-hues:${lightId}`;
 }
 
-function readHues(lightId: string): Record<string, string> {
-  if (typeof window === "undefined") return {};
+/** In-memory copy so hues stay stable within a session when localStorage is unavailable. */
+const memoryHues = new Map<string, string>();
+const hueListeners = new Set<() => void>();
+
+function subscribeHues(listener: () => void): () => void {
+  hueListeners.add(listener);
+  window.addEventListener("storage", listener);
+  return () => {
+    hueListeners.delete(listener);
+    window.removeEventListener("storage", listener);
+  };
+}
+
+function readHuesRaw(lightId: string): string | null {
   try {
     const raw = window.localStorage.getItem(hueKey(lightId));
-    if (!raw) return {};
+    if (raw !== null) return raw;
+  } catch {
+    /* fall back to memory */
+  }
+  return memoryHues.get(hueKey(lightId)) ?? null;
+}
+
+function parseHues(raw: string | null): Record<string, string> {
+  if (!raw) return {};
+  try {
     const parsed = JSON.parse(raw) as unknown;
     if (!parsed || typeof parsed !== "object") return {};
     return parsed as Record<string, string>;
@@ -833,12 +864,14 @@ function readHues(lightId: string): Record<string, string> {
 }
 
 function writeHues(lightId: string, hues: Record<string, string>) {
-  if (typeof window === "undefined") return;
+  const raw = JSON.stringify(hues);
+  memoryHues.set(hueKey(lightId), raw);
   try {
-    window.localStorage.setItem(hueKey(lightId), JSON.stringify(hues));
+    window.localStorage.setItem(hueKey(lightId), raw);
   } catch {
     /* display-only */
   }
+  for (const listener of hueListeners) listener();
 }
 
 function ApplyFailed({

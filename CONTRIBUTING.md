@@ -33,7 +33,7 @@ Use this product’s vocabulary in chrome, routes, and user-facing copy.
 - One CONFIG slice per PR. Gaps are not the next R-slice. Do not start the next CONFIG ticket in the same run.
 - Title like `CONFIG-N: …`. Body includes `Fixes CONFIG-N` (or equivalent) so intake can match.
 - CHANGELOG and public docs land in the **same commit** as the code they describe.
-- `pnpm test` and `pnpm typecheck` pass.
+- `pnpm lint`, `pnpm typecheck` and `pnpm test` pass (CI runs all three on every pull request).
 - Honesty stays: unreachable beads stay grey with last-seen (never last colour); Preview is temporary and Apply persists; Safe / provision refuse unsupported firmware; the fixture is a development stub, not Hardware Done.
 - Adjacent bugs: leave them out of this PR. File or comment as a separate intake stub.
 

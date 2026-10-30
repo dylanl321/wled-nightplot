@@ -136,6 +136,15 @@ describe("toLightView strip honesty", () => {
     expect(pitched.spacingMm).toBe(16.67);
     expect(pitched.spacingKind).toBe("pitch");
 
+    const dense = toLightView(light, snapshot, {
+      elementCount: 0,
+      segmentCount: 1,
+      driftLabel: null,
+      product: { id: "eave-60", label: "Eave 60", notes: "", formFactor: "discrete",
+        driverId: "ws281x", ledsPerMeter: 60, pitchMm: 16.67 },
+    });
+    expect(dense.spacingMm).toBe(1000 / 60);
+
     const cob = toLightView(light, snapshot, {
       elementCount: 0,
       segmentCount: 1,

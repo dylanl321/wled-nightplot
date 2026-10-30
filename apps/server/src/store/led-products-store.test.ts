@@ -2,10 +2,22 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { seedLedProductsFromPresets } from "@nightplot/shared";
+import { ledProductSpacing, parseLedProductInput, seedLedProductsFromPresets } from "@nightplot/shared";
 import { FileLedProductsStore } from "./led-products-store.ts";
 
 describe("FileLedProductsStore", () => {
+  it("persists exact LEDs-per-metre geometry across restarts", () => {
+    const file = join(mkdtempSync(join(tmpdir(), "nightplot-led-")), "led-products.json");
+    const parsed = parseLedProductInput({ id: "eave-60", label: "Eave 60 LEDs/m",
+      formFactor: "discrete", driverId: "ws281x", ledsPerMeter: 60 });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    new FileLedProductsStore(file).create(parsed.product);
+    const saved = new FileLedProductsStore(file).findById("eave-60");
+    expect(saved?.ledsPerMeter).toBe(60);
+    expect(saved && ledProductSpacing(saved)?.mm).toBe(1000 / 60);
+  });
+
   it("refuses to capture a corrupt catalog instead of silently re-seeding a backup", () => {
     const dir = mkdtempSync(join(tmpdir(), "nightplot-led-"));
     const file = join(dir, "led-products.json");

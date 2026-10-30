@@ -414,4 +414,27 @@ describe("LED product attach + draft fill", () => {
       voltage: 3,
     })).toMatchObject({ ok: false, error: "bad_defaults" });
   });
+
+  it("makes LEDs per metre a precise discrete/diffused recipe spacing without changing COB", () => {
+    for (const formFactor of ["discrete", "diffused"] as const) {
+      const parsed = parseLedProductInput({ label: "Sixty per metre", formFactor,
+        driverId: "ws281x", ledsPerMeter: 60 });
+      expect(parsed.ok).toBe(true);
+      if (!parsed.ok) continue;
+      expect(parsed.product.ledsPerMeter).toBe(60);
+      expect(parsed.product.pitchMm).toBeCloseTo(1000 / 60);
+      expect(formatNodeLength(60, ledProductSpacing(parsed.product)?.mm)).toBe("1 m");
+      expect(validateLedProduct({ ...parsed.product, id: "sixty" })).toBeNull();
+    }
+    expect(parseLedProductInput({ label: "COB", formFactor: "cob", driverId: "ws281x",
+      ledsPerMeter: 60 })).toMatchObject({ ok: false, error: "bad_defaults" });
+    expect(parseLedProductInput({ label: "Bad", formFactor: "discrete", driverId: "ws281x",
+      ledsPerMeter: 0 })).toMatchObject({ ok: false, error: "bad_defaults" });
+    expect(parseLedProductInput({ label: "Conflict", formFactor: "discrete", driverId: "ws281x",
+      ledsPerMeter: 60, pitchMm: 25 })).toMatchObject({ ok: false, error: "bad_defaults" });
+    const rounded = parseLedProductInput({ label: "Rounded pitch", formFactor: "discrete",
+      driverId: "ws281x", ledsPerMeter: 60, pitchMm: 16.67 });
+    expect(rounded.ok).toBe(true);
+    if (rounded.ok) expect(rounded.product.pitchMm).toBe(1000 / 60);
+  });
 });

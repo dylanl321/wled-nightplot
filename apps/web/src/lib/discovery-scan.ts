@@ -34,8 +34,7 @@ export function discoveryScanInFlight(): boolean {
 /** One LAN Find. A second caller waits on the scan already running. */
 export function runDiscoveryScan(): Promise<DiscoveryScanResult> {
   if (inFlight) return inFlight;
-  let scan: Promise<DiscoveryScanResult>;
-  scan = postDiscover().finally(() => {
+  const scan: Promise<DiscoveryScanResult> = postDiscover().finally(() => {
     if (inFlight === scan) inFlight = null;
   });
   inFlight = scan;

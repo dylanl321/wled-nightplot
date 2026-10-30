@@ -473,11 +473,15 @@ describe("Strip provision", () => {
         String(product.defaultGpio),
       );
     });
-    expect(screen.getByRole("button", { name: product.label }).getAttribute("aria-pressed")).toBe(
-      "true",
-    );
     await waitFor(() => {
       expect(attaches).toEqual([{ ledProductId: product.id }]);
+    });
+    // The attach PATCH is recorded before its response lands; Apply stays disabled until then.
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: product.label }).getAttribute("aria-pressed")).toBe(
+        "true",
+      );
+      expect((screen.getByRole("button", { name: "Apply hardware" }) as HTMLButtonElement).disabled).toBe(false);
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Apply hardware" }));
@@ -614,7 +618,7 @@ describe("Strip provision", () => {
         { provision: { ledType: "sk6812-rgbw", length: 60, gpio: 16 } },
       ]);
     });
-    expect(screen.getByText("Controller reports the strip we sent.")).toBeTruthy();
+    expect(await screen.findByText("Controller reports the strip we sent.")).toBeTruthy();
     expect(screen.getByText("Colour order on this bus: GRBW.")).toBeTruthy();
     expect(screen.getByText("Strip does not pick colour order.")).toBeTruthy();
     expect(screen.queryByText(/not GRBW/)).toBeNull();

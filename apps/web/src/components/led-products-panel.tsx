@@ -7,6 +7,8 @@ import {
   LED_CATALOG_PER_LIGHT_HEADING,
   LED_CATALOG_SHARED_COPY,
   LED_CATALOG_SHARED_HEADING,
+  LED_DENSITIES_PER_METER,
+  LED_DENSITY_PER_METER_MAX,
   LED_FORM_FACTORS,
   LED_IP_RATINGS,
   LED_SPACING_MM_MAX,
@@ -36,6 +38,7 @@ type FormState = {
   defaultLength: string;
   defaultGpio: string;
   pitchMm: string;
+  ledsPerMeter: string;
   sectionLengthMm: string;
   voltage: string;
   wattsPerMeter: string;
@@ -54,6 +57,7 @@ const emptyForm = (): FormState => ({
   defaultLength: "",
   defaultGpio: "",
   pitchMm: "",
+  ledsPerMeter: "",
   sectionLengthMm: "",
   voltage: "",
   wattsPerMeter: "",
@@ -73,6 +77,7 @@ function formFromProduct(product: LedProduct): FormState {
     defaultLength: product.defaultLength != null ? String(product.defaultLength) : "",
     defaultGpio: product.defaultGpio != null ? String(product.defaultGpio) : "",
     pitchMm: product.pitchMm != null ? String(product.pitchMm) : "",
+    ledsPerMeter: product.ledsPerMeter != null ? String(product.ledsPerMeter) : "",
     sectionLengthMm: product.sectionLengthMm != null ? String(product.sectionLengthMm) : "",
     voltage: product.voltage != null ? String(product.voltage) : "",
     wattsPerMeter: product.wattsPerMeter != null ? String(product.wattsPerMeter) : "",
@@ -113,6 +118,14 @@ function writeBody(
   const pitch = readMeasure(form.pitchMm, "Pitch", LED_SPACING_MM_MAX);
   if (!pitch.ok) return pitch;
   if (pitch.value != null) body.pitchMm = pitch.value;
+  if (form.formFactor !== "cob") {
+    const density = readMeasure(form.ledsPerMeter, "LEDs per metre", LED_DENSITY_PER_METER_MAX);
+    if (!density.ok) return density;
+    if (density.value != null) {
+      if (density.value < 1) return { ok: false, message: "LEDs per metre must be at least 1." };
+      body.ledsPerMeter = density.value;
+    }
+  }
   const section = readMeasure(form.sectionLengthMm, "Section length", LED_SPACING_MM_MAX);
   if (!section.ok) return section;
   if (section.value != null) body.sectionLengthMm = section.value;
@@ -169,9 +182,12 @@ function productSpacingLine(product: LedProduct): string | null {
     product.defaultLength != null
       ? formatNodeLength(product.defaultLength, spacing.mm)
       : null;
-  return fromNodes
-    ? `${spacing.mm} mm ${kind} · about ${fromNodes} from ${product.defaultLength} nodes`
+  const geometry = product.ledsPerMeter != null && product.formFactor !== "cob"
+    ? `${product.ledsPerMeter} LEDs/m · ${Number(spacing.mm.toFixed(4))} mm ${kind}`
     : `${spacing.mm} mm ${kind}`;
+  return fromNodes
+    ? `${geometry} · about ${fromNodes} from ${product.defaultLength} nodes`
+    : geometry;
 }
 
 export function LedProductsPanel({
@@ -189,6 +205,18 @@ export function LedProductsPanel({
 
   function patchForm<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => (current ? { ...current, [key]: value } : current));
+    setNotice(null);
+  }
+
+  function setDensity(value: string) {
+    const density = Number(value);
+    setForm((current) => current ? { ...current, ledsPerMeter: value,
+      pitchMm: value.trim() && Number.isFinite(density) && density > 0 ? String(1000 / density) : "" } : current);
+    setNotice(null);
+  }
+
+  function setPitch(value: string) {
+    setForm((current) => current ? { ...current, pitchMm: value, ledsPerMeter: "" } : current);
     setNotice(null);
   }
 
@@ -429,6 +457,23 @@ export function LedProductsPanel({
               </span>
             </label>
           </div>
+          {form.formFactor !== "cob" ? (
+            <div className="flex flex-col gap-2">
+              <label className="flex flex-col gap-2">
+                <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">LEDs per metre</span>
+                <Input inputMode="decimal" value={form.ledsPerMeter}
+                  onChange={(event) => setDensity(event.target.value)} aria-label="LEDs per metre" />
+              </label>
+              <div className="flex flex-wrap gap-2" aria-label="Common LED densities">
+                {LED_DENSITIES_PER_METER.map((density) => (
+                  <button key={density} type="button" aria-pressed={form.ledsPerMeter === String(density)}
+                    className="rounded-md border border-input px-2.5 py-1 text-[12px] hover:bg-secondary"
+                    onClick={() => setDensity(String(density))}>{density} LEDs/m</button>
+                ))}
+              </div>
+              <span className="text-[12px] text-quiet">Pick a common density or enter the recipe’s addressable nodes per metre. This fills pitch for calculated length; it does not set this Light’s node count.</span>
+            </div>
+          ) : null}
           <label className="flex flex-col gap-2">
             <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
               {form.formFactor === "cob" ? "Section length" : "Pitch"}
@@ -436,18 +481,15 @@ export function LedProductsPanel({
             <Input
               inputMode="decimal"
               value={form.formFactor === "cob" ? form.sectionLengthMm : form.pitchMm}
-              onChange={(event) =>
-                patchForm(
-                  form.formFactor === "cob" ? "sectionLengthMm" : "pitchMm",
-                  event.target.value,
-                )
-              }
+              onChange={(event) => form.formFactor === "cob"
+                ? patchForm("sectionLengthMm", event.target.value)
+                : setPitch(event.target.value)}
               aria-label={form.formFactor === "cob" ? "Section length" : "Pitch"}
             />
             <span className="text-[12px] text-quiet">
               {form.formFactor === "cob"
                 ? "Millimetres of one addressable section. COB has no separate nodes."
-                : "Millimetres between nodes, centre to centre."}{" "}
+                : "Millimetres between nodes, centre to centre. Editing pitch clears LEDs per metre."}{" "}
               {PHYSICAL_LENGTH_CAPTION} Not written to WLED.
             </span>
           </label>

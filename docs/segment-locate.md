@@ -31,6 +31,9 @@ Hover shows a separate, faint marker and does not move the clicked cursor.
 focused cursor, or the cut boundary when using **Cut (C)**. Keyboard shortcuts
 leave typing in inputs alone. Toolbar button clicks do not disable arrow keys.
 The **Shortcuts** popover lists the available keys.
+Press **?** outside a text field on any Nightplot page to open the app-wide
+keyboard shortcuts sheet. It labels the Segment editor commands as specific to
+that tab; **Escape** closes the sheet and returns focus to where it was.
 
 ## Create and change Segments
 
@@ -55,6 +58,22 @@ product defines spacing), and range check. Its **Free** footer offers **+ Add**
 for unused runs. The Inspector holds name and range fields, **Duplicate**,
 **Split in half**, **Cut at cursor**, and **Delete**. Its range stepper buttons
 grab the corresponding edge and use the same shared-boundary behavior as arrows.
+
+## Unsaved drafts across reloads
+
+Unsaved Segment changes stay in this browser for this Light, including after a
+reload. They are not backed up or shared with another browser. The bar at the
+bottom shows whether browser storage is available. **Save Segments** puts the
+draft in Nightplot's saved Light; **Save & Apply** also sends ranges to the
+controller. **Revert** discards the browser draft. Neither reloading nor keeping
+the draft sends anything to the controller.
+
+If saved Segments or the strip length changed while the draft was away, the
+draft remains visible, but Save and Apply pause for review. Choose **Keep draft
+for review** to compare and edit it against the current saved Segments, or
+**Use saved Segments** to discard it. A draft with invalid ranges cannot be
+saved until the ranges are corrected. A browser with disabled or cleared local
+storage cannot recover its unsaved draft.
 
 ## Cursor and Preview
 

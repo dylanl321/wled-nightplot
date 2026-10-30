@@ -9,7 +9,7 @@ import {
   type LightView,
 } from "@nightplot/shared";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { postJson } from "@/lib/api";
@@ -33,11 +33,8 @@ export function AllOffControl({ size, lights, sessions }: AllOffControlProps) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<AllOffResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // The confirm dialog portals into document.body, which exists only on the client.
+  const mounted = useSyncExternalStore(subscribeNever, () => true, () => false);
 
   const live = sessions[0] ?? null;
   const liveName =
@@ -54,15 +51,11 @@ export function AllOffControl({ size, lights, sessions }: AllOffControlProps) {
     missingCount: missingNames.length,
   });
 
-  const confirm = useMemo(
-    () =>
-      allOffConfirmCopy({
-        live: live ? { kind: live.kind, label: live.label, name: liveName } : null,
-        lightCount: lights.length,
-        missingNames,
-      }),
-    [live, liveName, lights.length, missingNames.join("|")],
-  );
+  const confirm = allOffConfirmCopy({
+    live: live ? { kind: live.kind, label: live.label, name: liveName } : null,
+    lightCount: lights.length,
+    missingNames,
+  });
 
   async function run(lightIds?: string[]) {
     window.dispatchEvent(new CustomEvent("nightplot:all-off", { detail: { lightIds } }));
@@ -349,4 +342,8 @@ function ResultCard({
       </Button>
     </div>
   );
+}
+
+function subscribeNever(): () => void {
+  return () => {};
 }
