@@ -473,11 +473,15 @@ describe("Strip provision", () => {
         String(product.defaultGpio),
       );
     });
-    expect(screen.getByRole("button", { name: product.label }).getAttribute("aria-pressed")).toBe(
-      "true",
-    );
     await waitFor(() => {
       expect(attaches).toEqual([{ ledProductId: product.id }]);
+    });
+    // The attach PATCH is recorded before its response lands; Apply stays disabled until then.
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: product.label }).getAttribute("aria-pressed")).toBe(
+        "true",
+      );
+      expect((screen.getByRole("button", { name: "Apply hardware" }) as HTMLButtonElement).disabled).toBe(false);
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Apply hardware" }));
