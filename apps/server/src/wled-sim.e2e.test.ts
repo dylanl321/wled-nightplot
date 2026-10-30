@@ -171,6 +171,22 @@ describe("headless WLED sim e2e (external process)", () => {
     expect(((await apply.json()) as { apply: { matched: boolean } }).apply.matched).toBe(true);
   }, 20_000);
 
+  it("refuses Apply past the controller's reported segment limit and sends nothing", async () => {
+    const sim = await startSim({ NIGHTPLOT_SIM_MAXSEG: "1" });
+    const { app } = appAgainstHttp();
+    const light = await enroll(app, `${sim.host}:${sim.httpPort}`);
+    const elements = [{ label: "Left", start: 0, stop: 30 }, { label: "Right", start: 30, stop: 60 }];
+    await declareElements(app, light.id, elements);
+    const res = await app.request(`/api/lights/${light.id}/apply`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ elements: elements.map((row) => ({ ...row, color: { hex: "#ffa000", white: 0 } })) }),
+    });
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as { message: string }).message).toMatch(/at most 1 segments; 2 are declared/);
+    const state = (await (await fetch(`${sim.baseUrl}/json/state`)).json()) as { seg: unknown[] };
+    expect(state.seg).toHaveLength(1);
+  }, 20_000);
+
   it("keeps Apply mismatch failed — not Hardware Done", async () => {
     const sim = await startSim();
     const { app } = appAgainstHttp();

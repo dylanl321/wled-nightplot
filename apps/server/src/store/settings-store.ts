@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { defaultNightplotSettings, isNightplotSettings, type NightplotSettings } from "@nightplot/shared";
+import { isEnoent, StoreUnreadableError } from "./store-error.ts";
 
 export class FileSettingsStore {
   constructor(private readonly filePath: string) {}
@@ -10,15 +11,15 @@ export class FileSettingsStore {
   }
 
   read(): NightplotSettings {
+    let value: unknown;
     try {
-      const value: unknown = JSON.parse(readFileSync(this.filePath, "utf8"));
-      if (!isNightplotSettings(value)) throw new Error("Invalid Nightplot settings; nothing was overwritten.");
-      return value;
+      value = JSON.parse(readFileSync(this.filePath, "utf8"));
     } catch (error) {
-      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT")
-        return defaultNightplotSettings();
-      throw error;
+      if (isEnoent(error)) return defaultNightplotSettings();
+      throw new StoreUnreadableError("Settings store", this.filePath, error instanceof SyntaxError ? "not JSON" : "unreadable");
     }
+    if (!isNightplotSettings(value)) throw new StoreUnreadableError("Settings store", this.filePath, "unexpected shape or version");
+    return value;
   }
 
   save(input: unknown): { settings?: NightplotSettings; error?: "invalid" | "conflict" } {

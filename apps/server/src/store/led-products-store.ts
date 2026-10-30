@@ -5,6 +5,7 @@ import {
   validateLedProduct,
   type LedProduct,
 } from "@nightplot/shared";
+import { isEnoent, keepLastGood, StoreUnreadableError } from "./store-error.ts";
 
 type FileShape = {
   version: 1;
@@ -79,18 +80,25 @@ export class FileLedProductsStore {
     return found;
   }
 
+  /**
+   * Missing or valid-but-empty seeds the catalog. A corrupt file, or one with
+   * rows that fail validation, throws: seeding over it would erase recipes.
+   */
   private read(): LedProduct[] {
+    let parsed: FileShape;
     try {
-      const raw = readFileSync(this.filePath, "utf8");
-      const parsed = JSON.parse(raw) as FileShape;
-      if (parsed.version !== 1 || !Array.isArray(parsed.products)) {
-        return this.seedIfEmpty([]);
-      }
-      const products = parsed.products.filter(isStoredProduct);
-      return this.seedIfEmpty(products);
-    } catch {
-      return this.seedIfEmpty([]);
+      parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as FileShape;
+    } catch (error) {
+      if (isEnoent(error)) return this.seedIfEmpty([]);
+      throw new StoreUnreadableError("LED products store", this.filePath, error instanceof SyntaxError ? "not JSON" : "unreadable");
     }
+    if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.products))
+      throw new StoreUnreadableError("LED products store", this.filePath, "unexpected shape or version");
+    const products = parsed.products.filter(isStoredProduct);
+    if (products.length !== parsed.products.length)
+      throw new StoreUnreadableError("LED products store", this.filePath,
+        `${parsed.products.length - products.length} products Nightplot does not understand`);
+    return this.seedIfEmpty(products);
   }
 
   private seedIfEmpty(products: LedProduct[]): LedProduct[] {
@@ -102,6 +110,7 @@ export class FileLedProductsStore {
 
   private write(products: LedProduct[]): void {
     mkdirSync(dirname(this.filePath), { recursive: true });
+    keepLastGood(this.filePath);
     const tmp = `${this.filePath}.tmp`;
     const body: FileShape = { version: 1, products };
     writeFileSync(tmp, `${JSON.stringify(body, null, 2)}\n`, "utf8");

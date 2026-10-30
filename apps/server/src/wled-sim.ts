@@ -8,12 +8,14 @@ const hostname = "127.0.0.1";
 const nativeTypeRaw = Number.parseInt(process.env.NIGHTPLOT_SIM_NATIVE_TYPE ?? "", 10);
 const nativeOrderRaw = Number.parseInt(process.env.NIGHTPLOT_SIM_NATIVE_ORDER ?? "", 10);
 const ledCountRaw = Number.parseInt(process.env.NIGHTPLOT_SIM_LEDS ?? "", 10);
+const maxSegRaw = Number.parseInt(process.env.NIGHTPLOT_SIM_MAXSEG ?? "", 10);
 
 const box = createFixtureBox({
   kind: "sim",
   name: process.env.NIGHTPLOT_SIM_NAME ?? "WLED-sim",
   ver: process.env.NIGHTPLOT_SIM_VER ?? "0.15.4",
   ledCount: Number.isSafeInteger(ledCountRaw) && ledCountRaw > 0 ? ledCountRaw : undefined,
+  maxSegments: Number.isSafeInteger(maxSegRaw) && maxSegRaw > 0 ? maxSegRaw : undefined,
   nativeType: Number.isSafeInteger(nativeTypeRaw) ? nativeTypeRaw : undefined,
   nativeOrder: Number.isSafeInteger(nativeOrderRaw) ? nativeOrderRaw : undefined,
   cfgEnabled: process.env.NIGHTPLOT_SIM_CFG !== "0",
