@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { normalizeLightLedProductId, type Element, type Light } from "@nightplot/shared";
+import { isEnoent, keepLastGood, StoreUnreadableError } from "./store-error.ts";
 
 type FileShape = {
   version: 1;
@@ -12,6 +13,8 @@ type StoreShape = {
   lights: Light[];
   elements: Element[];
 };
+
+type ReadShape = StoreShape & { dropped: number };
 
 export type LightsRawLoad =
   | { ok: true; lights: unknown[] }
@@ -92,14 +95,14 @@ export class FileLightsStore {
   }
 
   upsert(next: Light): void {
-    const { lights, elements } = this.read();
+    const { lights, elements } = this.readForWrite();
     const kept = lights.filter((light) => light.id !== next.id && light.hostKey !== next.hostKey);
     kept.push(next);
     this.write(kept, elements);
   }
 
   replace(next: Light): void {
-    const { lights, elements } = this.read();
+    const { lights, elements } = this.readForWrite();
     this.write(
       lights.map((light) => (light.id === next.id ? next : light)),
       elements,
@@ -107,7 +110,7 @@ export class FileLightsStore {
   }
 
   remove(id: string): boolean {
-    const { lights, elements } = this.read();
+    const { lights, elements } = this.readForWrite();
     if (!lights.some((light) => light.id === id)) return false;
     this.write(
       lights.filter((light) => light.id !== id),
@@ -117,33 +120,44 @@ export class FileLightsStore {
   }
 
   replaceElements(lightId: string, next: Element[]): void {
-    const { lights, elements } = this.read();
+    const { lights, elements } = this.readForWrite();
     this.write(lights, [
       ...elements.filter((element) => element.lightId !== lightId),
       ...next,
     ]);
   }
 
-  private read(): StoreShape {
+  /**
+   * A missing file is a known empty store. A corrupt or wrong-shaped file is
+   * not: it throws instead of reading as no Lights.
+   */
+  private read(): ReadShape {
+    let parsed: FileShape;
     try {
-      const raw = readFileSync(this.filePath, "utf8");
-      const parsed = JSON.parse(raw) as FileShape;
-      if (parsed.version !== 1 || !Array.isArray(parsed.lights)) {
-        return { lights: [], elements: [] };
-      }
-      return {
-        lights: parsed.lights.map(withLedProductId),
-        elements: Array.isArray(parsed.elements)
-          ? parsed.elements.filter(isElement)
-          : [],
-      };
-    } catch {
-      return { lights: [], elements: [] };
+      parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as FileShape;
+    } catch (error) {
+      if (isEnoent(error)) return { lights: [], elements: [], dropped: 0 };
+      throw new StoreUnreadableError("Lights store", this.filePath, error instanceof SyntaxError ? "not JSON" : "unreadable");
     }
+    if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.lights) ||
+      (parsed.elements !== undefined && !Array.isArray(parsed.elements)))
+      throw new StoreUnreadableError("Lights store", this.filePath, "unexpected shape or version");
+    const rows = parsed.elements ?? [];
+    const elements = rows.filter(isElement);
+    return { lights: parsed.lights.map(withLedProductId), elements, dropped: rows.length - elements.length };
+  }
+
+  /** Writes refuse when a read skipped rows, so a save never deletes what it could not parse. */
+  private readForWrite(): StoreShape {
+    const shape = this.read();
+    if (shape.dropped > 0)
+      throw new StoreUnreadableError("Lights store", this.filePath, `${shape.dropped} Segment rows Nightplot does not understand`);
+    return shape;
   }
 
   private write(lights: Light[], elements: Element[]): void {
     mkdirSync(dirname(this.filePath), { recursive: true });
+    keepLastGood(this.filePath);
     const tmp = `${this.filePath}.tmp`;
     const body: FileShape = { version: 1, lights, elements };
     writeFileSync(tmp, `${JSON.stringify(body, null, 2)}\n`, "utf8");
@@ -156,10 +170,6 @@ function withLedProductId(light: Light): Light {
     ...light,
     ledProductId: normalizeLightLedProductId(light.ledProductId),
   };
-}
-
-function isEnoent(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
 }
 
 function isElement(value: unknown): value is Element {

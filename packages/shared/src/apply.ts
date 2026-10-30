@@ -96,6 +96,8 @@ export function applyRefuseReason(input: {
   segmentCount?: number | null;
   /** Live snapshot colour. Missing or non-hex refuses — never invent `#ffa000`. */
   segmentColor?: string | null;
+  /** WLED `leds.maxseg` when reported. Unknown does not refuse. */
+  maxSegments?: number | null;
 }): string | null {
   if (!input.reachable) {
     return "This Light hasn’t answered. Refresh or re-address it first.";
@@ -111,6 +113,9 @@ export function applyRefuseReason(input: {
   }
   if (input.issueMessage) return input.issueMessage;
   if (input.elementCount < 1) return "Declare at least one Segment first.";
+  if (typeof input.maxSegments === "number" && input.elementCount > input.maxSegments) {
+    return `This controller holds at most ${input.maxSegments} segments; ${input.elementCount} are declared. Merge or remove Segments first. Nothing was sent.`;
+  }
   if (!knownApplyColor(input.segmentColor)) {
     return APPLY_UNKNOWN_COLOUR_REASON;
   }

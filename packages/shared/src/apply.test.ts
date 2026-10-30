@@ -21,6 +21,13 @@ import {
 } from "./apply.ts";
 
 describe("apply refuse", () => {
+  it("refuses more Segments than the controller's reported segment limit, and does not refuse when unknown", () => {
+    const base = { reachable: true, segmentCount: 1, segmentColor: "#ffa000" };
+    expect(applyRefuseReason({ ...base, elementCount: 17, maxSegments: 16 })).toMatch(/at most 16 segments; 17 are declared/);
+    expect(applyRefuseReason({ ...base, elementCount: 16, maxSegments: 16 })).toBeNull();
+    expect(applyRefuseReason({ ...base, elementCount: 40, maxSegments: null })).toBeNull();
+  });
+
   it("refuses Apply when offline, invalid, empty, or Preview is live", () => {
     expect(
       applyRefuseReason({ reachable: false, elementCount: 2, segmentCount: 1 }),

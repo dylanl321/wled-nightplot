@@ -7,6 +7,8 @@ const WHITE_NATIVE_TYPES: ReadonlySet<number> = new Set([WLED_SK6812_RGBW_NATIVE
 export type FixtureBoxKind = "fixture" | "sim";
 
 export type FixtureBoxOptions = {
+  /** WLED `leds.maxseg`; ESP32 builds report 32. */
+  maxSegments?: number;
   name?: string;
   ver?: string;
   ledCount?: number;
@@ -64,7 +66,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     uptime: 3920,
     freeheap: 115000,
     wifi: { signal: 78, rssi: -62 },
-    leds: { count: ledCount, rgbw: WHITE_NATIVE_TYPES.has(nativeType) },
+    leds: { count: ledCount, rgbw: WHITE_NATIVE_TYPES.has(nativeType), maxseg: options.maxSegments ?? 32 },
   };
   const cfgEnabled = options.cfgEnabled ?? true;
   const cfg: {

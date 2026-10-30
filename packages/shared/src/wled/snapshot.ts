@@ -14,6 +14,8 @@ export type WledSnapshot = {
   mac: string | null;
   ledCount: number;
   rgbw: boolean;
+  /** WLED `info.leds.maxseg`: segments this build can hold. Absent when not reported. */
+  maxSegments?: number;
   on: boolean | null;
   brightness: number | null;
   segmentColor: string | null;
@@ -80,6 +82,7 @@ export function parseWledPayload(body: unknown): WledSnapshot | null {
     mac: typeof info.mac === "string" ? formatMac(info.mac) : null,
     ledCount: count,
     rgbw: Boolean(leds?.rgbw),
+    ...(Number.isInteger(leds?.maxseg) && Number(leds!.maxseg) > 0 ? { maxSegments: Number(leds!.maxseg) } : {}),
     on,
     brightness,
     segmentColor,

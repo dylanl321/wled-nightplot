@@ -116,6 +116,7 @@ import { backupDigest, FileBackupStore } from "./store/backup-store.ts";
 import { writeNightplotStoresConsistent } from "./store/nightplot-restore.ts";
 import { FileLedProductsStore } from "./store/led-products-store.ts";
 import { FileSettingsStore } from "./store/settings-store.ts";
+import { StoreUnreadableError } from "./store/store-error.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
 import type { ProbeFn } from "./wled/client.ts";
 import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
@@ -234,6 +235,12 @@ export function createApp(deps: AppDeps) {
     if (!raw.ok) return unknownLedProductDeleteImpact();
     return ledProductDeleteImpact(raw.lights, productId);
   }
+
+  app.onError((error, c) => {
+    if (error instanceof StoreUnreadableError)
+      return c.json({ error: "store-unreadable", store: error.store, message: error.message }, 503);
+    throw error;
+  });
 
   app.use(
     "*",
@@ -911,6 +918,7 @@ export function createApp(deps: AppDeps) {
       busyKind: live.get(light.id)?.kind ?? null,
       segmentCount: previousSegmentCount,
       segmentColor: color,
+      maxSegments: snap?.maxSegments ?? null,
     });
     if (reason || !color) {
       return c.json(

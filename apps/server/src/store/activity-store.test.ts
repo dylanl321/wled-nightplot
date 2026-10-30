@@ -17,10 +17,10 @@ describe("Activity store", () => {
     expect(store.list("a").map((row) => row.id)).toEqual(["one"]);
     const file = JSON.parse(readFileSync(path, "utf8"));
     writeFileSync(path, JSON.stringify({ ...file, entries: [...file.entries, { id: "bad" }] }));
-    expect(() => store.list()).toThrow("Invalid Activity history");
+    expect(() => store.list()).toThrow("Activity history");
     expect(() => store.append({ id: "three", at: "2026-09-28T00:02:00.000Z", lightId: "a",
       lightName: "Porch", action: "apply", readback: "match", detail: "Applied" }))
-      .toThrow("Invalid Activity history");
+      .toThrow("Activity history");
     expect(JSON.parse(readFileSync(path, "utf8")).entries).toHaveLength(3);
   });
 });

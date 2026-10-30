@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ActivityEntry } from "@nightplot/shared";
+import { isEnoent, StoreUnreadableError } from "./store-error.ts";
 
 type ActivityFile = { version: 1; entries: ActivityEntry[] };
 
@@ -40,15 +41,16 @@ export class FileActivityStore {
   }
 
   private read(): ActivityEntry[] {
+    let parsed: ActivityFile;
     try {
-      const parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as ActivityFile;
-      if (parsed.version !== 1 || !Array.isArray(parsed.entries) ||
-        !parsed.entries.every(isActivityEntry)) throw new Error("Invalid Activity history");
-      return parsed.entries;
+      parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as ActivityFile;
     } catch (error) {
-      if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return [];
-      throw error;
+      if (isEnoent(error)) return [];
+      throw new StoreUnreadableError("Activity history", this.filePath, error instanceof SyntaxError ? "not JSON" : "unreadable");
     }
+    if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.entries) || !parsed.entries.every(isActivityEntry))
+      throw new StoreUnreadableError("Activity history", this.filePath, "unexpected shape or version");
+    return parsed.entries;
   }
 }
 
