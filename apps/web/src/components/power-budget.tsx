@@ -12,11 +12,16 @@ export function PowerBudgetPanel({ detail }: { detail: LightDetail }) {
   const [limit, setLimit] = useState<number | null>(null);
   const [limitNote, setLimitNote] = useState("Reading Safe current limit…");
   const light = detail.light;
+  const [loadedFor, setLoadedFor] = useState(light.id);
+
+  if (loadedFor !== light.id) {
+    setLoadedFor(light.id);
+    setLimit(null);
+    setLimitNote("Reading Safe current limit…");
+  }
 
   useEffect(() => {
     let active = true;
-    setLimit(null);
-    setLimitNote("Reading Safe current limit…");
     void fetchJson<{ safe: SafeRead }>(`/api/lights/${light.id}/safe`)
       .then((payload) => {
         if (!active) return;

@@ -2,7 +2,7 @@
 
 import type { DiscoverRow, LightView } from "@nightplot/shared";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useDiscoveryCandidates } from "@/components/discovery-watch";
 import { MiniStrip } from "@/components/mini-strip";
 import { Button } from "@/components/ui/button";
@@ -29,12 +29,13 @@ export function DiscoverPanel({
   );
   const addressRef = useRef<HTMLInputElement>(null);
   const discovered = useDiscoveryCandidates();
+  const [seenDiscovered, setSeenDiscovered] = useState<DiscoverRow[] | null>(null);
 
-  useEffect(() => {
-    if (!discovered) return;
+  if (discovered && discovered !== seenDiscovered) {
+    setSeenDiscovered(discovered);
     setRows(discovered);
     setFindLoadError(null);
-  }, [discovered]);
+  }
 
   const found = useMemo(
     () => rows.filter((row) => row.status === "found"),

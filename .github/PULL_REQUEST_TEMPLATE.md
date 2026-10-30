@@ -18,6 +18,7 @@ Fixes CONFIG-
 
 - [ ] `pnpm test`
 - [ ] `pnpm typecheck`
+- [ ] `pnpm lint`
 - [ ] CHANGELOG + public docs are in the same commit as the deliverable (or this PR is docs-only and still updates CHANGELOG)
 
 ## Adjacent

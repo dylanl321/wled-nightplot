@@ -130,7 +130,7 @@ describe("LED products catalog", () => {
         },
       ]);
     });
-    expect(screen.getByText("Eave COB")).toBeTruthy();
+    expect(await screen.findByText("Eave COB")).toBeTruthy();
     expect(fetch.mock.calls.every((call) => !String(call[0]).includes("/provision"))).toBe(true);
   });
 
