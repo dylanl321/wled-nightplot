@@ -3,13 +3,13 @@ export type ActivityEntry = {
   at: string;
   lightId: string;
   lightName: string;
-  action: "apply" | "preview" | "all-off" | "replacement";
+  action: "apply" | "preview" | "all-off" | "replacement" | "sync";
   /** A readback match is never inferred from a successful write alone. */
   readback: "match" | "mismatch" | "unknown" | "not-checked";
   detail: string;
 };
 
-const ACTIVITY_ACTIONS = new Set<ActivityEntry["action"]>(["apply", "preview", "all-off"]);
+const ACTIVITY_ACTIONS = new Set<ActivityEntry["action"]>(["apply", "preview", "all-off", "sync"]);
 const ACTIVITY_READBACK = new Set<ActivityEntry["readback"]>([
   "match",
   "mismatch",

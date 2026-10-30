@@ -9,6 +9,7 @@ import { spawnWledSim, type SpawnedWledSim } from "./wled-sim-spawn.ts";
 import { createWledCfgReader, createWledCfgWriter } from "./wled/cfg.ts";
 import { createWledProbe } from "./wled/client.ts";
 import { createWledLiveReader, createWledWriter } from "./wled/live.ts";
+import { createWledPresetsReader, createWledPresetsWriter } from "./wled/native-backup.ts";
 import { rgbFill, sendDdpRgb } from "./wled-ddp.ts";
 
 const sims: SpawnedWledSim[] = [];
@@ -274,6 +275,86 @@ describe("headless WLED sim e2e (external process)", () => {
     expect(body.error).toBe("checks_incomplete");
     expect(body.message).toMatch(/I understand/);
   }, 20_000);
+});
+
+describe("headless WLED sim e2e: Sync across Lights", () => {
+  const presets = JSON.stringify({
+    "0": {},
+    "1": { n: "Amber", on: true, bri: 120, seg: [{ id: 0, start: 0, stop: 60, col: [[255, 160, 0]], fx: 0 }] },
+    "2": { n: "Ocean", on: true, bri: 200, seg: [{ id: 0, start: 0, stop: 60, col: [[0, 80, 255]], fx: 9, pal: 11 }] },
+  });
+
+  async function post(app: ReturnType<typeof createApp>, path: string, body: unknown) {
+    const res = await app.request(path, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> & {
+      rows: { lightId: string; status: string; detail: string; safetyBackupId?: string }[];
+      warnings?: { message: string }[];
+    } };
+  }
+
+  it("copies presets, turns one on everywhere, and copies the look", async () => {
+    const [a, b] = await Promise.all([startSim(), startSim()]);
+    const { app } = appAgainstHttp();
+    const source = await enroll(app, `${a.host}:${a.httpPort}`);
+    const target = await enroll(app, `${b.host}:${b.httpPort}`);
+    await createWledPresetsWriter()({ hostname: a.host, port: a.httpPort }, presets);
+
+    const listed = (await (await app.request(`/api/sync/presets/${source.id}`)).json()) as { presets: { id: number; name: string }[] };
+    expect(listed.presets.map((entry) => entry.name)).toEqual(["Amber", "Ocean"]);
+
+    const copy = await post(app, "/api/sync/presets", { sourceLightId: source.id, targetLightIds: [target.id] });
+    expect(copy.status).toBe(200);
+    expect(copy.body.rows).toEqual([expect.objectContaining({ lightId: target.id, status: "matched" })]);
+    expect(copy.body.rows[0]!.safetyBackupId).toBeTruthy();
+    expect(copy.body.caption).toMatch(/Not Hardware Done/);
+    expect(JSON.parse(await createWledPresetsReader()({ hostname: b.host, port: b.httpPort }))).toEqual(JSON.parse(presets));
+
+    const on = await post(app, "/api/sync/preset", { lightIds: [source.id, target.id], presetId: 2 });
+    expect(on.status).toBe(200);
+    expect(on.body.rows.map((row) => row.status)).toEqual(["matched", "matched"]);
+    const bState = (await (await fetch(`${b.baseUrl}/json/state`)).json()) as { ps: number; seg: { fx: number }[] };
+    expect(bState.ps).toBe(2);
+    expect(bState.seg[0]!.fx).toBe(9);
+
+    const missing = await post(app, "/api/sync/preset", { lightIds: [target.id], presetId: 5 });
+    expect(missing.body.rows[0]).toMatchObject({ status: "refused", detail: expect.stringMatching(/no preset 5/) });
+
+    await fetch(`${a.baseUrl}/json/state`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ on: true, bri: 77, seg: [{ id: 0, start: 0, stop: 60, col: [[12, 200, 40]], fx: 38, sx: 40, pal: 5 }] }) });
+    const look = await post(app, "/api/sync/look", { sourceLightId: source.id, targetLightIds: [target.id] });
+    expect(look.status).toBe(200);
+    expect(look.body.rows[0]).toMatchObject({ status: "matched" });
+    const copied = (await (await fetch(`${b.baseUrl}/json/state`)).json()) as { bri: number; seg: { fx: number; pal: number; col: number[][] }[] };
+    expect(copied.bri).toBe(77);
+    expect(copied.seg[0]).toMatchObject({ fx: 38, pal: 5, col: [[12, 200, 40]] });
+
+    const activity = (await (await app.request(`/api/activity?lightId=${target.id}`)).json()) as { entries: { action: string }[] };
+    expect(activity.entries.filter((entry) => entry.action === "sync")).toHaveLength(4);
+  }, 30_000);
+
+  it("asks before copying presets to a Light with a different length, and lists offline targets", async () => {
+    const [a, b, gone] = await Promise.all([startSim(), startSim({ NIGHTPLOT_SIM_LEDS: "90" }), startSim()]);
+    const { app } = appAgainstHttp();
+    const source = await enroll(app, `${a.host}:${a.httpPort}`);
+    const longer = await enroll(app, `${b.host}:${b.httpPort}`);
+    const offline = await enroll(app, `${gone.host}:${gone.httpPort}`);
+    await gone.stop();
+
+    const ask = await post(app, "/api/sync/presets", { sourceLightId: source.id, targetLightIds: [longer.id, offline.id] });
+    expect(ask.status).toBe(409);
+    expect(ask.body.error).toBe("confirm-warnings");
+    expect(ask.body.warnings?.[0]?.message).toMatch(/90 LEDs; the source has 60/);
+
+    const confirmed = await post(app, "/api/sync/presets", {
+      sourceLightId: source.id, targetLightIds: [longer.id, offline.id], confirmWarnings: true,
+    });
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body.rows.find((row) => row.lightId === offline.id)?.status).toBe("failed");
+    expect(confirmed.body.rows.find((row) => row.lightId === longer.id)?.status).toBe("matched");
+    expect(confirmed.body.message).toBe("1 of 2 have the copied presets. Check the Lights listed below.");
+  }, 30_000);
 });
 
 async function viWaitForLive(baseUrl: string, hex: string) {

@@ -123,10 +123,15 @@ import {
   createWledConfigExportReader,
   createWledNativeFilesReader,
   createWledNativeFilesWriter,
+  createWledPresetsReader,
+  createWledPresetsWriter,
   type ReadWledConfigExport,
   type ReadWledNativeFiles,
+  type ReadWledPresets,
   type WriteWledNativeFiles,
+  type WriteWledPresets,
 } from "./wled/native-backup.ts";
+import { registerSyncRoutes } from "./sync-routes.ts";
 import { applyRangesWrite, type ReadLiveFn, type WriteStateFn } from "./wled/live.ts";
 
 export type AppDeps = {
@@ -143,6 +148,8 @@ export type AppDeps = {
   readNativeFiles?: ReadWledNativeFiles;
   writeNativeFiles?: WriteWledNativeFiles;
   readConfigExport?: ReadWledConfigExport;
+  readPresets?: ReadWledPresets;
+  writePresets?: WriteWledPresets;
   writeCfg: WriteCfgFn;
   now?: () => Date;
 };
@@ -482,6 +489,17 @@ export function createApp(deps: AppDeps) {
         message: WLED_NATIVE_RESTORE_CAPTION,
       });
     } finally { release(); }
+  });
+
+  registerSyncRoutes(app, {
+    store: deps.store,
+    live,
+    write: deps.write,
+    readPresets: deps.readPresets ?? createWledPresetsReader(),
+    writePresets: deps.writePresets ?? createWledPresetsWriter(),
+    refreshOne,
+    captureDevice: (reason, light, snap) => captureDevice(reason, light, snap),
+    record,
   });
 
   app.get("/api/activity", (c) => c.json({ entries: activity.list(c.req.query("lightId")) }));
