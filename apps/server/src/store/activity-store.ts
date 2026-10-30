@@ -57,7 +57,7 @@ function isActivityEntry(value: unknown): value is ActivityEntry {
   const entry = value as Partial<ActivityEntry>;
   return typeof entry.id === "string" && typeof entry.at === "string" &&
     typeof entry.lightId === "string" && typeof entry.lightName === "string" &&
-    (entry.action === "apply" || entry.action === "preview" || entry.action === "all-off" || entry.action === "replacement") &&
+    (entry.action === "apply" || entry.action === "preview" || entry.action === "all-off" || entry.action === "replacement" || entry.action === "sync") &&
     (entry.readback === "match" || entry.readback === "mismatch" ||
       entry.readback === "unknown" || entry.readback === "not-checked") &&
     typeof entry.detail === "string";

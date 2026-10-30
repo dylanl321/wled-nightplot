@@ -94,9 +94,10 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       },
     },
   };
-  const state: { on: boolean; bri: number; seg: Seg[] } = {
+  const state: { on: boolean; bri: number; ps: number; seg: Seg[] } = {
     on: true,
     bri: 140,
+    ps: -1,
     seg: [{ start: 0, stop: ledCount, col: [[255, 160, 0]] }],
   };
   const pixels = Array.from({ length: ledCount }, () => "#ffa000");
@@ -175,9 +176,28 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     }
   }
 
+  function presetsText(): string {
+    return exportedPresets ?? JSON.stringify({ "1": { n: "Fixture preset", on: true, bri: 128, seg: state.seg } });
+  }
+
+  /** WLED `ps`: load that slot from presets.json, then report it as current. */
+  function applyPreset(id: number) {
+    let preset: unknown;
+    try { preset = (JSON.parse(presetsText()) as Record<string, unknown>)[String(id)]; }
+    catch { return; }
+    if (!preset || typeof preset !== "object") return;
+    applyState(preset);
+    state.ps = id;
+  }
+
   function applyState(body: unknown) {
     if (!body || typeof body !== "object") return;
-    const next = body as { on?: unknown; bri?: unknown; seg?: unknown };
+    const next = body as { on?: unknown; bri?: unknown; seg?: unknown; ps?: unknown };
+    if (typeof next.ps === "number" && Number.isInteger(next.ps) && next.ps >= 1 && next.ps <= 250 && next.seg === undefined) {
+      applyPreset(next.ps);
+      return;
+    }
+    if (next.seg !== undefined) state.ps = -1;
     if (typeof next.on === "boolean") state.on = next.on;
     if (typeof next.bri === "number") state.bri = Math.max(0, Math.min(255, Math.round(next.bri)));
     if (!Array.isArray(next.seg)) return;
@@ -312,7 +332,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       return;
     }
     if (url === "/presets.json") {
-      res.end(exportedPresets ?? JSON.stringify({ "1": { n: "Fixture preset", on: true, bri: 128, seg: state.seg } }));
+      res.end(presetsText());
       return;
     }
     if (url === "/upload" && (req.method === "POST" || req.method === "PUT")) {

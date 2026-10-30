@@ -18,11 +18,16 @@ export type WledStateWrite = {
    * so HTTP hops do not fade-crawl while a segment start/stop moves.
    */
   tt?: number;
+  /** WLED preset select (`ps`, 1–250). Sync only; never sent with `seg`. */
+  ps?: number;
   seg?: {
     id?: number; start: number; stop: number; col?: number[][];
     i?: (number | string)[];
     frz?: boolean; on?: boolean; bri?: number; grp?: number; spc?: number; of?: number;
     rev?: boolean; mi?: boolean; fx?: number;
+    /** Look fields copied by Sync from another Light's report. */
+    cct?: number; sx?: number; ix?: number; pal?: number; c1?: number; c2?: number; c3?: number;
+    o1?: boolean; o2?: boolean; o3?: boolean; si?: number; m12?: number;
   }[];
 };
 

@@ -57,7 +57,7 @@ export function createWledNativeFilesWriter(fetchFn: typeof fetch = fetch): Writ
   };
 }
 
-async function uploadNativeFile(
+export async function uploadNativeFile(
   fetchFn: typeof fetch,
   host: string,
   port: number,
@@ -80,4 +80,27 @@ async function uploadNativeFile(
   if (!response.ok) {
     throw new Error(`WLED ${filename} upload returned HTTP ${response.status}.`);
   }
+}
+
+export type ReadWledPresets = (target: HostPort) => Promise<string>;
+export type WriteWledPresets = (target: HostPort, presetsJson: string) => Promise<void>;
+
+/** Fresh `/presets.json` only — Sync source and reread. */
+export function createWledPresetsReader(fetchFn: typeof fetch = fetch): ReadWledPresets {
+  return async (target) => {
+    const response = await fetchFn(`http://${advertisedHost(target)}:${target.port}/presets.json`, {
+      signal: AbortSignal.timeout(5000), headers: { Accept: "application/json" },
+    });
+    if (!response.ok) throw new Error(`WLED presets.json returned HTTP ${response.status}.`);
+    const raw = await response.text();
+    if (raw.length > 8_000_000) throw new Error("WLED presets.json exceeds the size limit.");
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("WLED presets.json was not a JSON object.");
+    return raw;
+  };
+}
+
+/** Upload `presets.json` alone. WLED takes it without a reboot (`presetsModifiedTime`). */
+export function createWledPresetsWriter(fetchFn: typeof fetch = fetch): WriteWledPresets {
+  return (target, presetsJson) => uploadNativeFile(fetchFn, advertisedHost(target), target.port, "presets.json", presetsJson);
 }
