@@ -1021,7 +1021,7 @@ describe("configure server", () => {
     expect(body.stripPresets.every((entry) => entry.ledType === "ws281x")).toBe(true);
     expect(body.ledProducts.length).toBeGreaterThanOrEqual(2);
     expect(body.ledProducts.every((entry) => entry.driverId === "ws281x")).toBe(true);
-    expect(body.strips.map((row) => row.id)).toEqual(["ws281x", "sk6812-rgbw"]);
+    expect(body.strips.map((row) => row.id)).toEqual(["ws281x", "sk6812-rgbw", "fw1906"]);
     expect(body.strips.find((row) => row.id === "sk6812-rgbw")?.bead).toBe("rgbw");
   });
 

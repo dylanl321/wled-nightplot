@@ -1,5 +1,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { WLED_SK6812_RGBW_NATIVE_TYPE, WLED_WS281X_NATIVE_TYPE } from "@nightplot/shared";
+import { WLED_FW1906_NATIVE_TYPE, WLED_SK6812_RGBW_NATIVE_TYPE, WLED_WS281X_NATIVE_TYPE } from "@nightplot/shared";
+
+/** WLED reports `leds.rgbw` for any bus with a white channel (`hasWhite`). */
+const WHITE_NATIVE_TYPES: ReadonlySet<number> = new Set([WLED_SK6812_RGBW_NATIVE_TYPE, WLED_FW1906_NATIVE_TYPE]);
 
 export type FixtureBoxKind = "fixture" | "sim";
 
@@ -61,7 +64,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     uptime: 3920,
     freeheap: 115000,
     wifi: { signal: 78, rssi: -62 },
-    leds: { count: ledCount, rgbw: nativeType === WLED_SK6812_RGBW_NATIVE_TYPE },
+    leds: { count: ledCount, rgbw: WHITE_NATIVE_TYPES.has(nativeType) },
   };
   const cfgEnabled = options.cfgEnabled ?? true;
   const cfg: {
@@ -152,7 +155,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       if (typeof row.start === "number") bus.start = Math.max(0, Math.round(row.start));
       if (typeof row.type === "number") {
         bus.type = Math.round(row.type);
-        info.leds.rgbw = bus.type === WLED_SK6812_RGBW_NATIVE_TYPE;
+        info.leds.rgbw = WHITE_NATIVE_TYPES.has(bus.type);
       }
       if (typeof row.order === "number") bus.order = Math.round(row.order);
       if (typeof row.rev === "boolean") bus.rev = row.rev;

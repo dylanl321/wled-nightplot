@@ -4,6 +4,7 @@ import {
   defaultStripPreset,
   draftLedTypeFromSettings,
   isProvisionLedType,
+  nativeTypeLabel,
   formatNodeLength,
   ledProductSpacing,
   LED_CATALOG_ATTACH_COPY,
@@ -357,7 +358,10 @@ export function StripProvisionPanel({
 
       {read.settings.ledType === "unknown" && !read.refuse ? (
         <p className="text-[13px] text-quiet">
-          Live bus type is unknown. Apply writes the selected type’s mapping for this firmware.
+          {read.settings.nativeType !== null
+            ? `This bus reports ${nativeTypeLabel(read.settings.nativeType)}, which Strip does not map.`
+            : "Live bus type is unknown."}{" "}
+          Apply writes the selected type’s mapping for this firmware.
         </p>
       ) : null}
 

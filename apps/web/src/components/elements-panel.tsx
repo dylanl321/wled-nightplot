@@ -11,6 +11,7 @@ import {
   applyRefuseReason,
   buildRangeDisplay,
   formatNodeLength,
+  getStrip,
   previewRefuseReason,
   reportedRangeRails,
   validateDeclaredRanges,
@@ -154,7 +155,7 @@ export function ElementsPanel({
     mode: locateMode,
     elements: state.els,
     hues,
-    rgbw: light.stripKind === "sk6812-rgbw",
+    rgbw: getStrip(light.stripKind)?.bead === "rgbw",
     backgroundPercent,
     searchRange,
   });
@@ -556,7 +557,7 @@ export function ElementsPanel({
         </div>
       </div>
 
-        <ElementInspector state={state} hues={hues} issuesFor={issuesFor} dispatch={dispatch} spacingMm={light.spacingMm} rgbw={light.stripKind === "sk6812-rgbw"} />
+        <ElementInspector state={state} hues={hues} issuesFor={issuesFor} dispatch={dispatch} spacingMm={light.spacingMm} rgbw={getStrip(light.stripKind)?.bead === "rgbw"} />
       </div>
 
       {notice ? <p className="text-[13px] text-destructive">{notice}</p> : null}

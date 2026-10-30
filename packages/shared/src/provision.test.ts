@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  WLED_FW1906_NATIVE_TYPE,
   WLED_SK6812_RGBW_NATIVE_TYPE,
   WLED_WS281X_NATIVE_TYPE,
   buildProvisionWrite,
   colorOrderFromNative,
+  nativeTypeLabel,
   parseWledProvision,
   provisionFieldsMatch,
   provisionRefuseReason,
@@ -150,6 +152,44 @@ describe("parseWledProvision", () => {
   });
 });
 
+describe("firmware table and native identity", () => {
+  it("covers every released 0.14.x, 0.15.x and 16.0.x tag", () => {
+    for (const version of ["0.14.1", "0.14.4", "0.14.4-fix1", "0.15.1", "0.15.2", "0.15.5", "16.0.0"]) {
+      expect(resolveWs281xMapping(`WLED ${version}`), version).not.toBeNull();
+      expect(resolveProvisionMapping(version, "sk6812-rgbw"), version).not.toBeNull();
+    }
+    expect(resolveWs281xMapping("0.16.0")).toBeNull();
+  });
+
+  it("maps FW1906 only on firmware whose const.h defines type 28", () => {
+    expect(resolveProvisionMapping("0.14.4", "fw1906")).toBeNull();
+    for (const version of ["0.15.0", "0.15.1", "0.15.4", "16.0.1"]) {
+      expect(resolveProvisionMapping(version, "fw1906")?.native, version).toEqual({ type: 28, order: 0 });
+    }
+  });
+
+  it("decodes WLED COL_ORDER 4 as BGR and 5 as GBR", () => {
+    expect(colorOrderFromNative(4, "ws281x")).toBe("BGR");
+    expect(colorOrderFromNative(5, "ws281x")).toBe("GBR");
+    expect(colorOrderFromNative(4, "sk6812-rgbw")).toBe("BGRW");
+  });
+
+  it("names unmapped native bus types instead of a bare number", () => {
+    expect(nativeTypeLabel(32)).toBe("WLED type 32 (WS2805 RGB+CCT)");
+    expect(nativeTypeLabel(77)).toBe("WLED type 77");
+    expect(nativeTypeLabel(null)).toBeNull();
+  });
+
+  it("reads a FW1906 COB bus on 0.15.1 as writable", () => {
+    const cob = { hw: { led: { ins: [{ start: 0, len: 60, pin: [16], type: 28, order: 0 }] } } };
+    const read = parseWledProvision(cob, "WLED 0.15.1");
+    expect(read.refuse).toBeNull();
+    expect(read.fingerprint.writable).toBe(true);
+    expect(read.fingerprint.mappingId).toBe("wled-0.15-fw1906-rgbcct-grb");
+    expect(read.settings).toMatchObject({ ledType: "fw1906", nativeType: WLED_FW1906_NATIVE_TYPE, colorOrder: "GRB" });
+  });
+});
+
 describe("provision write", () => {
   it("patches only pin / len and preserves unknown bus fields", () => {
     const read = parseWledProvision(cfg, "WLED 0.15.4");
@@ -234,6 +274,29 @@ describe("provision write", () => {
     expect(bus.extra).toBe("keep");
     expect(built.sent.ledType).toBe("sk6812-rgbw");
     expect(built.orderPreserved).toBe(false);
+  });
+
+  it("writes FW1906 type 28 / order 0 when converting, and keeps order on same-type writes", () => {
+    const raw = { hw: { led: { ins: [{ start: 0, len: 60, pin: [16], type: 22, order: 1 }] } } };
+    const built = buildProvisionWrite({ ledType: "fw1906", length: 60, gpio: 16 }, raw,
+      parseWledProvision(raw, "0.15.1").fingerprint);
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    const bus = (built.body as { hw: { led: { ins: Record<string, unknown>[] } } }).hw.led.ins[0]!;
+    expect(bus).toMatchObject({ type: WLED_FW1906_NATIVE_TYPE, order: 0 });
+    const cob = { hw: { led: { ins: [{ start: 0, len: 60, pin: [16], type: 28, order: 3 }] } } };
+    const same = buildProvisionWrite({ ledType: "fw1906", length: 90, gpio: 16 }, cob,
+      parseWledProvision(cob, "0.15.1").fingerprint);
+    expect(same.ok && same.orderPreserved).toBe(true);
+    if (!same.ok) return;
+    expect((same.body as { hw: { led: { ins: Record<string, unknown>[] } } }).hw.led.ins[0]).toMatchObject({ type: 28, order: 3, len: 90 });
+  });
+
+  it("refuses FW1906 on 0.14 firmware, which has no type 28", () => {
+    const raw = { hw: { led: { ins: [{ start: 0, len: 60, pin: [16], type: 22, order: 0 }] } } };
+    const built = buildProvisionWrite({ ledType: "fw1906", length: 60, gpio: 16 }, raw,
+      parseWledProvision(raw, "0.14.4").fingerprint);
+    expect(built.ok).toBe(false);
   });
 
   it("preserves SK6812 order on a same-type length write", () => {

@@ -10,7 +10,7 @@
 import { softwareHonestyCaption, type LiveSource } from "./live.ts";
 import type { RangeLengthStory } from "./range.ts";
 
-export const PROVISION_LED_TYPES = ["ws281x", "sk6812-rgbw"] as const;
+export const PROVISION_LED_TYPES = ["ws281x", "sk6812-rgbw", "fw1906"] as const;
 export type ProvisionLedType = (typeof PROVISION_LED_TYPES)[number];
 
 export function isProvisionLedType(value: unknown): value is ProvisionLedType {
@@ -19,6 +19,7 @@ export function isProvisionLedType(value: unknown): value is ProvisionLedType {
 
 export function provisionLedTypeLabel(ledType: ProvisionLedType): string {
   if (ledType === "sk6812-rgbw") return "SK6812 RGBW";
+  if (ledType === "fw1906") return "FW1906 RGB+CCT";
   return "WS281x";
 }
 
@@ -65,8 +66,9 @@ export type NativeCompatibilityMapping = {
  * firmware that is not in the table.
  *
  * SK6812 RGBW is `TYPE_SK6812_RGBW` (30). Order 0 is `COL_ORDER_GRB`,
- * documented as GRB(w) — GRBW on RGBW types. RGBWW (e.g. `TYPE_WS2805` 32)
- * is not mapped.
+ * documented as GRB(w) — GRBW on RGBW types. FW1906 is `TYPE_FW1906` (28),
+ * RGB + CW + WW; WLED 0.14 does not define it. Other RGBCCT ICs (e.g.
+ * `TYPE_WS2805` 32) are recognised by name but not mapped.
  *
  * Convert authors that mapping `order` (GRBW / 0 for SK6812) only when the
  * native type changes. Same-type length / GPIO writes preserve the live
@@ -75,13 +77,13 @@ export type NativeCompatibilityMapping = {
 export const WLED_COMPATIBILITY_MAPPINGS: readonly NativeCompatibilityMapping[] = [
   {
     id: "wled-0.14-ws281x-rgb-grb",
-    firmwareVersions: ["0.14.0"],
+    firmwareVersions: ["0.14.0", "0.14.1", "0.14.2", "0.14.3", "0.14.4"],
     protocol: "ws281x",
     native: { type: 22, order: 0 },
   },
   {
     id: "wled-0.14-sk6812-rgbw-grbw",
-    firmwareVersions: ["0.14.0"],
+    firmwareVersions: ["0.14.0", "0.14.1", "0.14.2", "0.14.3", "0.14.4"],
     protocol: "sk6812-rgbw",
     native: { type: 30, order: 0 },
   },
@@ -98,28 +100,46 @@ export const WLED_COMPATIBILITY_MAPPINGS: readonly NativeCompatibilityMapping[] 
     native: { type: 30, order: 0 },
   },
   {
+    id: "wled-0.15-fw1906-rgbcct-grb-driver",
+    firmwareVersions: ["0.15.0"],
+    protocol: "fw1906",
+    native: { type: 28, order: 0 },
+  },
+  {
     id: "wled-0.15-ws281x-rgb-grb",
-    firmwareVersions: ["0.15.3", "0.15.4"],
+    firmwareVersions: ["0.15.1", "0.15.2", "0.15.3", "0.15.4", "0.15.5"],
     protocol: "ws281x",
     native: { type: 22, order: 0 },
   },
   {
     id: "wled-0.15-sk6812-rgbw-grbw",
-    firmwareVersions: ["0.15.3", "0.15.4"],
+    firmwareVersions: ["0.15.1", "0.15.2", "0.15.3", "0.15.4", "0.15.5"],
     protocol: "sk6812-rgbw",
     native: { type: 30, order: 0 },
   },
   {
+    id: "wled-0.15-fw1906-rgbcct-grb",
+    firmwareVersions: ["0.15.1", "0.15.2", "0.15.3", "0.15.4", "0.15.5"],
+    protocol: "fw1906",
+    native: { type: 28, order: 0 },
+  },
+  {
     id: "wled-16-ws281x-rgb-grb",
-    firmwareVersions: ["16.0.1"],
+    firmwareVersions: ["16.0.0", "16.0.1"],
     protocol: "ws281x",
     native: { type: 22, order: 0 },
   },
   {
     id: "wled-16-sk6812-rgbw-grbw",
-    firmwareVersions: ["16.0.1"],
+    firmwareVersions: ["16.0.0", "16.0.1"],
     protocol: "sk6812-rgbw",
     native: { type: 30, order: 0 },
+  },
+  {
+    id: "wled-16-fw1906-rgbcct-grb",
+    firmwareVersions: ["16.0.0", "16.0.1"],
+    protocol: "fw1906",
+    native: { type: 28, order: 0 },
   },
 ];
 
@@ -128,6 +148,58 @@ export const WLED_WS281X_NATIVE_TYPE = 22;
 
 /** TYPE_SK6812_RGBW — WLED const.h (0.14.4 / 0.15.x / master). */
 export const WLED_SK6812_RGBW_NATIVE_TYPE = 30;
+
+/** TYPE_FW1906 — WLED const.h (0.15.x / 16 / main). Not in 0.14. */
+export const WLED_FW1906_NATIVE_TYPE = 28;
+
+/**
+ * Names for WLED `TYPE_*` values (`wled00/const.h`, 0.15 / 16) so an unmapped
+ * bus is identified honestly instead of a bare number. Naming a type is not
+ * support for writing it.
+ */
+const WLED_NATIVE_TYPE_NAMES: Readonly<Record<number, string>> = {
+  18: "WS2812 white (1 ch)",
+  19: "WS2812 white (3 ch)",
+  20: "WS2812 CCT",
+  21: "WS2812 WWA",
+  22: "WS281x RGB",
+  23: "GS8608",
+  24: "WS2811 400 kHz",
+  25: "TM1829",
+  26: "UCS8903",
+  27: "APA106",
+  28: "FW1906 RGB+CCT",
+  29: "UCS8904 RGBW",
+  30: "SK6812 RGBW",
+  31: "TM1814 RGBW",
+  32: "WS2805 RGB+CCT",
+  33: "TM1914",
+  34: "SM16825 RGB+CCT",
+  40: "On/off relay",
+  41: "PWM white",
+  42: "PWM CCT",
+  43: "PWM RGB",
+  44: "PWM RGBW",
+  45: "PWM RGB+CCT",
+  46: "PWM RGB+A+CCT",
+  50: "WS2801",
+  51: "APA102",
+  52: "LPD8806",
+  53: "P9813",
+  54: "LPD6803",
+  80: "Network DDP RGB",
+  81: "Network E1.31 RGB",
+  82: "Network Art-Net RGB",
+  88: "Network DDP RGBW",
+  89: "Network Art-Net RGBW",
+};
+
+/** `WLED type 28 (FW1906 RGB+CCT)`; unnamed values stay `WLED type N`. */
+export function nativeTypeLabel(type: number | null): string | null {
+  if (type === null) return null;
+  const name = WLED_NATIVE_TYPE_NAMES[type];
+  return name ? `WLED type ${type} (${name})` : `WLED type ${type}`;
+}
 
 /**
  * Out-of-scope WLED bus kinds (analog PWM, network, HUB75). Observing one
@@ -186,10 +258,11 @@ const emptySettings = (): WledStripProvision => ({
 });
 
 /**
- * WLED `COL_ORDER_*` in `wled00/const.h` (0.14 / 0.15 / 16). RGBW types
- * append W — order 0 is GRBW on SK6812. Extra packed encodings stay numeric.
+ * WLED `COL_ORDER_*` in `wled00/const.h` (0.14 / 0.15 / 16): 0 GRB, 1 RGB,
+ * 2 BRG, 3 RBG, 4 BGR, 5 GBR. RGBW types append W — order 0 is GRBW on
+ * SK6812. Extra packed encodings stay numeric.
  */
-export const WLED_COL_ORDER_RGB = ["GRB", "RGB", "BRG", "RBG", "GBR", "BGR"] as const;
+export const WLED_COL_ORDER_RGB = ["GRB", "RGB", "BRG", "RBG", "BGR", "GBR"] as const;
 
 export function busNativeOrder(bus: Record<string, unknown>): number | null {
   return integer(bus.order);
@@ -211,7 +284,7 @@ export function colorOrderFromNative(
 /** Convert / catalog default for a mapped type. Null when the live type is unknown. */
 export function catalogColorOrder(ledType: ProvisionLedType | "unknown"): string | null {
   if (ledType === "sk6812-rgbw") return "GRBW";
-  if (ledType === "ws281x") return "GRB";
+  if (ledType === "ws281x" || ledType === "fw1906") return "GRB";
   return null;
 }
 
@@ -284,6 +357,7 @@ export function isSupportedProvisionFirmware(firmware: string | null | undefined
 export function ledTypeFromNative(type: number | null): ProvisionLedType | "unknown" {
   if (type === WLED_WS281X_NATIVE_TYPE) return "ws281x";
   if (type === WLED_SK6812_RGBW_NATIVE_TYPE) return "sk6812-rgbw";
+  if (type === WLED_FW1906_NATIVE_TYPE) return "fw1906";
   return "unknown";
 }
 
