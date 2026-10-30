@@ -66,6 +66,7 @@ See `docs/PLANE.md` for Plane coordinates, REST-only rules, state ids, and comme
 ```bash
 pnpm test
 pnpm typecheck
+pnpm lint
 pnpm dev
 ```
 
