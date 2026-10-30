@@ -222,7 +222,9 @@ export function createApp(deps: AppDeps) {
       "Safety backup failed. The requested change was not made; nothing was sent to WLED." };
   }
   const live = createLiveEngine({
-    write: deps.write,
+    // Preview and Blink belong to one Light: `udpn.nn` stops a WLED sync
+    // leader from broadcasting them to its followers.
+    write: (target, body) => deps.write(target, { ...body, udpn: { nn: true } }),
     readLive: deps.readLive,
     findLight: (id) => deps.store.findById(id),
   });
@@ -495,6 +497,8 @@ export function createApp(deps: AppDeps) {
     store: deps.store,
     live,
     write: deps.write,
+    readCfg: deps.readCfg,
+    writeCfg: deps.writeCfg,
     readPresets: deps.readPresets ?? createWledPresetsReader(),
     writePresets: deps.writePresets ?? createWledPresetsWriter(),
     refreshOne,

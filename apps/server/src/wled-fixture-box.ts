@@ -72,7 +72,12 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     def: { on: boolean; bri: number; ps: number };
     light: { tr: { dur: number } };
     hw: { led: { maxpwr: number; total: number; ins: BusIns[] } };
+    if: { sync: { port0: number; port1: number; recv: Record<string, boolean | number>; send: Record<string, boolean | number> } };
   } = {
+    // WLED defaults (cfg.cpp): broadcast off, receive group 1 with every field.
+    if: { sync: { port0: 21324, port1: 65506,
+      recv: { bri: true, col: true, fx: true, pal: true, grp: 1, seg: false, sb: false },
+      send: { en: false, dir: false, btn: false, va: false, hue: true, grp: 1, ret: 0 } } },
     id: { name: info.name },
     def: { on: true, bri: 128, ps: 0 },
     light: { tr: { dur: 7 } },
@@ -129,7 +134,15 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       def?: { on?: unknown; bri?: unknown; ps?: unknown };
       light?: { tr?: { dur?: unknown } };
       hw?: { led?: { maxpwr?: unknown; ins?: unknown } };
+      if?: { sync?: { recv?: Record<string, unknown>; send?: Record<string, unknown> } };
     };
+    for (const side of ["recv", "send"] as const) {
+      const incoming = next.if?.sync?.[side];
+      if (!incoming || typeof incoming !== "object") continue;
+      for (const [key, value] of Object.entries(incoming)) {
+        if (key in cfg.if.sync[side] && typeof value === typeof cfg.if.sync[side][key]) cfg.if.sync[side][key] = value as boolean | number;
+      }
+    }
     if (typeof next.id?.name === "string" && next.id.name.trim()) {
       const name = next.id.name.trim().slice(0, 32);
       cfg.id.name = name;

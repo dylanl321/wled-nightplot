@@ -404,3 +404,17 @@ export {
   type SyncWarning,
   type WledPresetSummary,
 } from "./sync.ts";
+export {
+  UDP_SYNC_CAPTION,
+  UDP_SYNC_GROUP_MAX,
+  UDP_SYNC_GROUP_MIN,
+  buildUdpSyncWrite,
+  groupBit,
+  groupsFromMask,
+  isUdpSyncGroup,
+  parseWledUdpSync,
+  udpSyncMatches,
+  udpSyncRole,
+  type UdpSyncRole,
+  type WledUdpSync,
+} from "./udp-sync.ts";
