@@ -42,10 +42,15 @@ export function SafeSettingsPanel({
   const [busy, setBusy] = useState<"load" | "write" | null>("load");
   const [notice, setNotice] = useState<string | null>(null);
   const [result, setResult] = useState<SafeWriteResult | null>(null);
+  const [loadedFor, setLoadedFor] = useState(lightId);
+
+  if (loadedFor !== lightId) {
+    setLoadedFor(lightId);
+    setBusy("load");
+  }
 
   useEffect(() => {
     let cancelled = false;
-    setBusy("load");
     void fetchJson<SafePayload>(`/api/lights/${lightId}/safe`)
       .then((payload) => {
         if (cancelled) return;

@@ -10,23 +10,40 @@ export function ActivityPanel({ lightId }: { lightId: string }) {
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
+  const [loadedFor, setLoadedFor] = useState(lightId);
 
-  async function load() {
+  if (loadedFor !== lightId) {
+    setLoadedFor(lightId);
     setBusy(true);
-    try {
-      const result = await fetchJson<{ entries: ActivityEntry[] }>(
-        `/api/activity?lightId=${encodeURIComponent(lightId)}`,
-      );
-      setEntries(result.entries);
-      setError(null);
-    } catch {
-      setError("Activity could not be loaded. Try again.");
-    } finally {
-      setBusy(false);
-    }
   }
 
-  useEffect(() => { void load(); }, [lightId]);
+  const [reloads, setReloads] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchJson<{ entries: ActivityEntry[] }>(
+      `/api/activity?lightId=${encodeURIComponent(lightId)}`,
+    )
+      .then((result) => {
+        if (cancelled) return;
+        setEntries(result.entries);
+        setError(null);
+      })
+      .catch(() => {
+        if (!cancelled) setError("Activity could not be loaded. Try again.");
+      })
+      .finally(() => {
+        if (!cancelled) setBusy(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [lightId, reloads]);
+
+  function load() {
+    setBusy(true);
+    setReloads((count) => count + 1);
+  }
 
   return (
     <section className="flex flex-col gap-4 rounded-[14px] border border-border bg-card p-5" aria-label="Activity">
@@ -35,7 +52,7 @@ export function ActivityPanel({ lightId }: { lightId: string }) {
           <h2 className="text-lg font-medium">Activity</h2>
           <p className="text-[13px] text-muted-foreground">Saved actions and controller readback. A match is software readback, not proof the strip lit.</p>
         </div>
-        <Button variant="outline" onClick={() => void load()} disabled={busy}>Refresh activity</Button>
+        <Button variant="outline" onClick={load} disabled={busy}>Refresh activity</Button>
       </div>
       {error ? <p role="alert" className="text-destructive">{error}</p> : null}
       {busy && entries.length === 0 ? <LedLoader label="Loading activity…" /> : null}
