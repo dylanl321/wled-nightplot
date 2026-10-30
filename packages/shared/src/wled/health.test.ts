@@ -12,7 +12,8 @@ describe("WLED health", () => {
 
   it("warns for older and unverified Strip firmware without claiming newer is too old", () => {
     expect(parseWledHealth({}, "0.13.3").compatibilityNotice).toMatch(/predates/);
-    expect(parseWledHealth({}, "0.15.2").compatibilityNotice).toMatch(/not in Nightplot/);
+    expect(parseWledHealth({}, "0.15.2").compatibilityNotice).toBeNull();
+    expect(parseWledHealth({}, "0.16.0").compatibilityNotice).toMatch(/not in Nightplot/);
     expect(parseWledHealth({}, "16.0.1").compatibilityNotice).toBeNull();
   });
 });

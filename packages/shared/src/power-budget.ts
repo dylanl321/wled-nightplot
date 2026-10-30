@@ -22,14 +22,14 @@ export function estimatePowerScenario(input: {
 }): PowerScenario | null {
   const { segments, ledCount, colours, stripKind, brightness, limitMa } = input;
   if (!Number.isInteger(ledCount) || ledCount < 0 || !Number.isInteger(brightness) || brightness < 0 || brightness > 255 ||
-    !["ws281x", "sk6812-rgbw"].includes(stripKind) || validateDeclaredRanges(segments, ledCount).length) return null;
+    !["ws281x", "sk6812-rgbw", "fw1906"].includes(stripKind) || validateDeclaredRanges(segments, ledCount).length) return null;
   const rows: SegmentPowerRow[] = [];
   for (const segment of segments) {
     const colour = colours[segment.id];
     const match = colour?.hex.match(/^#([0-9a-f]{6})$/i);
     if (!colour || !match || !Number.isInteger(colour.white) || colour.white < 0 || colour.white > 255) return null;
     const rgb = [0, 2, 4].map((offset) => Number.parseInt(match[1]!.slice(offset, offset + 2), 16));
-    const white = stripKind === "sk6812-rgbw" ? colour.white : 0;
+    const white = stripKind === "ws281x" ? 0 : colour.white;
     rows.push({ id: segment.id, label: segment.label, leds: segment.stop - segment.start,
       milliAmps: (segment.stop - segment.start) * 20 * (rgb.reduce((sum, value) => sum + value, white) / 255) * (brightness / 255) });
   }

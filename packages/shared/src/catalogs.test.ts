@@ -31,7 +31,7 @@ describe("strip catalog", () => {
     expect(strip?.implementation).toBe("registered");
     expect(strip?.bead).toBe("rgb");
     expect(strip?.channels).toEqual(["r", "g", "b"]);
-    expect(listStrips().map((entry) => entry.id)).toEqual(["ws281x", "sk6812-rgbw"]);
+    expect(listStrips().map((entry) => entry.id)).toEqual(["ws281x", "sk6812-rgbw", "fw1906"]);
   });
 
   it("registers SK6812 RGBW as a four-channel bead", () => {
@@ -42,6 +42,16 @@ describe("strip catalog", () => {
     expect(strip?.bead).toBe("rgbw");
     expect(strip?.channels).toEqual(["r", "g", "b", "w"]);
     expect(strip?.colorOrder).toBe("GRBW");
+    expect(strip?.notes).toMatch(/not Hardware Done/);
+  });
+
+  it("registers FW1906 as an RGB+CCT bead with one white value", () => {
+    const strip = getStrip("fw1906");
+    expect(strip?.implementation).toBe("registered");
+    expect(strip?.bead).toBe("rgbw");
+    expect(strip?.channels).toEqual(["r", "g", "b", "w"]);
+    expect(strip?.colorOrder).toBe("GRB");
+    expect(strip?.notes).toMatch(/native type 28/);
     expect(strip?.notes).toMatch(/not Hardware Done/);
   });
 
@@ -71,7 +81,7 @@ describe("catalog snapshot", () => {
     const snap = catalogSnapshot();
     expect(snap.slice).toBe("R6");
     expect(snap.controllers).toHaveLength(1);
-    expect(snap.strips).toHaveLength(2);
+    expect(snap.strips).toHaveLength(3);
     expect(snap.stripPresets.length).toBeGreaterThanOrEqual(3);
     expect(snap.ledProducts).toEqual([]);
     expect(snap.discovery).toHaveLength(3);

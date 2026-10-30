@@ -301,6 +301,7 @@ export type {
 export type { StripBead, StripChannel, StripDriverDescriptor } from "./strip/types.ts";
 export type { StripPreset } from "./strip/presets.ts";
 export { sk6812RgbwStrip } from "./strip/sk6812-rgbw.ts";
+export { fw1906Strip } from "./strip/fw1906.ts";
 export { ws281xStrip } from "./strip/ws281x.ts";
 export {
   knownStripKind,
@@ -317,6 +318,7 @@ export {
   PROVISION_LENGTH_MIN,
   WLED_COL_ORDER_RGB,
   WLED_COMPATIBILITY_MAPPINGS,
+  WLED_FW1906_NATIVE_TYPE,
   WLED_SK6812_RGBW_NATIVE_TYPE,
   WLED_WS281X_NATIVE_TYPE,
   baseFirmwareVersion,
@@ -332,6 +334,7 @@ export {
   isProvisionLedType,
   isSupportedProvisionFirmware,
   ledTypeFromNative,
+  nativeTypeLabel,
   parseWledProvision,
   provisionCaption,
   provisionFieldsMatch,

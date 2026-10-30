@@ -135,6 +135,41 @@ describe("headless WLED sim e2e (external process)", () => {
     20_000,
   );
 
+  it("sets up a fresh 0.15.1 controller as FW1906 and Applies a white Segment", async () => {
+    const sim = await startSim({ NIGHTPLOT_SIM_VER: "0.15.1" });
+    const { app } = appAgainstHttp();
+    const light = await enroll(app, `${sim.host}:${sim.httpPort}`);
+    const read = (await (await app.request(`/api/lights/${light.id}/provision`)).json()) as {
+      provision: { refuse: string | null; fingerprint: { writable: boolean } };
+    };
+    expect(read.provision.refuse).toBeNull();
+    expect(read.provision.fingerprint.writable).toBe(true);
+
+    const provision = await app.request(`/api/lights/${light.id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provision: { ledType: "fw1906", length: 60, gpio: 16 } }),
+    });
+    expect(provision.status).toBe(200);
+    const provisionBody = (await provision.json()) as {
+      provisionWrite: { matched: boolean };
+      provision: { settings: { ledType: string; nativeType: number; colorOrder: string } };
+    };
+    expect(provisionBody.provisionWrite.matched).toBe(true);
+    expect(provisionBody.provision.settings).toMatchObject({ ledType: "fw1906", nativeType: 28, colorOrder: "GRB" });
+
+    await declareElements(app, light.id, [{ label: "Shelf", start: 0, stop: 60 }]);
+    const apply = await app.request(`/api/lights/${light.id}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [{ label: "Shelf", start: 0, stop: 60, color: { hex: "#000000", white: 200 } }],
+      }),
+    });
+    expect(apply.status).toBe(200);
+    expect(((await apply.json()) as { apply: { matched: boolean } }).apply.matched).toBe(true);
+  }, 20_000);
+
   it("keeps Apply mismatch failed — not Hardware Done", async () => {
     const sim = await startSim();
     const { app } = appAgainstHttp();

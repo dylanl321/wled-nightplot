@@ -1,6 +1,6 @@
 "use client";
 
-import { estimatePowerScenario, type LightDetail, type SafeRead, type SegmentPowerColour } from "@nightplot/shared";
+import { estimatePowerScenario, getStrip, type LightDetail, type SafeRead, type SegmentPowerColour } from "@nightplot/shared";
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { fetchJson } from "@/lib/api";
@@ -38,7 +38,7 @@ export function PowerBudgetPanel({ detail }: { detail: LightDetail }) {
     colours: Object.fromEntries(detail.elements.map((segment) => [segment.id,
       colours[segment.id] ?? segment.color ?? { hex: "#ffffff", white: 0 }])),
   });
-  const rgbw = light.stripKind === "sk6812-rgbw";
+  const rgbw = getStrip(light.stripKind)?.bead === "rgbw";
   return <div className="space-y-4 text-[13px]">
     <p className="text-muted-foreground">Planning estimate only: saved Segment colours start this scenario; unset colours start at full RGB with zero white. You can change them here without saving or writing WLED. These are not measured amps.</p>
     <label className="flex items-center gap-3">Scenario brightness (0–255)
