@@ -334,6 +334,34 @@ describe("headless WLED sim e2e: Sync across Lights", () => {
     expect(activity.entries.filter((entry) => entry.action === "sync")).toHaveLength(4);
   }, 30_000);
 
+  it("sets up a WLED UDP sync group with one leader and a follower, and refuses two leaders", async () => {
+    const [a, b] = await Promise.all([startSim(), startSim()]);
+    const { app } = appAgainstHttp();
+    const leader = await enroll(app, `${a.host}:${a.httpPort}`);
+    const follower = await enroll(app, `${b.host}:${b.httpPort}`);
+
+    const two = await post(app, "/api/sync/udp", { group: 2, roles: { [leader.id]: "leader", [follower.id]: "leader" } });
+    expect(two.status).toBe(400);
+
+    const set = await post(app, "/api/sync/udp", { group: 2, roles: { [leader.id]: "leader", [follower.id]: "follower" } });
+    expect(set.status).toBe(200);
+    expect(set.body.rows.map((entry) => entry.status)).toEqual(["matched", "matched"]);
+    expect(set.body.rows[0]!.safetyBackupId).toBeTruthy();
+    const cfgA = (await (await fetch(`${a.baseUrl}/json/cfg`)).json()) as { if: { sync: { send: { en: boolean; dir: boolean; grp: number } } } };
+    expect(cfgA.if.sync.send).toMatchObject({ en: true, dir: true, grp: 2 });
+    const cfgB = (await (await fetch(`${b.baseUrl}/json/cfg`)).json()) as { if: { sync: { recv: { grp: number; sb: boolean } } } };
+    expect(cfgB.if.sync.recv).toMatchObject({ grp: 3, sb: false });
+
+    const listed = (await (await app.request("/api/sync/udp")).json()) as {
+      rows: { lightId: string; sendGroups: number[] | null; receiveGroups: number[] | null }[];
+    };
+    expect(listed.rows.find((entry) => entry.lightId === leader.id)).toMatchObject({ sendGroups: [2], receiveGroups: [1] });
+    expect(listed.rows.find((entry) => entry.lightId === follower.id)).toMatchObject({ sendGroups: [], receiveGroups: [1, 2] });
+
+    const off = await post(app, "/api/sync/udp", { group: 2, roles: { [follower.id]: "off" } });
+    expect(off.body.rows[0]).toMatchObject({ status: "matched" });
+  }, 30_000);
+
   it("asks before copying presets to a Light with a different length, and lists offline targets", async () => {
     const [a, b, gone] = await Promise.all([startSim(), startSim({ NIGHTPLOT_SIM_LEDS: "90" }), startSim()]);
     const { app } = appAgainstHttp();

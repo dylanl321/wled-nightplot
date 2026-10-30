@@ -20,6 +20,8 @@ export type WledStateWrite = {
   tt?: number;
   /** WLED preset select (`ps`, 1–250). Sync only; never sent with `seg`. */
   ps?: number;
+  /** WLED `udpn.nn`: apply without sending a UDP sync notification. */
+  udpn?: { nn: true };
   seg?: {
     id?: number; start: number; stop: number; col?: number[][];
     i?: (number | string)[];

@@ -1,5 +1,14 @@
 import {
   SYNC_CAPTION,
+  UDP_SYNC_CAPTION,
+  buildUdpSyncWrite,
+  groupsFromMask,
+  isSupportedProvisionFirmware,
+  isUdpSyncGroup,
+  parseWledUdpSync,
+  udpSyncMatches,
+  type UdpSyncRole,
+  type WledUdpSync,
   buildSyncLookWrite,
   isPresetId,
   parseWledPresets,
@@ -20,6 +29,7 @@ import {
 import type { Hono } from "hono";
 import type { createLiveEngine } from "./live/engine.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
+import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
 import type { WriteStateFn } from "./wled/live.ts";
 import type { ReadWledPresets, WriteWledPresets } from "./wled/native-backup.ts";
 
@@ -27,6 +37,8 @@ export type SyncRouteDeps = {
   store: FileLightsStore;
   live: ReturnType<typeof createLiveEngine>;
   write: WriteStateFn;
+  readCfg: ReadCfgFn;
+  writeCfg: WriteCfgFn;
   readPresets: ReadWledPresets;
   writePresets: WriteWledPresets;
   refreshOne: (stored: Light) => Promise<{ light: Light; live: WledSnapshot | null }>;
@@ -246,5 +258,68 @@ export function registerSyncRoutes(app: Hono, deps: SyncRouteDeps) {
       deps.record(light, "sync", readback(done.status), `Turn on preset ${presetId}: ${done.detail}`);
     }
     return c.json(finish("preset", null, rows));
+  });
+
+  app.get("/api/sync/udp", async (c) => {
+    const rows = [];
+    for (const light of deps.store.load()) {
+      const read = parseWledUdpSync(await deps.readCfg(target(light)));
+      rows.push({ lightId: light.id, lightName: light.name, read,
+        sendGroups: read ? (read.send ? groupsFromMask(read.sendGroups) : []) : null,
+        receiveGroups: read ? groupsFromMask(read.receiveGroups) : null });
+    }
+    return c.json({ rows, caption: UDP_SYNC_CAPTION });
+  });
+
+  app.post("/api/sync/udp", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { group?: unknown; roles?: unknown } | null;
+    const group = body?.group;
+    if (!isUdpSyncGroup(group)) return c.json({ error: "group-required", message: "Choose a WLED sync group 1–8. Nothing was sent." }, 400);
+    const roles = body?.roles && typeof body.roles === "object" && !Array.isArray(body.roles)
+      ? Object.entries(body.roles as Record<string, unknown>) : [];
+    if (!roles.length || roles.some(([, role]) => role !== "leader" && role !== "follower" && role !== "off"))
+      return c.json({ error: "roles-required", message: "Give each chosen Light a role: leader, follower or off. Nothing was sent." }, 400);
+    if (roles.filter(([, role]) => role === "leader").length > 1)
+      return c.json({ error: "one-leader", message: "Choose one leader per group, so followers do not fight. Nothing was sent." }, 400);
+
+    const { online, rows } = await prepare(roles.map(([id]) => id));
+    const reads = new Map<string, WledUdpSync>();
+    for (const { light } of online) {
+      const read = parseWledUdpSync(await deps.readCfg(target(light)));
+      if (read) reads.set(light.id, read);
+    }
+    const leaderPort = online.map(({ light }) => light.id)
+      .filter((id) => (body!.roles as Record<string, UdpSyncRole>)[id] === "leader")
+      .map((id) => reads.get(id)?.port).find((port) => port !== undefined) ?? null;
+
+    for (const { light, snap } of online) {
+      const role = (body!.roles as Record<string, UdpSyncRole>)[light.id]!;
+      const result = await withLight(light, async (): Promise<SyncRow> => {
+        if (!isSupportedProvisionFirmware(snap.firmware))
+          return row(light, "refused", `${snap.firmware} is not in Nightplot’s verified firmware table. Nothing was sent.`);
+        const current = reads.get(light.id);
+        if (!current) return row(light, "refused", "This firmware did not report WLED sync settings in /json/cfg. Nothing was sent.");
+        const planned = buildUdpSyncWrite(current, role, group);
+        let safety: BackupDocument;
+        try { safety = await deps.captureDevice("pre-sync", light, snap); }
+        catch (error) { return row(light, "failed", `Safety backup failed: ${message(error)} Nothing was sent.`); }
+        if (!(await deps.writeCfg(target(light), planned.body)))
+          return row(light, "failed", "WLED did not accept the sync settings.", safety.id);
+        const matched = udpSyncMatches(planned.expected, parseWledUdpSync(await deps.readCfg(target(light))));
+        const portNote = role === "follower" && leaderPort !== null && current.port !== null && current.port !== leaderPort
+          ? ` This Light listens on port ${current.port}; the leader sends on ${leaderPort}, so it will not hear it.` : "";
+        const roleCopy = role === "leader" ? `sends group ${group}` : role === "follower" ? `follows group ${group}` : `is out of group ${group}`;
+        return matched === true ? row(light, "matched", `Reports that it ${roleCopy}.${portNote}`, safety.id)
+          : matched === false ? row(light, "mismatch", "Wrote, but /json/cfg reads back different sync settings. Not treating as a match.", safety.id)
+            : row(light, "unknown", "Wrote, but /json/cfg did not reread. Not treating as a match.", safety.id);
+      });
+      const done = result === "busy" ? row(light, "refused", BUSY) : result;
+      rows.push(done);
+      deps.record(light, "sync", readback(done.status), `WLED sync group ${group} (${role}): ${done.detail}`);
+    }
+    const matched = rows.filter((entry) => entry.status === "matched").length;
+    return c.json({ kind: "udp", group, rows,
+      message: `${matched} of ${rows.length} report the WLED sync role sent.${matched === rows.length ? "" : " Check the Lights listed below."}`,
+      caption: UDP_SYNC_CAPTION });
   });
 }

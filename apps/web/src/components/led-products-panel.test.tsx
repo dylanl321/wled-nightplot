@@ -169,7 +169,7 @@ describe("LED products catalog", () => {
       },
     });
     expect((patches[0]?.body as { product: { id?: string } }).product.id).toBeUndefined();
-    expect(screen.getByText("Porch WS281x revised")).toBeTruthy();
+    expect(await screen.findByText("Porch WS281x revised")).toBeTruthy();
   });
 
   it("asks for section length on COB and keeps voltage under Advanced", () => {

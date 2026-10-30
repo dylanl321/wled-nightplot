@@ -3,6 +3,7 @@
 import type { LightView, SyncResult, SyncWarning, WledPresetSummary } from "@nightplot/shared";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { UdpSyncSection } from "@/components/udp-sync-section";
 import { fetchJson, postJson } from "@/lib/api";
 
 type Action = "presets" | "look";
@@ -156,5 +157,6 @@ export function SyncPanel({ lights }: { lights: LightView[] }) {
       ))}</ul>
       <p className="text-[12px] text-quiet">{result.caption}</p>
     </div> : null}
+    <UdpSyncSection lights={lights} />
   </section>;
 }

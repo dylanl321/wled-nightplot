@@ -58,7 +58,7 @@ it("recovers a stranded fixture Preview through the API and preserves saved Segm
       frozenPreview: false, elements: saved, session: null,
       recovery: { cleared: true, wrote: true, restored: false },
     });
-    expect(writes).toEqual([{ seg: [{ id: 0, start: 0, stop: 60, frz: false }] }]);
+    expect(writes).toEqual([{ seg: [{ id: 0, start: 0, stop: 60, frz: false }], udpn: { nn: true } }]);
     expect(store.elementsFor(id)).toEqual(saved);
     const preview = await app.request(`/api/lights/${id}/preview`, {
       method: "POST", headers: { "Content-Type": "application/json" },
