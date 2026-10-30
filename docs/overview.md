@@ -12,6 +12,7 @@ It is early software. There is no authentication and no TLS. A fixture report is
 - **Apply** writes the controller and re-reads. Success only on match. Unknown colour refuses — Apply does not invent `#ffa000`. Unknown reread segments are not treated as empty and are not a match. Write-failed and reread-failed do not invent an empty `apply.read` — unread stays `null`, not `[]`. Unknown pre-apply segment count does not invent 0 leftover-segment clears — Apply refuses until a count is known. The failure panel uses that reread message — unknown is not **Apply didn’t stick**. Unread / unknown-read captions do not say the controller reported ranges — caption follows the read, not the source. A known empty reread says **reported no ranges**, not **these ranges**. Its Hardware Done suffix is **until you look at the strip**, not **until you see them**. A known non-empty reread still does. **Use controller’s** is only offered when that reread named ranges.
 - **Blink** is an identify pulse.
 - **All Off** cancels live sessions without restoring, then powers off enrolled Lights. Probes up to four Lights at a time; each Light is listed by what it reported. Unknown stays unknown.
+- An **Effect** is a portable colour function of normalized position and time. The same source samples any node count without a rewrite. The shared evaluator is a software frame — not Preview, not Apply, and not a lit strip. See [effects-research-and-plan.md](effects-research-and-plan.md).
 
 ## Flow
 
@@ -60,6 +61,7 @@ Paths and types: [architecture.md](architecture.md#shared-catalog-vs-this-light)
 | [install.md](install.md) | pnpm, ports, fixture, sim / e2e |
 | [deploy.md](deploy.md) | Docker / compose / GHCR on a LAN |
 | [architecture.md](architecture.md) | Tree, seams, shared catalog vs this Light |
+| [effects-research-and-plan.md](effects-research-and-plan.md) | Portable Effect contract, restricted expressions, evaluator. Software sample only — not Preview, not Apply |
 | [ui/README.md](ui/README.md) | v2 prototype |
 | [PLANE.md](PLANE.md) | CONFIG tickets |
 | [../CONSTITUTION.md](../CONSTITUTION.md) | Non-negotiables |
