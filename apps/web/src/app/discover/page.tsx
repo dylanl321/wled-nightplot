@@ -35,9 +35,7 @@ export default async function DiscoverPage() {
             Add a Light
           </h1>
           <p className="text-muted-foreground">
-            Looking on this link. Find starts on its own and retries about once
-            a minute while Nightplot is open. Find Lights runs it again. Type
-            host:port if find has no port or the list comes back empty.
+            Controllers on this network show up here. Type an address if yours does not.
           </p>
         </div>
         <DiscoverPanel

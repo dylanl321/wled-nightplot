@@ -31,10 +31,10 @@ function Shape({ kind }: { kind: PropKind }) {
     case "wireframe":
       return (
         <g fill="none" stroke="currentColor" strokeWidth="2">
-          <rect x="8" y="10" width="20" height="28" />
-          <rect x="30" y="10" width="20" height="28" />
-          <rect x="52" y="10" width="20" height="28" />
-          <path d="M8 10 L28 38 M8 38 L28 10" />
+          <rect x="8" y="10" width="28" height="28" />
+          <rect x="36" y="10" width="28" height="28" />
+          <path d="M8 10 L36 38" />
+          <path d="M36 10 L64 38" />
         </g>
       );
     case "custom":

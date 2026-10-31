@@ -60,7 +60,7 @@ export function DiscoverPanel({
     }
     setRows(res.candidates);
     if (!res.candidates.some((row) => row.status === "found")) {
-      setNotice("Nothing new answered. Type an address if mDNS is hidden.");
+      setNotice("Nothing new answered. Type an address.");
     }
   }
 
@@ -169,14 +169,14 @@ export function DiscoverPanel({
       ) : null}
       <div className="flex flex-col gap-4 rounded-xl border border-[#3a4150] bg-[#12141a] p-[18px]">
         <p className="text-[15px] leading-6 text-[#c9c3b8]">
-          Find is already looking on this link, and it retries about once a
-          minute while Nightplot is open. Find Lights runs that scan again.
-          It probes up to four collected hosts at a time. A dead probe stops
-          in 3 s and does not block the rest of the scan. Add fails closed — a
-          snapshot that can’t be read saves nothing. Public addresses are
-          refused before a probe. Find only offers Add when the box advertised
-          a port (SSDP LOCATION or mDNS SRV). No port → type host:port.
+          Looking for controllers on this network. If none show up, type the address below.
         </p>
+        <details className="text-[14px] text-muted-foreground">
+          <summary className="flex min-h-11 cursor-pointer items-center">Details</summary>
+          <p className="pb-2 leading-6">
+            Find retries about once a minute while this page is open. It probes up to four collected hosts at a time. A dead probe stops in 3 s and does not block the rest of the scan. A controller is offered only when it advertised a port. Type host:port when it did not.
+          </p>
+        </details>
         <div className="flex flex-wrap items-center gap-2.5">
           <Button
             type="button"
@@ -321,9 +321,7 @@ export function DiscoverPanel({
           {busy === "add" ? "Adding…" : "Check and add"}
         </Button>
         <p className="text-xs leading-5 text-quiet">
-          Some networks hide mDNS. Typed address is the escape hatch — host
-          alone means :80; non-80 boxes need host:port. The local fixture is
-          127.0.0.1:48210.
+          Type the address the controller is using. A host with no port means port 80.
         </p>
       </div>
 

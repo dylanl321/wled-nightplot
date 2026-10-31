@@ -17,7 +17,7 @@ export default async function LooksPage() {
   const [lights, looks] = result.map((item) => (item as PromiseFulfilledResult<unknown>).value) as [LightsPayload, LooksPayload];
   return (
     <AppShell lights={lights.lights} lightCount={lights.lights.length} nav="looks" sessions={lights.sessions}>
-      <LooksPanel lights={lights.lights} initial={looks} />
+      <LooksPanel lights={lights.lights} initial={looks} firstRun={looks.yard.props.length === 0} />
     </AppShell>
   );
 }

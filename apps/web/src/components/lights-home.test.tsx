@@ -179,7 +179,7 @@ describe("LightsHome cached beads", () => {
       />,
     );
 
-    expect(screen.getByText(/segments unknown/i)).toBeTruthy();
+    expect(screen.getByText(/not read yet/i)).toBeTruthy();
     expect(screen.queryByText(/0 segments/)).toBeNull();
   });
 

@@ -126,12 +126,14 @@ export type Prop = {
 export type PropIndexRange = {
   start: number;
   stop: number;
+  /** Which string these lights belong to. Absent means the first string. */
+  stringId?: string;
 };
 
 export type PropSection = {
   id: string;
   name: string;
-  /** Edge ids on `layout.run`. Ranges move when those edges' light counts change. */
+  /** Edge ids on any string. Ranges move when those edges' light counts change. */
   edgeIds: string[];
   pinnedRanges: PropIndexRange[];
   /** Preview colour stored on the prop. Looks do not read this yet. */
@@ -148,6 +150,8 @@ export type PropSegmentDraft = {
   start: number;
   stop: number;
   outputId?: string;
+  /** Section colour. Absent on older plans that used the palette. */
+  color?: string;
 };
 
 export function isPropKind(value: unknown): value is PropKind {
@@ -301,6 +305,7 @@ export function isProp(value: unknown): value is Prop {
 export function isPropIndexRange(value: unknown): value is PropIndexRange {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const row = value as Partial<PropIndexRange>;
+  if (row.stringId !== undefined && (typeof row.stringId !== "string" || row.stringId.length === 0)) return false;
   return Number.isInteger(row.start) && Number.isInteger(row.stop) &&
     (row.start ?? -1) >= 0 && (row.stop ?? 0) > (row.start ?? 0);
 }

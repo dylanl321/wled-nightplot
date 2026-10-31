@@ -61,10 +61,8 @@ export function LightsHome({
         <div className="flex flex-col gap-2.5">
           <h2 className="text-2xl font-semibold tracking-[-0.01em]">No Lights yet</h2>
           <p className="max-w-prose text-[15px] leading-6 text-[#c9c3b8]">
-            Nightplot finds WLED controllers on your home network. Nothing changes
-            on any strip until you add one. A Light is one controller and may
-            have several outputs. Segments — inclusive–exclusive ranges, gaps
-            allowed — appear after that.
+            Nightplot finds controllers on your home network. Nothing changes
+            on a strip until you add one.
           </p>
         </div>
         <div className="flex flex-col gap-2.5 sm:flex-row">
@@ -103,11 +101,6 @@ function LightsRack({ lights, tray }: { lights: LightView[]; tray: DiscoverRow[]
           <Link href="/discover">Add a Light</Link>
         </Button>
       </div>
-      <FleetSetupBar
-        selectedIds={selected}
-        onSelectAll={() => setSelected(lights.map((light) => light.id))}
-        onClear={() => setSelected([])}
-      />
       {lights.map((light) => (
         <LightCard
           key={light.id}
@@ -116,6 +109,16 @@ function LightsRack({ lights, tray }: { lights: LightView[]; tray: DiscoverRow[]
           onToggle={() => toggle(light.id)}
         />
       ))}
+      <details className="rounded-xl border border-border p-4">
+        <summary className="flex min-h-11 cursor-pointer items-center text-[16px]">Set up outputs</summary>
+        <div className="pt-3">
+          <FleetSetupBar
+            selectedIds={selected}
+            onSelectAll={() => setSelected(lights.map((light) => light.id))}
+            onClear={() => setSelected([])}
+          />
+        </div>
+      </details>
       <FoundBanner rows={tray} />
     </div>
   );
@@ -256,7 +259,7 @@ function CardSync({ light, drifted }: { light: LightView; drifted: number }) {
     );
   }
   if (light.segmentCount == null) {
-    return <span className="text-muted-foreground">Segments unknown</span>;
+    return <span className="text-muted-foreground">Not read yet</span>;
   }
   if (light.segmentCount === 0) {
     return <span className="text-muted-foreground">0 segments</span>;
@@ -463,7 +466,7 @@ function FleetSetupBar({
               setOutputTarget(saved?.outputIndex == null ? "all" : saved.outputIndex);
             }}
           >
-            <option value="">Inline only</option>
+            <option value="">This controller only</option>
             {profiles.map((profile) => (
               <option key={profile.id} value={profile.id}>
                 {profile.name}

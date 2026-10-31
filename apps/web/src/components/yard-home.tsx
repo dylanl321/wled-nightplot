@@ -1,4 +1,5 @@
 import {
+  layoutStrings,
   propAttachmentLabel,
   yardSetupSteps,
   type Light,
@@ -60,13 +61,17 @@ export function YardHome({
           </li>
         ))}
       </ol>
-      {next ? (
+      {next && next.id !== "design" ? (
         <Button asChild size="lg" className="min-h-12 w-full text-base">
-          <Link href={next.id === "design" ? "/props/new" : stepHref(next.id, firstLoose?.id)}>{nextAction(next.id)}</Link>
+          <Link href={stepHref(next.id, firstLoose?.id)}>{nextAction(next.id)}</Link>
         </Button>
-      ) : (
-        <p className="text-[15px] text-muted-foreground">The checklist is done. This is not Hardware Done until you look at the yard.</p>
-      )}
+      ) : null}
+      <Button asChild size="lg" variant={next?.id === "design" ? "default" : "outline"} className="min-h-12 w-full text-base">
+        <Link href="/props/new">New prop</Link>
+      </Button>
+      {!next ? (
+        <p className="text-[15px] text-muted-foreground">The checklist is done. Look at the lights outside to be sure.</p>
+      ) : null}
       <section className="flex flex-col gap-3" aria-label="Props">
         <h2 className="text-[20px] font-semibold">Props</h2>
         {props.length === 0 ? (
@@ -82,7 +87,7 @@ export function YardHome({
               const count = prop.design?.ledCount;
               return (
                 <li key={prop.id} className="flex gap-3 rounded-[14px] border border-border bg-card p-3">
-                  <PropShapeArt kind={prop.kind} />
+                  <SectionSketch prop={prop} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[16px] font-medium">{prop.label}</p>
                     <p className="text-[13px] text-muted-foreground">{shapeTitle(prop.kind)}</p>
@@ -96,12 +101,12 @@ export function YardHome({
                           ? "Controller missing"
                           : propAttachmentLabel(attachment, light.name, output?.index ?? null)}
                     </p>
-                    <span className="mt-2 flex gap-4">
-                      <Link href={`/props/${prop.id}/edit`} className="inline-flex min-h-11 items-center text-[15px] text-primary">
+                    <span className="mt-3 flex gap-2">
+                      <Link href={`/props/${prop.id}/edit`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg border border-border px-3 text-[15px]">
                         Edit
                       </Link>
                       {!attachment ? (
-                        <Link href={`/props/${prop.id}/attach`} className="inline-flex min-h-11 items-center text-[15px] text-primary">
+                        <Link href={`/props/${prop.id}/attach`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg border border-primary px-3 text-[15px] text-primary">
                           Attach
                         </Link>
                       ) : null}
@@ -114,6 +119,38 @@ export function YardHome({
         )}
       </section>
     </div>
+  );
+}
+
+function SectionSketch({ prop }: { prop: Prop }) {
+  const layout = prop.layout;
+  if (!layout || layout.corners.length === 0) return <PropShapeArt kind={prop.kind} />;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const corner of layout.corners) {
+    minX = Math.min(minX, corner.x);
+    minY = Math.min(minY, corner.y);
+    maxX = Math.max(maxX, corner.x);
+    maxY = Math.max(maxY, corner.y);
+  }
+  const span = Math.max(maxX - minX, maxY - minY, layout.pitchM);
+  const colourOf = new Map<string, string>();
+  for (const section of prop.sections ?? []) {
+    for (const id of section.edgeIds) {
+      if (!colourOf.has(id) && section.color) colourOf.set(id, section.color);
+    }
+  }
+  return (
+    <svg viewBox={`${minX - span * 0.08} ${-(maxY + span * 0.08)} ${maxX - minX + span * 0.16} ${maxY - minY + span * 0.16}`} className="h-16 w-16 shrink-0" aria-hidden>
+      {layoutStrings(layout).flatMap((string) => string.run).map((edge) => {
+        const from = layout.corners.find((corner) => corner.id === edge.from);
+        const to = layout.corners.find((corner) => corner.id === edge.to);
+        if (!from || !to || edge.kind === "wire") return null;
+        return <line key={edge.id} x1={from.x} y1={-from.y} x2={to.x} y2={-to.y} stroke={colourOf.get(edge.id) ?? "#d4a574"} strokeWidth={span * 0.06} strokeLinecap="round" />;
+      })}
+    </svg>
   );
 }
 

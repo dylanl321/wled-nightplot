@@ -12,6 +12,7 @@ import {
   type YardCompareStatus,
   type YardUndoToken,
 } from "@nightplot/shared";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -171,6 +172,18 @@ export function YardPanel({
 
   const drifted = check?.rows.filter((row) => row.canFix) ?? [];
   const disabled = Boolean(busy);
+
+  if (lights.length === 0) {
+    return (
+      <section className="flex flex-1 flex-col gap-4 px-5 py-8">
+        <h1 className="text-[26px] font-semibold">Yard</h1>
+        <p className="text-[15px] leading-6 text-muted-foreground">Connect a controller first. Then this page compares what you saved with what the controller reports.</p>
+        <Button asChild size="lg" className="min-h-12">
+          <Link href="/discover">Connect controllers</Link>
+        </Button>
+      </section>
+    );
+  }
 
   return (
     <section className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8">

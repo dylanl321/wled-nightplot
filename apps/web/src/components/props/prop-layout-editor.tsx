@@ -1,20 +1,22 @@
 "use client";
 
 import {
-  addCorner,
-  closeLoop,
+  addStringAt,
+  continueToCorner,
+  continueToPoint,
   countLayout,
   edgeLengthM,
   gapLabel,
   gridSizeM,
   idleGesture,
   isClosed,
+  ensureStrings,
+  layoutStrings,
   lengthLabel,
   moveCorner,
   reduceGesture,
   setEdgeLength,
   snapPoint,
-  startCorner,
   type GestureHit,
   type GestureMode,
   type GestureState,
@@ -55,6 +57,9 @@ export function PropLayoutEditor({
   const [selected, setSelected] = useState<string | null>(null);
   const [ask, setAsk] = useState(false);
   const [asked, setAsked] = useState(false);
+  const [activeString, setActiveString] = useState(layoutStrings(initial)[0]?.id ?? "s1");
+  const [dark, setDark] = useState(false);
+  const [placing, setPlacing] = useState(false);
   const [gap, setGap] = useState<string | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [magnifier, setMagnifier] = useState<{ x: number; y: number; wx: number; wy: number } | null>(null);
@@ -64,12 +69,18 @@ export function PropLayoutEditor({
   const viewRef = useRef(view);
   const snapRef = useRef(snap);
   const askedRef = useRef(asked);
+  const activeRef = useRef(activeString);
+  const darkRef = useRef(dark);
+  const placingRef = useRef(placing);
   const nudgeRef = useRef<(key: string) => void>(() => {});
   const fitRef = useRef<() => void>(() => {});
   layoutRef.current = layout;
   viewRef.current = view;
   snapRef.current = snap;
   askedRef.current = asked;
+  activeRef.current = activeString;
+  darkRef.current = dark;
+  placingRef.current = placing;
 
   useEffect(() => {
     const node = frame.current;
@@ -210,10 +221,16 @@ export function PropLayoutEditor({
     for (const effect of result.effects) {
       if (effect.type === "commit") dropCorner(effect.x, effect.y, event.altKey, event.shiftKey);
       if (effect.type === "commit-drag") {
-        const start = startCorner(layoutRef.current);
         setSelected(effect.cornerId);
-        if (effect.tap && effect.cornerId === start.id && gesture.current.mode === "trace" && !isClosed(layoutRef.current) && layoutRef.current.run.length > 0) {
-          commit(closeLoop(layoutRef.current));
+        if (effect.tap && gesture.current.mode === "trace") {
+          if (placingRef.current) {
+            const next = addStringAt(layoutRef.current, 0, 0, effect.cornerId);
+            setActiveString(layoutStrings(next).at(-1)?.id ?? activeRef.current);
+            setPlacing(false);
+            commit(next);
+          } else {
+            commit(continueToCorner(layoutRef.current, activeRef.current, effect.cornerId, darkRef.current ? "wire" : "lit"));
+          }
         } else if (!effect.tap) {
           const snapped = snappedPoint(effect.x, effect.y, effect.cornerId, event.altKey, event.shiftKey);
           commit(moveCorner(layoutRef.current, effect.cornerId, snapped.x, snapped.y));
@@ -239,9 +256,16 @@ export function PropLayoutEditor({
 
   function dropCorner(x: number, y: number, alt: boolean, shift: boolean) {
     const snapped = snappedPoint(x, y, undefined, alt, shift);
-    const next = addCorner(layoutRef.current, snapped.x, snapped.y);
-    const edge = next.run[next.run.length - 1];
-    if (edge && edgeLengthM(next, edge) < next.pitchM && !askedRef.current) {
+    if (placingRef.current) {
+      const next = addStringAt(layoutRef.current, snapped.x, snapped.y);
+      setActiveString(layoutStrings(next).at(-1)?.id ?? activeRef.current);
+      setPlacing(false);
+      commit(next);
+      return;
+    }
+    const next = continueToPoint(layoutRef.current, activeRef.current, snapped.x, snapped.y, darkRef.current ? "wire" : "lit");
+    const edge = layoutStrings(next).flatMap((string) => string.run).at(-1);
+    if (edge && edge.kind === "lit" && edgeLengthM(next, edge) < next.pitchM && !askedRef.current) {
       setAsk(true);
       setAsked(true);
     }
@@ -298,7 +322,7 @@ export function PropLayoutEditor({
   const short = spare != null && spare < 0;
 
   const totalText = stringLights == null
-    ? `${counted.total} lights · string length unknown`
+    ? `${counted.total} lights`
     : `${counted.total} lights · string has ${stringLights} · ${short ? `${Math.abs(spare ?? 0)} short` : `${spare} spare`}`;
 
   return (
@@ -308,7 +332,8 @@ export function PropLayoutEditor({
         <button type="button" className="min-h-11 shrink-0 px-3 text-[16px]" onClick={onBack}>Back</button>
         <h1 className="min-w-0 flex-1 truncate text-[17px] font-medium">{name}</h1>
       </header>
-      <p className={`shrink-0 bg-background px-4 pb-2 text-[15px] ${short ? "text-amber-200" : "text-foreground"}`}>{totalText}</p>
+      <p className={`shrink-0 bg-background px-4 text-[15px] ${short ? "text-amber-200" : "text-foreground"}`}>{totalText}</p>
+      <p className="shrink-0 bg-background px-4 pb-2 text-[14px] leading-5 text-muted-foreground">{editorHint(mode, dark, placing)}</p>
       {gap ? <p className="bg-background px-4 text-[14px] text-red-400">{gap}</p> : null}
       <div ref={frame} className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-background" style={{ touchAction: "none" }}>
         <svg
@@ -323,7 +348,7 @@ export function PropLayoutEditor({
         >
           <Grid layout={drawing} view={view} width={size.w} height={size.h} />
           {guide ? <Guide view={view} guide={guide} anchor={anchorOf(drawing, drag?.id)} /> : null}
-          {drawing.run.map((edge) => {
+          {layoutStrings(drawing).flatMap((string) => string.run.map((edge, index) => ({ edge, order: index + 1 }))).map(({ edge, order }) => {
             const from = corners.find((corner) => corner.id === edge.from);
             const to = corners.find((corner) => corner.id === edge.to);
             if (!from || !to) return null;
@@ -332,7 +357,10 @@ export function PropLayoutEditor({
             const row = counted.edges.find((item) => item.id === edge.id);
             const label = lengthLabel(edgeLengthM(drawing, edge), layout.units);
             const mid = edgeLabelPoint(a, b);
-            const caption = `${label.whole}${zoomed && label.extra ? ` ${label.extra}` : ""} · ${row?.lights ?? 0}`;
+            const pixelLen = Math.hypot(b.x - a.x, b.y - a.y);
+            const caption = pixelLen < 80
+              ? String(order)
+              : `${order} · ${label.whole}${zoomed && label.extra ? ` ${label.extra}` : ""} · ${row?.lights ?? 0}`;
             return (
               <g key={edge.id}>
                 <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={edge.kind === "wire" ? "#8a8478" : "#d4a574"} strokeWidth={edge.kind === "wire" ? 2 : 3} strokeDasharray={edge.kind === "wire" ? "6 4" : undefined} />
@@ -360,7 +388,7 @@ export function PropLayoutEditor({
           })}
           {preview ? <CornerDot view={view} x={preview.x} y={preview.y} index={corners.length + 1} ghost /> : null}
           {corners.map((corner, index) => (
-            <CornerDot key={corner.id} view={view} x={corner.x} y={corner.y} index={index + 1} start={corner.id === startCorner(layout).id} />
+            <CornerDot key={corner.id} view={view} x={corner.x} y={corner.y} index={index + 1} start={layoutStrings(layout).some((string) => string.startId === corner.id)} />
           ))}
         </svg>
         {magnifier ? <Magnifier magnifier={magnifier} layout={drawing} /> : null}
@@ -370,12 +398,19 @@ export function PropLayoutEditor({
         </div>
       </div>
       </div>
-      <div className="flex gap-2 border-t border-border bg-background p-2 landscape:w-16 landscape:flex-col landscape:border-t-0 landscape:border-l">
+      <div className="flex gap-2 border-t border-border bg-background p-2">
         <DockButton onClick={undo} disabled={past.length === 0}>Undo</DockButton>
         <DockButton onClick={redo} disabled={future.length === 0}>Redo</DockButton>
         <DockButton onClick={() => setSnap((value) => !value)} pressed={snap}>Snap</DockButton>
         <DockButton onClick={fit}>Fit</DockButton>
-        <DockButton onClick={() => onDone(layout)}>{doneLabel}</DockButton>
+      </div>
+      <div className="flex gap-2 bg-background px-2 pb-2">
+        <DockButton onClick={() => { setDark((value) => !value); setPlacing(false); }} pressed={dark}>Mark dark</DockButton>
+        <DockButton onClick={() => { setPlacing((value) => !value); setMode("trace"); }} pressed={placing}>Add another string</DockButton>
+      </div>
+      <div className="flex gap-2 border-t border-border bg-background px-3 py-3">
+        <Button type="button" variant="outline" className="min-h-12 flex-1 text-base" onClick={onBack}>Back</Button>
+        <Button type="button" className="min-h-12 flex-1 text-base" onClick={() => onDone(ensureStrings(layout))}>{doneLabel}</Button>
       </div>
       {toast ? (
         <div className="absolute bottom-20 left-3 right-3 flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 text-[14px] landscape:bottom-3 landscape:right-20">
@@ -406,6 +441,13 @@ export function PropLayoutEditor({
   }
 }
 
+function editorHint(mode: GestureMode, dark: boolean, placing: boolean): string {
+  if (placing) return "Tap where the new string's wire comes in.";
+  if (dark) return "The next run is dark: the wire jumps and no lights are on it.";
+  if (mode === "edit") return "Drag a corner to move it. Snap keeps it on the grid. Fit shows the whole drawing.";
+  return "Continue from where the wire comes in. Tap a corner to run there, or empty space for a new point.";
+}
+
 function ModeButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: string }) {
   return (
     <button type="button" onClick={onClick} className={`min-h-11 rounded-lg border px-3 text-[15px] ${active ? "border-primary bg-card" : "border-border"}`} aria-pressed={active}>
@@ -428,7 +470,7 @@ function CornerDot({ view, x, y, index, start, ghost }: { view: View; x: number;
     <g>
       <circle cx={screen.x} cy={screen.y} r={22} fill="transparent" />
       <circle cx={screen.x} cy={screen.y} r={6} fill={ghost ? "none" : start ? "#7ee0d0" : "#d4a574"} stroke="#d4a574" />
-      <text x={start ? screen.x : screen.x + 10} y={start ? screen.y + 22 : screen.y - 10} textAnchor={start ? "middle" : "start"} fontSize={12} className="fill-foreground">{start ? "Controller end" : index}</text>
+      <text x={screen.x + 12} y={start ? screen.y + 4 : screen.y - 10} textAnchor="start" fontSize={12} className="fill-foreground">{start ? "Wire in" : index}</text>
     </g>
   );
 }

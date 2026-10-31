@@ -1,7 +1,9 @@
 /**
- * One prop model: corners in metres and edges in wiring order.
- * Templates, Trace, and (later) the net all write this. Light counts are
- * derived from the run and the pitch. They are not stored.
+ * A prop is one or more strings. Each string is an ordered polyline of runs.
+ * Run order is the physical pixel order on that string. Two runs may share
+ * the same corners (a backtrack). A wire run is a dark jump: no pixels.
+ * Templates only prefill a starting path. `run` mirrors the first string so
+ * older readers still see it.
  */
 
 export const LAYOUT_PITCH_M = 0.1;
@@ -36,6 +38,14 @@ export type LayoutFace = {
   cornerIds: string[];
 };
 
+/** One physical string. Indexes on this string start at 0, in `run` order. */
+export type LayoutString = {
+  id: string;
+  /** Corner where this string's wire comes in. */
+  startId: string;
+  run: LayoutEdge[];
+};
+
 export type PropLayout = {
   source: LayoutSource;
   template?: { type: string; params: Record<string, number> };
@@ -46,8 +56,13 @@ export type PropLayout = {
   /** Metres along the run before the first light. Default 0. */
   startOffsetM: number;
   corners: LayoutCorner[];
-  /** Wiring order. */
+  /** First string, kept in step with `strings[0]` when strings are present. */
   run: LayoutEdge[];
+  /**
+   * Every string on the prop. Absent on older drawings: that drawing is one
+   * string whose run is `run`.
+   */
+  strings?: LayoutString[];
   faces?: LayoutFace[];
   /** Known lights on the real string, when one has been measured. */
   stringLights?: number;
@@ -80,6 +95,15 @@ export function isPropLayout(value: unknown): value is PropLayout {
   const ids = new Set(row.corners.map((corner) => corner.id));
   if (ids.size !== row.corners.length) return false;
   if (!row.run.every((edge) => isEdge(edge, ids))) return false;
+  if (row.strings !== undefined) {
+    if (!Array.isArray(row.strings)) return false;
+    for (const string of row.strings) {
+      if (!string || typeof string !== "object") return false;
+      const item = string as Partial<LayoutString>;
+      if (typeof item.id !== "string" || typeof item.startId !== "string" || !ids.has(item.startId)) return false;
+      if (!Array.isArray(item.run) || !item.run.every((edge) => isEdge(edge, ids))) return false;
+    }
+  }
   if (row.stringLights !== undefined && (!Number.isInteger(row.stringLights) || row.stringLights < 0)) return false;
   return true;
 }
@@ -131,75 +155,98 @@ export function edgeLengthM(layout: PropLayout, edge: LayoutEdge): number {
 }
 
 /**
- * Lights sit every pitch along a lit span, starting at the controller end.
- * A light exactly on a corner belongs to the next edge.
- * The span's light count is floor(length / pitch) + 1.
- * A wire has no lights and the next lit span starts over.
- * Hidden lights are consumed and not drawn.
+ * Each lit or hidden edge is counted on its own: round(length ÷ pitch).
+ * Equal lengths round the same way, so they get the same light count.
+ * A corner is not a second light. A closed loop does not add one for the start.
+ * A wire has no lights and does not join the edges beside it.
+ * Hidden edges consume that count and are not drawn.
  */
 export function countLayout(layout: PropLayout): LayoutCount {
-  const pitch = Math.round(layout.pitchM * 1000);
-  const offset = Math.round(layout.startOffsetM * 1000);
   const edges: CountedEdge[] = [];
   let total = 0;
-  let span: { id: string; kind: RunKind; lengthMm: number }[] = [];
-
-  const flush = () => {
-    if (span.length === 0) return;
-    const counted = countLitSpan(span.map((edge) => edge.lengthMm), pitch, offset);
-    span.forEach((edge, index) => {
-      const row = counted.edges[index]!;
+  for (const string of layoutStrings(layout)) {
+    for (const edge of string.run) {
+      const lengthM = edgeLengthM(layout, edge);
+      const lights = edge.kind === "wire" ? 0 : lightsOnLength(lengthM, layout.pitchM);
       edges.push({
         id: edge.id,
         kind: edge.kind,
-        lengthM: edge.lengthMm / 1000,
-        lights: edge.kind === "hidden" ? 0 : row.lights,
-        hidden: edge.kind === "hidden" ? row.lights : 0,
+        lengthM,
+        lights: edge.kind === "lit" ? lights : 0,
+        hidden: edge.kind === "hidden" ? lights : 0,
       });
-      total += row.lights;
-    });
-    span = [];
-  };
-
-  for (const edge of layout.run) {
-    if (edge.kind === "wire") {
-      flush();
-      edges.push({ id: edge.id, kind: "wire", lengthM: edgeLengthM(layout, edge), lights: 0, hidden: 0 });
-      continue;
+      if (edge.kind === "lit") total += lights;
     }
-    const lengthMm = Math.round(edgeLengthM(layout, edge) * 1000);
-    span.push({ id: edge.id, kind: edge.kind, lengthMm });
   }
-  flush();
-  if (layout.run.length === 0) return { total: 0, edges };
   return { total, edges };
 }
 
-function countLitSpan(lengthsMm: number[], pitchMm: number, offsetMm: number): { edges: { lights: number }[] } {
-  if (pitchMm <= 0) return { edges: lengthsMm.map(() => ({ lights: 0 })) };
-  const prefix: number[] = [];
-  let cursor = 0;
-  for (const length of lengthsMm) {
-    cursor += Math.max(0, length);
-    prefix.push(cursor);
-  }
-  const span = prefix[prefix.length - 1] ?? 0;
-  if (span <= offsetMm) return { edges: lengthsMm.map(() => ({ lights: 0 })) };
-  const total = Math.floor((span - offsetMm) / pitchMm) + 1;
-  const lights = lengthsMm.map((_, index) => {
-    const end = prefix[index]!;
-    const start = index === 0 ? 0 : prefix[index - 1]!;
-    if (index === lengthsMm.length - 1) return 0;
-    return Math.max(0, ceilDiv(end - offsetMm, pitchMm) - ceilDiv(start - offsetMm, pitchMm));
-  });
-  const used = lights.reduce((sum, count) => sum + count, 0);
-  lights[lights.length - 1] = Math.max(0, total - used);
-  return { edges: lights.map((count) => ({ lights: count })) };
+/** Round length ÷ pitch. Zero when either measurement is missing. Equal lengths round the same way. */
+export function lightsOnLength(lengthM: number, pitchM: number): number {
+  if (!(lengthM > 0) || !(pitchM > 0)) return 0;
+  return Math.max(0, Math.round(lengthM / pitchM));
 }
 
-function ceilDiv(value: number, divisor: number): number {
-  if (value <= 0) return 0;
-  return Math.ceil(value / divisor);
+export function layoutStrings(layout: PropLayout): LayoutString[] {
+  if (layout.strings && layout.strings.length > 0) return layout.strings;
+  const startId = layout.run[0]?.from ?? layout.corners[0]?.id ?? "c1";
+  return [{ id: "s1", startId, run: layout.run }];
+}
+
+export function ensureStrings(layout: PropLayout): PropLayout {
+  const strings = layoutStrings(layout);
+  return { ...layout, strings, run: strings[0]?.run ?? [] };
+}
+
+function writeStrings(layout: PropLayout, strings: LayoutString[]): PropLayout {
+  return { ...layout, strings, run: strings[0]?.run ?? [] };
+}
+
+export function stringById(layout: PropLayout, stringId: string | null): LayoutString {
+  const strings = layoutStrings(layout);
+  return strings.find((string) => string.id === stringId) ?? strings[0]!;
+}
+
+export function stringEndId(string: LayoutString): string {
+  return string.run.length > 0 ? string.run[string.run.length - 1]!.to : string.startId;
+}
+
+/** Continue the string from its end to a new point. Kind `wire` is a dark jump. */
+export function continueToPoint(layout: PropLayout, stringId: string, x: number, y: number, kind: "lit" | "wire" = "lit"): PropLayout {
+  const base = ensureStrings(layout);
+  const cornerId = nextId(base, "c");
+  const strings = (base.strings ?? []).map((string) => {
+    if (string.id !== stringId) return string;
+    const edge: LayoutEdge = { id: nextId(base, "e"), from: stringEndId(string), to: cornerId, kind };
+    return { ...string, run: [...string.run, edge] };
+  });
+  return writeStrings({ ...base, corners: [...base.corners, { id: cornerId, x, y }] }, strings);
+}
+
+/**
+ * Continue the string from its end to a corner that already exists.
+ * A second run over the same corners is a backtrack: both are lit unless this one is dark.
+ */
+export function continueToCorner(layout: PropLayout, stringId: string, cornerId: string, kind: "lit" | "wire" = "lit"): PropLayout {
+  const base = ensureStrings(layout);
+  if (!base.corners.some((corner) => corner.id === cornerId)) return layout;
+  const strings = (base.strings ?? []).map((string) => {
+    if (string.id !== stringId) return string;
+    const from = stringEndId(string);
+    if (from === cornerId) return string;
+    const edge: LayoutEdge = { id: nextId(base, "e"), from, to: cornerId, kind };
+    return { ...string, run: [...string.run, edge] };
+  });
+  return writeStrings(base, strings);
+}
+
+/** A new string starts at its own wire-in point and counts its own lights from zero. */
+export function addStringAt(layout: PropLayout, x: number, y: number, cornerId?: string): PropLayout {
+  const base = ensureStrings(layout);
+  const id = cornerId && base.corners.some((corner) => corner.id === cornerId) ? cornerId : nextId(base, "c");
+  const corners = id === cornerId ? base.corners : [...base.corners, { id, x, y }];
+  const string: LayoutString = { id: `s${(base.strings?.length ?? 0) + 1}`, startId: id, run: [] };
+  return writeStrings({ ...base, corners }, [...(base.strings ?? []), string]);
 }
 
 export function layoutLightTotal(layout: PropLayout): number {
@@ -382,6 +429,23 @@ export function windowLayout(input: {
   };
 }
 
+/** Bottom, Right, Top, Left in the layout's wiring order. */
+export function windowSideNames(layout: PropLayout): string[] {
+  const clockwise = layout.template?.params.clockwise === 1;
+  const start = layout.template?.params.start ?? 0;
+  const ring = clockwise ? [0, 3, 2, 1] : [0, 1, 2, 3];
+  const at = Math.max(0, ring.indexOf(start));
+  const order = [...ring.slice(at), ...ring.slice(0, at)];
+  const side = (a: number, b: number) => {
+    const key = [a, b].sort((left, right) => left - right).join("-");
+    if (key === "0-1") return "Bottom";
+    if (key === "1-2") return "Right";
+    if (key === "2-3") return "Top";
+    return "Left";
+  };
+  return order.map((corner, index) => side(corner, order[(index + 1) % order.length]!));
+}
+
 export function rooflineLayout(input: {
   lengthM: number;
   units: LayoutUnits;
@@ -540,11 +604,10 @@ function wellHouseLayout(input: {
   const side = toM(input.params.side ?? 0);
   const height = toM(input.params.height ?? 0);
   if (sides < 3 || sides > 16 || !(side > 0) || !(height > 0)) return null;
-  const gap = Math.max(side, height) * 0.45;
   const corners: LayoutCorner[] = [];
   const byId = new Map<string, LayoutEdge>();
   for (let index = 0; index < sides; index += 1) {
-    const x = index * (side + gap);
+    const x = index * side;
     const tl = `w${index}-tl`;
     const tr = `w${index}-tr`;
     const br = `w${index}-br`;
@@ -717,7 +780,11 @@ function normalizeAngle(angle: number): number {
 }
 
 function nextId(layout: PropLayout, prefix: string): string {
-  const used = new Set([...layout.corners.map((corner) => corner.id), ...layout.run.map((edge) => edge.id)]);
+  const used = new Set(layout.corners.map((corner) => corner.id));
+  for (const string of layoutStrings(layout)) {
+    used.add(string.id);
+    for (const edge of string.run) used.add(edge.id);
+  }
   let n = 1;
   while (used.has(`${prefix}${n}`)) n += 1;
   return `${prefix}${n}`;

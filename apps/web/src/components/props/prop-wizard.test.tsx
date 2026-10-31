@@ -14,7 +14,7 @@ describe("New prop wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: /Roofline/ }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByRole("heading", { name: "Which corner is the controller end?" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Which end is the controller end?" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "This end" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByText(/122 lights/)).toBeTruthy();
@@ -30,7 +30,7 @@ describe("New prop wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByRole("button", { name: "Trace", pressed: true })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Name sections" })).toBeTruthy();
-    expect(screen.getByText("Controller end")).toBeTruthy();
+    expect(screen.getByText(/where the wire comes in/i)).toBeTruthy();
   });
 
   it("opens a window after choosing a start corner and a direction", () => {
@@ -44,7 +44,7 @@ describe("New prop wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clockwise" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByRole("button", { name: "Edit", pressed: true })).toBeTruthy();
-    expect(screen.getAllByText("Controller end").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Wire in").length).toBeGreaterThan(0);
   });
 
   it("opens well house sections after the size, with one section per wall", () => {
@@ -54,10 +54,10 @@ describe("New prop wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: /Well house/ }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("button", { name: "Name sections" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Name sections" }));
     expect(screen.getByRole("heading", { name: "Name the sections" })).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: /Wall 1 top/ }).length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("Section name")).toHaveProperty("value", "Wall 1");
-    expect(screen.getByText(/LEDs \d+ through \d+/)).toBeTruthy();
+    expect(screen.getByLabelText("Section name")).toHaveProperty("value", "Front");
     expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
   });
 });

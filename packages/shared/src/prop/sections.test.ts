@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compilePropDesign, migrateDesignedProp } from "./design.ts";
-import { countLayout, layoutFromMeasurements, wellHouseEdgeOrder, type PropLayout } from "./layout.ts";
+import { addStringAt, continueToPoint, countLayout, emptyTrace, layoutFromMeasurements, wellHouseEdgeOrder, type PropLayout } from "./layout.ts";
 import {
   defaultSections,
   describeIndexRanges,
@@ -97,8 +97,8 @@ describe("well house template", () => {
     expect(right.from).not.toBe(left.from);
     expect(right.to).not.toBe(left.to);
     const sections = defaultSections(layout);
-    expect(sections.map((section) => section.name)).toEqual(["Wall 1", "Wall 2", "Wall 3", "Wall 4"]);
-    const wall = sectionIndexRanges(layout, sections).find((section) => section.name === "Wall 1");
+    expect(sections.map((section) => section.name)).toEqual(["Front", "Right", "Back", "Left"]);
+    const wall = sectionIndexRanges(layout, sections).find((section) => section.name === "Front");
     expect(wall).toBeTruthy();
     expect(wall!.ranges.length).toBeGreaterThan(1);
     const covered = wall!.ranges.reduce((sum, range) => sum + (range.stop - range.start), 0);
@@ -106,7 +106,7 @@ describe("well house template", () => {
     expect(covered).toBeLessThan(span);
     expect(describeIndexRanges(wall!.ranges)).toMatch(/LEDs \d+ through \d+/);
     const stretched = extendEdge(layout, "top.0", 0.5);
-    const again = sectionIndexRanges(stretched, sections).find((section) => section.name === "Wall 1");
+    const again = sectionIndexRanges(stretched, sections).find((section) => section.name === "Front");
     expect(again!.derived).not.toEqual(wall!.derived);
   });
 
@@ -144,7 +144,7 @@ describe("well house template", () => {
     };
     const migrated = migrateDesignedProp(prop);
     expect(migrated.layout?.run.map((edge) => edge.id)).toEqual(wellHouseEdgeOrder(4));
-    expect(migrated.sections?.map((section) => section.name)).toEqual(["Wall 1", "Wall 2", "Wall 3", "Wall 4"]);
+    expect(migrated.sections?.map((section) => section.name)).toEqual(["Front", "Right", "Back", "Left"]);
     expect(migrated.wireframe?.locks).toEqual(spec.locks);
     expect(migrated.wireframe?.path).toBeNull();
     expect(migrateDesignedProp(migrated).layout?.run[0]?.id).toBe("top.0");
@@ -196,4 +196,28 @@ describe("typed ranges", () => {
     expect(outside.errors.length).toBeGreaterThan(0);
     expect(outside.pinned).toEqual([]);
   });
+
+  it("includes runs from two strings in one section", () => {
+    let layout = continueToPoint(emptyTrace("m", 0.1), "s1", 1, 0, "lit");
+    layout = addStringAt(layout, 0, 1);
+    const second = layout.strings?.[1]?.id ?? "s2";
+    layout = continueToPoint(layout, second, 1, 1, "lit");
+    const [firstEdge, secondEdge] = layoutStringsRuns(layout);
+    const report = sectionIndexRanges(layout, [{
+      id: "both",
+      name: "Front",
+      edgeIds: [firstEdge!, secondEdge!],
+      pinnedRanges: [],
+      color: "#ff0000",
+    }])[0]!;
+    expect(report.ranges).toHaveLength(2);
+    expect(report.ranges.map((range) => range.stringId ?? "s1").sort()).toEqual([second, "s1"].sort());
+    expect(report.ranges.every((range) => range.stop - range.start === 10)).toBe(true);
+  });
 });
+
+function layoutStringsRuns(layout: PropLayout): string[] {
+  const first = layout.run[0]?.id;
+  const second = layout.strings?.[1]?.run[0]?.id;
+  return [first ?? "", second ?? ""];
+}

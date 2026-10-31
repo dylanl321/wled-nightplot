@@ -11,7 +11,7 @@ type AppShellProps = {
   children: ReactNode;
   lights?: LightView[];
   lightCount: number;
-  nav: "lights" | "discover" | "light" | "catalog" | "backups" | "sync" | "looks" | "yard" | "settings";
+  nav: "home" | "lights" | "discover" | "light" | "catalog" | "backups" | "sync" | "looks" | "yard" | "settings";
   activeLightId?: string;
   sessions?: LiveHint[];
   /** Prop drawing and the New prop wizard fill the phone. All Off and the bottom bar stay off those screens. */
@@ -31,7 +31,7 @@ export function AppShell({
     <DiscoveryProvider>
     <div className={cn(
       "flex min-h-dvh flex-col bg-background text-foreground",
-      immersive ? "[--phone-chrome:0px]" : "[--phone-chrome:calc(9rem+env(safe-area-inset-bottom))] lg:[--phone-chrome:0px]",
+      immersive ? "[--phone-chrome:0px]" : "[--phone-chrome:calc(12rem+env(safe-area-inset-bottom))] lg:[--phone-chrome:0px]",
     )}>
       {immersive ? null : <header
         className="flex h-auto min-h-14 items-center gap-2.5 border-b border-border px-5 lg:h-14 lg:gap-7 lg:bg-rail lg:px-6"
