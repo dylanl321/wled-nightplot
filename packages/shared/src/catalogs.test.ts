@@ -85,7 +85,7 @@ describe("catalog snapshot", () => {
     expect(snap.stripPresets.length).toBeGreaterThanOrEqual(3);
     expect(snap.ledProducts).toEqual([]);
     expect(snap.discovery).toHaveLength(3);
-    expect(snap.stripAssist.map((entry) => entry.id)).toEqual(["find-length"]);
+    expect(snap.stripAssist.map((entry) => entry.id)).toEqual(["find-length", "add-prop"]);
   });
 });
 

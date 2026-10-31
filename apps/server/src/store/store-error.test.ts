@@ -26,6 +26,14 @@ describe("unreadable stores are not empty", () => {
     expect(readFileSync(path, "utf8")).toBe("{ not json");
   });
 
+  it("Lights: a write refuses when Prop rows could not be parsed, instead of dropping them", () => {
+    const path = file("lights.json", JSON.stringify({ version: 1, lights: [light],
+      elements: [], props: [{ id: "p", lightId: "a", label: "Odd" }] }));
+    const store = new FileLightsStore(path);
+    expect(store.load()).toHaveLength(1);
+    expect(() => store.replace({ ...light, name: "Renamed" })).toThrow(/1 Prop rows/);
+  });
+
   it("Lights: a write refuses when Segment rows could not be parsed, instead of dropping them", () => {
     const path = file("lights.json", JSON.stringify({ version: 1, lights: [light],
       elements: [{ id: "e", lightId: "a", label: "Odd", start: "0", stop: 4 }] }));

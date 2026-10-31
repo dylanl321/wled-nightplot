@@ -1,7 +1,8 @@
+import { addPropAssist } from "./add-prop-plugin.ts";
 import { findLengthAssist } from "./find-length-plugin.ts";
 import type { StripAssistPlugin } from "./types.ts";
 
-const plugins: readonly StripAssistPlugin[] = [findLengthAssist];
+const plugins: readonly StripAssistPlugin[] = [findLengthAssist, addPropAssist];
 
 export function listStripAssistPlugins(): readonly StripAssistPlugin[] {
   return plugins;

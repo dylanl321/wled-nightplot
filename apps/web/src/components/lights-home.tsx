@@ -224,6 +224,7 @@ function LightCard({
           {light.outputs && light.outputs.length > 1
             ? `${light.outputs.length} outputs · ${light.ledCount} LEDs`
             : `${light.ledCount} LEDs`}
+          {light.propCount > 0 ? ` · ${light.propCount} Prop${light.propCount === 1 ? "" : "s"}` : ""}
           {length ? ` · ${length}` : ""} · {light.stripChip} · {light.displayHost}
         </span>
         {length ? <span className="text-quiet">{PHYSICAL_LENGTH_CAPTION}</span> : null}

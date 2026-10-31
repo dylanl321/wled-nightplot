@@ -52,6 +52,7 @@ export function lightView(overrides: Partial<LightView> = {}): LightView {
     bead: "unknown",
     displayHost: "192.168.1.40",
     elementCount: 1,
+    propCount: 0,
     segmentCount: null,
     driftLabel: null,
     declared: [],
@@ -83,6 +84,7 @@ export function lightDetail(overrides: Partial<LightDetail> = {}): LightDetail {
     elements: [
       { id: "el-door", lightId: light.id, label: "Door", start: 0, stop: 60 },
     ],
+    props: [],
     reported: [],
     display: emptyDisplay,
     snapshotAt: null,

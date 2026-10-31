@@ -102,4 +102,52 @@ describe("lights store ledProductId", () => {
       expect.objectContaining({ id: "roof", start: 0, stop: 20 }),
     ]);
   });
+
+  it("treats a missing props list as none and keeps a saved Prop", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-lights-"));
+    const file = join(dir, "lights.json");
+    writeFileSync(
+      file,
+      `${JSON.stringify({
+        version: 1,
+        lights: [{ ...base }],
+        elements: [{ id: "top", lightId: base.id, label: "Front · top", start: 0, stop: 10 }],
+      })}\n`,
+    );
+    const store = new FileLightsStore(file);
+    expect(store.propsFor(base.id)).toEqual([]);
+    store.replaceElements(base.id, [
+      { id: "top", lightId: base.id, label: "Front · top", start: 0, stop: 10 },
+      { id: "right", lightId: base.id, label: "Front · right", start: 10, stop: 20 },
+    ]);
+    store.replaceProps(base.id, [{
+      id: "prop-window",
+      lightId: base.id,
+      label: "Front",
+      kind: "window",
+      elementIds: ["top", "right"],
+    }]);
+    expect(new FileLightsStore(file).propsFor(base.id)).toEqual([
+      expect.objectContaining({ id: "prop-window", label: "Front", kind: "window" }),
+    ]);
+  });
+
+  it("drops a Prop when replaceElements removes every Segment it named", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-lights-"));
+    const file = join(dir, "lights.json");
+    const store = new FileLightsStore(file);
+    store.upsert(base);
+    store.replaceElements(base.id, [
+      { id: "top", lightId: base.id, label: "Front · top", start: 0, stop: 10 },
+    ]);
+    store.replaceProps(base.id, [{
+      id: "prop-window",
+      lightId: base.id,
+      label: "Front",
+      kind: "window",
+      elementIds: ["top"],
+    }]);
+    store.replaceElements(base.id, []);
+    expect(store.propsFor(base.id)).toEqual([]);
+  });
 });

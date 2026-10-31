@@ -103,6 +103,8 @@ and a Not lit answer checks 3. **Start over** returns to the whole strip;
 the latest check. If Preview pauses, Retry or end it instead of guessing.
 This is temporary lighting, not an edit to Segments. Finding how many LEDs are on an output is **Find length** on Strip, not this search.
 
+**Add prop** on Segments is how a named shape is created without counting. Pick Roofline, Window, Arch, Tree, Stake row, or Custom, walk the same lit cursor, and tap each corner or end. A window is four sides from five taps; a stake row leaves unused LEDs between stakes. Finished sides stay lit while later corners are unmarked. Review, then Apply writes every Segment on this Light and reads the controller back. Cancel ends Preview and restores; All Off cancels without restoring. Preview is not Apply.
+
 Use the cursor’s LED number or −/+ buttons to move it. **Phone remote** on the
 Segments strip opens a full-screen view with large previous/next LED buttons
 and the current zero-based LED number. Start Preview there to light that cursor

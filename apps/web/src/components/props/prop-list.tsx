@@ -1,0 +1,135 @@
+"use client";
+
+import { propKindLabel, type Element, type LightDetail, type Prop } from "@nightplot/shared";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { deleteJson, patchJson } from "@/lib/api";
+
+export function PropList({
+  lightId,
+  props,
+  elements,
+  disabled,
+  disabledReason,
+  onAdd,
+  onDetail,
+  onNotice,
+}: {
+  lightId: string;
+  props: Prop[];
+  elements: Element[];
+  disabled: boolean;
+  disabledReason?: string;
+  onAdd: () => void;
+  onDetail: (next: LightDetail) => void;
+  onNotice: (notice: string | null) => void;
+}) {
+  return (
+    <section aria-label="Props" className="rounded-[14px] border border-border bg-[#0e1014]">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+        <h3 className="text-[15px] font-medium">Props</h3>
+        <p className="text-[12px] text-muted-foreground">Named shapes on this Light. Gaps between their Segments stay unused.</p>
+        <Button
+          type="button"
+          className="ml-auto h-[34px] px-3 text-[13px]"
+          onClick={onAdd}
+          disabled={disabled}
+          title={disabledReason}
+        >
+          Add prop
+        </Button>
+      </div>
+      {props.length === 0 ? (
+        <p className="px-4 py-3 text-[13px] text-muted-foreground">No Props yet. Add a shape and tap its corners on the lit strip.</p>
+      ) : (
+        <ul>
+          {props.map((prop) => (
+            <PropRow
+              key={prop.id}
+              lightId={lightId}
+              prop={prop}
+              elements={elements}
+              disabled={disabled}
+              onDetail={onDetail}
+              onNotice={onNotice}
+            />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function PropRow({
+  lightId,
+  prop,
+  elements,
+  disabled,
+  onDetail,
+  onNotice,
+}: {
+  lightId: string;
+  prop: Prop;
+  elements: Element[];
+  disabled: boolean;
+  onDetail: (next: LightDetail) => void;
+  onNotice: (notice: string | null) => void;
+}) {
+  const [label, setLabel] = useState(prop.label);
+  const [busy, setBusy] = useState(false);
+  const sides = prop.elementIds
+    .map((id) => elements.find((element) => element.id === id))
+    .filter((element): element is Element => Boolean(element));
+  const dirty = label.trim() !== prop.label;
+
+  async function rename() {
+    const next = label.trim();
+    if (!next || next === prop.label) return;
+    setBusy(true);
+    onNotice(null);
+    const res = await patchJson<LightDetail>(`/api/lights/${lightId}/props/${prop.id}`, { label: next });
+    setBusy(false);
+    if (!res.ok) {
+      onNotice(res.data.message ?? "Prop was not renamed.");
+      return;
+    }
+    onDetail(res.data);
+  }
+
+  async function remove() {
+    setBusy(true);
+    onNotice(null);
+    const res = await deleteJson<LightDetail>(`/api/lights/${lightId}/props/${prop.id}`);
+    setBusy(false);
+    if (!res.ok) {
+      onNotice(res.data.message ?? "Prop was not removed.");
+      return;
+    }
+    onDetail(res.data);
+  }
+
+  return (
+    <li className="flex flex-col gap-2 border-b border-border px-4 py-3 last:border-b-0">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-md bg-secondary px-2 py-1 text-[12px] text-muted-foreground">{propKindLabel(prop.kind)}</span>
+        <input
+          aria-label={`Rename ${prop.label}`}
+          value={label}
+          onChange={(event) => setLabel(event.target.value)}
+          className="h-9 min-w-[10rem] flex-1 rounded-md border border-input bg-[#07080a] px-3 text-[14px] text-foreground outline-none focus:border-primary"
+        />
+        <Button type="button" variant="outline" className="h-9 text-[13px]" onClick={() => void rename()} disabled={disabled || busy || !dirty || !label.trim()}>
+          {busy ? "Saving…" : "Rename"}
+        </Button>
+        <Button type="button" variant="outline" className="h-9 text-[13px]" onClick={() => void remove()} disabled={disabled || busy}>
+          Remove
+        </Button>
+      </div>
+      <p className="text-[13px] text-muted-foreground">
+        {sides.length === 0
+          ? "No Segments remain on this Prop."
+          : sides.map((side) => `${side.label} ${side.start}–${side.stop}`).join(" · ")}
+      </p>
+    </li>
+  );
+}

@@ -1,7 +1,7 @@
 /**
  * Strip-assist plugins are modular help on Strip. They do not own the LED
- * catalog and they do not replace attach. A length helper is the first
- * member; a segment helper can plug in later without rewriting Strip.
+ * catalog and they do not replace attach. Find length is the first member.
+ * Add prop is the segment helper — its walk lives on Segments, not Strip.
  */
 
 export const STRIP_ASSIST_KINDS = ["length", "segment"] as const;

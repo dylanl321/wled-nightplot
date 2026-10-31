@@ -25,7 +25,7 @@ export function writeNightplotStoresConsistent(paths: NightplotRestorePaths, dat
   const files = [
     {
       dest: paths.lights,
-      body: `${JSON.stringify({ version: 1, lights: data.lights, elements: data.elements }, null, 2)}\n`,
+      body: `${JSON.stringify({ version: 1, lights: data.lights, elements: data.elements, props: data.props ?? [] }, null, 2)}\n`,
     },
     {
       dest: paths.products,

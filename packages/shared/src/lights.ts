@@ -4,6 +4,7 @@ import type { BeadColor } from "./bead.ts";
 import type { RangeDisplay, ReportedRail } from "./drift.ts";
 import type { LiveMatch, LiveSession } from "./live.ts";
 import type { AllOffResult, DeleteCheck } from "./manage.ts";
+import type { Prop } from "./prop/types.ts";
 import type { ProvisionRead, ProvisionWriteResult } from "./provision.ts";
 import type { SafeRead, SafeWriteResult } from "./safe.ts";
 import type { StripBead } from "./strip/types.ts";
@@ -115,6 +116,8 @@ export type LightView = Light & {
   spacingKind: "pitch" | "section" | null;
   displayHost: string;
   elementCount: number;
+  /** Saved Props on this Light. Missing on older payloads is zero. */
+  propCount: number;
   /** Null when `state.seg` is unknown. 0 is a known empty list. */
   segmentCount: number | null;
   driftLabel: string | null;
@@ -140,6 +143,8 @@ export type LightDetail = {
   frozenPreview?: boolean;
   light: LightView;
   elements: Element[];
+  /** Named shape groups on this Light. Missing on older payloads is none. */
+  props?: Prop[];
   reported: ReportedRail[];
   display: RangeDisplay;
   snapshotAt: string | null;
@@ -166,6 +171,7 @@ export const emptyLightsPayload = {
 export type LightsPayload = {
   lights: LightView[];
   elements: Element[];
+  props?: Prop[];
   unenrolled: import("./discovery/types.ts").DiscoverRow[];
   note?: string;
   sessions?: { lightId: string; kind: import("./live.ts").LiveSessionKind; label: string }[];

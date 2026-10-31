@@ -4478,6 +4478,184 @@ describe("fleet setup", () => {
     ]);
   });
 
+  it("creates a window Prop from corner taps and Applies every Segment with readback", async () => {
+    const { app, store } = testApp();
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.80" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const res = await app.request(`/api/lights/${id}/props`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "window",
+        label: "Front window",
+        apply: true,
+        taps: [{ index: 0 }, { index: 9 }, { index: 19 }, { index: 29 }, { index: 39 }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      apply: { matched: boolean };
+      props: { label: string; kind: string; elementIds: string[] }[];
+      elements: { label: string; start: number; stop: number }[];
+      prop: { label: string; kind: string };
+    };
+    expect(body.apply.matched).toBe(true);
+    expect(body.prop).toMatchObject({ label: "Front window", kind: "window" });
+    expect(body.props).toEqual([expect.objectContaining({ label: "Front window", kind: "window" })]);
+    expect(body.elements.map((row) => row.label)).toEqual([
+      "Front window · top",
+      "Front window · right",
+      "Front window · bottom",
+      "Front window · left",
+    ]);
+    expect(store.propsFor(id)).toHaveLength(1);
+    const listed = (await (await app.request("/api/lights")).json()) as { lights: { propCount: number }[] };
+    expect(listed.lights[0]?.propCount).toBe(1);
+  });
+
+  it("keeps a gap between stake-row Segments and can host another Prop on the same strip", async () => {
+    const { app } = testApp();
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.80" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const first = await app.request(`/api/lights/${id}/props`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "stake-row",
+        label: "Path",
+        taps: [{ index: 2 }, { index: 7 }, { index: 16 }, { index: 21 }],
+      }),
+    });
+    expect(first.status).toBe(200);
+    const second = await app.request(`/api/lights/${id}/props`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "custom",
+        label: "Bush",
+        taps: [{ index: 30 }, { index: 39 }],
+      }),
+    });
+    expect(second.status).toBe(200);
+    const body = (await second.json()) as {
+      elements: { label: string; start: number; stop: number }[];
+      props: { label: string }[];
+    };
+    expect(body.props.map((row) => row.label)).toEqual(["Path", "Bush"]);
+    expect(body.elements).toEqual([
+      expect.objectContaining({ label: "Path · stake 1", start: 2, stop: 8 }),
+      expect.objectContaining({ label: "Path · stake 2", start: 16, stop: 22 }),
+      expect.objectContaining({ label: "Bush · run 1", start: 30, stop: 40 }),
+    ]);
+  });
+
+  it("renames a Prop and refuses taps that overlap a saved Segment", async () => {
+    const { app } = testApp();
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.80" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const created = await app.request(`/api/lights/${id}/props`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "roofline",
+        label: "Eave",
+        taps: [{ index: 0 }, { index: 19 }],
+      }),
+    });
+    const propId = ((await created.json()) as { prop: { id: string } }).prop.id;
+    const renamed = await app.request(`/api/lights/${id}/props/${propId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: "Front eave" }),
+    });
+    expect(renamed.status).toBe(200);
+    const renamedBody = (await renamed.json()) as { props: { label: string }[]; elements: { label: string }[] };
+    expect(renamedBody.props[0]?.label).toBe("Front eave");
+    expect(renamedBody.elements[0]?.label).toBe("Front eave · run 1");
+    const overlap = await app.request(`/api/lights/${id}/props`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "custom",
+        taps: [{ index: 10 }, { index: 25 }],
+      }),
+    });
+    expect(overlap.status).toBe(422);
+    const removed = await app.request(`/api/lights/${id}/props/${propId}`, { method: "DELETE" });
+    expect(removed.status).toBe(200);
+    const after = (await removed.json()) as { props: unknown[]; message: string };
+    expect(after.props).toEqual([]);
+    expect(after.message).toMatch(/Apply was not sent/);
+  });
+
+  it("saves a Prop that spans two outputs of one controller", async () => {
+    const { app, store } = testApp();
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.80" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const light = store.findById(id)!;
+    store.replace({
+      ...light,
+      ledCount: 100,
+      outputs: [
+        {
+          id: "out-a",
+          index: 0,
+          start: 0,
+          ledCount: 40,
+          stripKind: "ws281x",
+          gpio: 16,
+          nativeType: 22,
+          nativeOrder: 0,
+          colorOrder: "GRB",
+        },
+        {
+          id: "out-b",
+          index: 1,
+          start: 40,
+          ledCount: 60,
+          stripKind: "ws281x",
+          gpio: 2,
+          nativeType: 22,
+          nativeOrder: 0,
+          colorOrder: "GRB",
+        },
+      ],
+    });
+    const res = await app.request(`/api/lights/${id}/props`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "roofline",
+        label: "Ridge",
+        taps: [{ index: 30 }, { index: 49 }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      elements: { start: number; stop: number; outputId?: string }[];
+    };
+    expect(body.elements).toEqual([
+      expect.objectContaining({ start: 30, stop: 40, outputId: "out-a" }),
+      expect.objectContaining({ start: 40, stop: 50, outputId: "out-b" }),
+    ]);
+  });
+
   it("applies a setup profile to online Lights and lists a dead one", async () => {
     const live = await liveApp(createFixtureBox({ name: "Online", ledCount: 60 }));
     const enroll = await live.app.request("/api/lights", {

@@ -23,6 +23,7 @@ describe("crash-consistent Nightplot restore", () => {
       activity: [],
     });
     expect(JSON.parse(readFileSync(paths.lights, "utf8")).elements[0].label).toBe("Door");
+    expect(JSON.parse(readFileSync(paths.lights, "utf8")).props).toEqual([]);
     expect(JSON.parse(readFileSync(paths.products, "utf8")).products[0].id).toBe("ws");
     expect(JSON.parse(readFileSync(paths.activity, "utf8")).entries).toEqual([]);
   });

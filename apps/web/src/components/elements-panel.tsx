@@ -59,6 +59,8 @@ import {
 } from "@/components/elements-editor/use-live-locate";
 import { StripZoom } from "@/components/elements-editor/zoom";
 import { LedLoader } from "@/components/ui/led-loader";
+import { AddPropFlow } from "@/components/props/add-prop";
+import { PropList } from "@/components/props/prop-list";
 import { SegmentBackupPanel } from "@/components/segment-backup";
 import { Button } from "@/components/ui/button";
 import { fetchJson, patchJson, postJson } from "@/lib/api";
@@ -104,6 +106,7 @@ export function ElementsPanel({
   const [locateMode, setLocateMode] = useState<LocateMode>("hold");
   const [searchRange, setSearchRange] = useState<{ start: number; stop: number } | null>(null);
   const [remoteOpen, setRemoteOpen] = useState(false);
+  const [addPropOpen, setAddPropOpen] = useState(false);
   const [backgroundPercent, setBackgroundPercent] = useState(60);
   const storedHuesRaw = useSyncExternalStore(subscribeHues, () => readHuesRaw(light.id), () => null);
   const unreachable = light.reachability === "no-answer";
@@ -169,7 +172,7 @@ export function ElementsPanel({
     searchRange,
   });
   const locate = useLiveLocate({
-    enabled: live && !unreachable,
+    enabled: live && !unreachable && !addPropOpen,
     lightId: light.id,
     ledCount: light.ledCount,
     frame,
@@ -339,6 +342,22 @@ export function ElementsPanel({
     <div className="flex flex-col gap-4">
       <SegmentBackupPanel detail={detail} blocked={dirtyCount > 0 || live || busy !== null || Boolean(detail.session)}
         onRestored={(next) => { setApply(null); onDetail(next); }} />
+      {addPropOpen ? <AddPropFlow
+        lightId={light.id}
+        lightName={light.name}
+        ledCount={light.ledCount}
+        outputs={light.outputs ?? EMPTY_OUTPUTS}
+        existing={state.saved}
+        props={detail.props ?? []}
+        rgbw={getStrip(light.stripKind)?.bead === "rgbw"}
+        unreachable={unreachable}
+        onClose={() => setAddPropOpen(false)}
+        onApplied={(next) => {
+          setApply(next.apply ?? null);
+          onDetail(next);
+          onRefresh();
+        }}
+      /> : null}
       {remoteOpen ? <PhoneRemote
         lightName={light.name}
         ledCount={light.ledCount}
@@ -499,9 +518,26 @@ export function ElementsPanel({
         />
         </div>
         <KeysBar state={state} hues={hues} live={live && !unreachable && !locate.error && !locate.stopping} spacingMm={light.spacingMm} />
-        <CursorControls state={state} dispatch={dispatch} live={live} paused={remoteOpen} blocked={unreachable || frozenPreview || busy === "recover" || Boolean(locate.error) || locate.stopping} onPreview={() => setLive(true)} onScanning={setScanning} />
+        <CursorControls state={state} dispatch={dispatch} live={live} paused={remoteOpen || addPropOpen} blocked={unreachable || frozenPreview || busy === "recover" || Boolean(locate.error) || locate.stopping} onPreview={() => setLive(true)} onScanning={setScanning} />
         <StripZoom ledCount={Math.max(light.ledCount, 1)} elements={state.els} hues={hues} issueWord={wordFor} focus={zoom.focus} edge={zoom.edge} caption={zoom.caption} />
       </div>
+
+      <PropList
+        lightId={light.id}
+        props={detail.props ?? []}
+        elements={detail.elements}
+        disabled={dirtyCount > 0 || live || busy !== null || Boolean(detail.session) || frozenPreview}
+        disabledReason={dirtyCount > 0 ? "Save or revert unsaved Segment edits first." : live ? "End Preview first." : undefined}
+        onAdd={() => {
+          setLive(false);
+          setAddPropOpen(true);
+        }}
+        onDetail={(next) => {
+          setApply(null);
+          onDetail(next);
+        }}
+        onNotice={onNotice}
+      />
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,340px),1fr))] items-start gap-3.5">
       <div className="min-w-0 overflow-x-auto rounded-[14px] border border-border bg-[#0e1014]">

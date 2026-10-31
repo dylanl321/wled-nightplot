@@ -1,10 +1,12 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import {
+  isProp,
   normalizeLightLedProductId,
   withMigratedOutputs,
   type Element,
   type Light,
+  type Prop,
 } from "@nightplot/shared";
 import { isEnoent, keepLastGood, StoreUnreadableError } from "./store-error.ts";
 
@@ -12,14 +14,16 @@ type FileShape = {
   version: 1;
   lights: Light[];
   elements?: Element[];
+  props?: Prop[];
 };
 
 type StoreShape = {
   lights: Light[];
   elements: Element[];
+  props: Prop[];
 };
 
-type ReadShape = StoreShape & { dropped: number };
+type ReadShape = StoreShape & { droppedElements: number; droppedProps: number };
 
 export type LightsRawLoad =
   | { ok: true; lights: unknown[] }
@@ -36,27 +40,39 @@ export class FileLightsStore {
     try {
       const parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as FileShape;
       const elements = parsed.elements ?? [];
-      if (parsed.version !== 1 || !this.validBackup({ lights: parsed.lights, elements }))
+      const props = parsed.props ?? [];
+      if (parsed.version !== 1 || !this.validBackup({ lights: parsed.lights, elements, props }))
         throw new Error("Invalid Lights store; backup refused.");
-      return { lights: parsed.lights.map(normalizeStoredLight), elements };
+      return { lights: parsed.lights.map(normalizeStoredLight), elements, props };
     } catch (error) {
-      if (isEnoent(error)) return { lights: [], elements: [] };
+      if (isEnoent(error)) return { lights: [], elements: [], props: [] };
       throw error;
     }
   }
 
   restoreBackup(value: StoreShape): void {
-    if (!this.validBackup(value)) throw new Error("Invalid backup Lights or Segments; nothing was restored.");
-    this.write(value.lights, value.elements);
+    if (!this.validBackup({ ...value, props: value.props ?? [] })) {
+      throw new Error("Invalid backup Lights, Segments, or Props; nothing was restored.");
+    }
+    this.write(value.lights, value.elements, value.props ?? []);
   }
 
-  validBackup(value: StoreShape): boolean {
+  validBackup(value: { lights: Light[]; elements: Element[]; props?: Prop[] }): boolean {
+    const props = value.props ?? [];
     return Array.isArray(value.lights) && value.lights.every(isStoredLight) &&
       Array.isArray(value.elements) && value.elements.every(isElement) &&
+      Array.isArray(props) && props.every(isProp) &&
       new Set(value.lights.map((light) => light.id)).size === value.lights.length &&
       new Set(value.lights.map((light) => light.hostKey)).size === value.lights.length &&
       new Set(value.elements.map((element) => element.id)).size === value.elements.length &&
-      value.elements.every((element) => value.lights.some((light) => light.id === element.lightId));
+      new Set(props.map((prop) => prop.id)).size === props.length &&
+      value.elements.every((element) => value.lights.some((light) => light.id === element.lightId)) &&
+      props.every((prop) =>
+        value.lights.some((light) => light.id === prop.lightId) &&
+        prop.elementIds.every((elementId) =>
+          value.elements.some((element) => element.id === elementId && element.lightId === prop.lightId),
+        ),
+      );
   }
 
   load(): Light[] {
@@ -67,8 +83,16 @@ export class FileLightsStore {
     return this.read().elements;
   }
 
+  loadProps(): Prop[] {
+    return this.read().props;
+  }
+
   elementsFor(lightId: string): Element[] {
     return this.read().elements.filter((element) => element.lightId === lightId);
+  }
+
+  propsFor(lightId: string): Prop[] {
+    return this.read().props.filter((prop) => prop.lightId === lightId);
   }
 
   findByHostKey(hostKey: string): Light | undefined {
@@ -100,34 +124,49 @@ export class FileLightsStore {
   }
 
   upsert(next: Light): void {
-    const { lights, elements } = this.readForWrite();
+    const { lights, elements, props } = this.readForWrite();
     const kept = lights.filter((light) => light.id !== next.id && light.hostKey !== next.hostKey);
     kept.push(next);
-    this.write(kept, elements);
+    this.write(kept, elements, props);
   }
 
   replace(next: Light): void {
-    const { lights, elements } = this.readForWrite();
+    const { lights, elements, props } = this.readForWrite();
     this.write(
       lights.map((light) => (light.id === next.id ? next : light)),
       elements,
+      props,
     );
   }
 
   remove(id: string): boolean {
-    const { lights, elements } = this.readForWrite();
+    const { lights, elements, props } = this.readForWrite();
     if (!lights.some((light) => light.id === id)) return false;
     this.write(
       lights.filter((light) => light.id !== id),
       elements.filter((element) => element.lightId !== id),
+      props.filter((prop) => prop.lightId !== id),
     );
     return true;
   }
 
   replaceElements(lightId: string, next: Element[]): void {
-    const { lights, elements } = this.readForWrite();
-    this.write(lights, [
-      ...elements.filter((element) => element.lightId !== lightId),
+    const { lights, elements, props } = this.readForWrite();
+    const keptIds = new Set(next.map((element) => element.id));
+    this.write(
+      lights,
+      [
+        ...elements.filter((element) => element.lightId !== lightId),
+        ...next,
+      ],
+      pruneProps(props, lightId, keptIds),
+    );
+  }
+
+  replaceProps(lightId: string, next: Prop[]): void {
+    const { lights, elements, props } = this.readForWrite();
+    this.write(lights, elements, [
+      ...props.filter((prop) => prop.lightId !== lightId),
       ...next,
     ]);
   }
@@ -141,33 +180,52 @@ export class FileLightsStore {
     try {
       parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as FileShape;
     } catch (error) {
-      if (isEnoent(error)) return { lights: [], elements: [], dropped: 0 };
+      if (isEnoent(error)) return { lights: [], elements: [], props: [], droppedElements: 0, droppedProps: 0 };
       throw new StoreUnreadableError("Lights store", this.filePath, error instanceof SyntaxError ? "not JSON" : "unreadable");
     }
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.lights) ||
-      (parsed.elements !== undefined && !Array.isArray(parsed.elements)))
+      (parsed.elements !== undefined && !Array.isArray(parsed.elements)) ||
+      (parsed.props !== undefined && !Array.isArray(parsed.props)))
       throw new StoreUnreadableError("Lights store", this.filePath, "unexpected shape or version");
-    const rows = parsed.elements ?? [];
-    const elements = rows.filter(isElement);
-    return { lights: parsed.lights.map(normalizeStoredLight), elements, dropped: rows.length - elements.length };
+    const elementRows = parsed.elements ?? [];
+    const propRows = parsed.props ?? [];
+    const elements = elementRows.filter(isElement);
+    const props = propRows.filter(isProp);
+    return {
+      lights: parsed.lights.map(normalizeStoredLight),
+      elements,
+      props,
+      droppedElements: elementRows.length - elements.length,
+      droppedProps: propRows.length - props.length,
+    };
   }
 
   /** Writes refuse when a read skipped rows, so a save never deletes what it could not parse. */
   private readForWrite(): StoreShape {
     const shape = this.read();
-    if (shape.dropped > 0)
-      throw new StoreUnreadableError("Lights store", this.filePath, `${shape.dropped} Segment rows Nightplot does not understand`);
+    if (shape.droppedElements > 0)
+      throw new StoreUnreadableError("Lights store", this.filePath, `${shape.droppedElements} Segment rows Nightplot does not understand`);
+    if (shape.droppedProps > 0)
+      throw new StoreUnreadableError("Lights store", this.filePath, `${shape.droppedProps} Prop rows Nightplot does not understand`);
     return shape;
   }
 
-  private write(lights: Light[], elements: Element[]): void {
+  private write(lights: Light[], elements: Element[], props: Prop[]): void {
     mkdirSync(dirname(this.filePath), { recursive: true });
     keepLastGood(this.filePath);
     const tmp = `${this.filePath}.tmp`;
-    const body: FileShape = { version: 1, lights, elements };
+    const body: FileShape = { version: 1, lights, elements, props };
     writeFileSync(tmp, `${JSON.stringify(body, null, 2)}\n`, "utf8");
     renameSync(tmp, this.filePath);
   }
+}
+
+function pruneProps(props: Prop[], lightId: string, keptElementIds: Set<string>): Prop[] {
+  return props.flatMap((prop) => {
+    if (prop.lightId !== lightId) return [prop];
+    const elementIds = prop.elementIds.filter((id) => keptElementIds.has(id));
+    return elementIds.length > 0 ? [{ ...prop, elementIds }] : [];
+  });
 }
 
 function normalizeStoredLight(light: Light): Light {
