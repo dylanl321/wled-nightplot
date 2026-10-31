@@ -37,7 +37,7 @@ export function AppShell({
       >
         <Brand markClassName="h-2.5 w-9 lg:h-3 lg:w-11" />
         <nav className="hidden items-center gap-1 lg:flex" aria-label="Nightplot">
-          <NavLink href="/" active={lightsActive}>
+          <NavLink href="/lights" active={lightsActive}>
             Lights
           </NavLink>
           <NavLink href="/led-products" active={nav === "catalog"}>

@@ -22,7 +22,7 @@ import {
 } from "./look.ts";
 import { type Element, type Light } from "./lights.ts";
 import { withMigratedOutputs } from "./outputs.ts";
-import { isProp, type Prop } from "./prop/types.ts";
+import { isProp, isPropAttachment, type Prop, type PropAttachment } from "./prop/types.ts";
 import { isNightlySchedule } from "./schedule.ts";
 import { isSetupProfile, type SetupProfile } from "./setup-profile.ts";
 
@@ -51,6 +51,8 @@ export type SeasonDocument = {
   lights: Light[];
   elements: Element[];
   props: Prop[];
+  /** Missing on season files saved before attachment was separate. */
+  attachments?: PropAttachment[];
   setupProfiles: SetupProfile[];
   looks: LooksDocument | null;
   devices: SeasonDeviceFiles[];
@@ -241,6 +243,8 @@ function parseCurrentSeason(raw: Record<string, unknown>): SeasonDocument | null
   if (!elements.every(isSeasonElement)) return null;
   const props = Array.isArray(raw.props) ? (raw.props as Prop[]) : [];
   if (!props.every(isProp)) return null;
+  const attachments = Array.isArray(raw.attachments) ? raw.attachments.filter(isPropAttachment) : [];
+  if (Array.isArray(raw.attachments) && attachments.length !== raw.attachments.length) return null;
   const setupProfiles = Array.isArray(raw.setupProfiles) ? (raw.setupProfiles as SetupProfile[]) : [];
   if (!setupProfiles.every(isSetupProfile)) return null;
   const looks = parseLooksField(raw.looks);
@@ -248,12 +252,7 @@ function parseCurrentSeason(raw: Record<string, unknown>): SeasonDocument | null
   const devices = Array.isArray(raw.devices) ? raw.devices.filter(isSeasonDevice) : [];
   if (!idsUnique(lights.map((row) => row.id)) || !idsUnique(elements.map((row) => row.id))) return null;
   if (!elements.every((element) => lights.some((light) => light.id === element.lightId))) return null;
-  if (!props.every((prop) =>
-    lights.some((light) => light.id === prop.lightId) &&
-    prop.elementIds.every((elementId) =>
-      elements.some((element) => element.id === elementId && element.lightId === prop.lightId),
-    ),
-  )) return null;
+  if (!props.every((prop) => seasonPropFits(prop, lights, elements))) return null;
   return {
     version: SEASON_VERSION,
     kind: SEASON_KIND,
@@ -261,6 +260,7 @@ function parseCurrentSeason(raw: Record<string, unknown>): SeasonDocument | null
     lights,
     elements,
     props,
+    attachments,
     setupProfiles,
     looks,
     devices,
@@ -406,8 +406,17 @@ function lightKey(light: Light): string {
   return [light.name, light.mac ? normalizeMac(light.mac) : "", light.hostKey, light.ledCount, JSON.stringify(light.outputs ?? [])].join("|");
 }
 
+function seasonPropFits(prop: Prop, lights: { id: string }[], elements: Element[]): boolean {
+  if (prop.lightId && !lights.some((light) => light.id === prop.lightId)) return false;
+  if (prop.elementIds.length === 0) return !prop.lightId || lights.some((light) => light.id === prop.lightId);
+  if (!prop.lightId) return false;
+  return prop.elementIds.every((elementId) =>
+    elements.some((element) => element.id === elementId && element.lightId === prop.lightId),
+  );
+}
+
 function propKey(prop: Prop): string {
-  return `${prop.id}:${prop.label}:${prop.kind}:${prop.elementIds.join(",")}:${JSON.stringify(prop.wireframe ?? null)}`;
+  return `${prop.id}:${prop.label}:${prop.kind}:${prop.elementIds.join(",")}:${JSON.stringify(prop.wireframe ?? null)}:${JSON.stringify(prop.design ?? null)}`;
 }
 
 function elementKey(element: Element): string {

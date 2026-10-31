@@ -20,17 +20,19 @@ import { inspectPowerHow } from "@/lib/power-status";
 import { brightnessPct, lastSeenLabel, snapshotLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
-type DetailTab = "elements" | "settings" | "activity";
+type DetailTab = "overview" | "elements" | "settings" | "activity";
 type LegacyMode = "inspect" | "ranges" | "live" | "safe" | "strip";
 
 export function LightDetail({
   initial,
   mode,
   tab: tabProp,
+  checkWireframe = false,
 }: {
   initial: LightDetailPayload;
   mode?: LegacyMode;
   tab?: DetailTab;
+  checkWireframe?: boolean;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<DetailTab>(tabProp ?? tabFromMode(mode));
@@ -48,8 +50,7 @@ export function LightDetail({
 
   useEffect(() => {
     if (!mode) return;
-    const path =
-      tab === "elements" ? `/lights/${initial.light.id}` : `/lights/${initial.light.id}?tab=${tab}`;
+    const path = tabPath(initial.light.id, tab);
     if (window.location.search.includes("mode=")) {
       window.history.replaceState(null, "", path);
     }
@@ -81,8 +82,7 @@ export function LightDetail({
 
   function goTab(next: DetailTab) {
     setTab(next);
-    const path =
-      next === "elements" ? `/lights/${light.id}` : `/lights/${light.id}?tab=${next}`;
+    const path = tabPath(light.id, next);
     window.history.replaceState(null, "", path);
   }
 
@@ -156,7 +156,7 @@ export function LightDetail({
   return (
     <div className="mx-auto flex w-full max-w-[1100px] flex-1 flex-col gap-4 px-4 pt-5 pb-8 sm:px-10 sm:pt-6 sm:pb-32">
       <p className="text-[13px] text-muted-foreground">
-        <Link href="/" className="hover:text-foreground">
+        <Link href="/lights" className="hover:text-foreground">
           Lights
         </Link>
         <span> / {light.name}</span>
@@ -215,8 +215,8 @@ export function LightDetail({
             Review the controller before another Apply. Nightplot cannot tell what changed it.</p>
         </div> : null}
         <div className="flex gap-2 border-b border-border">
-          <TabButton active={tab === "elements"} onClick={() => goTab("elements")}>
-            Segments
+          <TabButton active={tab === "overview"} onClick={() => goTab("overview")}>
+            Props
           </TabButton>
           <TabButton active={tab === "settings"} onClick={() => goTab("settings")}>
             Settings
@@ -225,9 +225,18 @@ export function LightDetail({
             Activity
           </TabButton>
         </div>
+        <button
+          type="button"
+          onClick={() => goTab(tab === "elements" ? "overview" : "elements")}
+          className="min-h-11 self-start text-left text-[15px] text-primary"
+        >
+          {tab === "elements" ? "Close advanced editor" : "Advanced editor"}
+        </button>
       </header>
 
-      {tab === "activity" ? <ActivityPanel lightId={light.id} /> : tab === "settings" ? (
+      {tab === "overview" ? (
+        <ControllerOverview lightName={light.name} props={detail.props ?? []} />
+      ) : tab === "activity" ? <ActivityPanel lightId={light.id} /> : tab === "settings" ? (
         <SettingsPanel
           detail={detail}
           addressOpen={addressOpen}
@@ -256,6 +265,7 @@ export function LightDetail({
           onDetail={setDetail}
           onSettings={() => goTab("settings")}
           onRefresh={() => router.refresh()}
+          openWireframe={checkWireframe}
         />
       )}
       {tab === "settings" && notice ? (
@@ -314,5 +324,40 @@ function TabButton({
 
 function tabFromMode(mode: LegacyMode | undefined): DetailTab {
   if (mode === "inspect" || mode === "strip" || mode === "safe") return "settings";
-  return "elements";
+  if (mode === "ranges" || mode === "live") return "elements";
+  return "overview";
+}
+
+function tabPath(id: string, tab: DetailTab): string {
+  if (tab === "overview") return `/lights/${id}`;
+  return `/lights/${id}?tab=${tab}`;
+}
+
+function ControllerOverview({
+  lightName,
+  props,
+}: {
+  lightName: string;
+  props: NonNullable<LightDetailPayload["props"]>;
+}) {
+  return (
+    <section className="flex flex-col gap-3" aria-label="Props on this controller">
+      <h2 className="text-[18px] font-medium">Props on {lightName}</h2>
+      {props.length === 0 ? (
+        <p className="text-[15px] leading-6 text-muted-foreground">
+          Nothing is attached here. Design a prop from your yard, then attach it. The advanced editor is for fixing ranges by hand.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {props.map((prop) => (
+            <li key={prop.id} className="rounded-xl border border-border px-3 py-3 text-[15px]">
+              {prop.label}
+              {prop.design?.ledCount != null ? ` · ${prop.design.ledCount} lights` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+      <Link href="/" className="inline-flex min-h-11 items-center text-[15px] text-primary">Your yard</Link>
+    </section>
+  );
 }

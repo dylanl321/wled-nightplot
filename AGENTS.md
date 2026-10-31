@@ -8,7 +8,7 @@ Use: **Lights**, **Segments**, Preview, Apply, Blink, All Off.
 
 Fleet and show words are also in play: **Yard**, **Prop**, **Zone**, **Look**, **Schedule**. Use them when the work is about many controllers or a show. Do not invent further product nouns.
 
-A Light is one enrolled controller. It may drive several **outputs** (WLED buses / strips), each with its own LED type, length, and GPIO. A Segment is an inclusive–exclusive range on one output. Gaps between Segments on the same output are allowed; overlap is not. A **Prop** is a named, typed shape on one Light, made of one or more Segments on any output of that controller. Gaps between those Segments are allowed.
+A Light is one enrolled controller. It may drive several **outputs** (WLED buses / strips), each with its own LED type, length, and GPIO. A Segment is an inclusive–exclusive range on one output. Gaps between Segments on the same output are allowed; overlap is not. A **Prop** is a named shape you can design before any controller is connected: a template, measurements, spacing, and a computed light count. Attaching it to a controller output is optional. Segments and a ledmap are generated when you attach and Apply, not drawn by hand on the main path. Gaps between those Segments are allowed.
 
 The user renamed visible Elements to Segments on September 28, 2026. Existing
 `Element` types, `elements` payload/store keys, routes, and saved custom labels

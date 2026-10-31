@@ -169,7 +169,8 @@ let failed = 0;
 try {
   const id = await lightId();
   const routes = [
-    ["lights", "/"],
+    ["yard", "/"],
+    ["lights", "/lights"],
     ["discover", "/discover"],
     ["led-products", "/led-products"],
     ["backups", "/backups"],
@@ -217,6 +218,7 @@ try {
     try {
       await page.goto(`${webOrigin}/lights/${id}`, { waitUntil: "domcontentloaded" });
       await settle(page);
+      await page.getByRole("button", { name: "Advanced editor" }).click();
       const add = page.getByRole("button", { name: "Add prop" });
       await add.evaluate((el) => el.scrollIntoView({ block: "center", inline: "nearest" }));
       await add.click();
@@ -236,6 +238,30 @@ try {
       await page.getByRole("button", { name: "Review this wireframe" }).click();
       assertFits(`${viewport.name} wireframe-review`, await measure(page));
       console.log(`ok ${viewport.name} wireframe-review`);
+    } catch (error) {
+      failed += 1;
+      console.error(String(error));
+    }
+
+    try {
+      await page.goto(`${webOrigin}/props/new`, { waitUntil: "domcontentloaded" });
+      await settle(page);
+      assertFits(`${viewport.name} new-prop-name`, await measure(page));
+      await page.getByRole("textbox").fill("Front roof");
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      assertFits(`${viewport.name} new-prop-shape`, await measure(page));
+      await page.getByRole("button", { name: /Roofline/ }).click();
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      assertFits(`${viewport.name} new-prop-size`, await measure(page));
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      assertFits(`${viewport.name} new-prop-review`, await measure(page));
+      console.log(`ok ${viewport.name} new-prop`);
+      await page.getByRole("button", { name: "Back" }).click();
+      await page.getByRole("button", { name: "Back" }).click();
+      await page.getByRole("button", { name: /Custom draw/ }).click();
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      assertFits(`${viewport.name} new-prop-custom`, await measure(page));
+      console.log(`ok ${viewport.name} new-prop-custom`);
     } catch (error) {
       failed += 1;
       console.error(String(error));

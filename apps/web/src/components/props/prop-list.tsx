@@ -19,6 +19,7 @@ export function PropList({
   onAdd,
   onDetail,
   onNotice,
+  openWireframe = false,
 }: {
   lightId: string;
   lightName: string;
@@ -32,8 +33,10 @@ export function PropList({
   onAdd: () => void;
   onDetail: (next: LightDetail) => void;
   onNotice: (notice: string | null) => void;
+  openWireframe?: boolean;
 }) {
-  const [editing, setEditing] = useState<Prop | null>(null);
+  const wireframe = openWireframe ? props.find((prop) => prop.kind === "wireframe" && prop.wireframe) ?? null : null;
+  const [editing, setEditing] = useState<Prop | null>(wireframe);
   return (
     <section aria-label="Props" className="rounded-[14px] border border-border bg-[#0e1014]">
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">

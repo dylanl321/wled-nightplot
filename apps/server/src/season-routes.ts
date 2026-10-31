@@ -65,6 +65,7 @@ export function snapshotSeason(deps: SeasonRouteDeps): SeasonDocument {
     lights: deps.store.load(),
     elements: deps.store.loadElements(),
     props: deps.store.loadProps(),
+    attachments: deps.store.loadAttachments(),
     setupProfiles: deps.profiles.list(),
     looks,
     devices: [],
@@ -196,6 +197,7 @@ export function registerSeasonRoutes(app: Hono, deps: SeasonRouteDeps) {
           lights: rematched.map((row) => row.light),
           elements: parsed.document.elements,
           props: parsed.document.props,
+          attachments: parsed.document.attachments ?? [],
           looks: parsed.document.looks ?? undefined,
           profiles: parsed.document.setupProfiles,
         });

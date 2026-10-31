@@ -11,6 +11,7 @@ import {
   type HostPort,
   type Light,
   type Prop,
+  type PropDesign,
   type WireframeSpec,
 } from "@nightplot/shared";
 import type { FileLightsStore } from "./store/lights-store.ts";
@@ -30,6 +31,7 @@ export function persistWireframeOnLight(input: {
   propId: string;
   label: string;
   spec: WireframeSpec;
+  design?: PropDesign;
   palette: readonly { hex: string }[];
 }): PersistWireframeResult {
   const refuse = wireframeRefuseReason(input.spec, input.light.ledCount);
@@ -39,7 +41,8 @@ export function persistWireframeOnLight(input: {
   if (otherWireframe) {
     return { ok: false, message: "This Light already has a wireframe Prop. Correct that one. A second map was not saved." };
   }
-  const existingProp = existingProps.find((row) => row.id === input.propId);
+  const onLight = existingProps.find((row) => row.id === input.propId);
+  const existingProp = onLight ?? input.store.loadProps().find((row) => row.id === input.propId);
   const existing = input.store.elementsFor(input.light.id);
   const others = existing.filter((element) => !existingProp?.elementIds.includes(element.id));
   if (others.length > 0) {
@@ -76,11 +79,12 @@ export function persistWireframeOnLight(input: {
     kind: "wireframe",
     elementIds: created.map((element) => element.id),
     wireframe: input.spec,
+    ...(input.design ?? existingProp?.design ? { design: input.design ?? existingProp?.design } : {}),
   };
   input.store.replaceElements(input.light.id, created);
   input.store.replaceProps(
     input.light.id,
-    existingProp
+    onLight
       ? existingProps.map((row) => (row.id === input.propId ? prop : row))
       : [...existingProps, prop],
   );
