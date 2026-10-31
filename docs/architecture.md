@@ -8,7 +8,7 @@ This is early software. Paths below are the real tree on `main`.
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `apps/web` | `@nightplot/web` | Quiet-utility Next.js shell. Routes: `/`, `/discover`, `/led-products`, `/backups`, `/looks`, `/sync`, `/lights/[id]` |
+| `apps/web` | `@nightplot/web` | Quiet-utility Next.js shell. Routes: `/`, `/discover`, `/led-products`, `/backups`, `/looks`, `/yard`, `/sync`, `/lights/[id]` |
 | `apps/server` | `@nightplot/server` | Hono API, Discover, JSON store, WLED I/O, fixture, headless sim |
 | `packages/shared` | `@nightplot/shared` | Types, catalogs, LAN guard, parse, range / live / safe / provision / Effect |
 | `docs/ui/` | — | v2 prototype (visual source of truth) |
@@ -55,8 +55,10 @@ Routes and API: [README.md](../README.md#ui) / [README.md](../README.md#api).
 | `Element` | same | Inclusive–exclusive range; optional `outputId`; gaps allowed |
 | `Prop` | `packages/shared/src/prop/types.ts` | Named typed shape on one Light. `elementIds` are its Segments. Templates in `prop/templates.ts` turn taps into drafts |
 | `SetupProfile` | `packages/shared/src/setup-profile.ts` | Saved fleet setup (LED type, colour order, Safe fields, name pattern). `outputIndex` missing/null = every writable bus; a number writes that 0-based bus |
-| `Look` | `packages/shared/src/look.ts` | Named colour / effect style. Same WLED preset slot on every Light; geometry from that Light’s Props / Segments. Overrides: Prop id, then Prop kind, then Segment |
+| `Look` | `packages/shared/src/look.ts` | Named colour / effect style. Same WLED preset slot on every Light; geometry from that Light’s Props / Segments. Overrides: Prop id, then Prop kind, then Segment. `LastLookPush` on a Light is the last matched write — missing is not “in sync” |
 | `NightlySchedule` | `packages/shared/src/schedule.ts` | Sunset or clock-time on, Look or playlist, off time. Written as `cfg.if.ntp` + `cfg.timers.ins` (sunset = hour 255 on slot 8) |
+| `YardCheckRow` | `packages/shared/src/yard.ts` | One Light after a Yard reread: firmware, outputs, Looks, Schedule, sync, lit. Unknown / not-pushed are not matches |
+| `SeasonDocument` | `packages/shared/src/season.ts` | Versioned one-file season (`nightplot-season` v1). Older Nightplot backups and Lights-store files migrate in. Missing Looks stay missing |
 | `validateDeclaredRanges` | `packages/shared/src/range.ts` | Invert, overlap, `over-ledCount`. Start at or past `ledCount` (or stop below 0) is past strip even when inverted |
 | `BeadColor` | `packages/shared/src/bead.ts` | Colour, `null` (off), or `"unknown"` (grey) |
 | `stripHonestyForLight` | `packages/shared/src/strip/honesty.ts` | rgb / rgbw + chip caption from product, else `stripKind` |
@@ -86,6 +88,8 @@ Strip Apply (`buildProvisionWrite`) writes WLED `order: 0` (GRBW on SK6812 RGBW;
 | HTTP | `createApp` | `apps/server/src/app.ts` |
 | Store | `FileLightsStore` | `apps/server/src/store/lights-store.ts` |
 | Looks | `FileLooksStore`, `registerLookRoutes` | `apps/server/src/store/looks-store.ts`, `apps/server/src/look-routes.ts`. Library in `data/looks.json`. Push merges Nightplot-managed preset slots into `/presets.json` and writes NTP / timers on `/json/cfg` |
+| Yard | `registerYardRoutes`, `FileYardUndoStore` | `apps/server/src/yard-routes.ts`, `apps/server/src/store/yard-undo-store.ts`. `GET /api/yard-check` rereads every Light. Fix / Sweep / Undo use `FLEET_YARD_CONCURRENCY` (4). Undo token in `data/yard-undo.json` |
+| Season | `registerSeasonRoutes`, `writeSeasonStoresConsistent` | `apps/server/src/season-routes.ts`, `apps/server/src/store/nightplot-restore.ts`. One-file export/review/restore. Looks replace `looks.json` when the file has them. Host rematch by MAC |
 | LED products | `FileLedProductsStore` | `apps/server/src/store/led-products-store.ts` |
 | Backups | `FileBackupStore` | `apps/server/src/store/backup-store.ts` |
 | Probe | `createWledProbe` | `apps/server/src/wled/client.ts` (`TIMEOUT_MS` 3000). All Off unknown-row copy is `allOffNoAnswerReason` — elapsed or generic refuse, not a claimed 3 s. Delete unknown-controller copy is `deleteUnknownControllerReason` — elapsed or generic refuse, not “in time” |
@@ -113,7 +117,7 @@ Find must use an advertised port (SSDP `LOCATION` in `apps/server/src/discovery/
 
 ## Persistence
 
-`FileLightsStore` writes `{ version: 1, lights, elements, props }` to `data/lights.json` (or `NIGHTPLOT_STORE_PATH`). A missing `props` list is none. Unparseable Prop rows refuse a write instead of dropping them. A Light may carry `ledProductId` (null if the operator keeps manual Strip fields). `FileLedProductsStore` writes `{ version: 1, products }` to `data/led-products.json` (or `NIGHTPLOT_LED_PRODUCTS_PATH`). First boot seeds from `STRIP_PRESETS`. `FileLooksStore` writes `{ version: 1, looks, playlists, schedule }` to `data/looks.json` (or `NIGHTPLOT_LOOKS_PATH`). A missing Looks file seeds the built-in library; a corrupt file is unreadable, not empty. Neither file is a WLED write.
+`FileLightsStore` writes `{ version: 1, lights, elements, props }` to `data/lights.json` (or `NIGHTPLOT_STORE_PATH`). A missing `props` list is none. Unparseable Prop rows refuse a write instead of dropping them. A Light may carry `ledProductId` (null if the operator keeps manual Strip fields) and optional `lastLookPush` (missing is not in sync). `FileLedProductsStore` writes `{ version: 1, products }` to `data/led-products.json` (or `NIGHTPLOT_LED_PRODUCTS_PATH`). First boot seeds from `STRIP_PRESETS`. `FileLooksStore` writes `{ version: 1, looks, playlists, schedule }` to `data/looks.json` (or `NIGHTPLOT_LOOKS_PATH`). A missing Looks file seeds the built-in library; a corrupt file is unreadable, not empty. Neither file is a WLED write. `FileYardUndoStore` writes the last Yard Fix backup ids to `data/yard-undo.json`. A season file is an operator download (`kind: nightplot-season`); restore stages Lights / Looks / setup profiles through one intent, the same crash-finish pattern as Nightplot restore.
 
 `FileActivityStore` writes `{ version: 1, entries }` atomically to `data/activity.json` beside the Lights store (or `NIGHTPLOT_ACTIVITY_PATH`). The latest 1000 entries survive server restarts and appear newest first on a Light's Activity tab. Apply logs controller readback match/difference/unknown after a write attempt; Preview logs its initial start and end (not every cursor hop), with restore write acceptance explicitly distinct from pixel verification. All Off logs each targeted Light and Preview cancellation without restoration. A controller/software readback match is not Hardware Done.
 

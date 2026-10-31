@@ -36,7 +36,7 @@ Copy [`.env.example`](../.env.example). Both apps read process env; there is no 
 | `NIGHTPLOT_API_HOST` | `127.0.0.1` | API bind |
 | `NIGHTPLOT_API_PORT` | `43181` | API bind |
 | `NIGHTPLOT_STORE_PATH` | `data/lights.json` | Enrolled Lights + Elements |
-| `NIGHTPLOT_LOOKS_PATH` | beside the Lights store (`looks.json`) | Looks library, playlists, nightly Schedule |
+| `NIGHTPLOT_LOOKS_PATH` | beside the Lights store (`looks.json`) | Looks library, playlists, nightly Schedule. Season restore writes this file when the season includes Looks. Yard Fix undo lives beside the Lights store as `yard-undo.json`. |
 | `NIGHTPLOT_LED_PRODUCTS_PATH` | `data/led-products.json` | Operator LED product catalog (`/led-products`) |
 | `NIGHTPLOT_ACTIVITY_PATH` | beside the Lights store (`activity.json`) | Durable Activity history |
 | `NIGHTPLOT_BACKUPS_PATH` | beside the Lights store (`backups/`) | Managed Nightplot data and native WLED file backups |

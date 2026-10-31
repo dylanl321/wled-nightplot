@@ -2,6 +2,7 @@ import {
   LOOK_CAPTION,
   buildManagedPresets,
   buildScheduleWrite,
+  lookPushDigest,
   lookPushSummaryFor,
   lookTargets,
   managedLookSlots,
@@ -22,6 +23,7 @@ import {
   isSupportedProvisionFirmware,
   type ActivityEntry,
   type BackupDocument,
+  type BackupReason,
   type HostPort,
   type Light,
   type Look,
@@ -50,7 +52,7 @@ export type LookRouteDeps = {
   readPresets: ReadWledPresets;
   writePresets: WriteWledPresets;
   refreshOne: (stored: Light) => Promise<{ light: Light; live: WledSnapshot | null }>;
-  captureDevice: (reason: "pre-sync", light: Light, snap: WledSnapshot) => Promise<BackupDocument>;
+  captureDevice: (reason: BackupReason, light: Light, snap: WledSnapshot) => Promise<BackupDocument>;
   record: (
     light: Pick<Light, "id" | "name">,
     action: ActivityEntry["action"],
@@ -177,7 +179,7 @@ export function registerLookRoutes(app: Hono, deps: LookRouteDeps) {
       try {
         await deps.live.settle(light.id);
         if (deps.live.get(light.id)) return row(light, "refused", BUSY);
-        return await pushOne(deps, {
+        return await pushLooksToLight(deps, {
           light,
           snap,
           document,
@@ -219,7 +221,7 @@ function parseUdp(value: PushBody["udp"]):
   return { group: value.group, roles: Object.fromEntries(roles) as Record<string, UdpSyncRole> };
 }
 
-async function pushOne(
+export async function pushLooksToLight(
   deps: LookRouteDeps,
   input: {
     light: Light;
@@ -228,12 +230,13 @@ async function pushOne(
     includeSchedule: boolean;
     runSlot: number | null;
     udp: { group: number; roles: Record<string, UdpSyncRole> } | null;
+    reason?: BackupReason;
   },
 ): Promise<SyncRow> {
   const { light, snap, document } = input;
   let safety: BackupDocument;
   try {
-    safety = await deps.captureDevice("pre-sync", light, snap);
+    safety = await deps.captureDevice(input.reason ?? "pre-sync", light, snap);
   } catch (error) {
     return row(light, "failed", `Safety backup failed: ${messageOf(error)} Nothing was sent.`);
   }
@@ -325,5 +328,22 @@ async function pushOne(
     }
   }
 
+  const udpRole = input.udp?.roles[light.id];
+  const digest = lookPushDigest({
+    looks: document.looks,
+    playlists: document.playlists,
+    schedule: document.schedule,
+    includeSchedule: input.includeSchedule,
+    udp: input.udp && udpRole ? { group: input.udp.group, role: udpRole } : null,
+  });
+  deps.store.replace({
+    ...light,
+    lastLookPush: {
+      at: new Date().toISOString(),
+      includeSchedule: input.includeSchedule,
+      ...(input.udp && udpRole ? { udp: { group: input.udp.group, role: udpRole } } : {}),
+      digest,
+    },
+  });
   return row(light, "matched", notes.join(" "), safety.id);
 }

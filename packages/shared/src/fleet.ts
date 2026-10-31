@@ -3,6 +3,7 @@
 export const FLEET_ENROLL_CONCURRENCY = 4;
 export const FLEET_PROFILE_CONCURRENCY = 4;
 export const FLEET_LOOK_CONCURRENCY = 4;
+export const FLEET_YARD_CONCURRENCY = 4;
 
 export const FLEET_BULK_CAPTION =
   "Each controller is listed by what happened. One failure does not stop the rest. Automatic backup before a lasting write; Undo is that backup, not a confirm step. Not Hardware Done.";

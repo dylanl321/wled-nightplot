@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import {
   isProp,
+  macsMatch,
   normalizeLightLedProductId,
   withMigratedOutputs,
   type Element,
@@ -101,6 +102,10 @@ export class FileLightsStore {
 
   findById(id: string): Light | undefined {
     return this.read().lights.find((light) => light.id === id);
+  }
+
+  findByMac(mac: string): Light | undefined {
+    return this.read().lights.find((light) => light.mac != null && macsMatch(light.mac, mac));
   }
 
   /**

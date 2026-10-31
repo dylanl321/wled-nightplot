@@ -3,6 +3,7 @@ import type { ApplyConflict, LastApply } from "./apply-conflict.ts";
 import type { BeadColor } from "./bead.ts";
 import type { RangeDisplay, ReportedRail } from "./drift.ts";
 import type { LiveMatch, LiveSession } from "./live.ts";
+import type { LastLookPush } from "./look.ts";
 import type { AllOffResult, DeleteCheck } from "./manage.ts";
 import type { Prop } from "./prop/types.ts";
 import type { ProvisionRead, ProvisionWriteResult } from "./provision.ts";
@@ -73,6 +74,8 @@ export type Light = {
   lastSnapshotAt?: string | null;
   /** Last confirmed Segment Apply; not rewritten by Inspect or readdressing. */
   lastApply?: LastApply | null;
+  /** Last matched Looks / Schedule / sync push. Missing is not “in sync”. */
+  lastLookPush?: LastLookPush | null;
 };
 
 /** Missing or blank store values are manual fields. */

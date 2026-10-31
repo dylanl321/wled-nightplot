@@ -13,6 +13,7 @@ import type { Element } from "./lights.ts";
 import { isPropKind, type Prop, type PropKind } from "./prop/types.ts";
 import type { NightlySchedule } from "./schedule.ts";
 import { isPresetId, WLED_PRESET_MAX, WLED_PRESET_MIN } from "./sync.ts";
+import { isUdpSyncGroup, type UdpSyncRole } from "./udp-sync.ts";
 
 export const LOOK_NAME_MAX = 32;
 export const LOOK_OFF_SLOT = 250;
@@ -426,6 +427,43 @@ export function lookPushSummaryFor(kind: "looks" | "looks+schedule", rows: { sta
   if (rows.length === 0) return "No Lights were chosen. Nothing was sent.";
   if (matched === rows.length) return `${matched} of ${rows.length} ${verb}.`;
   return `${matched} of ${rows.length} ${verb}. Check the Lights listed below.`;
+}
+
+/** What Nightplot last wrote to this Light. Missing is not “empty / in sync”. */
+export type LastLookPush = {
+  at: string;
+  includeSchedule: boolean;
+  udp?: { group: number; role: UdpSyncRole };
+  digest: string;
+};
+
+export function isLastLookPush(value: unknown): value is LastLookPush {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Partial<LastLookPush>;
+  if (typeof row.at !== "string" || !row.at) return false;
+  if (typeof row.includeSchedule !== "boolean") return false;
+  if (typeof row.digest !== "string" || !row.digest) return false;
+  if (row.udp !== undefined) {
+    if (!row.udp || typeof row.udp !== "object") return false;
+    if (!isUdpSyncGroup(row.udp.group)) return false;
+    if (row.udp.role !== "leader" && row.udp.role !== "follower" && row.udp.role !== "off") return false;
+  }
+  return true;
+}
+
+export function lookPushDigest(input: {
+  looks: readonly Look[];
+  playlists: readonly LookPlaylist[];
+  schedule: NightlySchedule | null;
+  includeSchedule: boolean;
+  udp?: { group: number; role: UdpSyncRole } | null;
+}): string {
+  return canonical({
+    looks: input.looks.map(normalizeLook),
+    playlists: input.playlists.map(normalizePlaylist),
+    schedule: input.includeSchedule ? input.schedule : null,
+    udp: input.udp ?? null,
+  });
 }
 
 function look(id: string, name: string, slot: number, style: LookStyle): Look {

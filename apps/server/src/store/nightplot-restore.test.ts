@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { defaultNightplotSettings } from "@nightplot/shared";
-import { recoverInterruptedRestore, writeNightplotStoresConsistent } from "./nightplot-restore.ts";
+import { recoverInterruptedRestore, writeNightplotStoresConsistent, writeSeasonStoresConsistent } from "./nightplot-restore.ts";
 
 describe("crash-consistent Nightplot restore", () => {
   it("replaces Lights, LED products and Activity together", () => {
@@ -67,5 +67,29 @@ describe("crash-consistent Nightplot restore", () => {
     })}\n`);
     recoverInterruptedRestore(dest);
     expect(readFileSync(dest, "utf8")).toBe("new");
+  });
+
+  it("replaces Lights and Looks together, and leaves Looks untouched when the file had none", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-season-restore-"));
+    const lights = join(dir, "lights.json");
+    const looks = join(dir, "looks.json");
+    const profiles = join(dir, "setup-profiles.json");
+    writeFileSync(looks, `${JSON.stringify({ version: 1, looks: [{ id: "keep" }], playlists: [], schedule: null })}\n`);
+    writeSeasonStoresConsistent({ lights, looks, profiles }, {
+      lights: [{ id: "porch" }],
+      elements: [],
+      props: [],
+      looks: { version: 1, looks: [{ id: "warm" }], playlists: [], schedule: null },
+      profiles: [{ id: "p1", name: "Yard" }],
+    });
+    expect(JSON.parse(readFileSync(looks, "utf8")).looks[0].id).toBe("warm");
+    expect(JSON.parse(readFileSync(profiles, "utf8")).profiles[0].name).toBe("Yard");
+    writeSeasonStoresConsistent({ lights }, {
+      lights: [{ id: "eave" }],
+      elements: [],
+      props: [],
+    });
+    expect(JSON.parse(readFileSync(looks, "utf8")).looks[0].id).toBe("warm");
+    expect(JSON.parse(readFileSync(lights, "utf8")).lights[0].id).toBe("eave");
   });
 });

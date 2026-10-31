@@ -58,6 +58,7 @@ export function lightFromSnapshot(
     lastSnapshot: existing?.lastSnapshot ?? null,
     lastSnapshotAt: existing?.lastSnapshotAt ?? null,
     lastApply: existing?.lastApply ?? null,
+    lastLookPush: existing?.lastLookPush ?? null,
   };
 }
 

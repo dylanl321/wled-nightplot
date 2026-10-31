@@ -585,6 +585,89 @@ describe("headless WLED sim e2e: Sync across Lights", () => {
   }, 20_000);
 });
 
+describe("headless WLED sim e2e: Yard check and season save", () => {
+  it("rereads drift, exports a season with Looks, and restores it as software path only", async () => {
+    const sim = await startSim();
+    const { app, store } = appAgainstHttp();
+    const porch = await enroll(app, `${sim.host}:${sim.httpPort}`);
+    const saved = await app.request("/api/looks", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        looks: [{
+          id: "look-warm", name: "Warm white", slot: 1,
+          style: { fx: 0, pal: 0, sx: 128, ix: 128, bri: 180, color: "#ffa000" },
+          overrides: [],
+        }],
+        playlists: [],
+        schedule: null,
+      }),
+    });
+    expect(saved.status).toBe(200);
+
+    const unread = (await (await app.request("/api/yard-check")).json()) as {
+      rows: { lightId: string; looks: { status: string } }[];
+      caption: string;
+    };
+    expect(unread.caption).toMatch(/Not Hardware Done/);
+    expect(unread.rows.find((row) => row.lightId === porch.id)?.looks.status).toBe("not-pushed");
+
+    const pushed = await app.request("/api/looks/push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightIds: [porch.id], includeSchedule: false }),
+    });
+    expect(pushed.status).toBe(200);
+    expect(store.findById(porch.id)?.lastLookPush?.includeSchedule).toBe(false);
+
+    const matched = (await (await app.request("/api/yard-check")).json()) as {
+      rows: { lightId: string; looks: { status: string } }[];
+    };
+    expect(matched.rows.find((row) => row.lightId === porch.id)?.looks.status).toBe("match");
+
+    const exported = (await (await app.request("/api/season/export")).json()) as {
+      document: { looks: { looks: { name: string }[] } };
+    };
+    expect(exported.document.looks.looks[0]?.name).toBe("Warm white");
+
+    const changed = await app.request("/api/looks", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        looks: [{
+          id: "look-cool", name: "Cool white", slot: 2,
+          style: { fx: 0, pal: 0, sx: 128, ix: 128, bri: 200, color: "#ffffff" },
+          overrides: [],
+        }],
+        playlists: [],
+        schedule: null,
+      }),
+    });
+    expect(changed.status).toBe(200);
+    const review = await app.request("/api/season/review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ document: exported.document }),
+    });
+    expect(review.status).toBe(200);
+    const reviewed = (await review.json()) as { expectedDigest: string; expectedCurrentDigest: string };
+    const restore = await app.request("/api/season/restore", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        document: exported.document,
+        expectedDigest: reviewed.expectedDigest,
+        expectedCurrentDigest: reviewed.expectedCurrentDigest,
+        confirm: true,
+        pushToControllers: true,
+      }),
+    });
+    expect(restore.status).toBe(200);
+    const looks = (await (await app.request("/api/looks")).json()) as { looks: { name: string }[] };
+    expect(looks.looks[0]?.name).toBe("Warm white");
+  }, 30_000);
+});
+
 async function viWaitForLive(baseUrl: string, hex: string) {
   const started = Date.now();
   while (Date.now() - started < 2000) {
