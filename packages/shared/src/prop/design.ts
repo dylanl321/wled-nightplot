@@ -6,6 +6,7 @@
 
 import type { Element, Light, LightOutput } from "../lights.ts";
 import { legacyOutputId } from "../outputs.ts";
+import { countLayout, layoutFromMeasurements, type PropLayout } from "./layout.ts";
 import { defaultWireframeSpec, defaultWiringOrder, parseEdgeId } from "./wireframe.ts";
 import {
   isPropDesign,
@@ -81,12 +82,12 @@ export function compilePropDesign(input: {
   pitchMm: number;
   ledProductId: string | null;
   measurements: PropMeasurements;
-}): { ok: true; design: PropDesign; wireframe?: WireframeSpec } | { ok: false; message: string } {
+}): { ok: true; design: PropDesign; layout: PropLayout; wireframe?: WireframeSpec } | { ok: false; message: string } {
   if (!(input.pitchMm > 0) || !Number.isFinite(input.pitchMm)) {
     return { ok: false, message: "Light spacing has to be greater than zero." };
   }
   if (input.measurements.shape === "custom") {
-    return { ok: false, message: "Custom draw is not ready yet. Pick a template shape." };
+    return { ok: false, message: "Draw the prop, then save. Nothing was saved." };
   }
   if (input.measurements.shape === "legacy") {
     return { ok: false, message: "That shape is only for props saved before designing without a controller." };
@@ -94,25 +95,116 @@ export function compilePropDesign(input: {
   if (input.measurements.shape !== input.kind && !(input.kind === "wireframe" && input.measurements.shape === "wireframe")) {
     return { ok: false, message: "The shape and the measurements do not match." };
   }
-  const built = edgesFor(input.measurements, input.unit, input.pitchMm);
-  if (!built.ok) return built;
-  const design: PropDesign = {
-    unit: input.unit,
-    pitchMm: input.pitchMm,
-    ledProductId: input.ledProductId,
-    measurements: input.measurements,
-    ledCount: built.edges.reduce((sum, edge) => sum + edge.ledCount, 0),
-    edges: built.edges,
-  };
+  const params = measurementParams(input.measurements);
+  if (!params) return { ok: false, message: "Those measurements could not be saved." };
+  const layout = layoutFromMeasurements({
+    units: input.unit,
+    pitchM: input.pitchMm / 1000,
+    shape: input.measurements.shape,
+    params,
+  });
+  if (!layout) return { ok: false, message: "Those measurements could not be saved." };
+  const design = designFromLayout(layout, input.ledProductId, input.measurements);
   if (!isPropDesign(design)) return { ok: false, message: "Those measurements could not be saved." };
   if (input.measurements.shape === "wireframe") {
     return {
       ok: true,
       design,
+      layout,
       wireframe: defaultWireframeSpec({ sides: input.measurements.sides, pitchMm: input.pitchMm }),
     };
   }
-  return { ok: true, design };
+  return { ok: true, design, layout };
+}
+
+export function designFromLayout(
+  layout: PropLayout,
+  ledProductId: string | null,
+  measurements: PropMeasurements,
+): PropDesign {
+  const counted = countLayout(layout);
+  const names = edgeNames(measurements, layout);
+  const edges = counted.edges.filter((edge) => edge.kind === "lit").map((edge, index) => ({
+    id: edge.id,
+    label: names[index] ?? `Side ${index + 1}`,
+    lengthMm: Math.round(edge.lengthM * 1000),
+    ledCount: edge.lights,
+  }));
+  return {
+    unit: layout.units,
+    pitchMm: Math.round(layout.pitchM * 1000 * 1000) / 1000,
+    ledProductId,
+    measurements,
+    ledCount: edges.reduce((sum, edge) => sum + edge.ledCount, 0),
+    edges,
+  };
+}
+
+function measurementParams(measurements: PropMeasurements): Record<string, number> | null {
+  switch (measurements.shape) {
+    case "roofline":
+      return { length: measurements.length };
+    case "window":
+      return { width: measurements.width, height: measurements.height };
+    case "arch":
+      return { width: measurements.width, height: measurements.height };
+    case "tree":
+      return { height: measurements.height, base: measurements.base };
+    case "stake-row":
+      return { stakes: measurements.stakes, height: measurements.height };
+    case "wireframe":
+      return { sides: measurements.sides, side: measurements.side, height: measurements.height };
+    case "custom":
+    case "legacy":
+      return null;
+    default: {
+      const _never: never = measurements;
+      return _never;
+    }
+  }
+}
+
+function windowEdgeNames(layout: PropLayout): string[] {
+  const clockwise = layout.template?.params.clockwise === 1;
+  const start = layout.template?.params.start ?? 0;
+  const ring = clockwise ? [0, 3, 2, 1] : [0, 1, 2, 3];
+  const at = Math.max(0, ring.indexOf(start));
+  const order = [...ring.slice(at), ...ring.slice(0, at)];
+  const side = (a: number, b: number) => {
+    const key = [a, b].sort((left, right) => left - right).join("-");
+    if (key === "0-1") return "Bottom";
+    if (key === "1-2") return "Right";
+    if (key === "2-3") return "Top";
+    return "Left";
+  };
+  return order.map((corner, index) => side(corner, order[(index + 1) % order.length]!));
+}
+
+function edgeNames(measurements: PropMeasurements, layout: PropLayout): string[] {
+  switch (measurements.shape) {
+    case "roofline":
+      return ["Along the roof"];
+    case "window":
+      return windowEdgeNames(layout);
+    case "arch":
+      return ["Left side", "Right side"];
+    case "tree":
+      return ["Left side", "Right side"];
+    case "stake-row":
+      return Array.from({ length: measurements.stakes }, (_, index) => `Stake ${index + 1}`);
+    case "wireframe":
+      return defaultWiringOrder(measurements.sides).map((id) => {
+        const parsed = parseEdgeId(id);
+        return parsed ? wellHouseLabel(parsed.kind, parsed.index) : id;
+      });
+    case "custom":
+    case "legacy":
+      return [];
+    default: {
+      const _never: never = measurements;
+      return _never;
+    }
+  }
 }
 
 function edgesFor(

@@ -254,12 +254,18 @@ try {
       await page.getByRole("button", { name: "Next", exact: true }).click();
       assertFits(`${viewport.name} new-prop-size`, await measure(page));
       await page.getByRole("button", { name: "Next", exact: true }).click();
-      assertFits(`${viewport.name} new-prop-review`, await measure(page));
+      await page.getByRole("heading", { name: /controller end/ }).waitFor();
+      assertFits(`${viewport.name} new-prop-origin`, await measure(page));
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      await page.getByRole("button", { name: "Done" }).waitFor();
+      assertFits(`${viewport.name} new-prop-editor`, await measure(page));
       console.log(`ok ${viewport.name} new-prop`);
+      await page.getByRole("button", { name: "Back" }).click();
       await page.getByRole("button", { name: "Back" }).click();
       await page.getByRole("button", { name: "Back" }).click();
       await page.getByRole("button", { name: /Custom draw/ }).click();
       await page.getByRole("button", { name: "Next", exact: true }).click();
+      await page.getByRole("button", { name: "Done" }).waitFor();
       assertFits(`${viewport.name} new-prop-custom`, await measure(page));
       console.log(`ok ${viewport.name} new-prop-custom`);
     } catch (error) {

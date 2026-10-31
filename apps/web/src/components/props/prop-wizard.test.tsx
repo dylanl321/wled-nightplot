@@ -7,31 +7,43 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("New prop wizard", () => {
-  it("walks a 40 ft roofline at 10 cm to 122 lights and leaves custom draw unsaved", () => {
+  it("opens a 40 ft roofline in the same editor, showing 122 lights", () => {
     render(<PropWizard products={[]} />);
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Front roof" } });
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     fireEvent.click(screen.getByRole("button", { name: /Roofline/ }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByText("122 lights")).toBeTruthy();
-    expect(screen.getByText("Along the roof")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    fireEvent.click(screen.getByRole("button", { name: /Custom draw/ }));
+    expect(screen.getByRole("heading", { name: "Which corner is the controller end?" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "This end" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByText(/Custom draw is not ready yet/)).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/122 lights/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeTruthy();
   });
 
-  it("counts an 8-sided well house from sides and side length", () => {
+  it("opens custom draw as the trace editor", () => {
     render(<PropWizard products={[]} />);
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Well" } });
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Ridge" } });
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    fireEvent.click(screen.getByRole("button", { name: /Well house/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Custom draw/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("button", { name: "Trace", pressed: true })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
+    expect(screen.getByText("Controller end")).toBeTruthy();
+  });
+
+  it("opens a window after choosing a start corner and a direction", () => {
+    render(<PropWizard products={[]} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Bay" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: /Window/ }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByRole("heading", { name: "Here is the prop" })).toBeTruthy();
-    expect(screen.getByText(/lights/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Bottom left" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clockwise" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("button", { name: "Edit", pressed: true })).toBeTruthy();
+    expect(screen.getAllByText("Controller end").length).toBeGreaterThan(0);
   });
 });

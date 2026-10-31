@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
   compilePropDesign,
+  designFromLayout,
+  isPropDesign,
+  isPropLayout,
   parsePropKind,
   planPropPlacement,
   validateDeclaredRangesForLight,
@@ -41,33 +44,69 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     const ledProductId = typeof row?.ledProductId === "string" && row.ledProductId.trim()
       ? row.ledProductId.trim()
       : null;
-    if (!label || !kind || !unit || !isMeasurements(row?.measurements)) {
-      return c.json({ error: "invalid", message: "Send a name, a shape, and the measurements. Nothing was saved." }, 400);
+    if (!label || !kind || !unit) {
+      return c.json({ error: "invalid", message: "Send a name and a shape. Nothing was saved." }, 400);
     }
-    if (kind === "custom" || row.measurements.shape === "custom") {
-      return c.json({ error: "custom-later", message: "Custom draw is not ready yet. Pick a template shape. Nothing was saved." }, 422);
+    const measurements = isMeasurements(row?.measurements) ? row.measurements : null;
+    const layout = isPropLayout(row?.layout) ? row.layout : null;
+    if (!measurements && !layout) {
+      return c.json({ error: "invalid", message: "Send the measurements or the drawing. Nothing was saved." }, 400);
     }
-    const built = compilePropDesign({
+    if ((kind === "custom" || measurements?.shape === "custom") && !layout) {
+      return c.json({ error: "custom-later", message: "Draw the prop, then save. Nothing was saved." }, 422);
+    }
+    const fromDrawing = layout
+      ? designFromLayout(layout, ledProductId, measurements ?? { shape: "custom" })
+      : null;
+    if (fromDrawing && !isPropDesign(fromDrawing)) {
+      return c.json({ error: "invalid-shape", message: "That drawing could not be saved." }, 422);
+    }
+    const built = fromDrawing || !measurements ? null : compilePropDesign({
       kind,
       unit,
       pitchMm,
       ledProductId,
-      measurements: row.measurements,
+      measurements,
     });
-    if (!built.ok) return c.json({ error: "invalid-shape", message: built.message }, 422);
+    if (!fromDrawing && (!built || !built.ok)) {
+      return c.json({ error: "invalid-shape", message: built && !built.ok ? built.message : "Those measurements could not be saved." }, 422);
+    }
     const prop: Prop = {
       id: randomUUID(),
       label,
       kind,
       elementIds: [],
-      design: built.design,
-      ...(built.wireframe ? { wireframe: built.wireframe } : {}),
+      design: fromDrawing ?? (built && built.ok ? built.design : undefined),
+      ...(layout ? { layout } : built && built.ok ? { layout: built.layout } : {}),
+      ...(built && built.ok && built.wireframe ? { wireframe: built.wireframe } : {}),
     };
+    if (!prop.design) {
+      return c.json({ error: "invalid-shape", message: "That drawing could not be saved." }, 422);
+    }
     deps.store.saveDesignedProp(prop);
     return c.json({
       prop,
       message: "Prop saved in Nightplot. It is not attached to a controller, and nothing was sent.",
     });
+  });
+
+  app.patch("/api/props/:id", async (c) => {
+    const existing = deps.store.loadProps().find((row) => row.id === c.req.param("id"));
+    if (!existing) return c.json({ error: "not_found", message: "That prop is not in the yard." }, 404);
+    const row = await c.req.json().catch(() => null) as Record<string, unknown> | null;
+    if (!isPropLayout(row?.layout)) {
+      return c.json({ error: "invalid", message: "Send the drawing. Nothing was saved." }, 400);
+    }
+    const measurements = isMeasurements(row?.measurements)
+      ? row.measurements
+      : existing.design?.measurements ?? { shape: "custom" as const };
+    const design = designFromLayout(row.layout, existing.design?.ledProductId ?? null, measurements);
+    if (!isPropDesign(design)) {
+      return c.json({ error: "invalid-shape", message: "That drawing could not be saved." }, 422);
+    }
+    const prop: Prop = { ...existing, design, layout: row.layout };
+    deps.store.saveDesignedProp(prop);
+    return c.json({ prop, message: "Prop saved in Nightplot. Nothing was sent to a controller." });
   });
 
   app.post("/api/props/:id/attach", async (c) => {
