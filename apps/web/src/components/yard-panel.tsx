@@ -12,6 +12,7 @@ import {
   type YardCompareStatus,
   type YardUndoToken,
 } from "@nightplot/shared";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { fetchJson, postJson } from "@/lib/api";
@@ -27,6 +28,7 @@ type SeasonReview = {
   expectedDigest: string;
   expectedCurrentDigest: string;
   looksMissing: boolean;
+  hostCollision?: boolean;
   message: string;
   document?: unknown;
 };
@@ -62,6 +64,7 @@ export function YardPanel({
   const [includeDevices, setIncludeDevices] = useState(false);
   const [review, setReview] = useState<(SeasonReview & { document: unknown }) | null>(null);
   const [pushOnRestore, setPushOnRestore] = useState(false);
+  const router = useRouter();
 
   async function run(label: string, work: () => Promise<void>) {
     setBusy(label);
@@ -143,7 +146,7 @@ export function YardPanel({
       const res = await postJson<SeasonReview>("/api/season/review", { document });
       if (!res.ok) throw new Error(res.data.message ?? "Season file was not accepted.");
       setReview({ ...res.data, document });
-      setNotice(res.data.message);
+      setNotice(null);
     });
   }
 
@@ -162,6 +165,7 @@ export function YardPanel({
       setReview(null);
       setNotice(res.data.message);
       await loadCheck();
+      router.refresh();
     });
   }
 
@@ -183,7 +187,7 @@ export function YardPanel({
       </div>
       {busy ? <p className="text-[14px] text-muted-foreground">{busy}</p> : null}
       {notice ? <p className="text-[14px]">{notice}</p> : null}
-      {error ? <p className="text-[14px] text-destructive">{error}</p> : null}
+      {error && !review ? <p className="text-[14px] text-destructive">{error}</p> : null}
 
       {check && check.rows.length === 0 ? (
         <p className="text-[14px] text-muted-foreground">Enroll Lights first. Season save can still keep Looks and profiles.</p>
@@ -237,13 +241,17 @@ export function YardPanel({
           <div className="flex flex-col gap-3 rounded-[14px] border border-border p-4">
             <p className="text-[14px]">{review.message}</p>
             {review.looksMissing ? <p className="text-[14px] text-destructive">Looks are missing in this file. The current library will stay.</p> : null}
+            {review.hostCollision ? (
+              <p className="text-[14px] text-destructive">Two Lights would share a host after MAC rematch. Restore will not run until that is fixed.</p>
+            ) : null}
+            {error ? <p className="text-[14px] text-destructive">{error}</p> : null}
             <SeasonDiffList diff={review.diff} />
             <label className="flex items-center gap-2 text-[14px]">
               <input type="checkbox" checked={pushOnRestore} onChange={(event) => setPushOnRestore(event.target.checked)} />
               <span>Re-push Looks to controllers matched by MAC</span>
             </label>
             <div className="flex flex-wrap gap-3">
-              <Button disabled={disabled} onClick={() => void restoreSeason()}>Restore season</Button>
+              <Button disabled={disabled || Boolean(review.hostCollision)} onClick={() => void restoreSeason()}>Restore season</Button>
               <Button variant="outline" disabled={disabled} onClick={() => setReview(null)}>Cancel</Button>
             </div>
           </div>

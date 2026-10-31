@@ -5720,6 +5720,31 @@ describe("Yard check and season save", () => {
     expect(rematched?.hostKey).toBe(a.host);
     expect(rematched?.mac).toBe(porch.mac);
   });
+
+  it("review names a rematch host collision so Restore is not offered as safe", async () => {
+    const live = createFixtureBox({ name: "Porch", ledCount: 60 });
+    const other = createFixtureBox({ name: "Eave", ledCount: 40 });
+    const a = await liveYardApp(live);
+    const b = await liveYardApp(other);
+    await a.app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: a.host }),
+    });
+    await a.app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: b.host }),
+    });
+    const exported = (await (await a.app.request("/api/season/export")).json()) as { document: unknown };
+    const closed = servers.pop();
+    if (closed) await new Promise<void>((resolve) => closed.close(() => resolve()));
+    const review = await a.app.request("/api/season/review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ document: exported.document }),
+    });
+    expect(review.status).toBe(200);
+    const reviewed = (await review.json()) as { hostCollision: boolean; message: string };
+    expect(reviewed.hostCollision).toBe(true);
+    expect(reviewed.message).toMatch(/Review this season file/);
+  });
 });
 
 function listen(server: Server): Promise<number> {

@@ -101,6 +101,7 @@ export function registerSeasonRoutes(app: Hono, deps: SeasonRouteDeps) {
     const parsed = parseSeasonDocument(body?.document ?? body);
     if (!parsed.ok) return c.json({ error: "invalid-season", message: parsed.message }, 422);
     const current = snapshotSeason(deps);
+    const rematch = await rematchPreview(deps, parsed.document.lights);
     return c.json({
       ok: true,
       migratedFrom: parsed.migratedFrom,
@@ -110,6 +111,8 @@ export function registerSeasonRoutes(app: Hono, deps: SeasonRouteDeps) {
       expectedDigest: seasonDigest(parsed.document),
       expectedCurrentDigest: seasonDigest(current),
       looksMissing: parsed.document.looks === null,
+      hostCollision: rematch.hostCollision,
+      rematch: rematch.rows,
       message: parsed.document.looks
         ? "Review this season file. Restore replaces Nightplot Lights, Segments, Props, setup profiles, and Looks. Controllers are not written until you choose re-push."
         : "This file has no Looks. Restore will leave the current Looks library in place. Review the rest before continuing.",
@@ -150,9 +153,9 @@ export function registerSeasonRoutes(app: Hono, deps: SeasonRouteDeps) {
       return c.json({ error: "changed", message: "The season file or current Nightplot data changed. Review again; nothing was restored." }, 409);
     }
 
-    const rematched = await rematchLights(deps, parsed.document.lights);
-    const hostKeys = rematched.map((row) => row.light.hostKey);
-    if (new Set(hostKeys).size !== hostKeys.length) {
+    const rematch = await rematchPreview(deps, parsed.document.lights);
+    const rematched = rematch.rematched;
+    if (rematch.hostCollision) {
       return c.json({
         error: "host-collision",
         message: "Two Lights would share a host after MAC rematch. Nothing was restored.",
@@ -277,6 +280,21 @@ function summaryOf(document: SeasonDocument) {
     playlists: document.looks?.playlists.length ?? null,
     schedule: Boolean(document.looks?.schedule),
     devices: document.devices.length,
+  };
+}
+
+async function rematchPreview(deps: SeasonRouteDeps, lights: Light[]) {
+  const rematched = await rematchLights(deps, lights);
+  const hostKeys = rematched.map((row) => row.light.hostKey);
+  return {
+    rematched,
+    hostCollision: new Set(hostKeys).size !== hostKeys.length,
+    rows: rematched.map((row) => ({
+      lightId: row.light.id,
+      name: row.light.name,
+      hostKey: row.light.hostKey,
+      how: row.how,
+    })),
   };
 }
 

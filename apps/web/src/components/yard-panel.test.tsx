@@ -134,5 +134,45 @@ describe("Yard", () => {
     fireEvent.change(screen.getByLabelText("Choose season file"), { target: { files: [file] } });
     expect(await screen.findByText(/Looks are missing/)).toBeTruthy();
     await waitFor(() => expect(screen.getByRole("button", { name: "Restore season" })).toBeTruthy());
+    expect(screen.getAllByText(/This file has no Looks/).length).toBe(1);
+  });
+
+  it("keeps Restore off when rematch would collide two Lights onto one host", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/yard-check") return new Response(JSON.stringify({ ...check, undo: null }));
+      if (path === "/api/season/review") {
+        return new Response(JSON.stringify({
+          ok: true,
+          migratedFrom: "season",
+          incoming: { lights: 2, segments: 0, props: 0, profiles: 0, looks: 1 },
+          current: { lights: 2, segments: 0, props: 0, profiles: 0, looks: 1 },
+          diff: {
+            lights: { current: 2, incoming: 2, added: [], removed: [], changed: [] },
+            segments: { current: 0, incoming: 0, added: [], removed: [], changed: [] },
+            props: { current: 0, incoming: 0, added: [], removed: [], changed: [] },
+            profiles: { current: 0, incoming: 0, added: [], removed: [], changed: [] },
+            looks: { current: 1, incoming: 1, added: [], removed: [], changed: ["Cool white"], missingInFile: false },
+            playlists: { current: 0, incoming: 0, added: [], removed: [], changed: [] },
+            schedule: { current: false, incoming: false, changed: false, missingInFile: false },
+            devicesComplete: 0,
+            devicesIncomplete: 0,
+          },
+          expectedDigest: "abc",
+          expectedCurrentDigest: "def",
+          looksMissing: false,
+          hostCollision: true,
+          message: "Review this season file. Restore replaces Nightplot Lights, Segments, Props, setup profiles, and Looks. Controllers are not written until you choose re-push.",
+        }));
+      }
+      return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+    }));
+    render(<YardPanel lights={lights} initial={{ ...check, undo: null }} />);
+    const file = new File([JSON.stringify({ version: 1, lights: [] })], "season.json", { type: "application/json" });
+    Object.defineProperty(file, "text", { value: async () => JSON.stringify({ version: 1, lights: [] }) });
+    fireEvent.change(screen.getByLabelText("Choose season file"), { target: { files: [file] } });
+    expect(await screen.findByText(/share a host after MAC rematch/)).toBeTruthy();
+    expect(screen.getAllByText(/share a host after MAC rematch/).length).toBe(1);
+    expect((screen.getByRole("button", { name: "Restore season" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
