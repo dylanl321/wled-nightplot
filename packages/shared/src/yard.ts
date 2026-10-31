@@ -19,6 +19,7 @@ import {
 } from "./look.ts";
 import type { Element, Light } from "./lights.ts";
 import type { Prop } from "./prop/types.ts";
+import { compileWireframe, ledmapsMatch, parseLedmapJson } from "./prop/wireframe.ts";
 import type { ProvisionRead } from "./provision.ts";
 import {
   buildScheduleWrite,
@@ -30,7 +31,7 @@ import { parseWledUdpSync, udpSyncRole, type UdpSyncRole } from "./udp-sync.ts";
 import type { WledSnapshot } from "./wled/snapshot.ts";
 
 export const YARD_CAPTION =
-  "Each Light is listed by what it reported just now. Unreachable stays grey with last-seen. Unknown is not a match. Fix writes Looks, the nightly Schedule, and last-pushed sync, then rereads. Sweep turns on the first Look. Not Hardware Done.";
+  "Each Light is listed by what it reported just now. Unreachable stays grey with last-seen. Unknown is not a match. Fix writes Looks, the nightly Schedule, and last-pushed sync, then rereads. A wireframe Prop also compares the ledmap. Sweep turns on the first Look. Not Hardware Done.";
 
 export const YARD_SWEEP_CAPTION =
   "Sweep turns on the first Look on every reachable Light so you can walk the yard. It is not Apply and not Hardware Done.";
@@ -69,6 +70,7 @@ export type YardCheckRow = {
   looks: YardCompare & { libraryChanged: boolean };
   schedule: YardCompare;
   sync: YardCompare;
+  ledmap: YardCompare;
   lit: { status: YardLitStatus; detail: string; on: boolean | null; preset: number | null };
   props: YardPropRow[];
   canFix: boolean;
@@ -102,13 +104,14 @@ export function yardSweepSummary(rows: { status: string }[]): string {
   return `${matched} of ${rows.length} report the first Look on. Check the Lights listed below.`;
 }
 
-export function yardHasDrift(row: Pick<YardCheckRow, "looks" | "schedule" | "sync" | "outputs" | "reachability">): boolean {
+export function yardHasDrift(row: Pick<YardCheckRow, "looks" | "schedule" | "sync" | "outputs" | "ledmap" | "reachability">): boolean {
   if (row.reachability !== "online") return false;
   return (
     isDriftStatus(row.looks.status) ||
     row.schedule.status === "mismatch" ||
     row.sync.status === "mismatch" ||
-    row.outputs.status === "mismatch"
+    row.outputs.status === "mismatch" ||
+    row.ledmap.status === "mismatch"
   );
 }
 
@@ -353,6 +356,37 @@ export function compareSync(input: {
   return { status: "match", detail: `WLED sync group ${udp.group} (${udp.role}).` };
 }
 
+export function compareLedmap(input: {
+  props: readonly Prop[];
+  ledCount: number;
+  liveRaw: string | null;
+  reachable: boolean;
+}): YardCompare {
+  const wireframes = input.props.filter((prop) => prop.wireframe);
+  if (wireframes.length === 0) {
+    return { status: "match", detail: "No wireframe Prop. Ledmap is not compared." };
+  }
+  if (!input.reachable) {
+    return { status: "unknown", detail: "A wireframe Prop expects a ledmap. WLED did not answer." };
+  }
+  if (input.liveRaw === null) {
+    return { status: "unknown", detail: "A wireframe Prop expects a ledmap. /ledmap.json did not reread. Not treating as a match." };
+  }
+  const live = parseLedmapJson(input.liveRaw);
+  if (live === null) {
+    return { status: "unknown", detail: "A wireframe Prop expects a ledmap. /ledmap.json was not a map. Not treating as a match." };
+  }
+  const expected = compileWireframe(wireframes[0]!.wireframe!, input.ledCount).ledmap;
+  const matched = ledmapsMatch(expected, live);
+  if (matched === null) {
+    return { status: "unknown", detail: "A wireframe Prop expects a ledmap. The controller map was not read. Not treating as a match." };
+  }
+  if (!matched) {
+    return { status: "mismatch", detail: "Ledmap differs from the wireframe Nightplot would write now." };
+  }
+  return { status: "match", detail: "Ledmap matches the wireframe." };
+}
+
 export function compareLit(input: { reachable: boolean; on: boolean | null; preset: number | null }): YardCheckRow["lit"] {
   if (!input.reachable) {
     return { status: "unknown", detail: "Power is unknown. WLED did not answer.", on: null, preset: null };
@@ -382,6 +416,7 @@ export function buildYardCheckRow(input: {
   provision: ProvisionRead | null;
   presetsRaw: string | null;
   cfg: unknown;
+  ledmapRaw?: string | null;
 }): YardCheckRow {
   const reachable = input.light.reachability === "online" && input.live !== null;
   const lastPush = input.light.lastLookPush ?? null;
@@ -429,6 +464,12 @@ export function buildYardCheckRow(input: {
     reachable,
   });
   const sync = compareSync({ lastPush, cfg: input.cfg, reachable });
+  const ledmap = compareLedmap({
+    props: input.props,
+    ledCount: input.light.ledCount,
+    liveRaw: input.ledmapRaw ?? null,
+    reachable,
+  });
   const lit = compareLit({
     reachable,
     on: input.live?.on ?? null,
@@ -448,6 +489,7 @@ export function buildYardCheckRow(input: {
     looks,
     schedule,
     sync,
+    ledmap,
     lit,
     props: input.props.map((prop) => ({ id: prop.id, label: prop.label, kind: prop.kind })),
     canFix: false,
@@ -458,7 +500,8 @@ export function buildYardCheckRow(input: {
     isDriftStatus(looks.status) ||
     schedule.status === "mismatch" ||
     (schedule.status === "not-pushed" && input.schedule?.enabled === true) ||
-    sync.status === "mismatch"
+    sync.status === "mismatch" ||
+    ledmap.status === "mismatch"
   );
   return row;
 }

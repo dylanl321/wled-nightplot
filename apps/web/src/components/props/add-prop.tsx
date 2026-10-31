@@ -29,11 +29,12 @@ import { ELEMENT_HUES, LOCATE_LIT } from "@/components/elements-editor/ops";
 import { Button } from "@/components/ui/button";
 import { LedLoader } from "@/components/ui/led-loader";
 import { postJson } from "@/lib/api";
+import { WireframeFlow } from "@/components/props/wireframe-flow";
 
 const TOUCH = "min-h-16 w-full rounded-2xl text-[18px] font-semibold";
 const NUDGES = [1, 10, 50] as const;
 
-type Phase = "pick" | "walk" | "review";
+type Phase = "pick" | "walk" | "review" | "draw" | "lock";
 
 type PropPayload = LightDetail & {
   apply?: ApplyResult;
@@ -175,6 +176,22 @@ export function AddPropFlow({
     onClose();
   }
 
+  if (kind === "wireframe" && (phase === "draw" || phase === "lock")) {
+    return (
+      <WireframeFlow
+        lightId={lightId}
+        lightName={lightName}
+        ledCount={ledCount}
+        rgbw={rgbw}
+        unreachable={unreachable}
+        initialLabel={label}
+        initialPhase={phase}
+        onClose={() => void leave()}
+        onApplied={onApplied}
+      />
+    );
+  }
+
   async function submit(applyWrite: boolean) {
     if (!review.ok) {
       setNotice(review.message);
@@ -231,7 +248,7 @@ export function AddPropFlow({
         {phase === "pick" ? (
           <div className="flex flex-col gap-4">
             <p className="text-[14px] text-muted-foreground">
-              Pick a shape. Then walk the lit cursor and tap each corner or end. You never type a count.
+              Pick a shape. Then walk the lit cursor and tap each corner or end. You never type a count. A wireframe is an unfolded box+X — draw one line, or lock from the cursor only.
             </p>
             <div className="grid grid-cols-1 gap-2">
               {PROP_TEMPLATES.map((template) => (
@@ -258,9 +275,20 @@ export function AddPropFlow({
                 className="h-12 rounded-xl border border-input bg-[#07080a] px-3 text-[16px] text-foreground outline-none focus:border-primary"
               />
             </label>
-            <Button type="button" className={TOUCH} onClick={() => setPhase("walk")} disabled={ledCount < 1 || !label.trim()}>
-              Walk the strip
-            </Button>
+            {kind === "wireframe" ? (
+              <div className="flex flex-col gap-3">
+                <Button type="button" className={TOUCH} onClick={() => setPhase("draw")} disabled={ledCount < 1 || !label.trim()}>
+                  Open the net
+                </Button>
+                <Button type="button" variant="outline" className="min-h-14 text-[16px]" onClick={() => setPhase("lock")} disabled={ledCount < 1 || !label.trim()}>
+                  Lock from the lit cursor
+                </Button>
+              </div>
+            ) : (
+              <Button type="button" className={TOUCH} onClick={() => setPhase("walk")} disabled={ledCount < 1 || !label.trim()}>
+                Walk the strip
+              </Button>
+            )}
           </div>
         ) : null}
 
@@ -372,6 +400,10 @@ function phaseLabel(phase: Phase): string {
       return "tap corners";
     case "review":
       return "review";
+    case "draw":
+      return "draw the line";
+    case "lock":
+      return "lock corners";
     default: {
       const _never: never = phase;
       return _never;

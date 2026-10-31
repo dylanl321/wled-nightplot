@@ -10,7 +10,8 @@
 
 import { hexToRgb, parseHexColor } from "./live.ts";
 import type { Element } from "./lights.ts";
-import { isPropKind, type Prop, type PropKind } from "./prop/types.ts";
+import { isPropKind, isSharedPostRule, type Prop, type PropKind, type SharedPostRule } from "./prop/types.ts";
+import { compileWireframe, wireframeGroupForElement } from "./prop/wireframe.ts";
 import type { NightlySchedule } from "./schedule.ts";
 import { isPresetId, WLED_PRESET_MAX, WLED_PRESET_MIN } from "./sync.ts";
 import { isUdpSyncGroup, type UdpSyncRole } from "./udp-sync.ts";
@@ -49,6 +50,10 @@ export type LookOverride = {
   propKind?: PropKind;
   /** Segment fallback when that Light has no Props. */
   elementId?: string;
+  /** Wireframe group on a Prop (face.N, tops, outline, …). */
+  wireframeGroup?: string;
+  /** How shared posts take colour for this Look. */
+  sharedPostRule?: SharedPostRule;
 };
 
 export type Look = {
@@ -144,7 +149,9 @@ export function isLookOverride(value: unknown): value is LookOverride {
   if (row.propId !== undefined && (typeof row.propId !== "string" || !row.propId)) return false;
   if (row.propKind !== undefined && !isPropKind(row.propKind)) return false;
   if (row.elementId !== undefined && (typeof row.elementId !== "string" || !row.elementId)) return false;
-  return Boolean(row.propId || row.propKind || row.elementId);
+  if (row.wireframeGroup !== undefined && (typeof row.wireframeGroup !== "string" || !row.wireframeGroup)) return false;
+  if (row.sharedPostRule !== undefined && !isSharedPostRule(row.sharedPostRule)) return false;
+  return Boolean(row.propId || row.propKind || row.elementId || row.wireframeGroup);
 }
 
 export function isLook(value: unknown): value is Look {
@@ -212,6 +219,8 @@ export function normalizeLook(row: Look): Look {
       ...(entry.propId ? { propId: entry.propId } : {}),
       ...(entry.propKind ? { propKind: entry.propKind } : {}),
       ...(entry.elementId ? { elementId: entry.elementId } : {}),
+      ...(entry.wireframeGroup ? { wireframeGroup: entry.wireframeGroup } : {}),
+      ...(entry.sharedPostRule ? { sharedPostRule: entry.sharedPostRule } : {}),
     })),
   };
 }
@@ -280,6 +289,7 @@ export type LookTarget = {
   stop: number;
   elementId?: string;
   prop: Prop | null;
+  wireframeGroup?: string;
 };
 
 /** Segments this Light will receive for a Look. Props own Segments; leftovers use the default. */
@@ -293,20 +303,32 @@ export function lookTargets(input: {
     const ledCount = Number.isInteger(input.ledCount) && input.ledCount > 0 ? input.ledCount : 0;
     return ledCount > 0 ? [{ start: 0, stop: ledCount, prop: null }] : [];
   }
-  return elements.map((element) => ({
-    start: element.start,
-    stop: element.stop,
-    elementId: element.id,
-    prop: input.props.find((prop) => prop.elementIds.includes(element.id)) ?? null,
-  }));
+  return elements.map((element) => {
+    const prop = input.props.find((row) => row.elementIds.includes(element.id)) ?? null;
+    const group = prop?.wireframe ? wireframeGroupForElement(prop.id, element.id) : undefined;
+    return {
+      start: element.start,
+      stop: element.stop,
+      elementId: element.id,
+      prop,
+      ...(group ? { wireframeGroup: group } : {}),
+    };
+  });
 }
 
 /**
- * propId wins, then propKind, then elementId, then the whole-yard default.
+ * A wireframe group override wins, then propId, then propKind, then elementId,
+ * then the whole-yard default.
  */
 export function resolveLookStyle(look: Look, target: LookTarget): LookStyle {
+  if (target.wireframeGroup && target.prop) {
+    const byGroup = look.overrides.find((row) =>
+      row.wireframeGroup === target.wireframeGroup && (!row.propId || row.propId === target.prop!.id),
+    );
+    if (byGroup) return byGroup.style;
+  }
   const byPropId = target.prop
-    ? look.overrides.find((row) => row.propId && row.propId === target.prop!.id)
+    ? look.overrides.find((row) => row.propId && row.propId === target.prop!.id && !row.wireframeGroup)
     : undefined;
   if (byPropId) return byPropId.style;
   const byKind = target.prop
@@ -318,6 +340,36 @@ export function resolveLookStyle(look: Look, target: LookTarget): LookStyle {
     : undefined;
   if (byElement) return byElement.style;
   return look.style;
+}
+
+/** Face Segments plus extra group ranges requested by this Look’s overrides. */
+export function lookTargetsForLook(look: Look, input: {
+  ledCount: number;
+  elements: readonly Element[];
+  props: readonly Prop[];
+}): LookTarget[] {
+  const base = lookTargets(input);
+  const extras: LookTarget[] = [];
+  for (const prop of input.props) {
+    if (!prop.wireframe) continue;
+    const groups = new Set(
+      look.overrides
+        .filter((row) => row.wireframeGroup && (!row.propId || row.propId === prop.id))
+        .map((row) => row.wireframeGroup!),
+    );
+    if (groups.size === 0) continue;
+    const stored = new Set(base.filter((row) => row.prop?.id === prop.id).map((row) => row.wireframeGroup).filter(Boolean));
+    const compiled = compileWireframe(prop.wireframe, input.ledCount);
+    for (const groupId of groups) {
+      if (stored.has(groupId)) continue;
+      const group = compiled.groups.find((row) => row.id === groupId);
+      if (!group) continue;
+      for (const range of group.virtualRanges) {
+        extras.push({ start: range.start, stop: range.stop, prop, wireframeGroup: groupId });
+      }
+    }
+  }
+  return [...base, ...extras];
 }
 
 export function styleColours(style: LookStyle, rgbw: boolean): number[][] {
@@ -381,9 +433,13 @@ export function buildManagedPresets(input: {
   playlists: readonly LookPlaylist[];
   targets: readonly LookTarget[];
   rgbw: boolean;
+  geometry?: { ledCount: number; elements: readonly Element[]; props: readonly Prop[] };
 }): Record<string, unknown> {
   const out: Record<string, unknown> = { "0": {}, [String(LOOK_OFF_SLOT)]: buildOffPreset() };
-  for (const row of input.looks) out[String(row.slot)] = buildLookPreset(row, input.targets, input.rgbw);
+  for (const row of input.looks) {
+    const targets = input.geometry ? lookTargetsForLook(row, input.geometry) : input.targets;
+    out[String(row.slot)] = buildLookPreset(row, targets, input.rgbw);
+  }
   for (const row of input.playlists) {
     const preset = buildPlaylistPreset(row, input.looks);
     if (preset) out[String(row.slot)] = preset;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { defaultWireframeSpec, formatLedmapJson, compileWireframe } from "./prop/wireframe.ts";
 import type { Light } from "./lights.ts";
 import { buildManagedPresets, lookPushDigest, type LastLookPush, type Look } from "./look.ts";
 import type { ProvisionRead } from "./provision.ts";
@@ -8,6 +9,7 @@ import {
   compareLit,
   compareLooks,
   compareOutputs,
+  compareLedmap,
   compareSchedule,
   compareSync,
   yardHasDrift,
@@ -223,6 +225,26 @@ describe("Yard check compares", () => {
     });
     expect(matched.looks.status).toBe("match");
     expect(matched.canFix).toBe(false);
+  });
+
+  it("compares a wireframe ledmap and does not treat a missing reread as a match", () => {
+    const spec = defaultWireframeSpec({ sides: 4 });
+    const compiled = compileWireframe(spec, 60);
+    const prop = { id: "well", lightId: "porch", label: "Well", kind: "wireframe" as const, elementIds: ["well-face-0"], wireframe: spec };
+    expect(compareLedmap({ props: [], ledCount: 60, liveRaw: null, reachable: true }).status).toBe("match");
+    expect(compareLedmap({ props: [prop], ledCount: 60, liveRaw: null, reachable: true }).status).toBe("unknown");
+    expect(compareLedmap({
+      props: [prop],
+      ledCount: 60,
+      liveRaw: formatLedmapJson(compiled.ledmap),
+      reachable: true,
+    }).status).toBe("match");
+    expect(compareLedmap({
+      props: [prop],
+      ledCount: 60,
+      liveRaw: formatLedmapJson(compiled.ledmap.slice().reverse()),
+      reachable: true,
+    }).status).toBe("mismatch");
   });
 
   it("plans a fix that writes the current Schedule only when it is enabled", () => {

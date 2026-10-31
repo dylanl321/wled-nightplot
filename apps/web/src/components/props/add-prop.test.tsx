@@ -136,6 +136,34 @@ describe("Add prop", () => {
     expect(closed).toHaveBeenCalled();
   });
 
+  it("opens a lock-only wireframe without drawing a line", async () => {
+    const { writes } = renderFlow();
+    const dialog = screen.getByRole("dialog", { name: "Add prop on Garage" });
+    fireEvent.click(within(dialog).getByRole("button", { name: /Wireframe/ }));
+    fireEvent.change(within(dialog).getByLabelText("Prop name"), { target: { value: "Well house" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Lock from the lit cursor" }));
+    const overlay = screen.getByRole("dialog", { name: "Wireframe on Garage" });
+    expect(within(overlay).getByLabelText("Lock role")).toBeTruthy();
+    fireEvent.click(within(overlay).getByRole("button", { name: "Lock this corner" }));
+    fireEvent.click(within(overlay).getByRole("button", { name: "Review this wireframe" }));
+    fireEvent.click(within(overlay).getByRole("button", { name: "Apply this Prop" }));
+    await waitFor(() => {
+      expect(writes.some((write) => (
+        write.path.endsWith("/props") &&
+        (write.body as { kind?: string }).kind === "wireframe" &&
+        (write.body as { apply?: boolean }).apply === true
+      ))).toBe(true);
+    });
+    const body = writes.find((write) => write.path.endsWith("/props"))?.body as {
+      kind: string;
+      label: string;
+      wireframe: { path: null | object; locks: { role: string }[] };
+    };
+    expect(body.label).toBe("Well house");
+    expect(body.wireframe.path).toBeNull();
+    expect(body.wireframe.locks.length).toBeGreaterThan(0);
+  });
+
   it("keeps Review disabled until a window has five marks", () => {
     renderFlow();
     const dialog = screen.getByRole("dialog", { name: "Add prop on Garage" });

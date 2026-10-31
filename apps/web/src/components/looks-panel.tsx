@@ -4,6 +4,8 @@ import {
   LOOK_EFFECTS,
   LOOK_PALETTES,
   PROP_KINDS,
+  SHARED_POST_RULES,
+  WIREFRAME_GROUPS,
   WLED_TIMEZONES,
   defaultScheduleDraft,
   nextLookSlot,
@@ -17,6 +19,7 @@ import {
   type NightlySchedule,
   type Prop,
   type PropKind,
+  type SharedPostRule,
   type SyncResult,
 } from "@nightplot/shared";
 import { useMemo, useState } from "react";
@@ -311,6 +314,10 @@ function LookEditor({
   const [kind, setKind] = useState<PropKind>("window");
   const [propId, setPropId] = useState(yard.props[0]?.id ?? "");
   const [elementId, setElementId] = useState(yard.elements[0]?.id ?? "");
+  const wireframeProps = yard.props.filter((prop) => prop.kind === "wireframe");
+  const [wireframePropId, setWireframePropId] = useState(wireframeProps[0]?.id ?? "");
+  const [wireframeGroup, setWireframeGroup] = useState(wireframeProps[0] ? "face.0" : WIREFRAME_GROUPS[0]);
+  const [postRule, setPostRule] = useState<SharedPostRule>("half");
 
   return (
     <div className="mt-4 flex flex-col gap-3 border-t border-border pt-3">
@@ -328,17 +335,38 @@ function LookEditor({
       <StyleFields label={look.name} style={look.style} onChange={onStyle} />
       <div className="flex flex-col gap-2">
         <p className="text-[13px] font-medium">Overrides</p>
-        <p className="text-[12px] text-quiet">Whole-yard default applies unless a Prop, Prop kind, or Segment overrides it. Prop id wins, then kind, then Segment.</p>
+        <p className="text-[12px] text-quiet">Whole-yard default applies unless a wireframe group, Prop, Prop kind, or Segment overrides it. A face group wins, then Prop id, then kind, then Segment.</p>
         {look.overrides.length === 0 ? <p className="text-[13px] text-quiet">No overrides. Every Prop and Segment gets the default.</p> : (
           <ul className="flex flex-col gap-1 text-[13px]">
             {look.overrides.map((override, index) => (
-              <li key={`${override.propId ?? override.propKind ?? override.elementId}-${index}`} className="flex items-center justify-between gap-2">
+              <li key={`${override.wireframeGroup ?? override.propId ?? override.propKind ?? override.elementId}-${index}`} className="flex items-center justify-between gap-2">
                 <span>{overrideLabel(override, yard)}</span>
                 <Button variant="ghost" onClick={() => onRemoveOverride(index)}>Remove</Button>
               </li>
             ))}
           </ul>
         )}
+        {wireframeProps.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <select aria-label={`${look.name} wireframe Prop`} className={selectClass} value={wireframePropId} onChange={(event) => setWireframePropId(event.target.value)}>
+              {wireframeProps.map((prop) => <option key={prop.id} value={prop.id}>{prop.lightName} · {prop.label}</option>)}
+            </select>
+            <select aria-label={`${look.name} wireframe group`} className={selectClass} value={wireframeGroup} onChange={(event) => setWireframeGroup(event.target.value)}>
+              {groupChoices(wireframeProps.find((prop) => prop.id === wireframePropId)?.wireframe?.sides ?? 8).map((group) => (
+                <option key={group} value={group}>{group}</option>
+              ))}
+            </select>
+            <select aria-label={`${look.name} shared post rule`} className={selectClass} value={postRule} onChange={(event) => setPostRule(event.target.value as SharedPostRule)}>
+              {SHARED_POST_RULES.map((rule) => <option key={rule} value={rule}>{rule}</option>)}
+            </select>
+            <Button variant="outline" disabled={!wireframePropId} onClick={() => wireframePropId && onAddOverride({
+              propId: wireframePropId,
+              wireframeGroup,
+              sharedPostRule: postRule,
+              style: { ...look.style },
+            })}>Override this face</Button>
+          </div>
+        ) : null}
         {yard.props.length > 0 ? (
           <div className="flex flex-wrap items-center gap-2">
             <select aria-label={`${look.name} Prop override`} className={selectClass} value={propId} onChange={(event) => setPropId(event.target.value)}>
@@ -500,7 +528,16 @@ function ScheduleEditor({
   );
 }
 
+function groupChoices(sides: number): string[] {
+  return [...WIREFRAME_GROUPS, ...Array.from({ length: sides }, (_, index) => `face.${index}`)];
+}
+
 function overrideLabel(override: LookOverride, yard: LooksPayload["yard"]): string {
+  if (override.wireframeGroup) {
+    const prop = override.propId ? yard.props.find((row) => row.id === override.propId) : null;
+    const where = prop ? `${prop.lightName} · ${prop.label}` : "wireframe";
+    return `${where} · ${override.wireframeGroup}${override.sharedPostRule ? ` · ${override.sharedPostRule} posts` : ""}`;
+  }
   if (override.propId) {
     const prop = yard.props.find((row) => row.id === override.propId);
     return prop ? `Prop ${prop.lightName} · ${prop.label}` : `Prop ${override.propId}`;

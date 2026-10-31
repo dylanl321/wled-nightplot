@@ -4,9 +4,14 @@ import { propKindLabel, type Element, type LightDetail, type Prop } from "@night
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { deleteJson, patchJson } from "@/lib/api";
+import { WireframeFlow } from "@/components/props/wireframe-flow";
 
 export function PropList({
   lightId,
+  lightName,
+  ledCount,
+  rgbw,
+  unreachable,
   props,
   elements,
   disabled,
@@ -16,6 +21,10 @@ export function PropList({
   onNotice,
 }: {
   lightId: string;
+  lightName: string;
+  ledCount: number;
+  rgbw: boolean;
+  unreachable: boolean;
   props: Prop[];
   elements: Element[];
   disabled: boolean;
@@ -24,6 +33,7 @@ export function PropList({
   onDetail: (next: LightDetail) => void;
   onNotice: (notice: string | null) => void;
 }) {
+  const [editing, setEditing] = useState<Prop | null>(null);
   return (
     <section aria-label="Props" className="rounded-[14px] border border-border bg-[#0e1014]">
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
@@ -40,7 +50,7 @@ export function PropList({
         </Button>
       </div>
       {props.length === 0 ? (
-        <p className="px-4 py-3 text-[13px] text-muted-foreground">No Props yet. Add a shape and tap its corners on the lit strip.</p>
+        <p className="px-4 py-3 text-[13px] text-muted-foreground">No Props yet. Add a shape, or a wireframe box+X, and mark it on the lit strip.</p>
       ) : (
         <ul>
           {props.map((prop) => (
@@ -52,10 +62,27 @@ export function PropList({
               disabled={disabled}
               onDetail={onDetail}
               onNotice={onNotice}
+              onCorrect={prop.kind === "wireframe" ? () => setEditing(prop) : undefined}
             />
           ))}
         </ul>
       )}
+      {editing ? (
+        <WireframeFlow
+          lightId={lightId}
+          lightName={lightName}
+          ledCount={ledCount}
+          rgbw={rgbw}
+          unreachable={unreachable}
+          existing={editing}
+          initialPhase="lock"
+          onClose={() => setEditing(null)}
+          onApplied={(payload) => {
+            onDetail(payload);
+            if (payload.prop) setEditing(payload.prop);
+          }}
+        />
+      ) : null}
     </section>
   );
 }
@@ -67,6 +94,7 @@ function PropRow({
   disabled,
   onDetail,
   onNotice,
+  onCorrect,
 }: {
   lightId: string;
   prop: Prop;
@@ -74,6 +102,7 @@ function PropRow({
   disabled: boolean;
   onDetail: (next: LightDetail) => void;
   onNotice: (notice: string | null) => void;
+  onCorrect?: () => void;
 }) {
   const [label, setLabel] = useState(prop.label);
   const [busy, setBusy] = useState(false);
@@ -121,6 +150,11 @@ function PropRow({
         <Button type="button" variant="outline" className="h-9 text-[13px]" onClick={() => void rename()} disabled={disabled || busy || !dirty || !label.trim()}>
           {busy ? "Saving…" : "Rename"}
         </Button>
+        {onCorrect ? (
+          <Button type="button" variant="outline" className="h-9 text-[13px]" onClick={onCorrect} disabled={disabled || busy}>
+            Correct wireframe
+          </Button>
+        ) : null}
         <Button type="button" variant="outline" className="h-9 text-[13px]" onClick={() => void remove()} disabled={disabled || busy}>
           Remove
         </Button>

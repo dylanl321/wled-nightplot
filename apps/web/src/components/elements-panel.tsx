@@ -524,6 +524,10 @@ export function ElementsPanel({
 
       <PropList
         lightId={light.id}
+        lightName={light.name}
+        ledCount={light.ledCount}
+        rgbw={getStrip(light.stripKind)?.bead === "rgbw"}
+        unreachable={unreachable}
         props={detail.props ?? []}
         elements={detail.elements}
         disabled={dirtyCount > 0 || live || busy !== null || Boolean(detail.session) || frozenPreview}

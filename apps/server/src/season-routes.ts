@@ -83,7 +83,16 @@ export function registerSeasonRoutes(app: Hono, deps: SeasonRouteDeps) {
         }
         try {
           const files = await deps.readNativeFiles(targetOf(light));
-          return deviceFilesFromNative({ light: { ...light, firmware: outcome.snapshot.firmware, mac: outcome.snapshot.mac }, files });
+          let ledmapJson: string | null = null;
+          if (deps.readLedmap) {
+            try { ledmapJson = await deps.readLedmap(targetOf(light)); }
+            catch { ledmapJson = null; }
+          }
+          return deviceFilesFromNative({
+            light: { ...light, firmware: outcome.snapshot.firmware, mac: outcome.snapshot.mac },
+            files,
+            ledmapJson,
+          });
         } catch {
           return deviceFilesFromNative({ light, files: null });
         }

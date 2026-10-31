@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Light } from "./lights.ts";
 import { DEFAULT_LOOKS, DEFAULT_PLAYLIST, defaultLooksDocument } from "./look.ts";
+import { defaultWireframeSpec } from "./prop/wireframe.ts";
 import {
   applyHostMatch,
   diffSeason,
@@ -143,6 +144,46 @@ describe("season file", () => {
       discoveredByMac: null,
     });
     expect(lost.how).toBe("unresolved");
+  });
+
+  it("keeps a wireframe Prop and an optional ledmap extra", () => {
+    const spec = defaultWireframeSpec({ sides: 8 });
+    const file = season({
+      props: [{
+        id: "well",
+        lightId: "porch",
+        label: "Well house",
+        kind: "wireframe",
+        elementIds: ["well-face-0"],
+        wireframe: spec,
+      }],
+      elements: [{ id: "well-face-0", lightId: "porch", label: "Well house · face 1", start: 0, stop: 10 }],
+      devices: [{
+        lightId: "porch",
+        mac: porch.mac,
+        hostname: porch.hostname,
+        port: porch.port,
+        firmware: porch.firmware,
+        ledmapJson: "{\"map\":[0,1,2]}\n",
+      }],
+    });
+    const parsed = parseSeasonDocument(file);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.document.props[0]?.wireframe?.sides).toBe(8);
+    expect(parsed.document.devices[0]?.ledmapJson).toMatch(/map/);
+    const changed = season({
+      props: [{
+        id: "well",
+        lightId: "porch",
+        label: "Well house",
+        kind: "wireframe",
+        elementIds: ["well-face-0"],
+        wireframe: { ...spec, locks: [{ role: "top.0.end", physicalIndex: 4 }] },
+      }],
+      elements: file.elements,
+    });
+    expect(diffSeason(file, changed).props.changed).toContain("Well house");
   });
 
   it("refuses a file Nightplot does not understand", () => {

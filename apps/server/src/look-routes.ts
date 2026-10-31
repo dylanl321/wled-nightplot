@@ -41,7 +41,8 @@ import type { createLiveEngine } from "./live/engine.ts";
 import type { FileLooksStore } from "./store/looks-store.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
 import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
-import type { ReadWledPresets, WriteWledPresets } from "./wled/native-backup.ts";
+import type { ReadWledLedmap, ReadWledPresets, WriteWledLedmap, WriteWledPresets } from "./wled/native-backup.ts";
+import { writeAndVerifyLedmap } from "./wireframe-persist.ts";
 
 export type LookRouteDeps = {
   store: FileLightsStore;
@@ -51,6 +52,8 @@ export type LookRouteDeps = {
   writeCfg: WriteCfgFn;
   readPresets: ReadWledPresets;
   writePresets: WriteWledPresets;
+  readLedmap: ReadWledLedmap;
+  writeLedmap: WriteWledLedmap;
   refreshOne: (stored: Light) => Promise<{ light: Light; live: WledSnapshot | null }>;
   captureDevice: (reason: BackupReason, light: Light, snap: WledSnapshot) => Promise<BackupDocument>;
   record: (
@@ -252,11 +255,27 @@ export async function pushLooksToLight(
     return row(light, "failed", `${parsedPresets.message} Nothing was sent.`, safety.id);
   }
 
-  const targets = lookTargets({
-    ledCount: light.ledCount,
-    elements: deps.store.elementsFor(light.id),
-    props: deps.store.propsFor(light.id),
+  const elements = deps.store.elementsFor(light.id);
+  const props = deps.store.propsFor(light.id);
+  const ledmap = await writeAndVerifyLedmap({
+    light,
+    props,
+    readLedmap: deps.readLedmap,
+    writeLedmap: deps.writeLedmap,
   });
+  if (!ledmap.ok) {
+    const status = ledmap.status === 422
+      ? "refused"
+      : ledmap.status === 503
+        ? "failed"
+        : ledmap.error.includes("unknown") || ledmap.error.includes("reread")
+          ? "unknown"
+          : "mismatch";
+    return row(light, status, ledmap.message, safety.id);
+  }
+
+  const geometry = { ledCount: light.ledCount, elements, props };
+  const targets = lookTargets(geometry);
   if (targets.length === 0) {
     return row(light, "refused", "This Light has no LEDs to address. Find the strip length first. Nothing was sent.", safety.id);
   }
@@ -265,6 +284,7 @@ export async function pushLooksToLight(
     playlists: document.playlists,
     targets,
     rgbw: light.rgbw,
+    geometry,
   });
   const merged = mergeWledPresets(existing, managed);
   try {
@@ -336,14 +356,16 @@ export async function pushLooksToLight(
     includeSchedule: input.includeSchedule,
     udp: input.udp && udpRole ? { group: input.udp.group, role: udpRole } : null,
   });
+  const pushedAt = new Date().toISOString();
   deps.store.replace({
     ...light,
     lastLookPush: {
-      at: new Date().toISOString(),
+      at: pushedAt,
       includeSchedule: input.includeSchedule,
       ...(input.udp && udpRole ? { udp: { group: input.udp.group, role: udpRole } } : {}),
       digest,
     },
+    ...(ledmap.digest ? { lastLedmap: { digest: ledmap.digest, at: pushedAt } } : {}),
   });
   return row(light, "matched", notes.join(" "), safety.id);
 }

@@ -54,6 +54,7 @@ type BusIns = {
 export function createFixtureBox(options: FixtureBoxOptions = {}) {
   let exportedCfg: string | null = null;
   let exportedPresets: string | null = null;
+  let exportedLedmap: string | null = null;
   let lastUploadName: string | null = null;
   const gpio = options.gpio ?? 16;
   const nativeType = options.nativeType ?? WLED_WS281X_NATIVE_TYPE;
@@ -434,6 +435,15 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       res.end(presetsText());
       return;
     }
+    if (url === "/ledmap.json") {
+      if (exportedLedmap === null) {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ error: "not_found" }));
+        return;
+      }
+      res.end(exportedLedmap);
+      return;
+    }
     if (url === "/upload" && (req.method === "POST" || req.method === "PUT")) {
       const chunks: Buffer[] = [];
       req.on("data", (chunk) => chunks.push(chunk as Buffer));
@@ -444,6 +454,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
         const body = start >= 0 ? raw.slice(start + 4).replace(/\r\n--[\s\S]*$/, "") : raw;
         lastUploadName = name;
         if (name.includes("presets.json")) exportedPresets = body;
+        if (name.includes("ledmap.json")) exportedLedmap = body;
         if (name.includes("cfg.json")) {
           exportedCfg = body;
           try {
@@ -611,6 +622,12 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     },
     setPresets(raw: string) {
       exportedPresets = raw;
+    },
+    ledmap() {
+      return exportedLedmap;
+    },
+    setLedmap(raw: string | null) {
+      exportedLedmap = raw;
     },
     handle,
     listen(port = 0, hostname = "127.0.0.1"): Server {

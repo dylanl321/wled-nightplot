@@ -624,6 +624,24 @@ describe("fixture info/cfg name divergence", () => {
     expect(live.leds[7]).not.toBe("ffa000");
   });
 
+  it("serves a missing ledmap as 404 and stores an uploaded map", async () => {
+    const box = createFixtureBox({ ledCount: 24 });
+    const base = await listen(box);
+    const missing = await fetch(`${base}/ledmap.json`);
+    expect(missing.status).toBe(404);
+    const body = "--x\r\nContent-Disposition: form-data; name=\"file\"; filename=\"ledmap.json\"\r\n\r\n{\"map\":[2,1,0]}\n\r\n--x--";
+    const uploaded = await fetch(`${base}/upload`, {
+      method: "POST",
+      headers: { "Content-Type": "multipart/form-data; boundary=x" },
+      body,
+    });
+    expect(uploaded.status).toBe(200);
+    expect(box.lastUploadName).toBe("ledmap.json");
+    const stored = await fetch(`${base}/ledmap.json`);
+    expect(stored.status).toBe(200);
+    expect(await stored.text()).toContain("\"map\"");
+  });
+
   it("leaves the bus stale when busMismatch is on", async () => {
     const box = createFixtureBox({ ledCount: 60, busMismatch: true });
     box.applyCfg({

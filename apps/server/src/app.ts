@@ -122,6 +122,7 @@ import {
   nextPropLabel,
   parsePropKind,
   parsePropTaps,
+  defaultWireframeSpec,
   segmentsFromPropTaps,
 } from "@nightplot/shared";
 import { Hono, type Context } from "hono";
@@ -162,14 +163,19 @@ import {
   createWledConfigExportReader,
   createWledNativeFilesReader,
   createWledNativeFilesWriter,
+  createWledLedmapReader,
+  createWledLedmapWriter,
   createWledPresetsReader,
   createWledPresetsWriter,
   type ReadWledConfigExport,
+  type ReadWledLedmap,
   type ReadWledNativeFiles,
   type ReadWledPresets,
+  type WriteWledLedmap,
   type WriteWledNativeFiles,
   type WriteWledPresets,
 } from "./wled/native-backup.ts";
+import { persistWireframeOnLight, specFromBody, writeAndVerifyLedmap } from "./wireframe-persist.ts";
 import { registerSyncRoutes } from "./sync-routes.ts";
 import { applyRangesWrite, type ReadLiveFn, type WriteStateFn } from "./wled/live.ts";
 
@@ -191,6 +197,8 @@ export type AppDeps = {
   readConfigExport?: ReadWledConfigExport;
   readPresets?: ReadWledPresets;
   writePresets?: WriteWledPresets;
+  readLedmap?: ReadWledLedmap;
+  writeLedmap?: WriteWledLedmap;
   writeCfg: WriteCfgFn;
   now?: () => Date;
 };
@@ -212,6 +220,8 @@ export function createApp(deps: AppDeps) {
   const readNativeFiles = deps.readNativeFiles ?? createWledNativeFilesReader();
   const writeNativeFiles = deps.writeNativeFiles ?? createWledNativeFilesWriter();
   const readConfigExport = deps.readConfigExport ?? createWledConfigExportReader();
+  const readLedmap = deps.readLedmap ?? createWledLedmapReader();
+  const writeLedmap = deps.writeLedmap ?? createWledLedmapWriter();
   const session: { rows: DiscoverRow[] } = { rows: [] };
   const nowIso = () => (deps.now ?? (() => new Date()))().toISOString();
   function record(light: Pick<Light, "id" | "name">, action: ActivityEntry["action"],
@@ -567,6 +577,8 @@ export function createApp(deps: AppDeps) {
     writeCfg: deps.writeCfg,
     readPresets: deps.readPresets ?? createWledPresetsReader(),
     writePresets: deps.writePresets ?? createWledPresetsWriter(),
+    readLedmap,
+    writeLedmap,
     refreshOne,
     captureDevice: (reason: Parameters<typeof captureDevice>[0], light: Light, snap: WledSnapshot) =>
       captureDevice(reason, light, snap),
@@ -1080,9 +1092,46 @@ export function createApp(deps: AppDeps) {
     const raw = await c.req.json().catch(() => null);
     const row = raw && typeof raw === "object" ? raw as Record<string, unknown> : null;
     const kind = parsePropKind(row?.kind);
+    if (kind === "wireframe") {
+      const existingProps = deps.store.propsFor(light.id);
+      const label = typeof row?.label === "string" && row.label.trim()
+        ? row.label.trim().slice(0, 64)
+        : nextPropLabel(kind, existingProps);
+      const spec = specFromBody(row?.wireframe) ?? defaultWireframeSpec();
+      const saved = persistWireframeOnLight({
+        store: deps.store,
+        light,
+        propId: randomUUID(),
+        label,
+        spec,
+        palette: settings.read().palette,
+      });
+      if (!saved.ok) {
+        return c.json({ error: "invalid-wireframe", message: saved.message }, 422);
+      }
+      const wantApply = row?.apply === true;
+      if (!wantApply) {
+        return c.json({
+          ...(await decorateDetail(light, snap, saved.elements)),
+          prop: saved.prop,
+          compiled: wireframeCompileView(saved.compiled),
+          message: "Prop saved in Nightplot. Apply was not sent.",
+        });
+      }
+      const drafts: DraftRange[] = saved.elements.map((element) => ({
+        id: element.id,
+        label: element.label,
+        start: element.start,
+        stop: element.stop,
+        ...(element.color ? { color: element.color } : {}),
+        ...(element.outputId ? { outputId: element.outputId } : {}),
+      }));
+      const result = await applyDraftsToController(light, snap, drafts);
+      return c.json({ ...result.body, prop: saved.prop, compiled: wireframeCompileView(saved.compiled) }, result.status);
+    }
     const taps = parsePropTaps(row?.taps);
     if (!kind || !taps) {
-      return c.json({ error: "invalid", message: "Send { kind, taps: [{ index }] }." }, 400);
+      return c.json({ error: "invalid", message: "Send { kind, taps: [{ index }] } or { kind: \"wireframe\", wireframe }." }, 400);
     }
     const existingProps = deps.store.propsFor(light.id);
     const label = typeof row?.label === "string" && row.label.trim()
@@ -1180,9 +1229,45 @@ export function createApp(deps: AppDeps) {
       return c.json({ error: "not_found", message: "That Prop is not on this Light." }, 404);
     }
     const raw = await c.req.json().catch(() => null);
-    const label = raw && typeof raw === "object" && typeof (raw as { label?: unknown }).label === "string"
-      ? (raw as { label: string }).label.trim().slice(0, 64)
-      : "";
+    const row = raw && typeof raw === "object" ? raw as Record<string, unknown> : null;
+    const label = typeof row?.label === "string" ? row.label.trim().slice(0, 64) : "";
+    if (prop.kind === "wireframe" && (row?.wireframe !== undefined || row?.apply === true)) {
+      const nextLabel = label || prop.label;
+      const spec = specFromBody(row?.wireframe, prop.wireframe);
+      if (!spec) {
+        return c.json({ error: "invalid", message: "Send a wireframe spec Nightplot understands." }, 400);
+      }
+      const saved = persistWireframeOnLight({
+        store: deps.store,
+        light: stored,
+        propId: prop.id,
+        label: nextLabel,
+        spec,
+        palette: settings.read().palette,
+      });
+      if (!saved.ok) {
+        return c.json({ error: "invalid-wireframe", message: saved.message }, 422);
+      }
+      const { light, live: snap } = await refreshOne(stored);
+      if (row?.apply !== true) {
+        return c.json({
+          ...(await decorateDetail(light, snap, saved.elements)),
+          prop: saved.prop,
+          compiled: wireframeCompileView(saved.compiled),
+          message: "Prop saved in Nightplot. Apply was not sent.",
+        });
+      }
+      const drafts: DraftRange[] = saved.elements.map((element) => ({
+        id: element.id,
+        label: element.label,
+        start: element.start,
+        stop: element.stop,
+        ...(element.color ? { color: element.color } : {}),
+        ...(element.outputId ? { outputId: element.outputId } : {}),
+      }));
+      const result = await applyDraftsToController(light, snap, drafts);
+      return c.json({ ...result.body, prop: saved.prop, compiled: wireframeCompileView(saved.compiled) }, result.status);
+    }
     if (!label) {
       return c.json({ error: "invalid", message: "Send { label }." }, 400);
     }
@@ -1279,6 +1364,15 @@ export function createApp(deps: AppDeps) {
     }
     try { await captureDevice("pre-apply", light, snap!); }
     catch (error) { return { status: 503, body: backupFailure(error) }; }
+    const ledmap = await writeAndVerifyLedmap({
+      light,
+      props: deps.store.propsFor(light.id),
+      readLedmap,
+      writeLedmap,
+    });
+    if (!ledmap.ok) {
+      return { status: ledmap.status, body: { error: ledmap.error, message: ledmap.message } };
+    }
     const written = await deps.write(dest, planned.body);
     if (!written) {
       record(light, "apply", "unknown", `Apply write was not confirmed for ${sentDescription}; ranges were not read back.`);
@@ -1342,6 +1436,7 @@ export function createApp(deps: AppDeps) {
       next.lastApply = next.mac ? { at: next.lastSeenAt ?? nowIso(), mac: next.mac,
         ledCount: next.ledCount, ranges: sent.map(({ start, stop }) => ({ start, stop })), color,
         ...(reread.snapshot.segmentColors ? { colors } : {}) } : null;
+      if (ledmap.digest) next.lastLedmap = { digest: ledmap.digest, at: next.lastSeenAt ?? nowIso() };
       deps.store.replace(next);
       const elements = persistDrafts(light.id, drafts);
       record(next, "apply", "match", `Applied ${sentDescription}; reported ranges match. ${outcome.caption}`);
@@ -2998,5 +3093,26 @@ function emptySnap(): WledSnapshot {
     brightness: null,
     segmentColor: null,
     segments: null,
+  };
+}
+
+function wireframeCompileView(compiled: {
+  staleLocks: { role: string; physicalIndex: number }[];
+  staleHidden: { afterRole: string; count: number; reason: string }[];
+  ledmapDigest: string;
+  pathEdgeIds: string[];
+  faces: { id: string; index: number; virtualStart: number; virtualStop: number }[];
+}) {
+  return {
+    staleLocks: compiled.staleLocks,
+    staleHidden: compiled.staleHidden,
+    ledmapDigest: compiled.ledmapDigest,
+    pathEdgeIds: compiled.pathEdgeIds,
+    faces: compiled.faces.map((face) => ({
+      id: face.id,
+      index: face.index,
+      start: face.virtualStart,
+      stop: face.virtualStop,
+    })),
   };
 }

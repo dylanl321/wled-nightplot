@@ -76,6 +76,13 @@ export type Light = {
   lastApply?: LastApply | null;
   /** Last matched Looks / Schedule / sync push. Missing is not “in sync”. */
   lastLookPush?: LastLookPush | null;
+  /** Last matched WLED ledmap write. Missing is not “in sync”. */
+  lastLedmap?: LastLedmap | null;
+};
+
+export type LastLedmap = {
+  digest: string;
+  at: string;
 };
 
 /** Missing or blank store values are manual fields. */
