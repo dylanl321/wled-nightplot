@@ -274,6 +274,39 @@ describe("editor reducer", () => {
     expect(readDraft("l")).toBeNull();
   });
 
+  it("assigns outputId when adding a gap and when picking an output", () => {
+    const outputs = [
+      {
+        id: "out-a",
+        index: 0,
+        start: 0,
+        ledCount: 40,
+        stripKind: "ws281x",
+        gpio: 16,
+        nativeType: 22,
+        nativeOrder: 0,
+        colorOrder: "GRB",
+      },
+      {
+        id: "out-b",
+        index: 1,
+        start: 40,
+        ledCount: 60,
+        stripKind: "ws281x",
+        gpio: 2,
+        nativeType: 22,
+        nativeOrder: 0,
+        colorOrder: "GRB",
+      },
+    ];
+    let state = initialEditorState([], 100, "l", outputs);
+    state = editorReducer(state, { type: "add-gap", start: 40, stop: 60 });
+    expect(state.els[0]?.outputId).toBe("out-b");
+    state = editorReducer(state, { type: "output", outputId: "out-a" });
+    expect(state.els[0]?.outputId).toBe("out-a");
+    expect(state.els[0]?.start).toBe(40);
+  });
+
   it("rejects corrupt or wrong-Light draft data", () => {
     window.localStorage.setItem("nightplot:segment-draft:v1:l", "{broken");
     expect(readDraft("l")).toBeNull();

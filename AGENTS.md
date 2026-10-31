@@ -1,18 +1,18 @@
 # Nightplot Configure
 
-Nightplot Configure is a LAN utility: discover a WLED controller, enroll it as a **Light**, describe **Segments** as ranges on the strip, Preview live, Apply, manage a few, All Off.
+Nightplot Configure is a LAN utility for a yard of WLED controllers: Find them, enroll them as **Lights**, describe each controller’s **outputs** (strips) and **Segments**, Preview live, Apply, manage a fleet, All Off.
 
 ## Product words
 
 Use: **Lights**, **Segments**, Preview, Apply, Blink, All Off.
 
-A Light is one enrolled controller + one strip. A Segment is a contiguous inclusive–exclusive range on that strip.
+Fleet and show words are also in play: **Yard**, **Prop**, **Zone**, **Look**, **Schedule**. Use them when the work is about many controllers or a show. Do not invent further product nouns.
+
+A Light is one enrolled controller. It may drive several **outputs** (WLED buses / strips), each with its own LED type, length, and GPIO. A Segment is an inclusive–exclusive range on one output. Gaps between Segments on the same output are allowed; overlap is not.
 
 The user renamed visible Elements to Segments on September 28, 2026. Existing
 `Element` types, `elements` payload/store keys, routes, and saved custom labels
 remain compatible; new operator-facing copy uses Segments.
-
-Use this product’s vocabulary. Do not invent alternate product nouns (control room / scenes / schedules / etc.).
 
 ## Honesty
 
@@ -22,6 +22,9 @@ Use this product’s vocabulary. Do not invent alternate product nouns (control 
 - Delete is a check that runs, not an “I understand” override on unknown.
 - A registered catalog member is a slot in the table. It is not proof hardware passed. A stub endpoint must say it sent nothing.
 - A sim enroll is software path only. Fixture software-green is not strip lit. Neither is Hardware Done.
+- Unknown is not empty. A missing read is not a successful write.
+- Lasting writes are readback-verified. Mismatch is not success.
+- Bulk writes take an automatic background backup and prefer one Undo over a blocking confirm. Fail closed per controller: one dead box does not stop the rest.
 
 ## Architecture
 
@@ -40,15 +43,17 @@ New controllers or strip types register a member. They do not rewrite the rack.
 Layout:
 
 - `apps/web` — Quiet-utility shell (Next.js)
-- `apps/server` — catalogs, Discover/connect, JSON Light store, live / Apply / provision / Safe / All Off
+- `apps/server` — catalogs, Discover/connect, JSON Light store, live / Apply / provision / Safe / All Off / fleet setup
 - `packages/shared` — types and catalogs
 - `docs/ui/` — bead-language prototype. The running shell is the v3 top bar (Lights, LED products, Backups, All Off; Segments and Settings on a Light).
 
-The store is `data/lights.json`.
+The store is `data/lights.json` (controller → outputs → Segments). Setup profiles are `data/setup-profiles.json`.
 
 ## Slices
 
 Work the CONFIG series in order. R6 is Safe settings (the small WledSafeSettings set, fingerprint-gated). Gaps (CONFIG-9, CONFIG-11, …) are not the next R-slice. Do not start the next CONFIG ticket in the same run.
+
+GitHub epic slices (Christmas yard MVP) are not CONFIG tickets. They may change product rules and fleet behaviour; they still do not fold adjacent CONFIG gaps into the same run.
 
 See `docs/PLANE.md` for Plane coordinates, REST-only rules, state ids, and comment duties.
 

@@ -43,15 +43,36 @@ import {
   parseWledCfg,
   readdressContinuity,
   applyResolvedName,
-  buildProvisionWrite,
+  applyNamePattern,
+  buildProvisionOutputsWrite,
   buildSafeWrite,
+  FLEET_BULK_CAPTION,
+  FLEET_ENROLL_CONCURRENCY,
+  FLEET_PROFILE_CONCURRENCY,
+  fleetApplySummary,
+  fleetEnrollSummary,
   isProvisionLedType,
+  mergeSetupProfile,
+  normalizeSetupProfile,
+  outputsFromProvision,
+  parseHostList,
+  parseLightIdList,
+  provisionOutputsMatch,
+  provisionWriteExpectedLedCount,
+  setupProfileWritesSafe,
+  setupProfileWritesStrip,
+  validateDeclaredRangesForLight,
+  validateSetupProfile,
+  withMigratedOutputs,
   needsInspectStripKindSeed,
+  parseProvisionBody,
   parseWledProvision,
   provisionFieldsMatch,
   provisionMismatchNote,
+  provisionOutputWriteRows,
   provisionRefuseReason,
   provisionSnapshotMatch,
+  setupProfileTargetIndexes,
   rangeLengthStory,
   reconcileDeclaredRangesForLedCount,
   resolveLightName,
@@ -84,12 +105,18 @@ import {
   type LiveEndKind,
   type LiveSource,
   type ReaddressStep,
+  type BulkEnrollRow,
   type ProvisionRead,
   type SafeRead,
+  type SetupApplyRow,
+  type SetupProfile,
+  type SetupProfileDraft,
+  type WledStripProvisionOutputDraft,
   type SafeWriteResult,
   type SegmentBackup,
   type WledSafeSettings,
   type WledSnapshot,
+  type ParsedProvisionBody,
   type WledStripProvisionDraft,
 } from "@nightplot/shared";
 import { Hono, type Context } from "hono";
@@ -118,6 +145,7 @@ import { FileLedProductsStore } from "./store/led-products-store.ts";
 import { FileSettingsStore } from "./store/settings-store.ts";
 import { StoreUnreadableError } from "./store/store-error.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
+import { FileSetupProfilesStore } from "./store/setup-profiles-store.ts";
 import type { ProbeFn } from "./wled/client.ts";
 import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
 import {
@@ -141,6 +169,7 @@ export type AppDeps = {
   backups?: FileBackupStore;
   settings?: FileSettingsStore;
   products?: FileLedProductsStore;
+  profiles?: FileSetupProfilesStore;
   probe: ProbeFn;
   collect: CollectFn;
   write: WriteStateFn;
@@ -162,6 +191,9 @@ export function createApp(deps: AppDeps) {
     new FileLedProductsStore(join(tmpdir(), `nightplot-led-products-${randomUUID()}.json`));
   const activity = deps.activity ?? new FileActivityStore(join(tmpdir(), `nightplot-activity-${randomUUID()}.json`));
   const settings = deps.settings ?? new FileSettingsStore(join(tmpdir(), `nightplot-settings-${randomUUID()}.json`));
+  const profiles =
+    deps.profiles ??
+    new FileSetupProfilesStore(join(tmpdir(), `nightplot-setup-profiles-${randomUUID()}.json`));
   const backups = deps.backups ?? new FileBackupStore(join(tmpdir(), `nightplot-backups-${randomUUID()}`), () => settings.read().backupRetention);
   const readNativeFiles = deps.readNativeFiles ?? createWledNativeFilesReader();
   const writeNativeFiles = deps.writeNativeFiles ?? createWledNativeFilesWriter();
@@ -757,47 +789,121 @@ export function createApp(deps: AppDeps) {
   app.post("/api/lights", async (c) => {
     const body = await readHostBody(c);
     if (!body) return c.json({ error: "invalid", message: "Send { host }." }, 400);
-    const decision = decideProbeAddress(body.host);
-    if (!decision.ok) {
-      const row = refusedRow(body.host, "address-probe", nowIso(), decision.reason);
-      mergeSession(row);
-      return c.json(
-        { error: decision.reasonCode, message: decision.reason, candidate: row },
-        403,
-      );
+    const result = await enrollHost(body.host);
+    if (result.status === "added") {
+      return c.json({ light: result.light }, 201);
     }
-
-    const existing = deps.store.findByHostKey(normalizeHostKey(decision.target));
-    if (existing) {
-      return c.json(
-        {
-          error: "already-added",
-          message: `${existing.name} is already on Lights.`,
-        },
-        409,
-      );
+    if (result.status === "already-enrolled") {
+      return c.json({ error: "already-added", message: result.reason }, 409);
     }
+    const status = result.error === "disallowed-address" ? 403 : 422;
+    return c.json(
+      {
+        error: result.error ?? "failed",
+        message: result.reason,
+        ...(result.candidate ? { candidate: result.candidate } : {}),
+      },
+      status,
+    );
+  });
 
-    const outcome = await deps.probe(decision.target);
-    if (outcome.kind !== "found") {
-      const row = rowFromProbe(
-        decision.target,
-        "address-probe",
-        outcome,
-        nowIso(),
-        false,
-      );
-      mergeSession(row);
-      return c.json(
-        { error: outcome.kind, message: outcome.reason, candidate: row },
-        422,
-      );
+  app.post("/api/lights/bulk", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const hosts = parseHostList(body);
+    if (!hosts) return c.json({ error: "invalid", message: "Send { hosts: string[] }." }, 400);
+    const settled = await mapLimit(hosts, FLEET_ENROLL_CONCURRENCY, (host) => enrollHost(host));
+    const results: BulkEnrollRow[] = settled.map((row) => {
+      switch (row.status) {
+        case "added":
+          return { host: row.host, status: row.status, lightId: row.lightId, name: row.name };
+        case "already-enrolled":
+          return {
+            host: row.host,
+            status: row.status,
+            reason: row.reason,
+            lightId: row.lightId,
+            name: row.name,
+          };
+        case "failed":
+          return { host: row.host, status: row.status, reason: row.reason };
+        default: {
+          const _exhaustive: never = row;
+          throw new Error(`unexpected enroll status: ${JSON.stringify(_exhaustive)}`);
+        }
+      }
+    });
+    return c.json({
+      results,
+      message: fleetEnrollSummary(results),
+      caption: FLEET_BULK_CAPTION,
+    });
+  });
+
+  app.get("/api/setup-profiles", (c) => c.json({ profiles: profiles.list() }));
+
+  app.post("/api/setup-profiles", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const draft = readSetupProfileDraft(body);
+    if (!draft) return c.json({ error: "invalid", message: "Send a setup profile." }, 400);
+    const invalid = validateSetupProfile(draft);
+    if (invalid) return c.json({ error: "invalid", message: invalid }, 422);
+    const profile = normalizeSetupProfile(draft, randomUUID());
+    profiles.upsert(profile);
+    return c.json({ profile }, 201);
+  });
+
+  app.patch("/api/setup-profiles/:id", async (c) => {
+    const existing = profiles.findById(c.req.param("id"));
+    if (!existing) return c.json({ error: "not_found", message: "That setup profile is not saved." }, 404);
+    const body = await c.req.json().catch(() => null);
+    const draft = readSetupProfileDraft(body);
+    if (!draft) return c.json({ error: "invalid", message: "Send a setup profile." }, 400);
+    const merged = mergeSetupProfile(existing, draft);
+    if (!merged) return c.json({ error: "invalid", message: "Send a setup profile." }, 400);
+    const invalid = validateSetupProfile(merged);
+    if (invalid) return c.json({ error: "invalid", message: invalid }, 422);
+    const profile = normalizeSetupProfile(merged, existing.id);
+    profiles.upsert(profile);
+    return c.json({ profile });
+  });
+
+  app.delete("/api/setup-profiles/:id", (c) => {
+    if (!profiles.remove(c.req.param("id"))) {
+      return c.json({ error: "not_found", message: "That setup profile is not saved." }, 404);
     }
+    return c.json({ deleted: true });
+  });
 
-    const light = lightFromSnapshot(decision.target, outcome.snapshot, nowIso());
-    deps.store.upsert(light);
-    session.rows = session.rows.filter((row) => row.key !== light.hostKey);
-    return c.json({ light: lightDetail(light, outcome.snapshot, [], attachedProduct(light)).light }, 201);
+  app.post("/api/lights/setup-profile", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const lightIds = parseLightIdList(body);
+    if (!lightIds) return c.json({ error: "invalid", message: "Send { lightIds: string[] }." }, 400);
+    const raw = body && typeof body === "object" ? (body as { profileId?: unknown; profile?: unknown }) : {};
+    const saved =
+      typeof raw.profileId === "string" ? profiles.findById(raw.profileId) ?? null : null;
+    if (typeof raw.profileId === "string" && !saved) {
+      return c.json({ error: "not_found", message: "That setup profile is not saved." }, 404);
+    }
+    const overlay = raw.profile && typeof raw.profile === "object"
+      ? readSetupProfileDraft({ profile: raw.profile })
+      : null;
+    const merged = mergeSetupProfile(saved, overlay);
+    if (!merged) {
+      return c.json({ error: "invalid", message: "Send a saved profileId or an inline profile." }, 400);
+    }
+    const invalid = validateSetupProfile(merged);
+    if (invalid) return c.json({ error: "invalid", message: invalid }, 422);
+    const profile = normalizeSetupProfile(merged, saved?.id ?? "inline");
+    const settled = await mapLimit(lightIds, FLEET_PROFILE_CONCURRENCY, async (lightId, index) =>
+      applySetupProfileToLight(lightId, profile, index + 1),
+    );
+    const results: SetupApplyRow[] = settled;
+    return c.json({
+      results,
+      backupIds: results.flatMap((row) => (row.backupId ? [row.backupId] : [])),
+      message: fleetApplySummary(results),
+      caption: FLEET_BULK_CAPTION,
+    });
   });
 
   app.get("/api/lights/:id", async (c) => {
@@ -866,7 +972,10 @@ export function createApp(deps: AppDeps) {
     if (!drafts) {
       return c.json({ error: "invalid", message: "Send { elements: [{ label, start, stop }] }." }, 400);
     }
-    const issues = validateDeclaredRanges(drafts, light.ledCount);
+    const issues = validateDeclaredRangesForLight(drafts, {
+      ledCount: light.ledCount,
+      outputs: light.outputs,
+    });
     if (issues.length > 0) {
       return c.json(
         {
@@ -892,6 +1001,10 @@ export function createApp(deps: AppDeps) {
       stop: draft.stop,
       ...(draft.color ? { color: draft.color } :
         previous.find((item) => item.id === draft.id)?.color ? { color: previous.find((item) => item.id === draft.id)!.color } : {}),
+      ...(draft.outputId ? { outputId: draft.outputId } :
+        previous.find((item) => item.id === draft.id)?.outputId
+          ? { outputId: previous.find((item) => item.id === draft.id)!.outputId }
+          : {}),
     }));
     deps.store.replaceElements(light.id, elements);
     return c.json(await decorateDetail(light, snap, elements));
@@ -907,7 +1020,10 @@ export function createApp(deps: AppDeps) {
     if (!drafts) {
       return c.json({ error: "invalid", message: "Send { elements: [{ label, start, stop }] }." }, 400);
     }
-    const issues = validateDeclaredRanges(drafts, light.ledCount);
+    const issues = validateDeclaredRangesForLight(drafts, {
+      ledCount: light.ledCount,
+      outputs: light.outputs,
+    });
     const previousSegmentCount = snapshotSegmentCount(snap);
     const colors = snap ? resolveApplyColors(drafts, snap) : null;
     const color = knownApplyColor(colors?.[0]?.hex ?? snap?.segmentColor);
@@ -1609,7 +1725,7 @@ export function createApp(deps: AppDeps) {
     const dest: HostPort = { hostname: light.hostname, port: light.port };
     const raw = await deps.readCfg(dest);
     const provision = await readProvision(light, snap?.firmware ?? light.firmware, raw);
-    const next = rememberStripKind(light, provision.settings.ledType);
+    const next = persistOutputs(light, provision);
     return c.json({
       ...(await decorateDetail(next, snap)),
       provision,
@@ -1628,18 +1744,31 @@ export function createApp(deps: AppDeps) {
     const dest: HostPort = { hostname: light.hostname, port: light.port };
     const raw = await deps.readCfg(dest);
     const provision = await readProvision(light, snap?.firmware ?? light.firmware, raw);
-    const draft = await readProvisionBody(c);
-    if (!draft) {
+    const parsed = await readProvisionBody(c);
+    if (!parsed) {
       return c.json(
-        { error: "invalid", message: "Send { provision: { ledType, length, gpio } }." },
+        {
+          error: "invalid",
+          message: "Send { provision: { ledType, length, gpio } } or { provision: { outputs } }.",
+        },
         400,
       );
     }
+    const firstWritable = provision.outputs.find((output) => output.writable);
+    const drafts: WledStripProvisionOutputDraft[] =
+      parsed.kind === "outputs"
+        ? parsed.drafts
+        : [{ ...parsed.draft, index: firstWritable?.index ?? 0 }];
+    const primary: WledStripProvisionDraft = {
+      ledType: drafts[0]!.ledType,
+      length: drafts[0]!.length,
+      gpio: drafts[0]!.gpio,
+    };
     const reason = provisionRefuseReason({
       reachable: light.reachability === "online" && snap !== null,
       read: provision,
       busyKind: live.get(light.id)?.kind ?? null,
-      draft,
+      draft: primary,
     });
     if (reason) {
       return c.json(
@@ -1650,18 +1779,19 @@ export function createApp(deps: AppDeps) {
           provisionWrite: {
             status: "refused" as const,
             matched: false,
-            sent: draft,
+            sent: primary,
             read: provision.settings,
             snapshotLedCount: snap?.ledCount ?? light.ledCount,
             fingerprint: provision.fingerprint,
             message: reason,
             caption: provision.caption,
+            outputs: provisionOutputWriteRows(drafts, provision),
           },
         },
         422,
       );
     }
-    const built = buildProvisionWrite(draft, raw, provision.fingerprint);
+    const built = buildProvisionOutputsWrite(drafts, raw, provision.fingerprint);
     if (!built.ok) {
       return c.json(
         {
@@ -1671,12 +1801,13 @@ export function createApp(deps: AppDeps) {
           provisionWrite: {
             status: "refused" as const,
             matched: false,
-            sent: draft,
+            sent: primary,
             read: provision.settings,
             snapshotLedCount: snap?.ledCount ?? light.ledCount,
             fingerprint: provision.fingerprint,
             message: built.message,
             caption: provision.caption,
+            outputs: provisionOutputWriteRows(drafts, provision),
           },
         },
         422,
@@ -1694,12 +1825,13 @@ export function createApp(deps: AppDeps) {
           provisionWrite: {
             status: "failed" as const,
             matched: false,
-            sent: built.sent,
+            sent: primary,
             read: provision.settings,
             snapshotLedCount: snap?.ledCount ?? light.ledCount,
             fingerprint: provision.fingerprint,
             message: "The controller did not take strip provision. Nothing else changed.",
             caption: provision.caption,
+            outputs: provisionOutputWriteRows(built.sent, provision),
           },
         },
         422,
@@ -1709,10 +1841,18 @@ export function createApp(deps: AppDeps) {
     const rereadRaw = await deps.readCfg(dest);
     const reread = await readProvision(light, snap?.firmware ?? light.firmware, rereadRaw);
     const { light: refreshed, live: nextSnap } = await refreshOne(stored);
-    const cfgMatched = provisionFieldsMatch(built.sent, reread.settings);
-    const snapMatched = provisionSnapshotMatch(built.sent, nextSnap?.ledCount ?? null);
+    const writtenIns = (built.body as { hw: { led: { ins: Record<string, unknown>[] } } }).hw.led.ins;
+    const expectedTotal = provisionWriteExpectedLedCount(writtenIns);
+    const nextLedCount = expectedTotal ?? drafts.reduce((sum, draft) => sum + draft.length, 0);
+    const outputRows = provisionOutputWriteRows(built.sent, reread);
+    const cfgMatched = provisionOutputsMatch(built.sent, reread);
+    const snapMatched = provisionSnapshotMatch(
+      primary,
+      nextSnap?.ledCount ?? null,
+      nextLedCount,
+    );
     const matched = cfgMatched && snapMatched;
-    let next = rememberStripKind(refreshed, reread.settings.ledType);
+    let next = persistOutputs(refreshed, reread);
     if (matched && nextSnap) {
       next.lastSnapshot = nextSnap;
       next.lastSnapshotAt = next.lastSeenAt;
@@ -1722,11 +1862,11 @@ export function createApp(deps: AppDeps) {
       deps.store.replace(next);
     }
     let ranges: ReturnType<typeof rangeLengthStory> | null = null;
-    if (matched && previousLedCount !== built.sent.length) {
+    if (matched && previousLedCount !== nextLedCount) {
       const reconcile = reconcileDeclaredRangesForLedCount(
         deps.store.elementsFor(light.id),
         previousLedCount,
-        built.sent.length,
+        nextLedCount,
       );
       if (reconcile.rewritten) {
         deps.store.replaceElements(light.id, reconcile.elements);
@@ -1734,16 +1874,24 @@ export function createApp(deps: AppDeps) {
       ranges = rangeLengthStory(reconcile);
     }
     const detail = await decorateDetail(next, nextSnap);
+    const primaryRead =
+      reread.outputs.find((output) => output.index === drafts[0]!.index)?.settings ?? reread.settings;
     const result = {
       status: matched ? ("matched" as const) : ("mismatch" as const),
       matched,
-      sent: built.sent,
-      read: reread.settings,
+      sent: primary,
+      read: primaryRead,
       snapshotLedCount: nextSnap?.ledCount ?? null,
       fingerprint: reread.fingerprint,
-      message: provisionMismatchNote(built.sent, reread.settings, nextSnap?.ledCount ?? null),
+      message: provisionMismatchNote(
+        primary,
+        primaryRead,
+        nextSnap?.ledCount ?? null,
+        nextLedCount,
+      ),
       caption: reread.caption,
       orderPreserved: built.orderPreserved,
+      outputs: outputRows,
       ...(ranges ? { ranges } : {}),
     };
     if (!matched) {
@@ -1927,19 +2075,10 @@ export function createApp(deps: AppDeps) {
 
   async function readProvisionBody(
     c: { req: { json: () => Promise<unknown> } },
-  ): Promise<WledStripProvisionDraft | null> {
+  ): Promise<ParsedProvisionBody | null> {
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body !== "object") return null;
-    const raw = (body as { provision?: unknown }).provision;
-    if (!raw || typeof raw !== "object") return null;
-    const row = raw as Record<string, unknown>;
-    if (!isProvisionLedType(row.ledType)) return null;
-    if (typeof row.length !== "number" || typeof row.gpio !== "number") return null;
-    return {
-      ledType: row.ledType,
-      length: row.length,
-      gpio: row.gpio,
-    };
+    return parseProvisionBody((body as { provision?: unknown }).provision);
   }
 
   async function readSafe(light: Light, firmware: string | null): Promise<SafeRead> {
@@ -2035,6 +2174,289 @@ export function createApp(deps: AppDeps) {
     return next;
   }
 
+  function persistOutputs(light: Light, provision: ProvisionRead): Light {
+    const withKind = rememberStripKind(light, provision.settings.ledType);
+    const next = withMigratedOutputs({
+      ...withKind,
+      outputs: outputsFromProvision(withKind, provision),
+    });
+    deps.store.upsert(next);
+    return next;
+  }
+
+  type EnrollOutcome =
+    | { status: "added"; host: string; light: LightView; lightId: string; name: string }
+    | { status: "already-enrolled"; host: string; reason: string; lightId: string; name: string }
+    | {
+        status: "failed";
+        host: string;
+        reason: string;
+        error?: string;
+        candidate?: DiscoverRow;
+      };
+
+  async function enrollHost(host: string): Promise<EnrollOutcome> {
+    const decision = decideProbeAddress(host);
+    if (!decision.ok) {
+      const row = refusedRow(host, "address-probe", nowIso(), decision.reason);
+      mergeSession(row);
+      return {
+        status: "failed",
+        host,
+        reason: decision.reason,
+        error: decision.reasonCode,
+        candidate: row,
+      };
+    }
+
+    const existing = deps.store.findByHostKey(normalizeHostKey(decision.target));
+    if (existing) {
+      return {
+        status: "already-enrolled",
+        host,
+        reason: `${existing.name} is already on Lights.`,
+        lightId: existing.id,
+        name: existing.name,
+      };
+    }
+
+    const outcome = await deps.probe(decision.target);
+    if (outcome.kind !== "found") {
+      const row = rowFromProbe(decision.target, "address-probe", outcome, nowIso(), false);
+      mergeSession(row);
+      return {
+        status: "failed",
+        host,
+        reason: outcome.reason,
+        error: outcome.kind,
+        candidate: row,
+      };
+    }
+
+    const light = withMigratedOutputs(lightFromSnapshot(decision.target, outcome.snapshot, nowIso()));
+    deps.store.upsert(light);
+    session.rows = session.rows.filter((row) => row.key !== light.hostKey);
+    const view = lightDetail(light, outcome.snapshot, [], attachedProduct(light)).light;
+    return { status: "added", host, light: view, lightId: light.id, name: light.name };
+  }
+
+  function readSetupProfileDraft(body: unknown): SetupProfileDraft | null {
+    if (!body || typeof body !== "object") return null;
+    const raw = (body as { profile?: unknown }).profile ?? body;
+    if (!raw || typeof raw !== "object") return null;
+    const row = raw as Record<string, unknown>;
+    const name = typeof row.name === "string" ? row.name : "Setup profile";
+    const draft: SetupProfileDraft = { name };
+    if (isProvisionLedType(row.ledType)) draft.ledType = row.ledType;
+    if (typeof row.colorOrder === "string") draft.colorOrder = row.colorOrder;
+    if (typeof row.gpio === "number") draft.gpio = row.gpio;
+    if (typeof row.length === "number") draft.length = row.length;
+    if (typeof row.bootBrightness === "number") draft.bootBrightness = row.bootBrightness;
+    if (typeof row.currentLimitMa === "number") draft.currentLimitMa = row.currentLimitMa;
+    if (typeof row.namePattern === "string") draft.namePattern = row.namePattern;
+    if (typeof row.outputIndex === "number") draft.outputIndex = row.outputIndex;
+    if (row.outputIndex === null) draft.outputIndex = null;
+    return draft;
+  }
+
+  async function applySetupProfileToLight(
+    lightId: string,
+    profile: SetupProfile,
+    index: number,
+  ): Promise<SetupApplyRow> {
+    const stored = deps.store.findById(lightId);
+    if (!stored) {
+      return { lightId, name: lightId, status: "failed", reason: "That Light is not on Lights." };
+    }
+    try {
+      const { light, live: snap } = await refreshOne(stored);
+      if (light.reachability !== "online" || !snap) {
+        return {
+          lightId,
+          name: light.name,
+          status: "failed",
+          reason: "This Light hasn’t answered. Refresh or re-address it first.",
+        };
+      }
+      const busyKind = live.get(light.id)?.kind ?? null;
+      if (busyKind === "preview") {
+        return { lightId, name: light.name, status: "failed", reason: "End the Preview first. Preview is not Apply." };
+      }
+      if (busyKind === "blink") {
+        return { lightId, name: light.name, status: "failed", reason: "Wait for Blink to finish." };
+      }
+      let backupId: string | undefined;
+      try {
+        const backup = await captureDevice("pre-setup-profile", light, snap);
+        backupId = backup.id;
+      } catch (error) {
+        return {
+          lightId,
+          name: light.name,
+          status: "failed",
+          reason: error instanceof Error
+            ? `Safety backup failed: ${error.message} Nothing was sent to WLED.`
+            : "Safety backup failed. Nothing was sent to WLED.",
+        };
+      }
+
+      const dest: HostPort = { hostname: light.hostname, port: light.port };
+      let next = light;
+      if (setupProfileWritesStrip(profile)) {
+        const raw = await deps.readCfg(dest);
+        const provision = await readProvision(next, snap.firmware ?? next.firmware, raw);
+        const refuse = provisionRefuseReason({
+          reachable: true,
+          read: provision,
+          busyKind: null,
+        });
+        if (refuse) return { lightId, name: next.name, status: "failed", reason: refuse, backupId };
+        const writable = provision.outputs.filter((bus) => bus.writable);
+        const targeted = setupProfileTargetIndexes(
+          profile,
+          writable.map((bus) => bus.index),
+        );
+        if (!targeted.ok) {
+          return { lightId, name: next.name, status: "failed", reason: targeted.reason, backupId };
+        }
+        const drafts: WledStripProvisionOutputDraft[] = [];
+        for (const bus of writable) {
+          if (!targeted.indexes.includes(bus.index)) continue;
+          const ledType = profile.ledType ?? (isProvisionLedType(bus.settings.ledType) ? bus.settings.ledType : null);
+          const length = profile.length ?? bus.settings.length;
+          const gpio = profile.gpio ?? bus.settings.gpio;
+          if (!ledType || length == null || gpio == null) {
+            return {
+              lightId,
+              name: next.name,
+              status: "failed",
+              reason: "This output is missing type, length, or GPIO, and the profile did not supply them.",
+              backupId,
+            };
+          }
+          drafts.push({
+            index: bus.index,
+            ledType,
+            length,
+            gpio,
+            ...(profile.colorOrder ? { colorOrder: profile.colorOrder } : {}),
+          });
+        }
+        if (drafts.length === 0) {
+          return {
+            lightId,
+            name: next.name,
+            status: "failed",
+            reason: "None of this controller’s buses are a strip we provision.",
+            backupId,
+          };
+        }
+        const built = buildProvisionOutputsWrite(drafts, raw, provision.fingerprint);
+        if (!built.ok) {
+          return { lightId, name: next.name, status: "failed", reason: built.message, backupId };
+        }
+        const written = await deps.writeCfg(dest, built.body);
+        if (!written) {
+          return {
+            lightId,
+            name: next.name,
+            status: "failed",
+            reason: "The controller did not take strip provision. Nothing else changed.",
+            backupId,
+          };
+        }
+        const rereadRaw = await deps.readCfg(dest);
+        const reread = await readProvision(next, snap.firmware ?? next.firmware, rereadRaw);
+        const { light: refreshed, live: nextSnap } = await refreshOne(stored);
+        const expected = provisionWriteExpectedLedCount(
+          (built.body as { hw: { led: { ins: Record<string, unknown>[] } } }).hw.led.ins,
+        );
+        const matched =
+          provisionOutputsMatch(built.sent, reread) &&
+          expected !== null &&
+          nextSnap?.ledCount === expected;
+        next = persistOutputs(refreshed, reread);
+        if (!matched) {
+          return {
+            lightId,
+            name: next.name,
+            status: "failed",
+            reason: "Wrote, but /json/cfg did not match. Not treating as success.",
+            backupId,
+          };
+        }
+        if (nextSnap) {
+          next = { ...next, lastSnapshot: nextSnap, lastSnapshotAt: next.lastSeenAt, lastApply: null };
+          deps.store.replace(next);
+        }
+      }
+
+      if (setupProfileWritesSafe(profile)) {
+        const displayName = profile.namePattern
+          ? applyNamePattern(profile.namePattern, {
+              index,
+              currentName: next.name,
+              host: displayHost({ hostname: next.hostname, port: next.port }),
+            })
+          : undefined;
+        const draft = {
+          ...(profile.bootBrightness != null ? { bootBrightness: profile.bootBrightness } : {}),
+          ...(profile.currentLimitMa != null ? { currentLimitMa: profile.currentLimitMa } : {}),
+          ...(displayName ? { displayName } : {}),
+        };
+        const safe = await readSafe(next, snap.firmware ?? next.firmware);
+        const refuse = safeRefuseReason({
+          reachable: true,
+          read: safe,
+          busyKind: null,
+          draft,
+        });
+        if (refuse) return { lightId, name: next.name, status: "failed", reason: refuse, backupId };
+        const built = buildSafeWrite(draft, safe.fingerprint);
+        if (!built.ok) return { lightId, name: next.name, status: "failed", reason: built.message, backupId };
+        const written = await deps.writeCfg(dest, built.body);
+        if (!written) {
+          return {
+            lightId,
+            name: next.name,
+            status: "failed",
+            reason: "The controller did not take Safe settings. Nothing else changed.",
+            backupId,
+          };
+        }
+        const reread = await readSafe(next, snap.firmware ?? next.firmware);
+        if (!safeFieldsMatch(built.sent, reread.settings)) {
+          return {
+            lightId,
+            name: next.name,
+            status: "failed",
+            reason: "Wrote, but /json/cfg did not match. Not treating as success.",
+            backupId,
+          };
+        }
+        if (typeof built.sent.displayName === "string") {
+          const { light: refreshed, live: nextSnap } = await refreshOne(stored);
+          const resolved = resolveLightName({
+            infoName: nextSnap?.name ?? refreshed.name,
+            cfgName: reread.settings.displayName,
+            existing: refreshed,
+          });
+          next = applyResolvedName(refreshed, resolved);
+          deps.store.replace(next);
+        }
+      }
+
+      return { lightId, name: next.name, status: "applied", backupId };
+    } catch (error) {
+      return {
+        lightId,
+        name: stored.name,
+        status: "failed",
+        reason: error instanceof Error ? error.message : "Setup profile apply failed.",
+      };
+    }
+  }
+
   async function seedStripKindFromInspect(
     light: Light,
     snap: WledSnapshot | null,
@@ -2053,7 +2475,7 @@ export function createApp(deps: AppDeps) {
     const raw = await deps.readCfg(dest);
     if (raw == null) return light;
     const provision = parseWledProvision(raw, snap.firmware ?? light.firmware);
-    return rememberStripKind(light, provision.settings.ledType);
+    return persistOutputs(light, provision);
   }
 
   async function refreshOne(
@@ -2165,7 +2587,7 @@ export function createApp(deps: AppDeps) {
     const drafts: DraftRange[] = [];
     for (const item of raw) {
       if (!item || typeof item !== "object") return null;
-      const row = item as { id?: unknown; label?: unknown; start?: unknown; stop?: unknown; color?: unknown };
+      const row = item as { id?: unknown; label?: unknown; start?: unknown; stop?: unknown; color?: unknown; outputId?: unknown };
       if (typeof row.start !== "number" || typeof row.stop !== "number") return null;
       if (!validSegmentColor(row.color)) return null;
       drafts.push({
@@ -2174,6 +2596,7 @@ export function createApp(deps: AppDeps) {
         start: row.start,
         stop: row.stop,
         color: row.color as DraftRange["color"],
+        ...(typeof row.outputId === "string" && row.outputId ? { outputId: row.outputId } : {}),
       });
     }
     return drafts;
@@ -2193,7 +2616,7 @@ export function createApp(deps: AppDeps) {
     const drafts: DraftRange[] = [];
     for (const item of raw) {
       if (!item || typeof item !== "object") return null;
-      const row = item as { id?: unknown; label?: unknown; start?: unknown; stop?: unknown; color?: unknown };
+      const row = item as { id?: unknown; label?: unknown; start?: unknown; stop?: unknown; color?: unknown; outputId?: unknown };
       if (typeof row.start !== "number" || typeof row.stop !== "number") return null;
       if (!validSegmentColor(row.color)) return null;
       drafts.push({
@@ -2202,6 +2625,7 @@ export function createApp(deps: AppDeps) {
         start: row.start,
         stop: row.stop,
         color: row.color as DraftRange["color"],
+        ...(typeof row.outputId === "string" && row.outputId ? { outputId: row.outputId } : {}),
       });
     }
     return drafts;
@@ -2223,6 +2647,10 @@ export function createApp(deps: AppDeps) {
       ...(draft.color ? { color: draft.color } :
         deps.store.elementsFor(lightId).find((item) => item.id === draft.id)?.color ?
           { color: deps.store.elementsFor(lightId).find((item) => item.id === draft.id)!.color } : {}),
+      ...(draft.outputId ? { outputId: draft.outputId } :
+        deps.store.elementsFor(lightId).find((item) => item.id === draft.id)?.outputId
+          ? { outputId: deps.store.elementsFor(lightId).find((item) => item.id === draft.id)!.outputId }
+          : {}),
     }));
     deps.store.replaceElements(lightId, elements);
     return elements;

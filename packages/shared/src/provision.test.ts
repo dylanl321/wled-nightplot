@@ -3,9 +3,11 @@ import {
   WLED_FW1906_NATIVE_TYPE,
   WLED_SK6812_RGBW_NATIVE_TYPE,
   WLED_WS281X_NATIVE_TYPE,
+  buildProvisionOutputsWrite,
   buildProvisionWrite,
   colorOrderFromNative,
   nativeTypeLabel,
+  parseProvisionBody,
   parseWledProvision,
   provisionFieldsMatch,
   provisionRefuseReason,
@@ -59,22 +61,30 @@ describe("parseWledProvision", () => {
     expect(read.refuse).toMatch(/isn’t a shape we write/);
   });
 
-  it("refuses more than one bus", () => {
+  it("reads every understood bus on a multi-output controller", () => {
     const read = parseWledProvision(
       {
         hw: {
           led: {
             ins: [
-              { start: 0, len: 30, pin: [16], type: 22 },
-              { start: 30, len: 30, pin: [2], type: 22 },
+              { start: 0, len: 30, pin: [16], type: 22, order: 0 },
+              { start: 30, len: 45, pin: [2], type: 22, order: 1 },
             ],
           },
         },
       },
       "0.15.4",
     );
-    expect(read.fingerprint.writable).toBe(false);
-    expect(read.refuse).toMatch(/more than one bus/);
+    expect(read.fingerprint.writable).toBe(true);
+    expect(read.refuse).toBeNull();
+    expect(read.buses).toBe(2);
+    expect(read.settings).toMatchObject({ ledType: "ws281x", length: 30, gpio: 16 });
+    expect(read.outputs).toHaveLength(2);
+    expect(read.outputs[1]).toMatchObject({
+      index: 1,
+      writable: true,
+      settings: { length: 45, gpio: 2, colorOrder: "RGB" },
+    });
   });
 
   it("refuses analog / network bus types closed", () => {
@@ -398,6 +408,79 @@ describe("provision write", () => {
     expect(provisionFieldsMatch(built.sent, next.settings)).toBe(true);
     expect(provisionSnapshotMatch(built.sent, 120)).toBe(true);
     expect(provisionSnapshotMatch(built.sent, 60)).toBe(false);
+  });
+
+  it("writes the first understood bus and clones the others", () => {
+    const raw = {
+      hw: {
+        led: {
+          ins: [
+            { start: 0, len: 30, pin: [16], type: 22, order: 0, extra: "keep-a" },
+            { start: 30, len: 40, pin: [2], type: 22, order: 3, extra: "keep-b" },
+          ],
+        },
+      },
+    };
+    const built = buildProvisionWrite(
+      { ledType: "ws281x", length: 80, gpio: 4 },
+      raw,
+      parseWledProvision(raw, "0.15.4").fingerprint,
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    const ins = (built.body as { hw: { led: { ins: Record<string, unknown>[] } } }).hw.led.ins;
+    expect(ins).toHaveLength(2);
+    expect(ins[0]).toMatchObject({ len: 80, pin: [4], type: 22, extra: "keep-a", start: 0 });
+    expect(ins[1]).toMatchObject({ len: 40, pin: [2], type: 22, order: 3, extra: "keep-b", start: 80 });
+  });
+
+  it("parses a single draft or an outputs[] body", () => {
+    expect(parseProvisionBody({ ledType: "ws281x", length: 40, gpio: 16 })).toEqual({
+      kind: "single",
+      draft: { ledType: "ws281x", length: 40, gpio: 16 },
+    });
+    expect(
+      parseProvisionBody({
+        outputs: [
+          { index: 0, ledType: "ws281x", length: 40, gpio: 16 },
+          { index: 1, ledType: "sk6812-rgbw", length: 80, gpio: 2 },
+        ],
+      }),
+    ).toEqual({
+      kind: "outputs",
+      drafts: [
+        { index: 0, ledType: "ws281x", length: 40, gpio: 16 },
+        { index: 1, ledType: "sk6812-rgbw", length: 80, gpio: 2 },
+      ],
+    });
+    expect(parseProvisionBody({ ledType: "ws281x" })).toBeNull();
+  });
+
+  it("writes every understood bus from a fleet draft", () => {
+    const raw = {
+      hw: {
+        led: {
+          ins: [
+            { start: 0, len: 30, pin: [16], type: 22, order: 0 },
+            { start: 30, len: 40, pin: [2], type: 22, order: 1 },
+          ],
+        },
+      },
+    };
+    const built = buildProvisionOutputsWrite(
+      [
+        { index: 0, ledType: "ws281x", length: 50, gpio: 16, colorOrder: "RGB" },
+        { index: 1, ledType: "ws281x", length: 60, gpio: 2 },
+      ],
+      raw,
+      parseWledProvision(raw, "0.15.4").fingerprint,
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    const ins = (built.body as { hw: { led: { ins: Record<string, unknown>[] } } }).hw.led.ins;
+    expect(ins[0]).toMatchObject({ len: 50, pin: [16], order: 1, start: 0 });
+    expect(ins[1]).toMatchObject({ len: 60, pin: [2], order: 1, start: 50 });
+    expect(built.orderPreserved).toBe(false);
   });
 });
 

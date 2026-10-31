@@ -1,6 +1,6 @@
 "use client";
 
-import { formatNodeLength, type Element } from "@nightplot/shared";
+import { formatNodeLength, outputCaption, type Element, type LightOutput } from "@nightplot/shared";
 import type { RangeIssue } from "@nightplot/shared";
 import { Input } from "@/components/ui/input";
 import { bounds, issueSentence, mergeCheck, parseIndex } from "./ops";
@@ -13,9 +13,11 @@ export function ElementInspector({
   dispatch,
   spacingMm,
   rgbw = false,
+  outputs = [],
 }: {
   spacingMm?: number | null;
   rgbw?: boolean;
+  outputs?: LightOutput[];
   state: EditorState;
   hues: Record<string, string>;
   issuesFor: (id: string) => RangeIssue[];
@@ -36,6 +38,7 @@ export function ElementInspector({
           issues={issuesFor(selected.id)}
           ledCount={state.ledCount}
           elements={state.els}
+          outputs={outputs.length > 0 ? outputs : state.outputs}
           dispatch={dispatch}
         />
       ) : null}
@@ -86,6 +89,7 @@ function OneElement({
   issues,
   ledCount,
   elements,
+  outputs,
   dispatch,
 }: {
   element: Element;
@@ -96,6 +100,7 @@ function OneElement({
   issues: RangeIssue[];
   ledCount: number;
   elements: Element[];
+  outputs: LightOutput[];
   dispatch: (action: EditorAction) => void;
 }) {
   const { lo, hi } = bounds(element, elements, ledCount);
@@ -158,6 +163,23 @@ function OneElement({
           onChange={(event) => dispatch({ type: "color", white: Number(event.target.value) })} /></label> : null}
         {!element.color ? <span className="self-end text-muted-foreground">Legacy Segment: colour unset until chosen.</span> : null}
       </div>
+      {outputs.length > 1 ? (
+        <label className="flex flex-col gap-1.5 text-[12px] text-muted-foreground">
+          Output
+          <select
+            aria-label="Segment output"
+            className="h-[34px] rounded-md border border-input bg-[#07080a] px-2 text-[13px] text-foreground"
+            value={element.outputId ?? outputs[0]?.id ?? ""}
+            onChange={(event) => dispatch({ type: "output", outputId: event.target.value })}
+          >
+            {outputs.map((output) => (
+              <option key={output.id} value={output.id}>
+                {outputCaption(output)} · LEDs {output.start}–{output.start + output.ledCount}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       <div className="flex flex-wrap gap-3.5 text-[12px] text-muted-foreground">
         <span className="font-mono text-foreground">{count} LEDs{length ? ` · ${length}` : ""}</span>
         <span>{before}</span>

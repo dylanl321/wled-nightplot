@@ -9,6 +9,7 @@ export type DraftRange = RangeSpan & {
   id?: string;
   label: string;
   color?: { hex: string; white: number };
+  outputId?: string;
 };
 
 export type RangeErrorCode = "invert" | "overlap" | "over-ledCount";

@@ -14,9 +14,11 @@ import {
   getStrip,
   previewRefuseReason,
   reportedRangeRails,
-  validateDeclaredRanges,
+  outputIdAt,
+  validateDeclaredRangesForLight,
   type ApplyResult,
   type Element,
+  type LightOutput,
   type LightDetail as LightDetailPayload,
   type NightplotSettings,
   type RangeIssue,
@@ -65,6 +67,8 @@ import { cn } from "@/lib/utils";
 
 type Busy = "save" | "refresh" | "apply" | "readdress" | "blink" | "recover" | null;
 
+const EMPTY_OUTPUTS: LightOutput[] = [];
+
 export function ElementsPanel({
   detail,
   busy,
@@ -85,7 +89,12 @@ export function ElementsPanel({
   onRefresh: () => void;
 }) {
   const light = detail.light;
-  const { state, dispatch, dirtyCount, draftReady, storageAvailable } = useEditorState(detail.elements, light.ledCount, light.id);
+  const { state, dispatch, dirtyCount, draftReady, storageAvailable } = useEditorState(
+    detail.elements,
+    light.ledCount,
+    light.id,
+    light.outputs ?? EMPTY_OUTPUTS,
+  );
   const elsRef = useRef(state.els);
   useLayoutEffect(() => {
     elsRef.current = state.els;
@@ -131,8 +140,8 @@ export function ElementsPanel({
   }, [light.id]);
 
   const issues = useMemo(
-    () => validateDeclaredRanges(state.els, light.ledCount),
-    [state.els, light.ledCount],
+    () => validateDeclaredRangesForLight(state.els, light),
+    [state.els, light],
   );
   const display = useMemo(() => {
     const segmentsKnown = light.segmentCount !== null;
@@ -216,7 +225,7 @@ export function ElementsPanel({
       } catch { /* Existing Save remains available with the built-in palette. */ }
     }
     const res = await patchJson<LightDetailPayload>(`/api/lights/${light.id}/elements`, {
-      elements: payload(elsRef.current, state.saved, palette),
+      elements: payload(elsRef.current, state.saved, palette, light.outputs ?? EMPTY_OUTPUTS),
     });
     onBusy(null);
     if (!res.ok) {
@@ -271,7 +280,7 @@ export function ElementsPanel({
       }
     }
     const res = await postJson<LightDetailPayload>(`/api/lights/${light.id}/apply`, {
-      elements: payload(applyElements),
+      elements: payload(applyElements, applyElements, DEFAULT_PALETTE, light.outputs ?? EMPTY_OUTPUTS),
     });
     onBusy(null);
     const body = res.data as LightDetailPayload & { apply?: ApplyResult; message?: string };
@@ -557,7 +566,7 @@ export function ElementsPanel({
         </div>
       </div>
 
-        <ElementInspector state={state} hues={hues} issuesFor={issuesFor} dispatch={dispatch} spacingMm={light.spacingMm} rgbw={getStrip(light.stripKind)?.bead === "rgbw"} />
+        <ElementInspector state={state} hues={hues} issuesFor={issuesFor} dispatch={dispatch} spacingMm={light.spacingMm} rgbw={getStrip(light.stripKind)?.bead === "rgbw"} outputs={light.outputs ?? EMPTY_OUTPUTS} />
       </div>
 
       {notice ? <p className="text-[13px] text-destructive">{notice}</p> : null}
@@ -802,16 +811,25 @@ function zoomFocus(state: EditorState): { focus: number; edge: boolean; caption:
   return { focus: cursor, edge: false, caption: `around LED ${cursor}` };
 }
 
-function payload(elements: Element[], saved: Element[] = elements, palette: { hex: string }[] = DEFAULT_PALETTE) {
-  return elements.map((element, index) => ({
-    id: element.id,
-    label: element.label,
-    start: element.start,
-    stop: element.stop,
-    ...(element.color ? { color: element.color } :
-      !saved.some((previous) => previous.id === element.id) ?
-        { color: { hex: palette[index % palette.length]!.hex, white: 0 } } : {}),
-  }));
+function payload(
+  elements: Element[],
+  saved: Element[] = elements,
+  palette: { hex: string }[] = DEFAULT_PALETTE,
+  outputs: LightOutput[] = EMPTY_OUTPUTS,
+) {
+  return elements.map((element, index) => {
+    const outputId = element.outputId ?? outputIdAt(element.start, outputs);
+    return {
+      id: element.id,
+      label: element.label,
+      start: element.start,
+      stop: element.stop,
+      ...(element.color ? { color: element.color } :
+        !saved.some((previous) => previous.id === element.id) ?
+          { color: { hex: palette[index % palette.length]!.hex, white: 0 } } : {}),
+      ...(outputId ? { outputId } : {}),
+    };
+  });
 }
 
 function rangeDriftPresent(display: {

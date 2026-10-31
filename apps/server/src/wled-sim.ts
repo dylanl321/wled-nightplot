@@ -9,12 +9,28 @@ const nativeTypeRaw = Number.parseInt(process.env.NIGHTPLOT_SIM_NATIVE_TYPE ?? "
 const nativeOrderRaw = Number.parseInt(process.env.NIGHTPLOT_SIM_NATIVE_ORDER ?? "", 10);
 const ledCountRaw = Number.parseInt(process.env.NIGHTPLOT_SIM_LEDS ?? "", 10);
 const maxSegRaw = Number.parseInt(process.env.NIGHTPLOT_SIM_MAXSEG ?? "", 10);
+const bus2LenRaw = Number.parseInt(process.env.NIGHTPLOT_SIM_BUS2_LEN ?? "", 10);
+const bus2PinRaw = Number.parseInt(process.env.NIGHTPLOT_SIM_BUS2_PIN ?? "", 10);
+const firstLen = Number.isSafeInteger(ledCountRaw) && ledCountRaw > 0 ? ledCountRaw : 60;
+const buses =
+  Number.isSafeInteger(bus2LenRaw) && bus2LenRaw > 0
+    ? [
+        { len: firstLen, pin: 16, type: Number.isSafeInteger(nativeTypeRaw) ? nativeTypeRaw : undefined, order: Number.isSafeInteger(nativeOrderRaw) ? nativeOrderRaw : undefined },
+        {
+          len: bus2LenRaw,
+          pin: Number.isSafeInteger(bus2PinRaw) ? bus2PinRaw : 2,
+          type: Number.isSafeInteger(nativeTypeRaw) ? nativeTypeRaw : undefined,
+          order: Number.isSafeInteger(nativeOrderRaw) ? nativeOrderRaw : undefined,
+        },
+      ]
+    : undefined;
 
 const box = createFixtureBox({
   kind: "sim",
   name: process.env.NIGHTPLOT_SIM_NAME ?? "WLED-sim",
   ver: process.env.NIGHTPLOT_SIM_VER ?? "0.15.4",
-  ledCount: Number.isSafeInteger(ledCountRaw) && ledCountRaw > 0 ? ledCountRaw : undefined,
+  ledCount: buses ? undefined : Number.isSafeInteger(ledCountRaw) && ledCountRaw > 0 ? ledCountRaw : undefined,
+  buses,
   maxSegments: Number.isSafeInteger(maxSegRaw) && maxSegRaw > 0 ? maxSegRaw : undefined,
   nativeType: Number.isSafeInteger(nativeTypeRaw) ? nativeTypeRaw : undefined,
   nativeOrder: Number.isSafeInteger(nativeOrderRaw) ? nativeOrderRaw : undefined,

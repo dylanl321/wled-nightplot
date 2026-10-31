@@ -8,6 +8,7 @@ import { recoverInterruptedRestore } from "./store/nightplot-restore.ts";
 import { FileLedProductsStore } from "./store/led-products-store.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
 import { FileSettingsStore } from "./store/settings-store.ts";
+import { FileSetupProfilesStore } from "./store/setup-profiles-store.ts";
 import { createWledCfgReader, createWledCfgWriter } from "./wled/cfg.ts";
 import { createWledConfigExportReader, createWledNativeFilesReader, createWledNativeFilesWriter } from "./wled/native-backup.ts";
 import { createWledProbe } from "./wled/client.ts";
@@ -24,6 +25,9 @@ const productsPath = resolve(
 const activityPath = resolve(process.env.NIGHTPLOT_ACTIVITY_PATH ?? join(dirname(storePath), "activity.json"));
 const backupsPath = resolve(process.env.NIGHTPLOT_BACKUPS_PATH ?? join(dirname(storePath), "backups"));
 const settingsPath = resolve(process.env.NIGHTPLOT_SETTINGS_PATH ?? join(dirname(storePath), "settings.json"));
+const setupProfilesPath = resolve(
+  process.env.NIGHTPLOT_SETUP_PROFILES_PATH ?? join(dirname(storePath), "setup-profiles.json"),
+);
 recoverInterruptedRestore(storePath);
 const products = new FileLedProductsStore(productsPath);
 const settings = new FileSettingsStore(settingsPath);
@@ -35,6 +39,7 @@ const app = createApp({
   backups: new FileBackupStore(backupsPath, () => settings.read().backupRetention),
   settings,
   products,
+  profiles: new FileSetupProfilesStore(setupProfilesPath),
   probe: createWledProbe(),
   write: createWledWriter(),
   readLive: createWledLiveReader(),
@@ -55,4 +60,5 @@ serve({ fetch: app.fetch, port, hostname }, (info) => {
   console.log(`backups  ${backupsPath}`);
   console.log(`settings  ${settingsPath}`);
   console.log(`led products  ${productsPath} (${seededProducts.length})`);
+  console.log(`setup profiles  ${setupProfilesPath}`);
 });

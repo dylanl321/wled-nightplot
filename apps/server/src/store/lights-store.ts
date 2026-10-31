@@ -1,6 +1,11 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { normalizeLightLedProductId, type Element, type Light } from "@nightplot/shared";
+import {
+  normalizeLightLedProductId,
+  withMigratedOutputs,
+  type Element,
+  type Light,
+} from "@nightplot/shared";
 import { isEnoent, keepLastGood, StoreUnreadableError } from "./store-error.ts";
 
 type FileShape = {
@@ -33,7 +38,7 @@ export class FileLightsStore {
       const elements = parsed.elements ?? [];
       if (parsed.version !== 1 || !this.validBackup({ lights: parsed.lights, elements }))
         throw new Error("Invalid Lights store; backup refused.");
-      return { lights: parsed.lights.map(withLedProductId), elements };
+      return { lights: parsed.lights.map(normalizeStoredLight), elements };
     } catch (error) {
       if (isEnoent(error)) return { lights: [], elements: [] };
       throw error;
@@ -144,7 +149,7 @@ export class FileLightsStore {
       throw new StoreUnreadableError("Lights store", this.filePath, "unexpected shape or version");
     const rows = parsed.elements ?? [];
     const elements = rows.filter(isElement);
-    return { lights: parsed.lights.map(withLedProductId), elements, dropped: rows.length - elements.length };
+    return { lights: parsed.lights.map(normalizeStoredLight), elements, dropped: rows.length - elements.length };
   }
 
   /** Writes refuse when a read skipped rows, so a save never deletes what it could not parse. */
@@ -165,11 +170,11 @@ export class FileLightsStore {
   }
 }
 
-function withLedProductId(light: Light): Light {
-  return {
+function normalizeStoredLight(light: Light): Light {
+  return withMigratedOutputs({
     ...light,
     ledProductId: normalizeLightLedProductId(light.ledProductId),
-  };
+  });
 }
 
 function isElement(value: unknown): value is Element {
@@ -183,7 +188,8 @@ function isElement(value: unknown): value is Element {
     typeof row.stop === "number" &&
     (row.color === undefined || (typeof row.color === "object" && row.color !== null &&
       typeof row.color.hex === "string" && /^#[0-9a-fA-F]{6}$/.test(row.color.hex) &&
-      Number.isInteger(row.color.white) && row.color.white >= 0 && row.color.white <= 255))
+      Number.isInteger(row.color.white) && row.color.white >= 0 && row.color.white <= 255)) &&
+    (row.outputId === undefined || (typeof row.outputId === "string" && row.outputId.length > 0))
   );
 }
 

@@ -17,6 +17,8 @@ export type FixtureBoxOptions = {
   nativeType?: number;
   /** WLED `hw.led.ins[0].order`. Default `COL_ORDER_GRB` (0). */
   nativeOrder?: number;
+  /** Extra / replacement `hw.led.ins[]` rows. When set, `ledCount` is the sum. */
+  buses?: Array<{ len: number; pin?: number; type?: number; order?: number }>;
   cfgEnabled?: boolean;
   mismatch?: boolean;
   busMismatch?: boolean;
@@ -53,10 +55,26 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
   let exportedCfg: string | null = null;
   let exportedPresets: string | null = null;
   let lastUploadName: string | null = null;
-  let ledCount = options.ledCount ?? 60;
   const gpio = options.gpio ?? 16;
   const nativeType = options.nativeType ?? WLED_WS281X_NATIVE_TYPE;
   const nativeOrder = options.nativeOrder ?? 0;
+  const initialBuses: BusIns[] = (options.buses?.length
+    ? options.buses
+    : [{ len: options.ledCount ?? 60, pin: gpio, type: nativeType, order: nativeOrder }]
+  ).reduce<BusIns[]>((rows, bus) => {
+    const start = rows.reduce((sum, row) => sum + row.len, 0);
+    rows.push({
+      start,
+      len: Math.max(1, Math.round(bus.len)),
+      pin: [bus.pin ?? gpio],
+      type: bus.type ?? nativeType,
+      order: bus.order ?? nativeOrder,
+      rev: false,
+      skip: 0,
+    });
+    return rows;
+  }, []);
+  let ledCount = initialBuses.reduce((sum, bus) => sum + bus.len, 0);
   const info = {
     ver: options.ver ?? "0.15.4",
     name: options.name ?? "WLED",
@@ -66,7 +84,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     uptime: 3920,
     freeheap: 115000,
     wifi: { signal: 78, rssi: -62 },
-    leds: { count: ledCount, rgbw: WHITE_NATIVE_TYPES.has(nativeType), maxseg: options.maxSegments ?? 32 },
+    leds: { count: ledCount, rgbw: initialBuses.some((bus) => WHITE_NATIVE_TYPES.has(bus.type)), maxseg: options.maxSegments ?? 32 },
   };
   const cfgEnabled = options.cfgEnabled ?? true;
   const cfg: {
@@ -87,17 +105,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       led: {
         maxpwr: 850,
         total: ledCount,
-        ins: [
-          {
-            start: 0,
-            len: ledCount,
-            pin: [gpio],
-            type: nativeType,
-            order: nativeOrder,
-            rev: false,
-            skip: 0,
-          },
-        ],
+        ins: initialBuses.map((bus) => ({ ...bus })),
       },
     },
   };
@@ -117,16 +125,52 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
   let hideSegAfterWrite = false;
   let refuseState = options.refuseState ?? false;
 
-  function resizeStrip(nextCount: number) {
+  function resizeCanvas(nextCount: number) {
     const count = Math.max(1, Math.min(2048, Math.round(nextCount)));
     ledCount = count;
     info.leds.count = count;
     cfg.hw.led.total = count;
-    cfg.hw.led.ins[0]!.len = count;
     const col = state.seg[0]?.col ?? [[255, 160, 0]];
     state.seg = [{ start: 0, stop: count, col }];
     while (pixels.length < count) pixels.push("#000000");
     pixels.length = count;
+  }
+
+  function applyIns(rows: unknown[]) {
+    const next: BusIns[] = [];
+    for (let i = 0; i < rows.length; i += 1) {
+      const row = rows[i];
+      if (!row || typeof row !== "object") continue;
+      const incoming = row as Record<string, unknown>;
+      const prev = cfg.hw.led.ins[i];
+      next.push({
+        start:
+          typeof incoming.start === "number"
+            ? Math.max(0, Math.round(incoming.start))
+            : (prev?.start ?? 0),
+        len:
+          typeof incoming.len === "number"
+            ? Math.max(1, Math.min(2048, Math.round(incoming.len)))
+            : (prev?.len ?? 1),
+        pin:
+          Array.isArray(incoming.pin) && typeof incoming.pin[0] === "number"
+            ? [Math.round(incoming.pin[0])]
+            : (prev?.pin ?? [gpio]),
+        type: typeof incoming.type === "number" ? Math.round(incoming.type) : (prev?.type ?? nativeType),
+        order: typeof incoming.order === "number" ? Math.round(incoming.order) : (prev?.order ?? nativeOrder),
+        rev: typeof incoming.rev === "boolean" ? incoming.rev : (prev?.rev ?? false),
+        skip: typeof incoming.skip === "number" ? Math.round(incoming.skip) : (prev?.skip ?? 0),
+      });
+    }
+    if (next.length === 0) return;
+    cfg.hw.led.ins = next;
+    info.leds.rgbw = next.some((bus) => WHITE_NATIVE_TYPES.has(bus.type));
+    const total = next.reduce((sum, bus) => sum + bus.len, 0);
+    if (infoCountLag) {
+      cfg.hw.led.total = total;
+      return;
+    }
+    resizeCanvas(total);
   }
 
   function applyCfg(body: unknown) {
@@ -165,29 +209,8 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     if (typeof next.hw?.led?.maxpwr === "number") {
       cfg.hw.led.maxpwr = Math.max(0, Math.min(65000, Math.round(next.hw.led.maxpwr)));
     }
-    if (Array.isArray(next.hw?.led?.ins) && next.hw.led.ins[0] && !busMismatch) {
-      const row = next.hw.led.ins[0] as Record<string, unknown>;
-      const bus = cfg.hw.led.ins[0]!;
-      if (typeof row.start === "number") bus.start = Math.max(0, Math.round(row.start));
-      if (typeof row.type === "number") {
-        bus.type = Math.round(row.type);
-        info.leds.rgbw = WHITE_NATIVE_TYPES.has(bus.type);
-      }
-      if (typeof row.order === "number") bus.order = Math.round(row.order);
-      if (typeof row.rev === "boolean") bus.rev = row.rev;
-      if (typeof row.skip === "number") bus.skip = Math.round(row.skip);
-      if (Array.isArray(row.pin) && typeof row.pin[0] === "number") {
-        bus.pin = [Math.round(row.pin[0])];
-      }
-      if (typeof row.len === "number") {
-        if (infoCountLag) {
-          const count = Math.max(1, Math.min(2048, Math.round(row.len)));
-          bus.len = count;
-          cfg.hw.led.total = count;
-        } else {
-          resizeStrip(row.len);
-        }
-      }
+    if (Array.isArray(next.hw?.led?.ins) && !busMismatch) {
+      applyIns(next.hw.led.ins);
     }
   }
 

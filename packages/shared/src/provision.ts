@@ -51,6 +51,20 @@ export type WledStripProvisionDraft = {
   gpio: number;
 };
 
+/** One `hw.led.ins[]` row. Analog / network / multi-pin buses stay listed with a refuse. */
+export type ProvisionBusRead = {
+  index: number;
+  start: number | null;
+  settings: WledStripProvision;
+  refuse: string | null;
+  writable: boolean;
+};
+
+export type WledStripProvisionOutputDraft = WledStripProvisionDraft & {
+  index: number;
+  colorOrder?: string | null;
+};
+
 export type NativeCompatibilityMapping = {
   readonly id: string;
   readonly firmwareVersions: readonly string[];
@@ -223,11 +237,21 @@ export type ProvisionFingerprint = {
 };
 
 export type ProvisionRead = {
+  /** First understood writable bus, for the existing single-strip Strip form. */
   settings: WledStripProvision;
+  /** Every `hw.led.ins[]` entry, including buses we will not convert. */
+  outputs: ProvisionBusRead[];
   fingerprint: ProvisionFingerprint;
   caption: string;
   refuse: string | null;
   buses: number;
+};
+
+export type ProvisionOutputWriteRow = {
+  index: number;
+  sent: WledStripProvisionDraft;
+  read: WledStripProvision;
+  matched: boolean;
 };
 
 export type ProvisionWriteResult = {
@@ -239,6 +263,8 @@ export type ProvisionWriteResult = {
   fingerprint: ProvisionFingerprint;
   message: string;
   caption: string;
+  /** Per-output sent / readback when more than one bus was written. */
+  outputs?: ProvisionOutputWriteRow[];
   /** Present after a successful length-changing Apply. Absent on same length / mismatch. */
   ranges?: RangeLengthStory | null;
   /**
@@ -247,6 +273,36 @@ export type ProvisionWriteResult = {
    */
   orderPreserved?: boolean;
 };
+
+export type ParsedProvisionBody =
+  | { kind: "single"; draft: WledStripProvisionDraft }
+  | { kind: "outputs"; drafts: WledStripProvisionOutputDraft[] };
+
+export function parseProvisionBody(raw: unknown): ParsedProvisionBody | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  if (Array.isArray(row.outputs)) {
+    const drafts: WledStripProvisionOutputDraft[] = [];
+    for (const item of row.outputs) {
+      if (!item || typeof item !== "object") return null;
+      const bus = item as Record<string, unknown>;
+      if (!Number.isInteger(bus.index) || (bus.index as number) < 0) return null;
+      if (!isProvisionLedType(bus.ledType)) return null;
+      if (typeof bus.length !== "number" || typeof bus.gpio !== "number") return null;
+      drafts.push({
+        index: bus.index as number,
+        ledType: bus.ledType,
+        length: bus.length,
+        gpio: bus.gpio,
+        ...(typeof bus.colorOrder === "string" ? { colorOrder: bus.colorOrder } : {}),
+      });
+    }
+    return drafts.length > 0 ? { kind: "outputs", drafts } : null;
+  }
+  if (!isProvisionLedType(row.ledType)) return null;
+  if (typeof row.length !== "number" || typeof row.gpio !== "number") return null;
+  return { kind: "single", draft: { ledType: row.ledType, length: row.length, gpio: row.gpio } };
+}
 
 const emptySettings = (): WledStripProvision => ({
   ledType: "unknown",
@@ -266,6 +322,20 @@ export const WLED_COL_ORDER_RGB = ["GRB", "RGB", "BRG", "RBG", "BGR", "GBR"] as 
 
 export function busNativeOrder(bus: Record<string, unknown>): number | null {
   return integer(bus.order);
+}
+
+export function nativeOrderFromColorOrder(
+  colorOrder: string,
+  ledType: ProvisionLedType | "unknown",
+): number | null {
+  const trimmed = colorOrder.trim().toUpperCase();
+  if (!trimmed) return null;
+  const rgb = trimmed.endsWith("W") ? trimmed.slice(0, -1) : trimmed;
+  const index = (WLED_COL_ORDER_RGB as readonly string[]).indexOf(rgb);
+  if (index < 0) return null;
+  if (ledType === "sk6812-rgbw" && trimmed.endsWith("W")) return index;
+  if (ledType !== "sk6812-rgbw" && trimmed.endsWith("W")) return null;
+  return index;
 }
 
 export function colorOrderFromNative(
@@ -421,72 +491,68 @@ export function parseWledProvision(
       mapping,
     );
   }
-  if (buses.length > 1) {
-    return refusedRead(
-      firmware,
-      "This Light has more than one bus. First-time provision is one strip. Nothing was written.",
-      caption,
-      mapping,
-      buses.length,
-    );
-  }
 
-  const bus = buses[0]!;
-  const gpioList = busPins(bus);
-  if (gpioList && gpioList.length > 1) {
-    return refusedRead(
-      firmware,
-      "This bus uses more than one pin. Strip provision is a single GPIO. Nothing was written.",
-      caption,
-      mapping,
-      1,
-    );
-  }
-
-  const nativeType = busNativeType(bus);
-  if (nativeType !== null && UNSUPPORTED_NUMERIC_TYPES.has(nativeType)) {
-    return refusedRead(
-      firmware,
-      "This bus type is not a strip we provision. Nothing was written.",
-      caption,
-      mapping,
-      1,
-    );
-  }
-
-  const ledType = ledTypeFromNative(nativeType);
-  const nativeOrder = busNativeOrder(bus);
-  const settings: WledStripProvision = {
-    ledType,
-    length: busLength(bus),
-    gpio: gpioList?.[0] ?? null,
-    nativeType,
-    nativeOrder,
-    colorOrder: colorOrderFromNative(nativeOrder, ledType),
-  };
-
+  const firmwareOk = mapping !== null;
+  const outputs = buses.map((bus, index) => inspectBus(bus, index, firmwareOk));
+  const writableOutputs = outputs.filter((output) => output.writable);
+  const firstWritable = writableOutputs[0] ?? null;
+  const settings = firstWritable?.settings ?? emptySettings();
   const typeMapping =
     settings.ledType === "unknown"
       ? null
       : resolveProvisionMapping(firmware, settings.ledType);
-  const firmwareOk = mapping !== null;
-  const writable = firmwareOk;
-  const refuse = firmwareOk
-    ? null
-    : "This firmware isn’t in the strip compatibility table. Nothing was written.";
+
+  if (!firmwareOk) {
+    return {
+      settings,
+      outputs,
+      fingerprint: {
+        firmware,
+        source: "cfg",
+        writable: false,
+        mappingId: null,
+        fields: [],
+      },
+      caption,
+      refuse: "This firmware isn’t in the strip compatibility table. Nothing was written.",
+      buses: buses.length,
+    };
+  }
+
+  if (!firstWritable) {
+    const onlyRefuse =
+      outputs.length === 1 && outputs[0]?.refuse
+        ? `${outputs[0].refuse} Nothing was written.`
+        : "None of this controller’s buses are a strip we provision. Nothing was written.";
+    return {
+      settings: emptySettings(),
+      outputs,
+      fingerprint: {
+        firmware,
+        source: "cfg",
+        writable: false,
+        mappingId: mapping.id,
+        fields: [],
+      },
+      caption,
+      refuse: onlyRefuse,
+      buses: buses.length,
+    };
+  }
 
   return {
     settings,
+    outputs,
     fingerprint: {
       firmware,
       source: "cfg",
-      writable,
-      mappingId: typeMapping?.id ?? mapping?.id ?? null,
-      fields: writable ? ["ledType", "length", "gpio"] : [],
+      writable: true,
+      mappingId: typeMapping?.id ?? mapping.id,
+      fields: ["ledType", "length", "gpio"],
     },
     caption,
-    refuse,
-    buses: 1,
+    refuse: null,
+    buses: buses.length,
   };
 }
 
@@ -548,6 +614,8 @@ export function validateProvisionDraft(draft: WledStripProvisionDraft): string |
  * native type differs (convert, including unknown → mapped). Convert to
  * SK6812 RGBW therefore authors GRBW (`order: 0`). Same-type writes leave
  * the existing `order` untouched.
+ *
+ * Writes the full `ins[]` list so other outputs are cloned, not dropped.
  */
 export function buildProvisionWrite(
   draft: WledStripProvisionDraft,
@@ -562,50 +630,101 @@ export function buildProvisionWrite(
     }
   | { ok: false; message: string } {
   const parsed = parseWledProvision(rawCfg, fingerprint.firmware, "controller");
+  const target = parsed.outputs.find((output) => output.writable);
+  const built = buildProvisionOutputsWrite(
+    target
+      ? [{ ...draft, index: target.index }]
+      : [{ ...draft, index: 0 }],
+    rawCfg,
+    fingerprint,
+  );
+  if (!built.ok) return built;
+  return {
+    ok: true,
+    body: built.body,
+    sent: {
+      ledType: built.sent[0]?.ledType ?? draft.ledType,
+      length: built.sent[0]?.length ?? draft.length,
+      gpio: built.sent[0]?.gpio ?? draft.gpio,
+    },
+    orderPreserved: built.orderPreserved,
+  };
+}
+
+export function buildProvisionOutputsWrite(
+  drafts: WledStripProvisionOutputDraft[],
+  rawCfg: unknown,
+  fingerprint: ProvisionFingerprint,
+):
+  | {
+      ok: true;
+      body: Record<string, unknown>;
+      sent: WledStripProvisionOutputDraft[];
+      orderPreserved: boolean;
+    }
+  | { ok: false; message: string } {
+  const parsed = parseWledProvision(rawCfg, fingerprint.firmware, "controller");
   const reason = provisionRefuseReason({
     reachable: true,
     read: {
       ...parsed,
       fingerprint,
-      refuse: fingerprint.writable ? parsed.refuse : parsed.refuse ?? "This firmware isn’t in the strip compatibility table. Nothing was written.",
+      refuse: fingerprint.writable
+        ? parsed.refuse
+        : parsed.refuse ??
+          "This firmware isn’t in the strip compatibility table. Nothing was written.",
     },
-    draft,
   });
   if (reason) return { ok: false, message: reason };
-
-  const mapping = resolveProvisionMapping(fingerprint.firmware, draft.ledType);
-  if (!mapping) {
-    return {
-      ok: false,
-      message: "This firmware isn’t in the strip compatibility table. Nothing was written.",
-    };
+  if (drafts.length === 0) {
+    return { ok: false, message: "No LED bus draft to write. Nothing was written." };
   }
 
-  const buses = rawWledBuses(rawCfg);
-  const current = buses[0] ? cloneRecord(buses[0]) : null;
-  if (!current) {
+  const buses = rawWledBuses(rawCfg).map(cloneRecord);
+  if (buses.length === 0) {
     return { ok: false, message: "No LED bus on this firmware. Nothing was written." };
   }
 
-  const next = cloneRecord(current);
-  next.pin = [draft.gpio];
-  next.len = draft.length;
-  const nativeType = busNativeType(current);
-  // Convert only. Same-type length / GPIO must not rewrite colour order.
-  const orderPreserved = nativeType === mapping.native.type;
-  if (!orderPreserved) {
-    next.type = mapping.native.type;
-    next.order = mapping.native.order;
+  let orderPreserved = true;
+  const sent: WledStripProvisionOutputDraft[] = [];
+  for (const draft of drafts) {
+    const invalid = validateProvisionDraft(draft);
+    if (invalid) return { ok: false, message: invalid };
+    const busRead = parsed.outputs.find((output) => output.index === draft.index);
+    if (!busRead?.writable) {
+      return {
+        ok: false,
+        message: `Output ${draft.index + 1} is not a strip we provision. Nothing was written.`,
+      };
+    }
+    const mapping = resolveProvisionMapping(fingerprint.firmware, draft.ledType);
+    if (!mapping) {
+      return {
+        ok: false,
+        message: "This firmware isn’t in the strip compatibility table. Nothing was written.",
+      };
+    }
+    const current = buses[draft.index];
+    if (!current) {
+      return { ok: false, message: "No LED bus on this firmware. Nothing was written." };
+    }
+    const applied = applyDraftToBus(current, draft, mapping);
+    if (!applied.ok) return applied;
+    buses[draft.index] = applied.bus;
+    if (!applied.orderPreserved) orderPreserved = false;
+    sent.push({
+      index: draft.index,
+      ledType: draft.ledType,
+      length: draft.length,
+      gpio: draft.gpio,
+      ...(draft.colorOrder ? { colorOrder: draft.colorOrder } : {}),
+    });
   }
 
-  const sent: WledStripProvisionDraft = {
-    ledType: draft.ledType,
-    length: draft.length,
-    gpio: draft.gpio,
-  };
+  recomputeBusStarts(buses);
   return {
     ok: true,
-    body: { hw: { led: { ins: [next] } } },
+    body: { hw: { led: { ins: buses } } },
     sent,
     orderPreserved,
   };
@@ -625,24 +744,140 @@ export function provisionFieldsMatch(
 export function provisionSnapshotMatch(
   sent: WledStripProvisionDraft,
   snapshotLedCount: number | null,
+  expectedSnapshotLedCount: number = sent.length,
 ): boolean {
-  return snapshotLedCount === sent.length;
+  return snapshotLedCount === expectedSnapshotLedCount;
+}
+
+export function provisionWriteExpectedLedCount(ins: Record<string, unknown>[]): number | null {
+  const lengths = ins.map(busLength);
+  if (lengths.some((value) => value === null)) return null;
+  return lengths.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+}
+
+export function provisionOutputsMatch(
+  sent: WledStripProvisionOutputDraft[],
+  read: ProvisionRead,
+): boolean {
+  return sent.every((draft) => {
+    const bus = read.outputs.find((output) => output.index === draft.index);
+    return Boolean(bus && provisionFieldsMatch(draft, bus.settings));
+  });
+}
+
+export function provisionOutputWriteRows(
+  sent: WledStripProvisionOutputDraft[],
+  read: ProvisionRead,
+): ProvisionOutputWriteRow[] {
+  return sent.map((draft) => {
+    const bus = read.outputs.find((output) => output.index === draft.index);
+    const settings = bus?.settings ?? emptySettings();
+    return {
+      index: draft.index,
+      sent: { ledType: draft.ledType, length: draft.length, gpio: draft.gpio },
+      read: settings,
+      matched: provisionFieldsMatch(draft, settings),
+    };
+  });
 }
 
 export function provisionMismatchNote(
   sent: WledStripProvisionDraft,
   read: WledStripProvision,
   snapshotLedCount: number | null,
+  expectedSnapshotLedCount: number = sent.length,
 ): string {
   if (!provisionFieldsMatch(sent, read)) {
     return "Wrote, but /json/cfg did not match. Not treating as success.";
   }
-  if (!provisionSnapshotMatch(sent, snapshotLedCount)) {
+  if (!provisionSnapshotMatch(sent, snapshotLedCount, expectedSnapshotLedCount)) {
     return `cfg reports the bus we sent, but the snapshot still has ${
       snapshotLedCount ?? "unknown"
     } LEDs. Not treating as success.`;
   }
   return "Controller reports the strip we sent.";
+}
+
+function inspectBus(
+  bus: Record<string, unknown>,
+  index: number,
+  firmwareOk: boolean,
+): ProvisionBusRead {
+  const gpioList = busPins(bus);
+  const nativeType = busNativeType(bus);
+  const ledType = ledTypeFromNative(nativeType);
+  const nativeOrder = busNativeOrder(bus);
+  const settings: WledStripProvision = {
+    ledType,
+    length: busLength(bus),
+    gpio: gpioList?.[0] ?? null,
+    nativeType,
+    nativeOrder,
+    colorOrder: colorOrderFromNative(nativeOrder, ledType),
+  };
+  if (gpioList && gpioList.length > 1) {
+    return {
+      index,
+      start: integer(bus.start),
+      settings,
+      refuse: "This bus uses more than one pin. Strip provision is a single GPIO.",
+      writable: false,
+    };
+  }
+  if (nativeType !== null && UNSUPPORTED_NUMERIC_TYPES.has(nativeType)) {
+    return {
+      index,
+      start: integer(bus.start),
+      settings,
+      refuse: "This bus type is not a strip we provision.",
+      writable: false,
+    };
+  }
+  return {
+    index,
+    start: integer(bus.start),
+    settings,
+    refuse: firmwareOk ? null : "This firmware isn’t in the strip compatibility table.",
+    writable: firmwareOk,
+  };
+}
+
+function applyDraftToBus(
+  current: Record<string, unknown>,
+  draft: WledStripProvisionOutputDraft,
+  mapping: NativeCompatibilityMapping,
+):
+  | { ok: true; bus: Record<string, unknown>; orderPreserved: boolean }
+  | { ok: false; message: string } {
+  const next = cloneRecord(current);
+  next.pin = [draft.gpio];
+  next.len = draft.length;
+  const nativeType = busNativeType(current);
+  let orderPreserved = nativeType === mapping.native.type;
+  if (!orderPreserved) {
+    next.type = mapping.native.type;
+    next.order = mapping.native.order;
+  }
+  if (draft.colorOrder != null && draft.colorOrder.trim()) {
+    const order = nativeOrderFromColorOrder(draft.colorOrder, draft.ledType);
+    if (order === null) {
+      return {
+        ok: false,
+        message: "Colour order must be a WLED RGB permutation (GRB, RGB, …) or GRBW on SK6812.",
+      };
+    }
+    next.order = order;
+    orderPreserved = busNativeOrder(current) === order && nativeType === mapping.native.type;
+  }
+  return { ok: true, bus: next, orderPreserved };
+}
+
+function recomputeBusStarts(buses: Record<string, unknown>[]): void {
+  let start = 0;
+  for (const bus of buses) {
+    bus.start = start;
+    start += busLength(bus) ?? 0;
+  }
 }
 
 function refusedRead(
@@ -654,6 +889,7 @@ function refusedRead(
 ): ProvisionRead {
   return {
     settings: emptySettings(),
+    outputs: [],
     fingerprint: {
       firmware,
       source: "cfg",

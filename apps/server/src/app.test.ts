@@ -4256,6 +4256,279 @@ describe("strip provision", () => {
   });
 });
 
+describe("fleet setup", () => {
+  const servers: Server[] = [];
+
+  afterEach(async () => {
+    await Promise.all(servers.splice(0).map((item) => new Promise<void>((resolve) => item.close(() => resolve()))));
+  });
+
+  async function liveApp(box: ReturnType<typeof createFixtureBox>) {
+    const http = box.listen(0, "127.0.0.1");
+    servers.push(http);
+    const port = await listenReady(http);
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-fleet-"));
+    const store = new FileLightsStore(join(dir, "lights.json"));
+    const app = createApp({
+      store,
+      backups: new FileBackupStore(join(dir, "backups")),
+      probe: (target) => probeWled(target, fetch, 500),
+      write: async () => true,
+      readLive: async () => ({ source: "fixture", leds: [] }),
+      readCfg: createWledCfgReader(),
+      writeCfg: createWledCfgWriter(),
+      collect: async () => [],
+    });
+    return { app, store, port, host: `127.0.0.1:${port}` };
+  }
+
+  it("enrolls every valid host and lists already-enrolled and failed separately", async () => {
+    const a = await liveApp(createFixtureBox({ name: "Yard-A", ledCount: 60 }));
+    const b = await liveApp(createFixtureBox({ name: "Yard-B", ledCount: 90 }));
+    const first = await a.app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: a.host }),
+    });
+    expect(first.status).toBe(201);
+    const res = await a.app.request("/api/lights/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hosts: [a.host, b.host, "127.0.0.1:1"] }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      results: { host: string; status: string; reason?: string }[];
+    };
+    expect(body.results).toEqual([
+      expect.objectContaining({ host: a.host, status: "already-enrolled" }),
+      expect.objectContaining({ host: b.host, status: "added" }),
+      expect.objectContaining({ host: "127.0.0.1:1", status: "failed" }),
+    ]);
+    expect(body.results[2]?.reason).toBeTruthy();
+    expect(a.store.load()).toHaveLength(2);
+  });
+
+  it("provisions a multi-bus controller without dropping the second output", async () => {
+    const box = createFixtureBox({
+      buses: [
+        { len: 40, pin: 16, type: 22, order: 0 },
+        { len: 80, pin: 2, type: 22, order: 1 },
+      ],
+    });
+    const { app, store, host } = await liveApp(box);
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string; outputs?: { index: number; ledCount: number }[] } }).light.id;
+    const read = (await (await app.request(`/api/lights/${id}/provision`)).json()) as {
+      provision: { refuse: string | null; buses: number; outputs: { index: number }[] };
+      light: { outputs?: { ledCount: number }[] };
+    };
+    expect(read.provision.refuse).toBeNull();
+    expect(read.provision.buses).toBe(2);
+    expect(read.light.outputs).toHaveLength(2);
+    const write = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provision: { ledType: "ws281x", length: 55, gpio: 4 } }),
+    });
+    expect(write.status).toBe(200);
+    expect(box.cfg.hw.led.ins).toHaveLength(2);
+    expect(box.cfg.hw.led.ins[0]).toMatchObject({ len: 55, pin: [4], start: 0 });
+    expect(box.cfg.hw.led.ins[1]).toMatchObject({ len: 80, pin: [2], start: 55 });
+    expect(store.findById(id)?.outputs).toHaveLength(2);
+  });
+
+  it("writes every understood output from an outputs[] provision body", async () => {
+    const box = createFixtureBox({
+      buses: [
+        { len: 40, pin: 16, type: 22, order: 0 },
+        { len: 80, pin: 2, type: 22, order: 1 },
+      ],
+    });
+    const { app, store, host } = await liveApp(box);
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const write = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provision: {
+          outputs: [
+            { index: 0, ledType: "ws281x", length: 22, gpio: 16 },
+            { index: 1, ledType: "ws281x", length: 44, gpio: 4 },
+          ],
+        },
+      }),
+    });
+    expect(write.status).toBe(200);
+    const body = (await write.json()) as {
+      provisionWrite: {
+        matched: boolean;
+        outputs?: { index: number; matched: boolean; sent: { length: number; gpio: number } }[];
+      };
+    };
+    expect(body.provisionWrite.matched).toBe(true);
+    expect(body.provisionWrite.outputs).toEqual([
+      expect.objectContaining({ index: 0, matched: true, sent: expect.objectContaining({ length: 22, gpio: 16 }) }),
+      expect.objectContaining({ index: 1, matched: true, sent: expect.objectContaining({ length: 44, gpio: 4 }) }),
+    ]);
+    expect(box.cfg.hw.led.ins[0]).toMatchObject({ len: 22, pin: [16], start: 0 });
+    expect(box.cfg.hw.led.ins[1]).toMatchObject({ len: 44, pin: [4], start: 22 });
+    expect(store.findById(id)?.outputs?.map((output) => output.ledCount)).toEqual([22, 44]);
+  });
+
+  it("applies a setup profile to one chosen output and leaves the other", async () => {
+    const box = createFixtureBox({
+      buses: [
+        { len: 40, pin: 16, type: 22, order: 0 },
+        { len: 80, pin: 2, type: 22, order: 1 },
+      ],
+    });
+    const { app, host } = await liveApp(box);
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const apply = await app.request("/api/lights/setup-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lightIds: [id],
+        profile: { name: "Second only", length: 55, outputIndex: 1 },
+      }),
+    });
+    expect(apply.status).toBe(200);
+    const body = (await apply.json()) as { results: { status: string; reason?: string }[] };
+    expect(body.results[0]?.status).toBe("applied");
+    expect(box.cfg.hw.led.ins[0]).toMatchObject({ len: 40, pin: [16], start: 0 });
+    expect(box.cfg.hw.led.ins[1]).toMatchObject({ len: 55, pin: [2], start: 40 });
+  });
+
+  it("saves a Segment on a named output and refuses one that leaves it", async () => {
+    const box = createFixtureBox({
+      buses: [
+        { len: 40, pin: 16, type: 22, order: 0 },
+        { len: 80, pin: 2, type: 22, order: 1 },
+      ],
+    });
+    const { app, host } = await liveApp(box);
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host }),
+    });
+    const light = ((await enroll.json()) as { light: { id: string; outputs?: { id: string; index: number }[] } }).light;
+    await app.request(`/api/lights/${light.id}/provision`);
+    const stored = ((await (await app.request(`/api/lights/${light.id}`)).json()) as {
+      light: { outputs?: { id: string; index: number }[] };
+    }).light;
+    const second = stored.outputs?.find((output) => output.index === 1);
+    expect(second?.id).toBeTruthy();
+    const ok = await app.request(`/api/lights/${light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [{ label: "Window", start: 40, stop: 60, outputId: second!.id }],
+      }),
+    });
+    expect(ok.status).toBe(200);
+    const refused = await app.request(`/api/lights/${light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [{ label: "Window", start: 0, stop: 20, outputId: second!.id }],
+      }),
+    });
+    expect(refused.status).toBe(422);
+  });
+
+  it("saves gapped Segments on one output", async () => {
+    const { app } = testApp();
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.80" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const res = await app.request(`/api/lights/${id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [
+          { label: "Roofline", start: 0, stop: 18 },
+          { label: "Window", start: 36, stop: 54 },
+        ],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { elements: { start: number; stop: number }[] };
+    expect(body.elements).toEqual([
+      expect.objectContaining({ start: 0, stop: 18 }),
+      expect.objectContaining({ start: 36, stop: 54 }),
+    ]);
+  });
+
+  it("applies a setup profile to online Lights and lists a dead one", async () => {
+    const live = await liveApp(createFixtureBox({ name: "Online", ledCount: 60 }));
+    const enroll = await live.app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: live.host }),
+    });
+    const onlineId = ((await enroll.json()) as { light: { id: string } }).light.id;
+    live.store.upsert({
+      id: "ghost",
+      name: "Ghost",
+      controllerKind: "wled",
+      stripKind: "ws281x",
+      hostname: "127.0.0.1",
+      port: 1,
+      hostKey: "127.0.0.1:1",
+      mac: null,
+      firmware: "WLED 0.15.4",
+      ledCount: 60,
+      rgbw: false,
+      reachability: "online",
+      lastSeenAt: null,
+      on: true,
+      brightness: 128,
+      enrolledAt: "2026-10-31T00:00:00.000Z",
+      ledProductId: null,
+    });
+    const saved = await live.app.request("/api/setup-profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profile: { name: "Yard WS281x", ledType: "ws281x", currentLimitMa: 2000, namePattern: "yard-{nn}" },
+      }),
+    });
+    expect(saved.status).toBe(201);
+    const profileId = ((await saved.json()) as { profile: { id: string } }).profile.id;
+    const apply = await live.app.request("/api/lights/setup-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightIds: [onlineId, "ghost"], profileId }),
+    });
+    expect(apply.status).toBe(200);
+    const body = (await apply.json()) as {
+      results: { lightId: string; status: string; reason?: string }[];
+    };
+    expect(body.results.find((row) => row.lightId === onlineId)?.status).toBe("applied");
+    expect(body.results.find((row) => row.lightId === "ghost")?.status).toBe("failed");
+    expect(live.store.findById(onlineId)?.name).toMatch(/yard-/);
+  });
+});
+
 describe("LED product catalog", () => {
   it("lists seeded products and fetches one by id", async () => {
     const { app, products } = testApp();

@@ -399,6 +399,102 @@ describe("headless WLED sim e2e: Sync across Lights", () => {
     expect(confirmed.body.rows.find((row) => row.lightId === longer.id)?.status).toBe("matched");
     expect(confirmed.body.message).toBe("1 of 2 have the copied presets. Check the Lights listed below.");
   }, 30_000);
+
+  it("reads a multi-bus sim, adds all found, and applies a setup profile as software path only", async () => {
+    const [multi, extra] = await Promise.all([
+      startSim({ NIGHTPLOT_SIM_BUS2_LEN: "40", NIGHTPLOT_SIM_BUS2_PIN: "2" }),
+      startSim({ NIGHTPLOT_SIM_NAME: "WLED-sim-b" }),
+    ]);
+    const { app, store } = appAgainstHttp();
+    const hostA = `${multi.host}:${multi.httpPort}`;
+    const hostB = `${extra.host}:${extra.httpPort}`;
+    const bulk = await app.request("/api/lights/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hosts: [hostA, hostB] }),
+    });
+    expect(bulk.status).toBe(200);
+    const enrolled = (await bulk.json()) as {
+      results: { host: string; status: string; lightId?: string }[];
+      caption: string;
+    };
+    expect(enrolled.results.every((row) => row.status === "added")).toBe(true);
+    expect(enrolled.caption).toMatch(/software path only|Not Hardware Done|automatic backup/i);
+    const multiId = enrolled.results.find((row) => row.host === hostA)!.lightId!;
+    const extraId = enrolled.results.find((row) => row.host === hostB)!.lightId!;
+
+    const provision = (await (await app.request(`/api/lights/${multiId}/provision`)).json()) as {
+      provision: { buses: number; refuse: string | null };
+      light: { outputs?: { ledCount: number }[] };
+    };
+    expect(provision.provision.refuse).toBeNull();
+    expect(provision.provision.buses).toBe(2);
+    expect(provision.light.outputs).toHaveLength(2);
+
+    const gaps = await app.request(`/api/lights/${multiId}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [
+          { label: "Roofline", start: 0, stop: 20 },
+          { label: "Window", start: 40, stop: 55 },
+        ],
+      }),
+    });
+    expect(gaps.status).toBe(200);
+
+    const apply = await app.request("/api/lights/setup-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lightIds: [multiId, extraId],
+        profile: { name: "Yard", ledType: "ws281x", currentLimitMa: 1500, namePattern: "yard-{nn}" },
+      }),
+    });
+    expect(apply.status).toBe(200);
+    const applied = (await apply.json()) as {
+      results: { lightId: string; status: string }[];
+    };
+    expect(applied.results.map((row) => row.status)).toEqual(["applied", "applied"]);
+    expect(store.findById(multiId)?.name).toBe("yard-01");
+    expect(store.findById(extraId)?.name).toBe("yard-02");
+
+    const writeBoth = await app.request(`/api/lights/${multiId}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provision: {
+          outputs: [
+            { index: 0, ledType: "ws281x", length: 28, gpio: 16 },
+            { index: 1, ledType: "ws281x", length: 36, gpio: 2 },
+          ],
+        },
+      }),
+    });
+    expect(writeBoth.status).toBe(200);
+    const written = (await writeBoth.json()) as {
+      provisionWrite: { matched: boolean; outputs?: { index: number; matched: boolean }[] };
+    };
+    expect(written.provisionWrite.matched).toBe(true);
+    expect(written.provisionWrite.outputs?.map((row) => row.matched)).toEqual([true, true]);
+
+    const secondOnly = await app.request("/api/lights/setup-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lightIds: [multiId],
+        profile: { name: "Second bus", length: 41, outputIndex: 1 },
+      }),
+    });
+    expect(secondOnly.status).toBe(200);
+    const secondBody = (await secondOnly.json()) as { results: { status: string }[] };
+    expect(secondBody.results[0]?.status).toBe("applied");
+    const after = (await (await app.request(`/api/lights/${multiId}/provision`)).json()) as {
+      provision: { outputs: { index: number; settings: { length: number | null } }[] };
+    };
+    expect(after.provision.outputs.find((row) => row.index === 0)?.settings.length).toBe(28);
+    expect(after.provision.outputs.find((row) => row.index === 1)?.settings.length).toBe(41);
+  }, 30_000);
 });
 
 async function viWaitForLive(baseUrl: string, hex: string) {
