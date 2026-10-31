@@ -68,7 +68,7 @@ export function AttachProp({
     setBusy(false);
     if (!res.ok) {
       setApplied(false);
-      setNotice(res.data.message ?? res.data.apply?.message ?? "Nothing was sent.");
+      setNotice(res.data.message ?? "Nothing was sent.");
       return;
     }
     setSummary(res.data.summary ?? plan.summary);
