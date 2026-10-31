@@ -12,7 +12,7 @@ Use: **Lights**, **Segments**, Preview, Apply, Blink, All Off.
 
 Fleet and show words are also in play: **Yard**, **Prop**, **Zone**, **Look**, **Schedule**.
 
-A Light is one enrolled controller. It may drive several outputs (WLED buses). A Segment is an inclusive–exclusive range on one output. Gaps between Segments are allowed; overlap is not.
+A Light is one enrolled controller. It may drive several outputs (WLED buses). A Segment is an inclusive–exclusive range on one output. Gaps between Segments are allowed; overlap is not. A Prop is a named, typed shape on one Light, made of one or more Segments on any output. Gaps between those Segments are allowed.
 
 Existing `Element` types and `elements` store keys stay compatible.
 

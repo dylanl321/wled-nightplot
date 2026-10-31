@@ -371,8 +371,34 @@ export {
   type FindLengthState,
 } from "./strip-assist/length.ts";
 export { getStripAssistPlugin, listStripAssistPlugins } from "./strip-assist/catalog.ts";
+export { addPropAssist } from "./strip-assist/add-prop-plugin.ts";
 export { findLengthAssist } from "./strip-assist/find-length-plugin.ts";
 export type { StripAssistKind, StripAssistPlugin } from "./strip-assist/types.ts";
+export {
+  PROP_KINDS,
+  isProp,
+  isPropKind,
+  type Prop,
+  type PropKind,
+  type PropSegmentDraft,
+  type PropTap,
+} from "./prop/types.ts";
+export {
+  PROP_TEMPLATES,
+  canFinishPropTaps,
+  nextPropLabel,
+  nextTapRole,
+  parsePropKind,
+  parsePropTaps,
+  partialSegmentsFromTaps,
+  propKindLabel,
+  propTemplate,
+  segmentsFromPropTaps,
+  splitRangeAcrossOutputs,
+  tapRefuseReason,
+  type PropTemplate,
+  type PropTapPairing,
+} from "./prop/templates.ts";
 export type { StripPreset } from "./strip/presets.ts";
 export { sk6812RgbwStrip } from "./strip/sk6812-rgbw.ts";
 export { fw1906Strip } from "./strip/fw1906.ts";

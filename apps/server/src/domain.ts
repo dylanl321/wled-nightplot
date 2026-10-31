@@ -19,6 +19,7 @@ import {
   type Light,
   type LightDetail,
   type LightView,
+  type Prop,
   type WledSnapshot,
 } from "@nightplot/shared";
 import type { ProbeOutcome } from "./wled/client.ts";
@@ -74,6 +75,7 @@ export function toLightView(
   live: WledSnapshot | null,
   extras: {
     elementCount: number;
+    propCount?: number;
     segmentCount: number | null;
     driftLabel: string | null;
     declared?: LightView["declared"];
@@ -98,6 +100,7 @@ export function toLightView(
     spacingMm: spacing?.mm ?? null,
     spacingKind: spacing?.kind ?? null,
     elementCount: extras.elementCount,
+    propCount: extras.propCount ?? 0,
     segmentCount: extras.segmentCount,
     driftLabel: extras.driftLabel,
     declared: extras.declared ?? [],
@@ -109,6 +112,7 @@ export function lightDetail(
   live: WledSnapshot | null,
   elements: Element[],
   product: LedProduct | null = null,
+  props: Prop[] = [],
 ): LightDetail {
   const reachable = light.reachability === "online" && live !== null;
   const reported = live?.segments ?? null;
@@ -118,6 +122,7 @@ export function lightDetail(
     health: reachable ? live.health ?? null : null,
     light: toLightView(light, live, {
       elementCount: elements.length,
+      propCount: props.length,
       segmentCount: reachable ? snapshotSegmentCount(live) : null,
       driftLabel: display.notes[0]?.text ?? null,
       declared: display.declared.map((rail, index) => ({
@@ -130,6 +135,7 @@ export function lightDetail(
       product,
     }),
     elements,
+    props,
     reported: display.reported,
     display,
     snapshotAt: reachable ? light.lastSeenAt : null,

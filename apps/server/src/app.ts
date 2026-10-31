@@ -117,7 +117,12 @@ import {
   type WledSafeSettings,
   type WledSnapshot,
   type ParsedProvisionBody,
+  type Prop,
   type WledStripProvisionDraft,
+  nextPropLabel,
+  parsePropKind,
+  parsePropTaps,
+  segmentsFromPropTaps,
 } from "@nightplot/shared";
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
@@ -957,7 +962,7 @@ export function createApp(deps: AppDeps) {
     catch (error) { return c.json(backupFailure(error), 503); }
     deps.store.replaceElements(light.id, elements);
     return c.json({
-      ...lightDetail(light, null, elements, attachedProduct(light)),
+      ...lightDetail(light, null, elements, attachedProduct(light), deps.store.propsFor(light.id)),
       message: "Segments restored to Nightplot. Preview and Apply were not started; use Apply separately to write the controller.",
     });
   });
@@ -1020,6 +1025,167 @@ export function createApp(deps: AppDeps) {
     if (!drafts) {
       return c.json({ error: "invalid", message: "Send { elements: [{ label, start, stop }] }." }, 400);
     }
+    const result = await applyDraftsToController(light, snap, drafts);
+    return c.json(result.body, result.status);
+  });
+
+  app.post("/api/lights/:id/props", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    const { light, live: snap } = await refreshOne(stored);
+    const raw = await c.req.json().catch(() => null);
+    const row = raw && typeof raw === "object" ? raw as Record<string, unknown> : null;
+    const kind = parsePropKind(row?.kind);
+    const taps = parsePropTaps(row?.taps);
+    if (!kind || !taps) {
+      return c.json({ error: "invalid", message: "Send { kind, taps: [{ index }] }." }, 400);
+    }
+    const existingProps = deps.store.propsFor(light.id);
+    const label = typeof row?.label === "string" && row.label.trim()
+      ? row.label.trim().slice(0, 64)
+      : nextPropLabel(kind, existingProps);
+    const built = segmentsFromPropTaps({
+      kind,
+      label,
+      taps,
+      ledCount: light.ledCount,
+      outputs: light.outputs ?? [],
+    });
+    if (!built.ok) {
+      return c.json({ error: "invalid-taps", message: built.message }, 422);
+    }
+    const palette = settings.read().palette;
+    const existing = deps.store.elementsFor(light.id);
+    const created: Element[] = built.segments.map((segment, index) => ({
+      id: randomUUID(),
+      lightId: light.id,
+      label: segment.label,
+      start: segment.start,
+      stop: segment.stop,
+      color: { hex: palette[index % palette.length]!.hex, white: 0 },
+      ...(segment.outputId ? { outputId: segment.outputId } : {}),
+    }));
+    const merged = [...existing, ...created];
+    const issues = validateDeclaredRangesForLight(merged, {
+      ledCount: light.ledCount,
+      outputs: light.outputs,
+    });
+    if (issues.length > 0) {
+      return c.json({ error: issues[0]!.code, message: issues[0]!.message, issues }, 422);
+    }
+    const wantApply = row?.apply === true;
+    if (wantApply) {
+      const colors = snap ? resolveApplyColors(merged, snap) : null;
+      const color = knownApplyColor(colors?.[0]?.hex ?? snap?.segmentColor);
+      const reason = applyRefuseReason({
+        reachable: light.reachability === "online" && snap !== null,
+        issueMessage: null,
+        elementCount: merged.length,
+        busyKind: live.get(light.id)?.kind ?? null,
+        segmentCount: snapshotSegmentCount(snap),
+        segmentColor: color,
+        maxSegments: snap?.maxSegments ?? null,
+      });
+      if (reason || !color) {
+        return c.json({ error: "refused", message: reason ?? APPLY_UNKNOWN_COLOUR_REASON }, 422);
+      }
+      if (!colors) {
+        return c.json({
+          error: "colour-unknown",
+          message: "An unset Segment has no unique fresh WLED colour at its exact range. Choose a colour, then Save before Apply. Nothing was sent.",
+        }, 422);
+      }
+    }
+    const prop: Prop = {
+      id: randomUUID(),
+      lightId: light.id,
+      label,
+      kind,
+      elementIds: created.map((element) => element.id),
+    };
+    deps.store.replaceElements(light.id, merged);
+    deps.store.replaceProps(light.id, [...existingProps, prop]);
+    if (!wantApply) {
+      return c.json({
+        ...(await decorateDetail(light, snap, merged)),
+        prop,
+        message: "Prop saved in Nightplot. Apply was not sent.",
+      });
+    }
+    const drafts: DraftRange[] = merged.map((element) => ({
+      id: element.id,
+      label: element.label,
+      start: element.start,
+      stop: element.stop,
+      ...(element.color ? { color: element.color } : {}),
+      ...(element.outputId ? { outputId: element.outputId } : {}),
+    }));
+    const result = await applyDraftsToController(light, snap, drafts);
+    return c.json({ ...result.body, prop }, result.status);
+  });
+
+  app.patch("/api/lights/:id/props/:propId", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    const propId = c.req.param("propId");
+    const existing = deps.store.propsFor(stored.id);
+    const prop = existing.find((row) => row.id === propId);
+    if (!prop) {
+      return c.json({ error: "not_found", message: "That Prop is not on this Light." }, 404);
+    }
+    const raw = await c.req.json().catch(() => null);
+    const label = raw && typeof raw === "object" && typeof (raw as { label?: unknown }).label === "string"
+      ? (raw as { label: string }).label.trim().slice(0, 64)
+      : "";
+    if (!label) {
+      return c.json({ error: "invalid", message: "Send { label }." }, 400);
+    }
+    const prefix = `${prop.label} · `;
+    const elements = deps.store.elementsFor(stored.id).map((element) => {
+      if (!prop.elementIds.includes(element.id)) return element;
+      const side = element.label.startsWith(prefix) ? element.label.slice(prefix.length) : element.label;
+      return { ...element, label: `${label} · ${side}` };
+    });
+    deps.store.replaceElements(stored.id, elements);
+    deps.store.replaceProps(stored.id, existing.map((row) => (row.id === propId ? { ...row, label } : row)));
+    const { light, live: snap } = await refreshOne(stored);
+    return c.json({
+      ...(await decorateDetail(light, snap, elements)),
+      prop: { ...prop, label },
+    });
+  });
+
+  app.delete("/api/lights/:id/props/:propId", async (c) => {
+    const stored = deps.store.findById(c.req.param("id"));
+    if (!stored) {
+      return c.json({ error: "not_found", message: "That Light is not on Lights." }, 404);
+    }
+    const propId = c.req.param("propId");
+    const existing = deps.store.propsFor(stored.id);
+    const prop = existing.find((row) => row.id === propId);
+    if (!prop) {
+      return c.json({ error: "not_found", message: "That Prop is not on this Light." }, 404);
+    }
+    const drop = new Set(prop.elementIds);
+    const elements = deps.store.elementsFor(stored.id).filter((element) => !drop.has(element.id));
+    deps.store.replaceElements(stored.id, elements);
+    deps.store.replaceProps(stored.id, existing.filter((row) => row.id !== propId));
+    const { light, live: snap } = await refreshOne(stored);
+    return c.json({
+      ...(await decorateDetail(light, snap, elements)),
+      message: "Prop removed from Nightplot. Apply was not sent.",
+    });
+  });
+
+  async function applyDraftsToController(
+    light: Light,
+    snap: WledSnapshot | null,
+    drafts: DraftRange[],
+  ): Promise<{ status: 200 | 409 | 422 | 503; body: Record<string, unknown> }> {
     const issues = validateDeclaredRangesForLight(drafts, {
       ledCount: light.ledCount,
       outputs: light.outputs,
@@ -1037,16 +1203,27 @@ export function createApp(deps: AppDeps) {
       maxSegments: snap?.maxSegments ?? null,
     });
     if (reason || !color) {
-      return c.json(
-        { error: "refused", message: reason ?? APPLY_UNKNOWN_COLOUR_REASON },
-        422,
-      );
+      return { status: 422, body: { error: "refused", message: reason ?? APPLY_UNKNOWN_COLOUR_REASON } };
     }
-    if (!colors) return c.json({ error: "colour-unknown",
-      message: "An unset Segment has no unique fresh WLED colour at its exact range. Choose a colour, then Save before Apply. Nothing was sent." }, 422);
+    if (!colors) {
+      return {
+        status: 422,
+        body: {
+          error: "colour-unknown",
+          message: "An unset Segment has no unique fresh WLED colour at its exact range. Choose a colour, then Save before Apply. Nothing was sent.",
+        },
+      };
+    }
     const rgbw = getStrip(light.stripKind)?.bead === "rgbw";
-    if (colors.some((entry) => entry.white && !rgbw)) return c.json({ error: "unsupported-white",
-      message: "This Light is not configured as RGBW. White-channel Apply was not sent." }, 422);
+    if (colors.some((entry) => entry.white && !rgbw)) {
+      return {
+        status: 422,
+        body: {
+          error: "unsupported-white",
+          message: "This Light is not configured as RGBW. White-channel Apply was not sent.",
+        },
+      };
+    }
     const sent = drafts.map((row) => ({
       label: row.label.trim() || "Untitled",
       start: row.start,
@@ -1056,10 +1233,10 @@ export function createApp(deps: AppDeps) {
     const dest: HostPort = { hostname: light.hostname, port: light.port };
     const planned = applyRangesWrite(sent, previousSegmentCount, color, colors, rgbw);
     if (!planned.ok) {
-      return c.json({ error: "refused", message: APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE }, 422);
+      return { status: 422, body: { error: "refused", message: APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE } };
     }
     try { await captureDevice("pre-apply", light, snap!); }
-    catch (error) { return c.json(backupFailure(error), 503); }
+    catch (error) { return { status: 503, body: backupFailure(error) }; }
     const written = await deps.write(dest, planned.body);
     if (!written) {
       record(light, "apply", "unknown", `Apply write was not confirmed for ${sentDescription}; ranges were not read back.`);
@@ -1068,14 +1245,7 @@ export function createApp(deps: AppDeps) {
         "The controller did not take the ranges. Nothing else changed.",
         "controller",
       );
-      return c.json(
-        {
-          error: "write-failed",
-          message: outcome.message,
-          apply: outcome,
-        },
-        422,
-      );
+      return { status: 422, body: { error: "write-failed", message: outcome.message, apply: outcome } };
     }
     const reread = await deps.probe(dest);
     if (reread.kind !== "found") {
@@ -1085,19 +1255,12 @@ export function createApp(deps: AppDeps) {
         "Wrote, but could not re-read. Not treating as success.",
         "controller",
       );
-      return c.json(
-        {
-          error: "reread-failed",
-          message: outcome.message,
-          apply: outcome,
-        },
-        409,
-      );
+      return { status: 409, body: { error: "reread-failed", message: outcome.message, apply: outcome } };
     }
     if (light.mac && (!reread.snapshot.mac || !macsMatch(light.mac, reread.snapshot.mac))) {
       const outcome = applyUnreadFailed(sent, "Apply was sent, but the readback controller identity is missing or changed. Not treating this as success.", "controller");
       record(light, "apply", "unknown", outcome.message);
-      return c.json({ error: "controller-changed", message: outcome.message, apply: outcome }, 409);
+      return { status: 409, body: { error: "controller-changed", message: outcome.message, apply: outcome } };
     }
     const liveRead = await live.read({ ...light, reachability: "online" });
     const source = honestySource(liveRead?.source);
@@ -1107,15 +1270,15 @@ export function createApp(deps: AppDeps) {
       const outcome = applyUnknownSegments(sent, source);
       deps.store.replace(next);
       record(next, "apply", "unknown", `Apply sent ${sentDescription}; controller Segments were not reported. ${outcome.caption}`);
-      return c.json(
-        {
+      return {
+        status: 409,
+        body: {
           error: "reread-unknown-segments",
           message: outcome.message,
           ...(await decorateDetail(next, reread.snapshot)),
           apply: outcome,
         },
-        409,
-      );
+      };
     }
     const outcome = applyOutcome(sent, read, source);
     const colorMatch = reread.snapshot.segmentColors?.some((entry) => Boolean(entry.hasWhite) !== rgbw) ? false :
@@ -1126,7 +1289,10 @@ export function createApp(deps: AppDeps) {
         message: colorMatch === null ? "Ranges matched, but Segment colours were not reported. Sent but unverified." :
           "Ranges matched, but Segment colours differ on readback. Apply is not confirmed." };
       record(next, "apply", "unknown", uncertain.message);
-      return c.json({ ...(await decorateDetail(next, reread.snapshot)), apply: uncertain, message: uncertain.message }, 409);
+      return {
+        status: 409,
+        body: { ...(await decorateDetail(next, reread.snapshot)), apply: uncertain, message: uncertain.message },
+      };
     }
     if (outcome.matched) {
       next.lastSnapshot = reread.snapshot;
@@ -1137,21 +1303,24 @@ export function createApp(deps: AppDeps) {
       deps.store.replace(next);
       const elements = persistDrafts(light.id, drafts);
       record(next, "apply", "match", `Applied ${sentDescription}; reported ranges match. ${outcome.caption}`);
-      return c.json({
-        ...(await decorateDetail(next, reread.snapshot, elements)),
-        apply: outcome,
-      });
+      return {
+        status: 200,
+        body: {
+          ...(await decorateDetail(next, reread.snapshot, elements)),
+          apply: outcome,
+        },
+      };
     }
     deps.store.replace(next);
     record(next, "apply", "mismatch", `Applied ${sentDescription}; reported ranges differ. ${outcome.caption}`);
-    return c.json(
-      {
+    return {
+      status: 409,
+      body: {
         ...(await decorateDetail(next, reread.snapshot)),
         apply: outcome,
       },
-      409,
-    );
-  });
+    };
+  }
 
   app.post("/api/lights/:id/readdress", async (c) => {
     const stored = deps.store.findById(c.req.param("id"));
@@ -1336,7 +1505,7 @@ export function createApp(deps: AppDeps) {
       record(next, "replacement", "not-checked",
         `Controller changed from ${stored.hostKey} (${shortMac(stored.mac)}) to ${targetKey} (${shortMac(next.mac)}). Saved Segments stayed on this Light; nothing was Applied.`);
       return c.json({
-        ...lightDetail(next, checked.snapshot, deps.store.elementsFor(next.id), attachedProduct(next)),
+        ...lightDetail(next, checked.snapshot, deps.store.elementsFor(next.id), attachedProduct(next), deps.store.propsFor(next.id)),
         replacement: { previousHost: stored.hostKey, previousMac: stored.mac,
           nextHost: targetKey, nextMac: next.mac, movedSegments: deps.store.elementsFor(next.id).length },
         message: "Controller replaced on this Light. Saved Segments remain; inspect Strip and use Apply separately when ready. Nothing was written to WLED.",
@@ -1407,6 +1576,7 @@ export function createApp(deps: AppDeps) {
         snap,
         deps.store.elementsFor(light.id),
         attachedProduct(light),
+        deps.store.propsFor(light.id),
       );
       return c.json({
         ...detail,
@@ -2499,14 +2669,17 @@ export function createApp(deps: AppDeps) {
     const stored = deps.store.load();
     const views: LightView[] = [];
     const allElements = deps.store.loadElements();
+    const allProps = deps.store.loadProps();
     for (const light of stored) {
       const elements = allElements.filter((element) => element.lightId === light.id);
-      views.push(lightDetail(light, null, elements, attachedProduct(light)).light);
+      const props = allProps.filter((prop) => prop.lightId === light.id);
+      views.push(lightDetail(light, null, elements, attachedProduct(light), props).light);
     }
     const enrolled = new Set(views.map((light) => light.hostKey));
     return {
       lights: views,
       elements: allElements,
+      props: allProps,
       unenrolled: session.rows.filter(
         (row) => row.status === "found" && !enrolled.has(row.key),
       ),
@@ -2528,15 +2701,16 @@ export function createApp(deps: AppDeps) {
     elements?: Element[],
     controllerWaitMs?: number,
   ): Promise<LightDetail> {
+    const elems = elements ?? deps.store.elementsFor(light.id);
     const detail = lightDetail(
       light,
       snap,
-      elements ?? deps.store.elementsFor(light.id),
+      elems,
       attachedProduct(light),
+      deps.store.propsFor(light.id),
     );
     const liveRead = snap ? await live.read(light) : null;
     const current = live.get(light.id);
-    const elems = elements ?? deps.store.elementsFor(light.id);
     return {
       ...detail,
       session: current ?? null,

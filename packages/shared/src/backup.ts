@@ -2,6 +2,7 @@ import type { ActivityEntry } from "./activity.ts";
 import { macsMatch } from "./apply.ts";
 import type { LedProduct } from "./strip/products.ts";
 import type { Element, Light } from "./lights.ts";
+import type { Prop } from "./prop/types.ts";
 import type { WledSnapshot } from "./wled/snapshot.ts";
 import type { NightplotSettings } from "./settings.ts";
 
@@ -19,6 +20,8 @@ export type BackupData = {
   activity: ActivityEntry[];
   /** Missing on backups made before Nightplot preferences existed. */
   settings?: NightplotSettings;
+  /** Missing on backups made before Props. Restore treats that as none. */
+  props?: Prop[];
 };
 
 /** Reference-only. Never sufficient to replay a full WLED configuration. */
@@ -142,6 +145,7 @@ function parseCurrentBackupDocument(raw: Record<string, unknown>, expectedId?: s
       products: pack.products as BackupData["products"],
       activity: pack.activity as BackupData["activity"],
       ...(pack.settings !== undefined ? { settings: pack.settings as BackupData["settings"] } : {}),
+      ...(Array.isArray(pack.props) ? { props: pack.props as BackupData["props"] } : {}),
     },
     controller: (raw.controller ?? null) as ControllerReference | null,
     deviceFiles: (raw.deviceFiles ?? null) as WledBackupFiles | null,

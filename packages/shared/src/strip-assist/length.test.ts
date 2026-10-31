@@ -42,10 +42,12 @@ function isolate(secret: number, ceiling: number) {
 }
 
 describe("strip-assist catalog", () => {
-  it("registers Find length and leaves a segment helper unregistered", () => {
-    expect(listStripAssistPlugins().map((entry) => entry.id)).toEqual(["find-length"]);
+  it("registers Find length and Add prop as the segment helper", () => {
+    expect(listStripAssistPlugins().map((entry) => entry.id)).toEqual(["find-length", "add-prop"]);
     expect(getStripAssistPlugin("find-length")?.kind).toBe("length");
     expect(getStripAssistPlugin("find-length")?.wired).toBe(false);
+    expect(getStripAssistPlugin("add-prop")?.kind).toBe("segment");
+    expect(getStripAssistPlugin("add-prop")?.wired).toBe(false);
     expect(getStripAssistPlugin("segment")).toBeUndefined();
   });
 });
