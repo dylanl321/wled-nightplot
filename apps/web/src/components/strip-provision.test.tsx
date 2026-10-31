@@ -136,6 +136,7 @@ describe("Strip provision", () => {
     const manage = screen.getByRole("link", { name: "Manage LED products" });
     expect(manage.getAttribute("href")).toBe("/led-products");
     expect(screen.getByRole("button", { name: "Manual fields" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Find length" })).toBeTruthy();
   });
 
   it("shows a load-path refuse once — banner, not a doubled notice", async () => {
@@ -999,6 +1000,8 @@ describe("Strip provision", () => {
     expect(await screen.findByText(/This controller has 2 outputs/)).toBeTruthy();
     expect(screen.getByLabelText("Output 1 node count")).toBeTruthy();
     expect(screen.getByLabelText("Output 2 GPIO pin")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Find length on output 1" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Find length on output 2" })).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Output 1 node count"), { target: { value: "70" } });
     fireEvent.click(screen.getByRole("button", { name: "Apply hardware" }));
 

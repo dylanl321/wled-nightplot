@@ -101,7 +101,7 @@ For five LEDs, the first check lights LEDs 0–2; a Lit answer checks 0–1 next
 and a Not lit answer checks 3. **Start over** returns to the whole strip;
 **Leave search** returns to Cursor only. Answer only after Preview confirms
 the latest check. If Preview pauses, Retry or end it instead of guessing.
-This is temporary lighting, not an edit to Segments or the length helper.
+This is temporary lighting, not an edit to Segments. Finding how many LEDs are on an output is **Find length** on Strip, not this search.
 
 Use the cursor’s LED number or −/+ buttons to move it. **Phone remote** on the
 Segments strip opens a full-screen view with large previous/next LED buttons

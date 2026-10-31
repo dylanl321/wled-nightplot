@@ -29,6 +29,7 @@ import { useEffect, useState } from "react";
 import { LedLoader } from "@/components/ui/led-loader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { FindLengthFlow } from "@/components/strip-assist/find-length";
 import { fetchJson, patchJson, postJson } from "@/lib/api";
 
 type ProvisionPayload = LightDetail & {
@@ -102,6 +103,9 @@ export function StripProvisionPanel({
   const [notice, setNotice] = useState<string | null>(null);
   const [result, setResult] = useState<ProvisionWriteResult | null>(null);
   const [loadedFor, setLoadedFor] = useState(lightId);
+  const [lightName, setLightName] = useState("this Light");
+  const [totalLedCount, setTotalLedCount] = useState(0);
+  const [finding, setFinding] = useState<WledStripProvisionOutputDraft | null>(null);
 
   if (loadedFor !== lightId) {
     setLoadedFor(lightId);
@@ -122,6 +126,8 @@ export function StripProvisionPanel({
           ? catalog.find((product) => product.id === suggestions?.defaultLedProductId)
           : null;
         setDrafts(draftsFromProvision(payload.provision, suggestions, suggestedProduct));
+        setLightName(payload.light.name);
+        setTotalLedCount(payload.light.ledCount);
         setNotice(null);
       })
       .catch((caught: unknown) => {
@@ -200,6 +206,8 @@ export function StripProvisionPanel({
     }
     if (payload.light) {
       setAttachedId(payload.light.ledProductId ?? null);
+      setLightName(payload.light.name);
+      setTotalLedCount(payload.light.ledCount);
       onUpdated?.(payload);
     }
     if (payload.provisionWrite) setResult(payload.provisionWrite);
@@ -211,6 +219,21 @@ export function StripProvisionPanel({
         payload.message ?? payload.provisionWrite?.message ?? "Strip provision was not written.",
       );
     }
+  }
+
+  function adoptFindLength(payload: ProvisionPayload) {
+    if (payload.provision) {
+      setRead(payload.provision);
+      setDrafts(draftsFromProvision(payload.provision));
+    }
+    if (payload.light) {
+      setAttachedId(payload.light.ledProductId ?? null);
+      setLightName(payload.light.name);
+      setTotalLedCount(payload.light.ledCount);
+      onUpdated?.(payload);
+    }
+    if (payload.provisionWrite) setResult(payload.provisionWrite);
+    setNotice(null);
   }
 
   if (busy === "load" && !read) {
@@ -247,11 +270,12 @@ export function StripProvisionPanel({
         <h2 className="text-[20px] font-semibold">Strip</h2>
         <p className="text-[13px] leading-5 text-[#c9c3b8]">
           First-time bus on this Light: LED type, node count, and GPIO for every understood
-          output. A shared catalog recipe fills the form from that SKU and its driver; this
-          Light’s fields still override. Apply writes /json/cfg, then reads each written bus
-          back. Colour order on a bus is named after Apply; Strip does not pick it. A length
-          change clips or drops declared ranges that run past the new strip, and flags leftover
-          coverage. Preview is not Apply.
+          output. Find length walks one output and writes that length through Apply. A shared
+          catalog recipe fills the form from that SKU and its driver; this Light’s fields still
+          override. Apply writes /json/cfg, then reads each written bus back. Colour order on a
+          bus is named after Apply; Strip does not pick it. A length change clips or drops
+          declared ranges that run past the new strip, and flags leftover coverage. Preview is
+          not Apply.
         </p>
       </div>
       )}
@@ -360,6 +384,8 @@ export function StripProvisionPanel({
                     colorOrder={bus?.settings.colorOrder ?? null}
                     ledType={bus?.settings.ledType ?? row.ledType}
                     afterSameTypeApply={afterSameTypeApply}
+                    canFind={writable && busy === null}
+                    onFindLength={() => setFinding(row)}
                     onPatch={(key, value) => patch(row.index, key, value)}
                   />
                 );
@@ -373,6 +399,8 @@ export function StripProvisionPanel({
               colorOrder={read.settings.colorOrder}
               ledType={read.settings.ledType}
               afterSameTypeApply={afterSameTypeApply}
+              canFind={writable && busy === null}
+              onFindLength={() => setFinding(draft)}
               onPatch={(key, value) => patch(draft.index, key, value)}
             />
           )}
@@ -496,6 +524,18 @@ export function StripProvisionPanel({
         </Button>
         {busy === "apply" ? <LedLoader label="Applying strip hardware" /> : null}
       </div>
+      {finding ? (
+        <FindLengthFlow
+          lightId={lightId}
+          lightName={lightName}
+          outputLabel={drafts.length > 1 ? `Output ${finding.index + 1}` : "This output"}
+          totalLedCount={totalLedCount || finding.length}
+          draft={finding}
+          outputStart={read.outputs.find((bus) => bus.index === finding.index)?.start ?? 0}
+          onClose={() => setFinding(null)}
+          onApplied={adoptFindLength}
+        />
+      ) : null}
     </div>
   );
 }
@@ -507,6 +547,8 @@ function OutputDraftFields({
   colorOrder,
   ledType,
   afterSameTypeApply,
+  canFind,
+  onFindLength,
   onPatch,
 }: {
   draft: WledStripProvisionOutputDraft;
@@ -515,6 +557,8 @@ function OutputDraftFields({
   colorOrder: string | null;
   ledType: Parameters<typeof stripColorOrderCopy>[0]["ledType"];
   afterSameTypeApply: boolean;
+  canFind: boolean;
+  onFindLength: () => void;
   onPatch: (
     key: keyof WledStripProvisionDraft,
     value: WledStripProvisionDraft[keyof WledStripProvisionDraft],
@@ -527,6 +571,7 @@ function OutputDraftFields({
   const n = draft.index + 1;
   const ledTypeLabel = many ? `Output ${n} LED type` : "LED type";
   const lengthAria = many ? `Output ${n} node count` : "Node count";
+  const findAria = many ? `Find length on output ${n}` : "Find length";
   const gpioAria = many ? `Output ${n} GPIO pin` : "GPIO pin";
   return (
     <fieldset className={many ? "flex flex-col gap-3 rounded-xl border border-border bg-[#0e1014] p-4" : undefined}>
@@ -564,7 +609,7 @@ function OutputDraftFields({
             Mapped types only. Unknown bus types are not written.
           </span>
         </div>
-        <label className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
           <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
             Length
           </span>
@@ -584,7 +629,17 @@ function OutputDraftFields({
               {lengthLabel}. {PHYSICAL_LENGTH_CAPTION}
             </span>
           ) : null}
-        </label>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-12 text-[15px]"
+            aria-label={findAria}
+            disabled={!canFind}
+            onClick={onFindLength}
+          >
+            Find length
+          </Button>
+        </div>
         <label className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
           <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
             GPIO

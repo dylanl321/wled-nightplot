@@ -77,7 +77,7 @@ describe("discovery catalog", () => {
 });
 
 describe("catalog snapshot", () => {
-  it("packages the three seams for the server", () => {
+  it("packages the seams for the server", () => {
     const snap = catalogSnapshot();
     expect(snap.slice).toBe("R6");
     expect(snap.controllers).toHaveLength(1);
@@ -85,6 +85,7 @@ describe("catalog snapshot", () => {
     expect(snap.stripPresets.length).toBeGreaterThanOrEqual(3);
     expect(snap.ledProducts).toEqual([]);
     expect(snap.discovery).toHaveLength(3);
+    expect(snap.stripAssist.map((entry) => entry.id)).toEqual(["find-length"]);
   });
 });
 

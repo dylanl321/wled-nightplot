@@ -342,6 +342,37 @@ export type {
   ProvisionDraftFromProduct,
 } from "./strip/products.ts";
 export type { StripBead, StripChannel, StripDriverDescriptor } from "./strip/types.ts";
+export {
+  FIND_LENGTH_ANSWERS_FOR_1K,
+  FIND_LENGTH_CEILINGS,
+  FIND_LENGTH_DIM,
+  FIND_LENGTH_END,
+  FIND_LENGTH_NUDGES,
+  FIND_LENGTH_OFF,
+  answerLitToEnd,
+  beginSearch,
+  confirmableLength,
+  findLengthCaption,
+  findLengthCeilingChoices,
+  findLengthConfirmDraft,
+  findLengthDraft,
+  findLengthExpandChoices,
+  findLengthRestoreDraft,
+  findLengthSpans,
+  findLengthWriteBody,
+  isolatedLength,
+  needsCeilingWrite,
+  needsLongerCeiling,
+  nudgeFindLength,
+  startFindLength,
+  worstCaseHalvingAnswers,
+  type FindLengthPhase,
+  type FindLengthSpan,
+  type FindLengthState,
+} from "./strip-assist/length.ts";
+export { getStripAssistPlugin, listStripAssistPlugins } from "./strip-assist/catalog.ts";
+export { findLengthAssist } from "./strip-assist/find-length-plugin.ts";
+export type { StripAssistKind, StripAssistPlugin } from "./strip-assist/types.ts";
 export type { StripPreset } from "./strip/presets.ts";
 export { sk6812RgbwStrip } from "./strip/sk6812-rgbw.ts";
 export { fw1906Strip } from "./strip/fw1906.ts";
