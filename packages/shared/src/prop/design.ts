@@ -6,8 +6,9 @@
 
 import type { Element, Light, LightOutput } from "../lights.ts";
 import { legacyOutputId } from "../outputs.ts";
-import { countLayout, layoutFromMeasurements, type PropLayout } from "./layout.ts";
-import { defaultWireframeSpec, defaultWiringOrder, parseEdgeId } from "./wireframe.ts";
+import { countLayout, layoutFromMeasurements, wellHouseEdgeLabel, wellHouseEdgeOrder, type PropLayout } from "./layout.ts";
+import { defaultSections, isLegacyWellHouseLayout } from "./sections.ts";
+import { defaultWireframeSpec } from "./wireframe.ts";
 import {
   isPropDesign,
   type Prop,
@@ -17,6 +18,7 @@ import {
   type PropKind,
   type PropLengthUnit,
   type PropMeasurements,
+  type PropSection,
   type PropSegmentDraft,
   type WireframeSpec,
 } from "./types.ts";
@@ -82,7 +84,7 @@ export function compilePropDesign(input: {
   pitchMm: number;
   ledProductId: string | null;
   measurements: PropMeasurements;
-}): { ok: true; design: PropDesign; layout: PropLayout; wireframe?: WireframeSpec } | { ok: false; message: string } {
+}): { ok: true; design: PropDesign; layout: PropLayout; sections: PropSection[]; wireframe?: WireframeSpec } | { ok: false; message: string } {
   if (!(input.pitchMm > 0) || !Number.isFinite(input.pitchMm)) {
     return { ok: false, message: "Light spacing has to be greater than zero." };
   }
@@ -111,10 +113,11 @@ export function compilePropDesign(input: {
       ok: true,
       design,
       layout,
+      sections: defaultSections(layout),
       wireframe: defaultWireframeSpec({ sides: input.measurements.sides, pitchMm: input.pitchMm }),
     };
   }
-  return { ok: true, design, layout };
+  return { ok: true, design, layout, sections: defaultSections(layout) };
 }
 
 export function designFromLayout(
@@ -193,10 +196,7 @@ function edgeNames(measurements: PropMeasurements, layout: PropLayout): string[]
     case "stake-row":
       return Array.from({ length: measurements.stakes }, (_, index) => `Stake ${index + 1}`);
     case "wireframe":
-      return defaultWiringOrder(measurements.sides).map((id) => {
-        const parsed = parseEdgeId(id);
-        return parsed ? wellHouseLabel(parsed.kind, parsed.index) : id;
-      });
+      return layout.run.filter((edge) => edge.kind === "lit").map((edge) => wellHouseEdgeLabel(edge.id) ?? edge.id);
     case "custom":
     case "legacy":
       return [];
@@ -345,33 +345,12 @@ function wellHouseEdges(
   if (sideMm === null || heightMm === null) return { ok: false, message: "Enter a side length and a height greater than zero." };
   const diagMm = Math.hypot(sideMm, heightMm);
   const edges: PropEdge[] = [];
-  for (const id of defaultWiringOrder(sides)) {
-    const parsed = parseEdgeId(id);
-    if (!parsed) continue;
-    const lengthMm = parsed.kind === "post" ? heightMm : parsed.kind === "diag-down" || parsed.kind === "diag-up" ? diagMm : sideMm;
-    edges.push(edge(id, wellHouseLabel(parsed.kind, parsed.index), lengthMm, lightsAlong(lengthMm, pitchMm)));
+  for (const id of wellHouseEdgeOrder(sides)) {
+    const role = id.split(".")[0] ?? "";
+    const lengthMm = role === "left" || role === "right" ? heightMm : role === "diag" ? diagMm : sideMm;
+    edges.push(edge(id, wellHouseEdgeLabel(id) ?? id, lengthMm, lightsAlong(lengthMm, pitchMm)));
   }
   return { ok: true, edges };
-}
-
-function wellHouseLabel(kind: "top" | "bottom" | "post" | "diag-down" | "diag-up", index: number): string {
-  const number = index + 1;
-  switch (kind) {
-    case "top":
-      return `Top ${number}`;
-    case "bottom":
-      return `Bottom ${number}`;
-    case "post":
-      return `Post ${number}`;
-    case "diag-down":
-      return `Diagonal down ${number}`;
-    case "diag-up":
-      return `Diagonal up ${number}`;
-    default: {
-      const _never: never = kind;
-      return _never;
-    }
-  }
 }
 
 function edge(id: string, label: string, lengthMm: number, ledCount: number): PropEdge {
@@ -450,13 +429,49 @@ export function attachmentForLegacy(
   };
 }
 
+/**
+ * Old well-house templates stored a straight run of shared posts and two
+ * diagonal passes. Those become the general path, with one section per wall.
+ * Other props gain a section per lit edge when they have none. A traced path
+ * is left as the operator drew it.
+ */
+export function migrateDesignedProp(prop: Prop): Prop {
+  if (!prop.layout) {
+    return prop.sections ? prop : prop;
+  }
+  let layout = prop.layout;
+  let design = prop.design;
+  let replaced = false;
+  if (prop.kind === "wireframe" && isLegacyWellHouseLayout(layout)) {
+    const params = design?.measurements.shape === "wireframe"
+      ? { sides: design.measurements.sides, side: design.measurements.side, height: design.measurements.height }
+      : layout.template?.params ?? null;
+    const rebuilt = params
+      ? layoutFromMeasurements({ units: layout.units, pitchM: layout.pitchM, shape: "wireframe", params })
+      : null;
+    if (rebuilt) {
+      layout = { ...rebuilt, startOffsetM: layout.startOffsetM };
+      replaced = true;
+      if (design) design = designFromLayout(layout, design.ledProductId, design.measurements);
+    }
+  }
+  if (!replaced && prop.sections) return prop;
+  const sections = replaced || !prop.sections ? defaultSections(layout) : prop.sections;
+  return {
+    ...prop,
+    layout,
+    sections,
+    ...(design ? { design } : {}),
+  };
+}
+
 export function enrichStoredProp(
   prop: Prop,
   elements: readonly Element[],
   light: Pick<Light, "id" | "outputs"> | undefined,
 ): { prop: Prop; attachment: PropAttachment | null } {
   const design = prop.design ?? (prop.lightId ? designFromLegacy(prop, elements) : undefined);
-  const next: Prop = design ? { ...prop, design } : prop;
+  const next = migrateDesignedProp(design ? { ...prop, design } : prop);
   const attachment = next.lightId ? attachmentForLegacy(next, elements, light) : null;
   return { prop: next, attachment };
 }
@@ -465,6 +480,11 @@ export type PlacementPlan =
   | { ok: true; absoluteStart: number; segments: PropSegmentDraft[]; summary: string }
   | { ok: false; message: string };
 
+/**
+ * One WLED segment per lit edge. Section index ranges live in
+ * `sectionIndexRanges` for a later ledmap compiler; this plan does not
+ * fold a section's ranges into one segment.
+ */
 export function planPropPlacement(input: {
   prop: Prop;
   output: Pick<LightOutput, "id" | "index" | "start" | "ledCount">;

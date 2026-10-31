@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
 import {
   compilePropDesign,
+  defaultSections,
   designFromLayout,
   isPropDesign,
   isPropLayout,
   parsePropKind,
+  parsePropSections,
   planPropPlacement,
   validateDeclaredRangesForLight,
+  defaultWireframeSpec,
   type DraftRange,
   type Element,
   type Light,
@@ -71,14 +74,24 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     if (!fromDrawing && (!built || !built.ok)) {
       return c.json({ error: "invalid-shape", message: built && !built.ok ? built.message : "Those measurements could not be saved." }, 422);
     }
+    const storedLayout = layout ?? (built && built.ok ? built.layout : null);
+    const sections = row?.sections === undefined
+      ? (storedLayout ? defaultSections(storedLayout) : built && built.ok ? built.sections : [])
+      : parsePropSections(row.sections);
+    if (row?.sections !== undefined && !sections) {
+      return c.json({ error: "invalid-sections", message: "Those sections could not be read. Nothing was saved." }, 400);
+    }
     const prop: Prop = {
       id: randomUUID(),
       label,
       kind,
       elementIds: [],
       design: fromDrawing ?? (built && built.ok ? built.design : undefined),
-      ...(layout ? { layout } : built && built.ok ? { layout: built.layout } : {}),
-      ...(built && built.ok && built.wireframe ? { wireframe: built.wireframe } : {}),
+      ...(storedLayout ? { layout: storedLayout } : {}),
+      ...(sections ? { sections } : {}),
+      ...(kind === "wireframe" && measurements?.shape === "wireframe"
+        ? { wireframe: defaultWireframeSpec({ sides: measurements.sides, pitchMm }) }
+        : built && built.ok && built.wireframe ? { wireframe: built.wireframe } : {}),
     };
     if (!prop.design) {
       return c.json({ error: "invalid-shape", message: "That drawing could not be saved." }, 422);
@@ -104,7 +117,16 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     if (!isPropDesign(design)) {
       return c.json({ error: "invalid-shape", message: "That drawing could not be saved." }, 422);
     }
-    const prop: Prop = { ...existing, design, layout: row.layout };
+    const sections = row?.sections === undefined ? existing.sections : parsePropSections(row.sections);
+    if (row?.sections !== undefined && !sections) {
+      return c.json({ error: "invalid-sections", message: "Those sections could not be read. Nothing was saved." }, 400);
+    }
+    const prop: Prop = {
+      ...existing,
+      design,
+      layout: row.layout,
+      ...(sections ? { sections } : {}),
+    };
     deps.store.saveDesignedProp(prop);
     return c.json({ prop, message: "Prop saved in Nightplot. Nothing was sent to a controller." });
   });

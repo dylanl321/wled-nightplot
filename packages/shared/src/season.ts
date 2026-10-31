@@ -22,6 +22,7 @@ import {
 } from "./look.ts";
 import { type Element, type Light } from "./lights.ts";
 import { withMigratedOutputs } from "./outputs.ts";
+import { migrateDesignedProp } from "./prop/design.ts";
 import { isProp, isPropAttachment, type Prop, type PropAttachment } from "./prop/types.ts";
 import { isNightlySchedule } from "./schedule.ts";
 import { isSetupProfile, type SetupProfile } from "./setup-profile.ts";
@@ -241,7 +242,7 @@ function parseCurrentSeason(raw: Record<string, unknown>): SeasonDocument | null
   if (!lights.every(isSeasonLight)) return null;
   const elements = raw.elements as Element[];
   if (!elements.every(isSeasonElement)) return null;
-  const props = Array.isArray(raw.props) ? (raw.props as Prop[]) : [];
+  const props = Array.isArray(raw.props) ? (raw.props as Prop[]).map((prop) => migrateDesignedProp(prop)) : [];
   if (!props.every(isProp)) return null;
   const attachments = Array.isArray(raw.attachments) ? raw.attachments.filter(isPropAttachment) : [];
   if (Array.isArray(raw.attachments) && attachments.length !== raw.attachments.length) return null;
@@ -302,7 +303,7 @@ function parseBackupAsSeason(raw: Record<string, unknown>): SeasonParseResult | 
       at: backup.at,
       lights,
       elements: backup.data.elements,
-      props: backup.data.props ?? [],
+      props: (backup.data.props ?? []).map((prop) => migrateDesignedProp(prop)),
       setupProfiles: [],
       looks,
       devices: devices.filter((row) => row.lightId),
@@ -320,7 +321,7 @@ function parseLightsStoreAsSeason(raw: Record<string, unknown>): SeasonParseResu
   if (!lights.every(isSeasonLight) || !elements.every(isSeasonElement)) {
     return { ok: false, message: "This Lights file is a shape Nightplot does not understand. Nothing was read." };
   }
-  const props = Array.isArray(raw.props) ? (raw.props as Prop[]) : [];
+  const props = Array.isArray(raw.props) ? (raw.props as Prop[]).map((prop) => migrateDesignedProp(prop)) : [];
   if (!props.every(isProp)) {
     return { ok: false, message: "This Lights file has Props Nightplot does not understand. Nothing was read." };
   }
@@ -416,7 +417,11 @@ function seasonPropFits(prop: Prop, lights: { id: string }[], elements: Element[
 }
 
 function propKey(prop: Prop): string {
-  return `${prop.id}:${prop.label}:${prop.kind}:${prop.elementIds.join(",")}:${JSON.stringify(prop.wireframe ?? null)}:${JSON.stringify(prop.design ?? null)}`;
+  const sections = (prop.sections ?? []).map((section) =>
+    `${section.id}:${section.name}:${section.edgeIds.join("+")}:${section.color ?? ""}:${section.pinnedRanges.map((range) => `${range.start}-${range.stop}`).join(",")}`,
+  ).join("|");
+  const path = prop.layout?.run.map((edge) => edge.id).join(",") ?? "";
+  return `${prop.id}:${prop.label}:${prop.kind}:${prop.elementIds.join(",")}:${JSON.stringify(prop.wireframe ?? null)}:${JSON.stringify(prop.design ?? null)}:${path}:${sections}`;
 }
 
 function elementKey(element: Element): string {

@@ -18,7 +18,7 @@ describe("New prop wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "This end" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByText(/122 lights/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Name sections" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Undo" })).toBeTruthy();
   });
 
@@ -29,7 +29,7 @@ describe("New prop wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: /Draw it/ }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByRole("button", { name: "Trace", pressed: true })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Name sections" })).toBeTruthy();
     expect(screen.getByText("Controller end")).toBeTruthy();
   });
 
@@ -45,5 +45,19 @@ describe("New prop wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByRole("button", { name: "Edit", pressed: true })).toBeTruthy();
     expect(screen.getAllByText("Controller end").length).toBeGreaterThan(0);
+  });
+
+  it("opens well house sections after the size, with one section per wall", () => {
+    render(<PropWizard products={[]} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Well house" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: /Well house/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("heading", { name: "Name the sections" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /Wall 1 top/ }).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("Section name")).toHaveProperty("value", "Wall 1");
+    expect(screen.getByText(/LEDs \d+ through \d+/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
   });
 });

@@ -1,26 +1,63 @@
 "use client";
 
 import {
+  defaultSections,
   isPropLayout,
   layoutFromMeasurements,
   type Prop,
   type PropLayout,
   type PropMeasurements,
+  type PropSection,
 } from "@nightplot/shared";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { PropLayoutEditor } from "@/components/props/prop-layout-editor";
+import { PropSectionsStep } from "@/components/props/prop-sections";
+import { Button } from "@/components/ui/button";
 import { patchJson } from "@/lib/api";
 
 export function EditProp({ prop }: { prop: Prop }) {
   const router = useRouter();
   const initial = prop.layout && isPropLayout(prop.layout) ? prop.layout : layoutFromDesign(prop);
   const [notice, setNotice] = useState<string | null>(null);
-  if (!initial) {
+  const [phase, setPhase] = useState<"draw" | "sections">("draw");
+  const [layout, setLayout] = useState<PropLayout | null>(initial);
+  const [sections, setSections] = useState<PropSection[]>(prop.sections ?? (initial ? defaultSections(initial) : []));
+  const [rangeError, setRangeError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!initial || !layout) {
     return (
       <div className="mx-auto max-w-[560px] px-4 py-8">
         <h1 className="text-[26px] font-semibold">{prop.label}</h1>
         <p className="mt-2 text-[15px] text-muted-foreground">This prop has no drawing to edit.</p>
+      </div>
+    );
+  }
+  if (phase === "sections") {
+    return (
+      <div className="mx-auto flex min-h-dvh w-full max-w-[560px] flex-col overflow-x-hidden">
+        <header className="flex h-14 shrink-0 items-center gap-1 px-1">
+          <button type="button" className="min-h-11 px-3 text-[16px]" onClick={() => setPhase("draw")}>Back</button>
+          <p className="min-w-0 flex-1 truncate text-[17px] font-medium">{prop.label}</p>
+        </header>
+        <div className="flex flex-1 flex-col gap-5 overflow-x-hidden px-4 pb-28">
+          <h1 className="text-[26px] font-semibold tracking-[-0.01em]">Name the sections</h1>
+          <PropSectionsStep
+            layout={layout}
+            sections={sections}
+            measurements={prop.design?.measurements ?? { shape: "custom" }}
+            onLayout={setLayout}
+            onSections={setSections}
+            onInvalid={setRangeError}
+          />
+          {notice ? <p className="text-[15px] text-destructive">{notice}</p> : null}
+        </div>
+        <div className="fixed inset-x-0 bottom-0 z-20 mx-auto flex w-full max-w-[560px] gap-2 border-t border-border bg-background px-4 py-3">
+          <Button type="button" variant="outline" className="min-h-11 flex-1 text-base" onClick={() => setPhase("draw")}>Back</Button>
+          <Button type="button" className="min-h-11 flex-1 text-base" disabled={busy || Boolean(rangeError)} onClick={() => void save(layout, sections)}>
+            {busy ? "Saving…" : "Save"}
+          </Button>
+        </div>
       </div>
     );
   }
@@ -29,19 +66,28 @@ export function EditProp({ prop }: { prop: Prop }) {
       {notice ? <p className="px-4 pt-4 text-[15px] text-destructive">{notice}</p> : null}
       <PropLayoutEditor
         name={prop.label}
-        initial={initial}
+        initial={layout}
         mode={prop.kind === "custom" ? "trace" : "edit"}
+        doneLabel="Name sections"
         onBack={() => router.push("/")}
-        onDone={(layout) => void save(layout)}
+        onDone={(next) => {
+          setLayout(next);
+          if (sections.length === 0) setSections(defaultSections(next));
+          setPhase("sections");
+        }}
       />
     </>
   );
 
-  async function save(layout: PropLayout) {
+  async function save(nextLayout: PropLayout, nextSections: PropSection[]) {
+    setBusy(true);
+    setNotice(null);
     const res = await patchJson(`/api/props/${prop.id}`, {
-      layout,
+      layout: nextLayout,
       measurements: prop.design?.measurements ?? { shape: "custom" },
+      sections: nextSections,
     });
+    setBusy(false);
     if (!res.ok) {
       setNotice(res.data.message ?? "The drawing was not saved.");
       return;
