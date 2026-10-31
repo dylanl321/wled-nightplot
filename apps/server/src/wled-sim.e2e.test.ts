@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { SOFTWARE_PATH_ONLY_CAPTION } from "@nightplot/shared";
+import { SOFTWARE_PATH_ONLY_CAPTION, beginSearch, findLengthSpans, startFindLength } from "@nightplot/shared";
 import { createApp } from "./app.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
 import { spawnWledSim, type SpawnedWledSim } from "./wled-sim-spawn.ts";
@@ -495,6 +495,51 @@ describe("headless WLED sim e2e: Sync across Lights", () => {
     expect(after.provision.outputs.find((row) => row.index === 0)?.settings.length).toBe(28);
     expect(after.provision.outputs.find((row) => row.index === 1)?.settings.length).toBe(41);
   }, 30_000);
+
+  it("Find length lights one output, restores Preview, then writes that output only", async () => {
+    const sim = await startSim({ NIGHTPLOT_SIM_BUS2_LEN: "40", NIGHTPLOT_SIM_BUS2_PIN: "2" });
+    const { app } = appAgainstHttp();
+    const light = await enroll(app, `${sim.host}:${sim.httpPort}`);
+    const search = beginSearch(
+      startFindLength({
+        outputIndex: 1,
+        outputStart: 60,
+        currentLength: 40,
+        ledType: "ws281x",
+        gpio: 2,
+      }),
+      40,
+    );
+    const preview = await app.request(`/api/lights/${light.id}/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pixels: true, spans: findLengthSpans(search, 100) }),
+    });
+    expect(preview.status).toBe(200);
+    expect(((await preview.json()) as { liveCaption: string }).liveCaption).toMatch(
+      /software path only|Not Hardware Done/i,
+    );
+    const ended = await app.request(`/api/lights/${light.id}/preview/end`, { method: "POST" });
+    expect(ended.status).toBe(200);
+    expect(((await ended.json()) as { restored?: boolean }).restored).not.toBe(false);
+
+    const write = await app.request(`/api/lights/${light.id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provision: { outputs: [{ index: 1, ledType: "ws281x", length: 36, gpio: 2 }] },
+      }),
+    });
+    expect(write.status).toBe(200);
+    const body = (await write.json()) as {
+      provisionWrite: { matched: boolean; caption: string };
+      provision: { outputs: { index: number; settings: { length: number | null } }[] };
+    };
+    expect(body.provisionWrite.matched).toBe(true);
+    expect(body.provisionWrite.caption).toBe(SOFTWARE_PATH_ONLY_CAPTION);
+    expect(body.provision.outputs.find((row) => row.index === 0)?.settings.length).toBe(60);
+    expect(body.provision.outputs.find((row) => row.index === 1)?.settings.length).toBe(36);
+  }, 20_000);
 });
 
 async function viWaitForLive(baseUrl: string, hex: string) {

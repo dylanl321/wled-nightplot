@@ -1,5 +1,6 @@
 import { listControllers } from "./controller/catalog.ts";
 import { listDiscoveryMechanisms } from "./discovery/catalog.ts";
+import { listStripAssistPlugins } from "./strip-assist/catalog.ts";
 import { listStripPresets, listStrips } from "./strip/catalog.ts";
 import type { LedProduct } from "./strip/products.ts";
 
@@ -13,6 +14,7 @@ export function catalogSnapshot(ledProducts: readonly LedProduct[] = []) {
     stripPresets: listStripPresets(),
     ledProducts,
     discovery: listDiscoveryMechanisms(),
+    stripAssist: listStripAssistPlugins(),
   };
 }
 
