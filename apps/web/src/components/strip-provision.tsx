@@ -3,7 +3,6 @@
 import {
   defaultStripPreset,
   draftLedTypeFromSettings,
-  isProvisionLedType,
   nativeTypeLabel,
   formatNodeLength,
   ledProductSpacing,
@@ -19,9 +18,11 @@ import {
   stripColorOrderCopy,
   type LedProduct,
   type LightDetail,
+  type ProvisionBusRead,
   type ProvisionRead,
   type ProvisionWriteResult,
   type WledStripProvisionDraft,
+  type WledStripProvisionOutputDraft,
 } from "@nightplot/shared";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -38,6 +39,50 @@ type ProvisionPayload = LightDetail & {
   message?: string;
 };
 
+export function draftsFromProvision(
+  provision: ProvisionRead,
+  suggestions?: { ledCount: number | null; gpio: number | null } | null,
+  suggestedProduct?: LedProduct | null,
+): WledStripProvisionOutputDraft[] {
+  const fallback = defaultStripPreset();
+  const productDraft =
+    suggestedProduct != null ? provisionDraftFromProduct(suggestedProduct) : null;
+  const product = productDraft?.ok === true ? productDraft.draft : null;
+  const writable = provision.outputs.filter((bus) => bus.writable);
+  const sources: ProvisionBusRead[] =
+    writable.length > 0
+      ? writable
+      : [
+          {
+            index: 0,
+            start: 0,
+            settings: provision.settings,
+            refuse: provision.refuse,
+            writable: false,
+          },
+        ];
+  return sources.map((bus, offset) => {
+    const first = offset === 0;
+    // `settings` is the first understood writable bus; the test/load path
+    // may update that row without rewriting `outputs[0]`.
+    const settings = first ? provision.settings : bus.settings;
+    return {
+      index: bus.index,
+      ledType: draftLedTypeFromSettings(settings.ledType),
+      length:
+        settings.length ??
+        (first ? suggestions?.ledCount : null) ??
+        (first ? product?.length : null) ??
+        fallback.length,
+      gpio:
+        settings.gpio ??
+        (first ? suggestions?.gpio : null) ??
+        (first ? product?.gpio : null) ??
+        fallback.gpio,
+    };
+  });
+}
+
 export function StripProvisionPanel({
   lightId,
   unreachable,
@@ -50,7 +95,7 @@ export function StripProvisionPanel({
   onUpdated?: (detail: LightDetail) => void;
 }) {
   const [read, setRead] = useState<ProvisionRead | null>(null);
-  const [draft, setDraft] = useState<WledStripProvisionDraft | null>(null);
+  const [drafts, setDrafts] = useState<WledStripProvisionOutputDraft[] | null>(null);
   const [products, setProducts] = useState<LedProduct[]>([]);
   const [attachedId, setAttachedId] = useState<string | null>(null);
   const [busy, setBusy] = useState<"load" | "apply" | "attach" | null>("load");
@@ -72,15 +117,11 @@ export function StripProvisionPanel({
         const catalog = payload.ledProducts ?? [];
         setProducts(catalog);
         setAttachedId(payload.light.ledProductId ?? null);
-        const fallback = defaultStripPreset();
         const suggestions = payload.nightplotSuggestions;
-        const suggestedProduct = !payload.light.ledProductId ? catalog.find((product) => product.id === suggestions?.defaultLedProductId) : null;
-        setDraft({
-          ledType: payload.provision.settings.ledType !== "unknown" ? draftLedTypeFromSettings(payload.provision.settings.ledType) :
-            suggestedProduct && isProvisionLedType(suggestedProduct.driverId) ? suggestedProduct.driverId : fallback.ledType,
-          length: payload.provision.settings.length ?? suggestions?.ledCount ?? suggestedProduct?.defaultLength ?? fallback.length,
-          gpio: payload.provision.settings.gpio ?? suggestions?.gpio ?? suggestedProduct?.defaultGpio ?? fallback.gpio,
-        });
+        const suggestedProduct = !payload.light.ledProductId
+          ? catalog.find((product) => product.id === suggestions?.defaultLedProductId)
+          : null;
+        setDrafts(draftsFromProvision(payload.provision, suggestions, suggestedProduct));
         setNotice(null);
       })
       .catch((caught: unknown) => {
@@ -97,12 +138,16 @@ export function StripProvisionPanel({
 
   const writable = Boolean(read?.fingerprint.writable) && !unreachable;
   const selected = products.find((product) => product.id === attachedId);
+  const draft = drafts?.[0] ?? null;
 
-  function patch<K extends keyof WledStripProvisionDraft>(
-    key: K,
-    value: WledStripProvisionDraft[K],
+  function patch(
+    index: number,
+    key: keyof WledStripProvisionDraft,
+    value: WledStripProvisionDraft[keyof WledStripProvisionDraft],
   ) {
-    setDraft((current) => (current ? { ...current, [key]: value } : current));
+    setDrafts((current) =>
+      current?.map((row) => (row.index === index ? { ...row, [key]: value } : row)) ?? current,
+    );
     setResult(null);
     setNotice(null);
   }
@@ -116,7 +161,9 @@ export function StripProvisionPanel({
         setNotice(filled.message);
         return;
       }
-      setDraft(filled.draft);
+      setDrafts((current) =>
+        (current ?? [{ index: 0, ...filled.draft }]).map((row) => ({ ...row, ...filled.draft })),
+      );
     }
     setBusy("attach");
     const res = await patchJson<ProvisionPayload>(`/api/lights/${lightId}/led-product`, {
@@ -136,24 +183,20 @@ export function StripProvisionPanel({
   }
 
   async function apply() {
-    if (!draft || !read) return;
+    if (!drafts?.length || !read) return;
     setBusy("apply");
     setNotice(null);
     const res = await postJson<ProvisionPayload>(
       `/api/lights/${lightId}/provision`,
-      { provision: draft },
+      drafts.length === 1
+        ? { provision: { ledType: drafts[0]!.ledType, length: drafts[0]!.length, gpio: drafts[0]!.gpio } }
+        : { provision: { outputs: drafts } },
     );
     setBusy(null);
     const payload = res.data as ProvisionPayload;
     if (payload.provision) {
       setRead(payload.provision);
-      if (payload.provision.settings.length != null && payload.provision.settings.gpio != null) {
-        setDraft({
-          ledType: draftLedTypeFromSettings(payload.provision.settings.ledType),
-          length: payload.provision.settings.length,
-          gpio: payload.provision.settings.gpio,
-        });
-      }
+      setDrafts(draftsFromProvision(payload.provision));
     }
     if (payload.light) {
       setAttachedId(payload.light.ledProductId ?? null);
@@ -174,7 +217,7 @@ export function StripProvisionPanel({
     return <p className="text-[13px] text-quiet">Reading /json/cfg bus…</p>;
   }
 
-  if (!read || !draft) {
+  if (!read || !draft || !drafts) {
     return (
       <p className="text-[13px] text-destructive">
         {notice ?? "Strip provision did not load."}
@@ -184,21 +227,18 @@ export function StripProvisionPanel({
 
   const failed = result && !result.matched;
   const afterSameTypeApply = Boolean(result?.matched && result.orderPreserved);
-  const colorOrderCopy = stripColorOrderCopy({
-    colorOrder: read.settings.colorOrder,
-    ledType: read.settings.ledType,
-    afterSameTypeApply,
-  });
-
   const fallback = defaultStripPreset();
-  const formDirty =
-    draft.ledType !== draftLedTypeFromSettings(read.settings.ledType) ||
-    draft.length !== (read.settings.length ?? fallback.length) ||
-    draft.gpio !== (read.settings.gpio ?? fallback.gpio);
-  const lengthLabel = formatNodeLength(
-    draft.length,
-    selected ? ledProductSpacing(selected)?.mm : null,
-  );
+  const formDirty = drafts.some((row, offset) => {
+    const bus = read.outputs.find((item) => item.index === row.index);
+    const settings = offset === 0 ? read.settings : (bus?.settings ?? read.settings);
+    return (
+      row.ledType !== draftLedTypeFromSettings(settings.ledType) ||
+      row.length !== (settings.length ?? fallback.length) ||
+      row.gpio !== (settings.gpio ?? fallback.gpio)
+    );
+  });
+  const many = drafts.length > 1;
+  const outputRows = result?.outputs ?? [];
 
   return (
     <div className="flex flex-col gap-4">
@@ -206,11 +246,12 @@ export function StripProvisionPanel({
       <div className="flex flex-col gap-1">
         <h2 className="text-[20px] font-semibold">Strip</h2>
         <p className="text-[13px] leading-5 text-[#c9c3b8]">
-          First-time bus on this Light: LED type, node count, and GPIO. A shared catalog recipe
-          fills the form from that SKU and its driver; this Light’s fields still override. Apply
-          writes /json/cfg, then reads the snapshot back. Colour order on the bus is named after
-          Apply; Strip does not pick it. A length change clips or drops declared ranges that run
-          past the new strip, and flags leftover coverage. Preview is not Apply.
+          First-time bus on this Light: LED type, node count, and GPIO for every understood
+          output. A shared catalog recipe fills the form from that SKU and its driver; this
+          Light’s fields still override. Apply writes /json/cfg, then reads each written bus
+          back. Colour order on a bus is named after Apply; Strip does not pick it. A length
+          change clips or drops declared ranges that run past the new strip, and flags leftover
+          coverage. Preview is not Apply.
         </p>
       </div>
       )}
@@ -273,9 +314,9 @@ export function StripProvisionPanel({
       {read.buses > 1 ? (
         <div className="rounded-xl border border-border bg-[#0e1014] p-4">
           <p className="text-[13px] leading-5 text-[#c9c3b8]">
-            This controller has {read.buses} outputs. Apply writes the first understood
-            bus and leaves the others as they are. A setup profile can write every
-            understood bus.
+            This controller has {read.buses} outputs. Apply writes every understood output —
+            each with its own LED type, length, and GPIO — then reads those buses back. Analog
+            or multi-pin buses stay listed and are not written.
           </p>
           <ul className="mt-2 space-y-1 font-mono text-[12px] text-quiet">
             {read.outputs.map((bus) => (
@@ -306,73 +347,47 @@ export function StripProvisionPanel({
             <h3 className="text-[15px] font-semibold">{LED_CATALOG_PER_LIGHT_HEADING}</h3>
             <p className="text-[12px] text-quiet">{LED_CATALOG_PER_LIGHT_COPY}</p>
           </div>
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
-            <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
-              LED type
-            </span>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="LED type">
-              {PROVISION_LED_TYPES.map((ledType) => {
-                const selectedType = draft.ledType === ledType;
+          {many ? (
+            <div className="flex flex-col gap-3">
+              {drafts.map((row) => {
+                const bus = read.outputs.find((item) => item.index === row.index);
                 return (
-                  <button
-                    key={ledType}
-                    type="button"
-                    aria-pressed={selectedType}
-                    onClick={() => patch("ledType", ledType)}
-                    className={`h-10 rounded-md border px-3 text-[13px] font-semibold ${
-                      selectedType
-                        ? "border-primary bg-secondary text-foreground"
-                        : "border-input bg-[#07080a] text-[#c9c3b8] hover:bg-secondary"
-                    }`}
-                  >
-                    {provisionLedTypeLabel(ledType)}
-                  </button>
+                  <OutputDraftFields
+                    key={row.index}
+                    draft={row}
+                    many
+                    selected={selected}
+                    colorOrder={bus?.settings.colorOrder ?? null}
+                    ledType={bus?.settings.ledType ?? row.ledType}
+                    afterSameTypeApply={afterSameTypeApply}
+                    onPatch={(key, value) => patch(row.index, key, value)}
+                  />
                 );
               })}
             </div>
-            <span className="text-[12px] text-quiet">
-              Mapped types only. Unknown bus types are not written.
-            </span>
-          </div>
-          <label className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
-            <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
-              Length
-            </span>
-            <Input
-              inputMode="numeric"
-              value={draft.length}
-              onChange={(event) =>
-                patch("length", Number.parseInt(event.target.value, 10) || 0)
-              }
-              aria-label="Node count"
+          ) : (
+            <OutputDraftFields
+              draft={draft}
+              many={false}
+              selected={selected}
+              colorOrder={read.settings.colorOrder}
+              ledType={read.settings.ledType}
+              afterSameTypeApply={afterSameTypeApply}
+              onPatch={(key, value) => patch(draft.index, key, value)}
             />
-            <span className="text-[12px] text-quiet">Node count on this Light.</span>
-            {lengthLabel ? (
-              <span className="text-[12px] text-quiet">
-                {lengthLabel}. {PHYSICAL_LENGTH_CAPTION}
-              </span>
-            ) : null}
-          </label>
-          <label className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
-            <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
-              GPIO
-            </span>
-            <Input
-              inputMode="numeric"
-              value={draft.gpio}
-              onChange={(event) => patch("gpio", Number.parseInt(event.target.value, 10) || 0)}
-              aria-label="GPIO pin"
-            />
-            <span className="text-[12px] text-quiet">Single data pin on this Light.</span>
-          </label>
-        </div>
+          )}
         </div>
       )}
 
-      {!read.refuse && !unreachable && !result?.matched ? (
+      {!read.refuse && !unreachable && !result?.matched && !many ? (
         <div className="flex flex-col gap-1">
-          <p className="text-[13px] leading-5 text-[#c9c3b8]">{colorOrderCopy}</p>
+          <p className="text-[13px] leading-5 text-[#c9c3b8]">
+            {stripColorOrderCopy({
+              colorOrder: read.settings.colorOrder,
+              ledType: read.settings.ledType,
+              afterSameTypeApply,
+            })}
+          </p>
           <p className="text-[12px] text-quiet">Strip does not pick colour order.</p>
         </div>
       ) : null}
@@ -389,20 +404,38 @@ export function StripProvisionPanel({
       {failed ? (
         <div className="flex flex-col gap-2 rounded-[14px] border border-[#5a2f33] bg-[#1a1113] p-4">
           <span className="text-[16px] font-semibold text-destructive">{result.message}</span>
-          <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[13px]">
-            <span className="text-muted-foreground">Sent</span>
-            <span className="font-mono">
-              {result.sent.ledType} · {result.sent.length} nodes · GPIO {result.sent.gpio}
-            </span>
-            <span className="text-muted-foreground">Read back</span>
-            <span className="font-mono text-destructive">
-              {result.read.ledType} · {result.read.length ?? "—"} nodes · GPIO{" "}
-              {result.read.gpio ?? "—"}
-              {result.snapshotLedCount != null
-                ? ` · snapshot ${result.snapshotLedCount} LEDs`
-                : ""}
-            </span>
-          </div>
+          {outputRows.length > 1 ? (
+            <div className="flex flex-col gap-2 text-[13px]">
+              {outputRows.map((row) => (
+                <div key={row.index} className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
+                  <span className="text-muted-foreground">Output {row.index + 1} sent</span>
+                  <span className="font-mono">
+                    {row.sent.ledType} · {row.sent.length} nodes · GPIO {row.sent.gpio}
+                  </span>
+                  <span className="text-muted-foreground">Output {row.index + 1} read back</span>
+                  <span className={`font-mono ${row.matched ? "" : "text-destructive"}`}>
+                    {row.read.ledType} · {row.read.length ?? "—"} nodes · GPIO {row.read.gpio ?? "—"}
+                    {row.matched ? "" : " · mismatch"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[13px]">
+              <span className="text-muted-foreground">Sent</span>
+              <span className="font-mono">
+                {result.sent.ledType} · {result.sent.length} nodes · GPIO {result.sent.gpio}
+              </span>
+              <span className="text-muted-foreground">Read back</span>
+              <span className="font-mono text-destructive">
+                {result.read.ledType} · {result.read.length ?? "—"} nodes · GPIO{" "}
+                {result.read.gpio ?? "—"}
+                {result.snapshotLedCount != null
+                  ? ` · snapshot ${result.snapshotLedCount} LEDs`
+                  : ""}
+              </span>
+            </div>
+          )}
           <p className="text-[12px] text-primary">{result.caption}</p>
         </div>
       ) : null}
@@ -410,8 +443,26 @@ export function StripProvisionPanel({
       {result?.matched ? (
         <div className="flex flex-col gap-2">
           <p className="text-[13px] text-primary">{result.message}</p>
-          <p className="text-[13px] text-primary">{colorOrderCopy}</p>
-          <p className="text-[12px] text-quiet">Strip does not pick colour order.</p>
+          {!many ? (
+            <>
+              <p className="text-[13px] text-primary">
+                {stripColorOrderCopy({
+                  colorOrder: read.settings.colorOrder,
+                  ledType: read.settings.ledType,
+                  afterSameTypeApply,
+                })}
+              </p>
+              <p className="text-[12px] text-quiet">Strip does not pick colour order.</p>
+            </>
+          ) : null}
+          {outputRows.length > 1
+            ? outputRows.map((row) => (
+                <p key={row.index} className="font-mono text-[12px] text-primary">
+                  Output {row.index + 1} · {row.sent.ledType} · {row.sent.length} nodes · GPIO{" "}
+                  {row.sent.gpio} · matched
+                </p>
+              ))
+            : null}
           {result.ranges?.notes.map((note) => (
             <p key={note} className="text-[13px] text-primary">
               {note}
@@ -428,12 +479,7 @@ export function StripProvisionPanel({
         <Button
           variant="outline"
           onClick={() => {
-            const fallback = defaultStripPreset();
-            setDraft({
-              ledType: draftLedTypeFromSettings(read.settings.ledType),
-              length: read.settings.length ?? fallback.length,
-              gpio: read.settings.gpio ?? fallback.gpio,
-            });
+            setDrafts(draftsFromProvision(read));
             setResult(null);
             setNotice(null);
           }}
@@ -451,5 +497,117 @@ export function StripProvisionPanel({
         {busy === "apply" ? <LedLoader label="Applying strip hardware" /> : null}
       </div>
     </div>
+  );
+}
+
+function OutputDraftFields({
+  draft,
+  many,
+  selected,
+  colorOrder,
+  ledType,
+  afterSameTypeApply,
+  onPatch,
+}: {
+  draft: WledStripProvisionOutputDraft;
+  many: boolean;
+  selected: LedProduct | undefined;
+  colorOrder: string | null;
+  ledType: Parameters<typeof stripColorOrderCopy>[0]["ledType"];
+  afterSameTypeApply: boolean;
+  onPatch: (
+    key: keyof WledStripProvisionDraft,
+    value: WledStripProvisionDraft[keyof WledStripProvisionDraft],
+  ) => void;
+}) {
+  const lengthLabel = formatNodeLength(
+    draft.length,
+    selected ? ledProductSpacing(selected)?.mm : null,
+  );
+  const n = draft.index + 1;
+  const ledTypeLabel = many ? `Output ${n} LED type` : "LED type";
+  const lengthAria = many ? `Output ${n} node count` : "Node count";
+  const gpioAria = many ? `Output ${n} GPIO pin` : "GPIO pin";
+  return (
+    <fieldset className={many ? "flex flex-col gap-3 rounded-xl border border-border bg-[#0e1014] p-4" : undefined}>
+      {many ? (
+        <legend className="px-1 font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
+          Output {n}
+        </legend>
+      ) : null}
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
+          <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
+            LED type
+          </span>
+          <div className="flex flex-wrap gap-2" role="group" aria-label={ledTypeLabel}>
+            {PROVISION_LED_TYPES.map((type) => {
+              const selectedType = draft.ledType === type;
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  aria-pressed={selectedType}
+                  onClick={() => onPatch("ledType", type)}
+                  className={`h-10 rounded-md border px-3 text-[13px] font-semibold ${
+                    selectedType
+                      ? "border-primary bg-secondary text-foreground"
+                      : "border-input bg-[#07080a] text-[#c9c3b8] hover:bg-secondary"
+                  }`}
+                >
+                  {provisionLedTypeLabel(type)}
+                </button>
+              );
+            })}
+          </div>
+          <span className="text-[12px] text-quiet">
+            Mapped types only. Unknown bus types are not written.
+          </span>
+        </div>
+        <label className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
+          <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
+            Length
+          </span>
+          <Input
+            inputMode="numeric"
+            value={draft.length}
+            onChange={(event) =>
+              onPatch("length", Number.parseInt(event.target.value, 10) || 0)
+            }
+            aria-label={lengthAria}
+          />
+          <span className="text-[12px] text-quiet">
+            {many ? `Node count on output ${n}.` : "Node count on this Light."}
+          </span>
+          {lengthLabel ? (
+            <span className="text-[12px] text-quiet">
+              {lengthLabel}. {PHYSICAL_LENGTH_CAPTION}
+            </span>
+          ) : null}
+        </label>
+        <label className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-4">
+          <span className="font-mono text-[10px] tracking-[0.14em] text-quiet uppercase">
+            GPIO
+          </span>
+          <Input
+            inputMode="numeric"
+            value={draft.gpio}
+            onChange={(event) => onPatch("gpio", Number.parseInt(event.target.value, 10) || 0)}
+            aria-label={gpioAria}
+          />
+          <span className="text-[12px] text-quiet">
+            {many ? `Data pin on output ${n}.` : "Single data pin on this Light."}
+          </span>
+        </label>
+      </div>
+      {many ? (
+        <div className="flex flex-col gap-1">
+          <p className="text-[13px] leading-5 text-[#c9c3b8]">
+            {stripColorOrderCopy({ colorOrder, ledType, afterSameTypeApply })}
+          </p>
+          <p className="text-[12px] text-quiet">Strip does not pick colour order.</p>
+        </div>
+      ) : null}
+    </fieldset>
   );
 }

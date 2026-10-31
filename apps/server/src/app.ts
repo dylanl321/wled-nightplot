@@ -45,7 +45,6 @@ import {
   applyResolvedName,
   applyNamePattern,
   buildProvisionOutputsWrite,
-  buildProvisionWrite,
   buildSafeWrite,
   FLEET_BULK_CAPTION,
   FLEET_ENROLL_CONCURRENCY,
@@ -66,11 +65,14 @@ import {
   validateSetupProfile,
   withMigratedOutputs,
   needsInspectStripKindSeed,
+  parseProvisionBody,
   parseWledProvision,
   provisionFieldsMatch,
   provisionMismatchNote,
+  provisionOutputWriteRows,
   provisionRefuseReason,
   provisionSnapshotMatch,
+  setupProfileTargetIndexes,
   rangeLengthStory,
   reconcileDeclaredRangesForLedCount,
   resolveLightName,
@@ -114,6 +116,7 @@ import {
   type SegmentBackup,
   type WledSafeSettings,
   type WledSnapshot,
+  type ParsedProvisionBody,
   type WledStripProvisionDraft,
 } from "@nightplot/shared";
 import { Hono, type Context } from "hono";
@@ -1741,18 +1744,31 @@ export function createApp(deps: AppDeps) {
     const dest: HostPort = { hostname: light.hostname, port: light.port };
     const raw = await deps.readCfg(dest);
     const provision = await readProvision(light, snap?.firmware ?? light.firmware, raw);
-    const draft = await readProvisionBody(c);
-    if (!draft) {
+    const parsed = await readProvisionBody(c);
+    if (!parsed) {
       return c.json(
-        { error: "invalid", message: "Send { provision: { ledType, length, gpio } }." },
+        {
+          error: "invalid",
+          message: "Send { provision: { ledType, length, gpio } } or { provision: { outputs } }.",
+        },
         400,
       );
     }
+    const firstWritable = provision.outputs.find((output) => output.writable);
+    const drafts: WledStripProvisionOutputDraft[] =
+      parsed.kind === "outputs"
+        ? parsed.drafts
+        : [{ ...parsed.draft, index: firstWritable?.index ?? 0 }];
+    const primary: WledStripProvisionDraft = {
+      ledType: drafts[0]!.ledType,
+      length: drafts[0]!.length,
+      gpio: drafts[0]!.gpio,
+    };
     const reason = provisionRefuseReason({
       reachable: light.reachability === "online" && snap !== null,
       read: provision,
       busyKind: live.get(light.id)?.kind ?? null,
-      draft,
+      draft: primary,
     });
     if (reason) {
       return c.json(
@@ -1763,18 +1779,19 @@ export function createApp(deps: AppDeps) {
           provisionWrite: {
             status: "refused" as const,
             matched: false,
-            sent: draft,
+            sent: primary,
             read: provision.settings,
             snapshotLedCount: snap?.ledCount ?? light.ledCount,
             fingerprint: provision.fingerprint,
             message: reason,
             caption: provision.caption,
+            outputs: provisionOutputWriteRows(drafts, provision),
           },
         },
         422,
       );
     }
-    const built = buildProvisionWrite(draft, raw, provision.fingerprint);
+    const built = buildProvisionOutputsWrite(drafts, raw, provision.fingerprint);
     if (!built.ok) {
       return c.json(
         {
@@ -1784,12 +1801,13 @@ export function createApp(deps: AppDeps) {
           provisionWrite: {
             status: "refused" as const,
             matched: false,
-            sent: draft,
+            sent: primary,
             read: provision.settings,
             snapshotLedCount: snap?.ledCount ?? light.ledCount,
             fingerprint: provision.fingerprint,
             message: built.message,
             caption: provision.caption,
+            outputs: provisionOutputWriteRows(drafts, provision),
           },
         },
         422,
@@ -1807,12 +1825,13 @@ export function createApp(deps: AppDeps) {
           provisionWrite: {
             status: "failed" as const,
             matched: false,
-            sent: built.sent,
+            sent: primary,
             read: provision.settings,
             snapshotLedCount: snap?.ledCount ?? light.ledCount,
             fingerprint: provision.fingerprint,
             message: "The controller did not take strip provision. Nothing else changed.",
             caption: provision.caption,
+            outputs: provisionOutputWriteRows(built.sent, provision),
           },
         },
         422,
@@ -1824,10 +1843,11 @@ export function createApp(deps: AppDeps) {
     const { light: refreshed, live: nextSnap } = await refreshOne(stored);
     const writtenIns = (built.body as { hw: { led: { ins: Record<string, unknown>[] } } }).hw.led.ins;
     const expectedTotal = provisionWriteExpectedLedCount(writtenIns);
-    const nextLedCount = expectedTotal ?? built.sent.length;
-    const cfgMatched = provisionFieldsMatch(built.sent, reread.settings);
+    const nextLedCount = expectedTotal ?? drafts.reduce((sum, draft) => sum + draft.length, 0);
+    const outputRows = provisionOutputWriteRows(built.sent, reread);
+    const cfgMatched = provisionOutputsMatch(built.sent, reread);
     const snapMatched = provisionSnapshotMatch(
-      built.sent,
+      primary,
       nextSnap?.ledCount ?? null,
       nextLedCount,
     );
@@ -1854,21 +1874,24 @@ export function createApp(deps: AppDeps) {
       ranges = rangeLengthStory(reconcile);
     }
     const detail = await decorateDetail(next, nextSnap);
+    const primaryRead =
+      reread.outputs.find((output) => output.index === drafts[0]!.index)?.settings ?? reread.settings;
     const result = {
       status: matched ? ("matched" as const) : ("mismatch" as const),
       matched,
-      sent: built.sent,
-      read: reread.settings,
+      sent: primary,
+      read: primaryRead,
       snapshotLedCount: nextSnap?.ledCount ?? null,
       fingerprint: reread.fingerprint,
       message: provisionMismatchNote(
-        built.sent,
-        reread.settings,
+        primary,
+        primaryRead,
         nextSnap?.ledCount ?? null,
-        expectedTotal ?? built.sent.length,
+        nextLedCount,
       ),
       caption: reread.caption,
       orderPreserved: built.orderPreserved,
+      outputs: outputRows,
       ...(ranges ? { ranges } : {}),
     };
     if (!matched) {
@@ -2052,19 +2075,10 @@ export function createApp(deps: AppDeps) {
 
   async function readProvisionBody(
     c: { req: { json: () => Promise<unknown> } },
-  ): Promise<WledStripProvisionDraft | null> {
+  ): Promise<ParsedProvisionBody | null> {
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body !== "object") return null;
-    const raw = (body as { provision?: unknown }).provision;
-    if (!raw || typeof raw !== "object") return null;
-    const row = raw as Record<string, unknown>;
-    if (!isProvisionLedType(row.ledType)) return null;
-    if (typeof row.length !== "number" || typeof row.gpio !== "number") return null;
-    return {
-      ledType: row.ledType,
-      length: row.length,
-      gpio: row.gpio,
-    };
+    return parseProvisionBody((body as { provision?: unknown }).provision);
   }
 
   async function readSafe(light: Light, firmware: string | null): Promise<SafeRead> {
@@ -2240,6 +2254,8 @@ export function createApp(deps: AppDeps) {
     if (typeof row.bootBrightness === "number") draft.bootBrightness = row.bootBrightness;
     if (typeof row.currentLimitMa === "number") draft.currentLimitMa = row.currentLimitMa;
     if (typeof row.namePattern === "string") draft.namePattern = row.namePattern;
+    if (typeof row.outputIndex === "number") draft.outputIndex = row.outputIndex;
+    if (row.outputIndex === null) draft.outputIndex = null;
     return draft;
   }
 
@@ -2295,15 +2311,20 @@ export function createApp(deps: AppDeps) {
           busyKind: null,
         });
         if (refuse) return { lightId, name: next.name, status: "failed", reason: refuse, backupId };
+        const writable = provision.outputs.filter((bus) => bus.writable);
+        const targeted = setupProfileTargetIndexes(
+          profile,
+          writable.map((bus) => bus.index),
+        );
+        if (!targeted.ok) {
+          return { lightId, name: next.name, status: "failed", reason: targeted.reason, backupId };
+        }
         const drafts: WledStripProvisionOutputDraft[] = [];
-        for (const bus of provision.outputs) {
-          if (!bus.writable) continue;
-          const first = drafts.length === 0;
+        for (const bus of writable) {
+          if (!targeted.indexes.includes(bus.index)) continue;
           const ledType = profile.ledType ?? (isProvisionLedType(bus.settings.ledType) ? bus.settings.ledType : null);
-          // Shared GPIO / length belong on the first writable bus — the same
-          // pin on every output would fight real wiring.
-          const length = first && profile.length != null ? profile.length : bus.settings.length;
-          const gpio = first && profile.gpio != null ? profile.gpio : bus.settings.gpio;
+          const length = profile.length ?? bus.settings.length;
+          const gpio = profile.gpio ?? bus.settings.gpio;
           if (!ledType || length == null || gpio == null) {
             return {
               lightId,

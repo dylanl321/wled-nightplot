@@ -4342,6 +4342,116 @@ describe("fleet setup", () => {
     expect(store.findById(id)?.outputs).toHaveLength(2);
   });
 
+  it("writes every understood output from an outputs[] provision body", async () => {
+    const box = createFixtureBox({
+      buses: [
+        { len: 40, pin: 16, type: 22, order: 0 },
+        { len: 80, pin: 2, type: 22, order: 1 },
+      ],
+    });
+    const { app, store, host } = await liveApp(box);
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const write = await app.request(`/api/lights/${id}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provision: {
+          outputs: [
+            { index: 0, ledType: "ws281x", length: 22, gpio: 16 },
+            { index: 1, ledType: "ws281x", length: 44, gpio: 4 },
+          ],
+        },
+      }),
+    });
+    expect(write.status).toBe(200);
+    const body = (await write.json()) as {
+      provisionWrite: {
+        matched: boolean;
+        outputs?: { index: number; matched: boolean; sent: { length: number; gpio: number } }[];
+      };
+    };
+    expect(body.provisionWrite.matched).toBe(true);
+    expect(body.provisionWrite.outputs).toEqual([
+      expect.objectContaining({ index: 0, matched: true, sent: expect.objectContaining({ length: 22, gpio: 16 }) }),
+      expect.objectContaining({ index: 1, matched: true, sent: expect.objectContaining({ length: 44, gpio: 4 }) }),
+    ]);
+    expect(box.cfg.hw.led.ins[0]).toMatchObject({ len: 22, pin: [16], start: 0 });
+    expect(box.cfg.hw.led.ins[1]).toMatchObject({ len: 44, pin: [4], start: 22 });
+    expect(store.findById(id)?.outputs?.map((output) => output.ledCount)).toEqual([22, 44]);
+  });
+
+  it("applies a setup profile to one chosen output and leaves the other", async () => {
+    const box = createFixtureBox({
+      buses: [
+        { len: 40, pin: 16, type: 22, order: 0 },
+        { len: 80, pin: 2, type: 22, order: 1 },
+      ],
+    });
+    const { app, host } = await liveApp(box);
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const apply = await app.request("/api/lights/setup-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lightIds: [id],
+        profile: { name: "Second only", length: 55, outputIndex: 1 },
+      }),
+    });
+    expect(apply.status).toBe(200);
+    const body = (await apply.json()) as { results: { status: string; reason?: string }[] };
+    expect(body.results[0]?.status).toBe("applied");
+    expect(box.cfg.hw.led.ins[0]).toMatchObject({ len: 40, pin: [16], start: 0 });
+    expect(box.cfg.hw.led.ins[1]).toMatchObject({ len: 55, pin: [2], start: 40 });
+  });
+
+  it("saves a Segment on a named output and refuses one that leaves it", async () => {
+    const box = createFixtureBox({
+      buses: [
+        { len: 40, pin: 16, type: 22, order: 0 },
+        { len: 80, pin: 2, type: 22, order: 1 },
+      ],
+    });
+    const { app, host } = await liveApp(box);
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host }),
+    });
+    const light = ((await enroll.json()) as { light: { id: string; outputs?: { id: string; index: number }[] } }).light;
+    await app.request(`/api/lights/${light.id}/provision`);
+    const stored = ((await (await app.request(`/api/lights/${light.id}`)).json()) as {
+      light: { outputs?: { id: string; index: number }[] };
+    }).light;
+    const second = stored.outputs?.find((output) => output.index === 1);
+    expect(second?.id).toBeTruthy();
+    const ok = await app.request(`/api/lights/${light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [{ label: "Window", start: 40, stop: 60, outputId: second!.id }],
+      }),
+    });
+    expect(ok.status).toBe(200);
+    const refused = await app.request(`/api/lights/${light.id}/elements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: [{ label: "Window", start: 0, stop: 20, outputId: second!.id }],
+      }),
+    });
+    expect(refused.status).toBe(422);
+  });
+
   it("saves gapped Segments on one output", async () => {
     const { app } = testApp();
     const enroll = await app.request("/api/lights", {

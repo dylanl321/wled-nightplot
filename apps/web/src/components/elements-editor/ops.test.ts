@@ -171,6 +171,17 @@ describe("element editor ops", () => {
     expect(extendOk(elements, elements[0]!, { start: 10, stop: 25 })).toBe(false);
   });
 
+  it("copies outputId when splitting or duplicating", () => {
+    const source = { ...el("a", 0, 10, "Door"), outputId: "out-b" };
+    expect(splitElement([source], "a", 4, ids())).toEqual([
+      { ...el("a", 0, 4, "Door"), outputId: "out-b" },
+      { ...el("n1", 4, 10, "Door 2"), outputId: "out-b" },
+    ]);
+    const placed = duplicateElement([source], "a", 20, ids());
+    expect(placed.ok).toBe(true);
+    if (placed.ok) expect(placed.elements[1]?.outputId).toBe("out-b");
+  });
+
   it("splits only on a boundary strictly inside the Segment", () => {
     expect(splitElement([el("a", 0, 10, "Door")], "a", 4, ids())).toEqual([
       el("a", 0, 4, "Door"),

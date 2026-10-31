@@ -26,6 +26,10 @@ export type SetupProfile = {
   bootBrightness?: number | null;
   currentLimitMa?: number | null;
   namePattern?: string | null;
+  /**
+   * WLED bus index to write. Missing / null means every writable output.
+   */
+  outputIndex?: number | null;
 };
 
 export type SetupProfileDraft = Omit<SetupProfile, "id"> & { id?: string };
@@ -42,6 +46,7 @@ export function isSetupProfile(value: unknown): value is SetupProfile {
   if (row.bootBrightness != null && !Number.isInteger(row.bootBrightness)) return false;
   if (row.currentLimitMa != null && !Number.isInteger(row.currentLimitMa)) return false;
   if (row.namePattern != null && typeof row.namePattern !== "string") return false;
+  if (row.outputIndex != null && !Number.isInteger(row.outputIndex)) return false;
   return true;
 }
 
@@ -73,6 +78,9 @@ export function validateSetupProfile(draft: SetupProfileDraft): string | null {
   }
   if (draft.currentLimitMa != null && (draft.currentLimitMa < 0 || draft.currentLimitMa > 65000)) {
     return "Current limit is 0–65000 mA.";
+  }
+  if (draft.outputIndex != null && (!Number.isInteger(draft.outputIndex) || draft.outputIndex < 0)) {
+    return "Output index is a 0-based writable bus, or leave it empty for every writable output.";
   }
   if (draft.namePattern != null && draft.namePattern.length > WLED_DISPLAY_NAME_MAX + 16) {
     return "Name pattern is too long.";
@@ -136,7 +144,27 @@ export function normalizeSetupProfile(draft: SetupProfileDraft, id: string): Set
     ...(typeof draft.namePattern === "string" && draft.namePattern.trim()
       ? { namePattern: draft.namePattern.trim() }
       : {}),
+    ...(draft.outputIndex != null ? { outputIndex: draft.outputIndex } : {}),
   };
+}
+
+/** Writable bus indexes this profile will write. */
+export function setupProfileTargetIndexes(
+  profile: Pick<SetupProfile, "outputIndex">,
+  writableIndexes: number[],
+): { ok: true; indexes: number[] } | { ok: false; reason: string } {
+  if (profile.outputIndex == null) {
+    return writableIndexes.length > 0
+      ? { ok: true, indexes: writableIndexes }
+      : { ok: false, reason: "None of this controller’s buses are a strip we provision." };
+  }
+  if (!writableIndexes.includes(profile.outputIndex)) {
+    return {
+      ok: false,
+      reason: `This Light has no writable output ${profile.outputIndex + 1}.`,
+    };
+  }
+  return { ok: true, indexes: [profile.outputIndex] };
 }
 
 export function mergeSetupProfile(

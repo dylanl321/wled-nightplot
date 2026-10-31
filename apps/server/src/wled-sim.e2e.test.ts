@@ -458,6 +458,42 @@ describe("headless WLED sim e2e: Sync across Lights", () => {
     expect(applied.results.map((row) => row.status)).toEqual(["applied", "applied"]);
     expect(store.findById(multiId)?.name).toBe("yard-01");
     expect(store.findById(extraId)?.name).toBe("yard-02");
+
+    const writeBoth = await app.request(`/api/lights/${multiId}/provision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provision: {
+          outputs: [
+            { index: 0, ledType: "ws281x", length: 28, gpio: 16 },
+            { index: 1, ledType: "ws281x", length: 36, gpio: 2 },
+          ],
+        },
+      }),
+    });
+    expect(writeBoth.status).toBe(200);
+    const written = (await writeBoth.json()) as {
+      provisionWrite: { matched: boolean; outputs?: { index: number; matched: boolean }[] };
+    };
+    expect(written.provisionWrite.matched).toBe(true);
+    expect(written.provisionWrite.outputs?.map((row) => row.matched)).toEqual([true, true]);
+
+    const secondOnly = await app.request("/api/lights/setup-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lightIds: [multiId],
+        profile: { name: "Second bus", length: 41, outputIndex: 1 },
+      }),
+    });
+    expect(secondOnly.status).toBe(200);
+    const secondBody = (await secondOnly.json()) as { results: { status: string }[] };
+    expect(secondBody.results[0]?.status).toBe("applied");
+    const after = (await (await app.request(`/api/lights/${multiId}/provision`)).json()) as {
+      provision: { outputs: { index: number; settings: { length: number | null } }[] };
+    };
+    expect(after.provision.outputs.find((row) => row.index === 0)?.settings.length).toBe(28);
+    expect(after.provision.outputs.find((row) => row.index === 1)?.settings.length).toBe(41);
   }, 30_000);
 });
 

@@ -12,6 +12,7 @@ function validElements(value: unknown, lightId: string): value is Element[] {
     return typeof el.id === "string" && typeof el.label === "string" && el.lightId === lightId &&
       typeof el.start === "number" && Number.isSafeInteger(el.start) &&
       typeof el.stop === "number" && Number.isSafeInteger(el.stop) &&
+      (el.outputId === undefined || typeof el.outputId === "string") &&
       (color === undefined || (color !== null && typeof color === "object" &&
         typeof (color as Record<string, unknown>).hex === "string" &&
         typeof (color as Record<string, unknown>).white === "number" &&
@@ -24,7 +25,8 @@ export function sameSegments(left: readonly Element[], right: readonly Element[]
     const other = right[index];
     return other && el.id === other.id && el.lightId === other.lightId && el.label === other.label &&
       el.start === other.start && el.stop === other.stop &&
-      el.color?.hex === other.color?.hex && el.color?.white === other.color?.white;
+      el.color?.hex === other.color?.hex && el.color?.white === other.color?.white &&
+      el.outputId === other.outputId;
   });
 }
 

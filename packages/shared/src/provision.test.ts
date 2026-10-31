@@ -7,6 +7,7 @@ import {
   buildProvisionWrite,
   colorOrderFromNative,
   nativeTypeLabel,
+  parseProvisionBody,
   parseWledProvision,
   provisionFieldsMatch,
   provisionRefuseReason,
@@ -431,6 +432,28 @@ describe("provision write", () => {
     expect(ins).toHaveLength(2);
     expect(ins[0]).toMatchObject({ len: 80, pin: [4], type: 22, extra: "keep-a", start: 0 });
     expect(ins[1]).toMatchObject({ len: 40, pin: [2], type: 22, order: 3, extra: "keep-b", start: 80 });
+  });
+
+  it("parses a single draft or an outputs[] body", () => {
+    expect(parseProvisionBody({ ledType: "ws281x", length: 40, gpio: 16 })).toEqual({
+      kind: "single",
+      draft: { ledType: "ws281x", length: 40, gpio: 16 },
+    });
+    expect(
+      parseProvisionBody({
+        outputs: [
+          { index: 0, ledType: "ws281x", length: 40, gpio: 16 },
+          { index: 1, ledType: "sk6812-rgbw", length: 80, gpio: 2 },
+        ],
+      }),
+    ).toEqual({
+      kind: "outputs",
+      drafts: [
+        { index: 0, ledType: "ws281x", length: 40, gpio: 16 },
+        { index: 1, ledType: "sk6812-rgbw", length: 80, gpio: 2 },
+      ],
+    });
+    expect(parseProvisionBody({ ledType: "ws281x" })).toBeNull();
   });
 
   it("writes every understood bus from a fleet draft", () => {

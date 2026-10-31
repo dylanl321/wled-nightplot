@@ -923,4 +923,99 @@ describe("Strip provision", () => {
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.queryByLabelText(/colour order/i)).toBeNull();
   });
+
+  it("edits and writes every understood output, then shows per-output readback", async () => {
+    const twoBus: ProvisionRead = {
+      ...provision,
+      buses: 2,
+      outputs: [
+        provision.outputs[0]!,
+        {
+          index: 1,
+          start: 60,
+          settings: {
+            ledType: "ws281x",
+            length: 40,
+            gpio: 2,
+            nativeType: 22,
+            nativeOrder: 1,
+            colorOrder: "RGB",
+          },
+          refuse: null,
+          writable: true,
+        },
+      ],
+    };
+    const posts: unknown[] = [];
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = requestPath(String(input));
+      if (path.endsWith("/provision") && init?.method === "POST") {
+        posts.push(JSON.parse(String(init.body)));
+        return new Response(
+          JSON.stringify({
+            ...payload({ provision: twoBus }),
+            provisionWrite: {
+              status: "matched",
+              matched: true,
+              sent: { ledType: "ws281x", length: 70, gpio: 16 },
+              read: twoBus.settings,
+              snapshotLedCount: 110,
+              fingerprint: twoBus.fingerprint,
+              message: "Controller reports the strip we sent.",
+              caption: twoBus.caption,
+              outputs: [
+                {
+                  index: 0,
+                  sent: { ledType: "ws281x", length: 70, gpio: 16 },
+                  read: { ...twoBus.outputs[0]!.settings, length: 70 },
+                  matched: true,
+                },
+                {
+                  index: 1,
+                  sent: { ledType: "ws281x", length: 40, gpio: 2 },
+                  read: twoBus.outputs[1]!.settings,
+                  matched: true,
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (path.endsWith("/provision")) {
+        return new Response(JSON.stringify(payload({ provision: twoBus })), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ message: "unexpected path" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(<StripProvisionPanel lightId="light-garage" unreachable={false} />);
+    expect(await screen.findByText(/This controller has 2 outputs/)).toBeTruthy();
+    expect(screen.getByLabelText("Output 1 node count")).toBeTruthy();
+    expect(screen.getByLabelText("Output 2 GPIO pin")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Output 1 node count"), { target: { value: "70" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply hardware" }));
+
+    await waitFor(() => {
+      expect(posts).toEqual([
+        {
+          provision: {
+            outputs: [
+              { index: 0, ledType: "ws281x", length: 70, gpio: 16 },
+              { index: 1, ledType: "ws281x", length: 40, gpio: 2 },
+            ],
+          },
+        },
+      ]);
+    });
+    expect(await screen.findByText("Controller reports the strip we sent.")).toBeTruthy();
+    expect(screen.getByText(/Output 1 · ws281x · 70 nodes · GPIO 16 · matched/)).toBeTruthy();
+    expect(screen.getByText(/Output 2 · ws281x · 40 nodes · GPIO 2 · matched/)).toBeTruthy();
+  });
 });

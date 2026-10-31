@@ -247,6 +247,13 @@ export type ProvisionRead = {
   buses: number;
 };
 
+export type ProvisionOutputWriteRow = {
+  index: number;
+  sent: WledStripProvisionDraft;
+  read: WledStripProvision;
+  matched: boolean;
+};
+
 export type ProvisionWriteResult = {
   status: "matched" | "mismatch" | "refused" | "failed";
   matched: boolean;
@@ -256,6 +263,8 @@ export type ProvisionWriteResult = {
   fingerprint: ProvisionFingerprint;
   message: string;
   caption: string;
+  /** Per-output sent / readback when more than one bus was written. */
+  outputs?: ProvisionOutputWriteRow[];
   /** Present after a successful length-changing Apply. Absent on same length / mismatch. */
   ranges?: RangeLengthStory | null;
   /**
@@ -264,6 +273,36 @@ export type ProvisionWriteResult = {
    */
   orderPreserved?: boolean;
 };
+
+export type ParsedProvisionBody =
+  | { kind: "single"; draft: WledStripProvisionDraft }
+  | { kind: "outputs"; drafts: WledStripProvisionOutputDraft[] };
+
+export function parseProvisionBody(raw: unknown): ParsedProvisionBody | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  if (Array.isArray(row.outputs)) {
+    const drafts: WledStripProvisionOutputDraft[] = [];
+    for (const item of row.outputs) {
+      if (!item || typeof item !== "object") return null;
+      const bus = item as Record<string, unknown>;
+      if (!Number.isInteger(bus.index) || (bus.index as number) < 0) return null;
+      if (!isProvisionLedType(bus.ledType)) return null;
+      if (typeof bus.length !== "number" || typeof bus.gpio !== "number") return null;
+      drafts.push({
+        index: bus.index as number,
+        ledType: bus.ledType,
+        length: bus.length,
+        gpio: bus.gpio,
+        ...(typeof bus.colorOrder === "string" ? { colorOrder: bus.colorOrder } : {}),
+      });
+    }
+    return drafts.length > 0 ? { kind: "outputs", drafts } : null;
+  }
+  if (!isProvisionLedType(row.ledType)) return null;
+  if (typeof row.length !== "number" || typeof row.gpio !== "number") return null;
+  return { kind: "single", draft: { ledType: row.ledType, length: row.length, gpio: row.gpio } };
+}
 
 const emptySettings = (): WledStripProvision => ({
   ledType: "unknown",
@@ -723,6 +762,22 @@ export function provisionOutputsMatch(
   return sent.every((draft) => {
     const bus = read.outputs.find((output) => output.index === draft.index);
     return Boolean(bus && provisionFieldsMatch(draft, bus.settings));
+  });
+}
+
+export function provisionOutputWriteRows(
+  sent: WledStripProvisionOutputDraft[],
+  read: ProvisionRead,
+): ProvisionOutputWriteRow[] {
+  return sent.map((draft) => {
+    const bus = read.outputs.find((output) => output.index === draft.index);
+    const settings = bus?.settings ?? emptySettings();
+    return {
+      index: draft.index,
+      sent: { ledType: draft.ledType, length: draft.length, gpio: draft.gpio },
+      read: settings,
+      matched: provisionFieldsMatch(draft, settings),
+    };
   });
 }
 

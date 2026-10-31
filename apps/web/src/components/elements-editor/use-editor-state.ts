@@ -1,6 +1,6 @@
 "use client";
 
-import type { Element } from "@nightplot/shared";
+import { outputIdAt, type Element, type LightOutput } from "@nightplot/shared";
 import { useEffect, useReducer, useRef } from "react";
 import { readDraft, sameSegments, writeDraft, type StoredDraft } from "./draft-storage";
 import {
@@ -72,6 +72,7 @@ export type EditorState = {
   toast: string | null;
   lightId: string;
   ledCount: number;
+  outputs: LightOutput[];
 };
 
 export type EditorAction =
@@ -109,16 +110,19 @@ export type EditorAction =
   | { type: "select-here" }
   | { type: "clear-led" }
   | { type: "escape" }
+  | { type: "output"; outputId: string }
   | { type: "add-gap"; start: number; stop: number }
   | { type: "toast-clear" }
   | { type: "select-row"; id: string; shift: boolean }
   | { type: "replace"; elements: Element[] }
+  | { type: "outputs"; outputs: LightOutput[] }
   | { type: "server"; previous: Element[]; next: Element[]; lengthChanged: boolean; ledCount: number }
   | { type: "recover"; stored: StoredDraft | null }
   | { type: "resolve-draft" }
   | { type: "draft-storage"; available: boolean };
 
 const HISTORY = 80;
+const EMPTY_OUTPUTS: LightOutput[] = [];
 
 function nextId(): string {
   return crypto.randomUUID();
@@ -209,6 +213,20 @@ function applyDrag(state: EditorState, hit: Hit, alt = false): EditorState {
   };
 }
 
+function outputsEqual(left: readonly LightOutput[], right: readonly LightOutput[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((output, index) => {
+    const other = right[index];
+    return (
+      !!other &&
+      output.id === other.id &&
+      output.index === other.index &&
+      output.start === other.start &&
+      output.ledCount === other.ledCount
+    );
+  });
+}
+
 function rangesEqual(left: readonly Element[], right: readonly Element[]): boolean {
   if (left.length !== right.length) return false;
   return left.every((element, index) => {
@@ -227,6 +245,7 @@ export function initialEditorState(
   elements: Element[],
   ledCount: number,
   lightId: string,
+  outputs: LightOutput[] = EMPTY_OUTPUTS,
 ): EditorState {
   return {
     focus: elements[0] ? { kind: "seg", id: elements[0].id } : { kind: "cursor" },
@@ -254,6 +273,7 @@ export function initialEditorState(
     toast: null,
     lightId,
     ledCount,
+    outputs,
   };
 }
 
@@ -504,6 +524,11 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         white: action.white ?? element.color?.white ?? 0 };
       return commit(state, withElement(state, element.id, { color }), { sel: [element.id] });
     }
+    case "output": {
+      const element = one(state);
+      if (!element) return state;
+      return commit(state, withElement(state, element.id, { outputId: action.outputId }), { sel: [element.id] });
+    }
     case "start":
     case "stop": {
       const element = one(state);
@@ -565,7 +590,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     case "new-from-sel": {
       const range = state.ledSel;
       if (!range) return state;
-      const made = carveNew(state.els, range, state.lightId, nextId);
+      const made = carveNew(state.els, range, state.lightId, nextId, outputIdAt(range.start, state.outputs));
       return commit(state, made.elements, {
         sel: [made.id],
         ledSel: null,
@@ -613,9 +638,17 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         draftRange: null, menuOpen: false, focus: { kind: "cursor" } };
     }
     case "add-gap": {
-      const made = fillGap(state.els, { start: action.start, stop: action.stop }, state.lightId, nextId);
+      const made = fillGap(
+        state.els,
+        { start: action.start, stop: action.stop },
+        state.lightId,
+        nextId,
+        outputIdAt(action.start, state.outputs),
+      );
       return commit(state, made.elements, { sel: [made.id], ledSel: null });
     }
+    case "outputs":
+      return outputsEqual(state.outputs, action.outputs) ? state : { ...state, outputs: action.outputs };
     case "toast-clear":
       return state.toast ? { ...state, toast: null } : state;
     case "select-row": {
@@ -694,11 +727,16 @@ function restoreFocus(state: EditorState, els: Element[], count = state.ledCount
   };
 }
 
-export function useEditorState(elements: Element[], ledCount: number, lightId: string) {
+export function useEditorState(
+  elements: Element[],
+  ledCount: number,
+  lightId: string,
+  outputs: LightOutput[] = EMPTY_OUTPUTS,
+) {
   const [state, dispatch] = useReducer(
     editorReducer,
-    { elements, ledCount, lightId },
-    (seed) => initialEditorState(seed.elements, seed.ledCount, seed.lightId),
+    { elements, ledCount, lightId, outputs },
+    (seed) => initialEditorState(seed.elements, seed.ledCount, seed.lightId, seed.outputs),
   );
   const seen = useRef({ elements, ledCount });
 
@@ -726,6 +764,10 @@ export function useEditorState(elements: Element[], ledCount: number, lightId: s
       ledCount,
     });
   }, [elements, ledCount]);
+
+  useEffect(() => {
+    dispatch({ type: "outputs", outputs });
+  }, [outputs]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {

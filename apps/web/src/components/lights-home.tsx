@@ -362,6 +362,7 @@ function FleetSetupBar({
   const [bootBrightness, setBootBrightness] = useState("");
   const [currentLimitMa, setCurrentLimitMa] = useState("");
   const [namePattern, setNamePattern] = useState("");
+  const [outputTarget, setOutputTarget] = useState<"all" | number>("all");
   const [saveName, setSaveName] = useState("");
   const [busy, setBusy] = useState<"apply" | "save" | null>(null);
   const [results, setResults] = useState<SetupApplyRow[] | null>(null);
@@ -390,6 +391,7 @@ function FleetSetupBar({
       ...(nextBri !== undefined ? { bootBrightness: nextBri } : {}),
       ...(nextLimit !== undefined ? { currentLimitMa: nextLimit } : {}),
       ...(namePattern.trim() ? { namePattern: namePattern.trim() } : {}),
+      outputIndex: outputTarget === "all" ? null : outputTarget,
     };
   }
 
@@ -453,7 +455,12 @@ function FleetSetupBar({
             className="h-9 rounded-md border border-input bg-[#07080a] px-2 text-[13px] text-foreground"
             value={profileId}
             onFocus={() => void loadProfiles()}
-            onChange={(event) => setProfileId(event.target.value)}
+            onChange={(event) => {
+              const next = event.target.value;
+              setProfileId(next);
+              const saved = profiles.find((profile) => profile.id === next);
+              setOutputTarget(saved?.outputIndex == null ? "all" : saved.outputIndex);
+            }}
           >
             <option value="">Inline only</option>
             {profiles.map((profile) => (
@@ -518,11 +525,31 @@ function FleetSetupBar({
           Current limit mA
           <Input inputMode="numeric" value={currentLimitMa} onChange={(event) => setCurrentLimitMa(event.target.value)} placeholder="keep" />
         </label>
+        <label className="flex flex-col gap-1 text-[12px] text-quiet">
+          Outputs
+          <select
+            aria-label="Setup profile output"
+            className="h-9 rounded-md border border-input bg-[#07080a] px-2 text-[13px] text-foreground"
+            value={outputTarget === "all" ? "all" : String(outputTarget)}
+            onChange={(event) => {
+              const value = event.target.value;
+              setOutputTarget(value === "all" ? "all" : Number.parseInt(value, 10));
+            }}
+          >
+            <option value="all">All writable outputs</option>
+            {Array.from({ length: 10 }, (_, index) => (
+              <option key={index} value={String(index)}>
+                Output {index + 1}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
       <p className="text-[12px] leading-5 text-quiet">
-        Apply writes each selected controller with an automatic backup first. One dead
-        Light does not stop the rest. Undo is that backup on Backups — there is no
-        confirm step. Not Hardware Done.
+        Apply writes each selected controller with an automatic backup first. Strip fields
+        go to every writable output, or the one output you pick. One dead Light does not
+        stop the rest. Undo is that backup on Backups — there is no confirm step. Not
+        Hardware Done.
       </p>
       <div className="flex flex-wrap items-center gap-2.5">
         <Input

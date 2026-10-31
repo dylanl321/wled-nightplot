@@ -247,6 +247,8 @@ export function carve(elements: readonly Element[], range: Range, nextId: IdFact
           label: `${element.label} 2`,
           start: range.stop,
           stop: element.stop,
+          ...(element.color ? { color: element.color } : {}),
+          ...(element.outputId ? { outputId: element.outputId } : {}),
         });
       } else {
         out.push({ ...element, start: range.stop });
@@ -270,6 +272,8 @@ export function splitElement(
     label: `${element.label} 2`,
     start: boundary,
     stop: element.stop,
+    ...(element.color ? { color: element.color } : {}),
+    ...(element.outputId ? { outputId: element.outputId } : {}),
   };
   return [
     ...elements.map((item) => (item.id === id ? { ...item, stop: boundary } : item)),
@@ -339,6 +343,8 @@ export function duplicateElement(
     label: `${element.label} copy`,
     start: run.start,
     stop: run.start + length,
+    ...(element.color ? { color: element.color } : {}),
+    ...(element.outputId ? { outputId: element.outputId } : {}),
   };
   return { ok: true, elements: [...elements, copy], id: copy.id };
 }
@@ -370,6 +376,7 @@ export function carveNew(
   range: Range,
   lightId: string,
   nextId: IdFactory,
+  outputId?: string,
 ): { elements: Element[]; id: string; taken: string[] } {
   const taken = hits(elements, range).map((element) => element.label);
   const base = carve(elements, range, nextId);
@@ -379,6 +386,7 @@ export function carveNew(
     label: `Segment ${base.length + 1}`,
     start: range.start,
     stop: range.stop,
+    ...(outputId ? { outputId } : {}),
   };
   return { elements: [...base, created], id: created.id, taken };
 }
@@ -388,6 +396,7 @@ export function fillGap(
   range: Range,
   lightId: string,
   nextId: IdFactory,
+  outputId?: string,
 ): { elements: Element[]; id: string } {
   const created: Element = {
     id: nextId(),
@@ -395,6 +404,7 @@ export function fillGap(
     label: `Segment ${elements.length + 1}`,
     start: range.start,
     stop: range.stop,
+    ...(outputId ? { outputId } : {}),
   };
   return { elements: [...elements, created], id: created.id };
 }
@@ -481,7 +491,8 @@ export function changeCount(draft: readonly Element[], saved: readonly Element[]
       left.start !== right.start ||
       left.stop !== right.stop ||
       left.color?.hex !== right.color?.hex ||
-      left.color?.white !== right.color?.white
+      left.color?.white !== right.color?.white ||
+      left.outputId !== right.outputId
     ) {
       count += 1;
     }
@@ -501,7 +512,8 @@ export function elementsEqual(left: readonly Element[], right: readonly Element[
       element.start === other.start &&
       element.stop === other.stop &&
       element.color?.hex === other.color?.hex &&
-      element.color?.white === other.color?.white
+      element.color?.white === other.color?.white &&
+      element.outputId === other.outputId
     );
   });
 }

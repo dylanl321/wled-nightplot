@@ -56,6 +56,14 @@ export function withMigratedOutputs<T extends Light>(light: T): T {
   return { ...light, outputs: migrateLightOutputs(light) };
 }
 
+export function outputCaption(output: Pick<LightOutput, "index">): string {
+  return `Output ${output.index + 1}`;
+}
+
+export function outputIdAt(index: number, outputs: LightOutput[]): string | undefined {
+  return outputs.find((output) => index >= output.start && index < output.start + output.ledCount)?.id;
+}
+
 export function elementOutputId(
   element: Pick<Element, "lightId" | "outputId">,
   outputs: LightOutput[],
