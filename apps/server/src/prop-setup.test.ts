@@ -91,7 +91,7 @@ describe("prop-first setup", () => {
         kind: "roofline",
         unit: "m",
         pitchMm: 100,
-        measurements: { shape: "roofline", length: 5.9 },
+        measurements: { shape: "roofline", length: 6 },
       }),
     });
     const fitProp = (await fit.json() as { prop: Prop }).prop;

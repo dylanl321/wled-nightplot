@@ -31,6 +31,8 @@ export type PropSetupDeps = {
     snap: WledSnapshot | null,
     drafts: DraftRange[],
   ) => Promise<{ status: number; body: Record<string, unknown> }>;
+  /** Ends a Blink on this Light when one is open, so Apply is not stuck behind it. */
+  endBlink?: (lightId: string) => Promise<void>;
 };
 
 export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
@@ -162,7 +164,7 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     });
     if (!plan.ok) return c.json({ error: "wont-fit", message: plan.message }, 422);
 
-    if (prop.kind === "wireframe") {
+    if (prop.kind === "wireframe" && !(prop.sections && prop.sections.length > 0)) {
       const whole = !afterPropId && startIndex === 0 && output.start === 0 &&
         output.ledCount === light.ledCount && prop.design.ledCount === light.ledCount;
       if (!whole || !prop.wireframe) {
@@ -199,7 +201,10 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
       label: segment.label,
       start: segment.start,
       stop: segment.stop,
-      color: { hex: palette[index % palette.length]!.hex, white: 0 },
+      color: {
+        hex: isHex(segment.color) ? segment.color : palette[index % palette.length]!.hex,
+        white: 0,
+      },
       ...(segment.outputId ? { outputId: segment.outputId } : {}),
     }));
     const merged = [...kept, ...created];
@@ -224,7 +229,9 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
       });
     }
     deps.store.attachProp(next, attachment, merged);
-    const result = await deps.applyDrafts(light, live, merged.map(toDraft));
+    if (deps.endBlink) await deps.endBlink(light.id);
+    const fresh = await deps.refresh(light);
+    const result = await deps.applyDrafts(fresh.light, fresh.live, merged.map(toDraft));
     return c.json({ ...result.body, prop: next, summary: plan.summary }, statusOf(result.status));
   });
 }
@@ -232,6 +239,10 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
 function statusOf(status: number): 200 | 409 | 422 | 503 {
   if (status === 200 || status === 409 || status === 422 || status === 503) return status;
   return 422;
+}
+
+function isHex(value: string | undefined): value is string {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
 }
 
 function toDraft(element: Element): DraftRange {

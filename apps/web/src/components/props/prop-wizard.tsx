@@ -37,7 +37,7 @@ const SHAPES: { kind: PropKind; title: string; blurb: string }[] = [
 
 export type SpacingChoice = { id: string; name: string; pitchMm: number };
 
-export function PropWizard({ products }: { products: SpacingChoice[] }) {
+export function PropWizard({ products: _products }: { products: SpacingChoice[] }) {
   const router = useRouter();
   const [step, setStep] = useState<Step>("name");
   const [name, setName] = useState("");
@@ -50,7 +50,7 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
   const [height, setHeight] = useState("3");
   const [base, setBase] = useState("3");
   const [stakes, setStakes] = useState("8");
-  const [sides, setSides] = useState("8");
+  const [sides, setSides] = useState("4");
   const [side, setSide] = useState("4");
   const [postHeight, setPostHeight] = useState("4");
   const [postTouched, setPostTouched] = useState(false);
@@ -121,6 +121,11 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
       }
       if (kind === "window" || kind === "roofline") {
         setStep("origin");
+        return;
+      }
+      if (kind === "wireframe" && compiled.ok) {
+        setDrawLayout(compiled.layout);
+        setStep("draw");
         return;
       }
       if (compiled.ok) openSections(compiled.layout, "size");
@@ -212,7 +217,7 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
         initial={drawLayout ?? emptyTrace(unit)}
         mode={kind === "custom" ? "trace" : "edit"}
         doneLabel="Name sections"
-        onBack={() => setStep(kind === "custom" ? "shape" : "origin")}
+        onBack={() => setStep(kind === "custom" ? "shape" : kind === "wireframe" ? "size" : "origin")}
         onDone={(layout) => openSections(layout, "draw")}
       />
     );
@@ -224,8 +229,8 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
         <button type="button" className="min-h-11 px-3 text-[16px]" onClick={step === "name" ? () => router.push("/") : back}>Back</button>
         <p className="min-w-0 flex-1 truncate text-[17px] font-medium">{name.trim() || "New prop"}</p>
       </header>
-      <div className="flex flex-1 flex-col gap-5 px-4 pb-28">
-      <h1 className="text-[26px] font-semibold tracking-[-0.01em]">{stepTitle(step)}</h1>
+      <div className="flex flex-1 flex-col gap-5 px-4 pb-36">
+      <h1 className="text-[26px] font-semibold tracking-[-0.01em]">{stepTitle(step, kind)}</h1>
       {step === "name" ? (
         <label className="flex flex-col gap-2 text-[15px]">
           Name
@@ -260,14 +265,19 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
         <div className="flex flex-col gap-3">
           <p className="text-[15px] leading-6">Tap the corner where the controller end of the string starts, then choose the direction.</p>
           <div className="grid grid-cols-2 gap-2">
-            {(["Bottom left", "Bottom right", "Top right", "Top left"] as const).map((label, index) => (
+            {([
+              { index: 3 as const, label: "Top left" },
+              { index: 2 as const, label: "Top right" },
+              { index: 0 as const, label: "Bottom left" },
+              { index: 1 as const, label: "Bottom right" },
+            ]).map((corner) => (
               <button
-                key={label}
+                key={corner.label}
                 type="button"
-                className={`min-h-[72px] rounded-xl border p-3 text-left text-[15px] ${startCorner === index ? "border-primary bg-card" : "border-border"}`}
-                onClick={() => setStartCorner(index as 0 | 1 | 2 | 3)}
+                className={`min-h-[72px] rounded-xl border p-3 text-left text-[15px] ${startCorner === corner.index ? "border-primary bg-card" : "border-border"}`}
+                onClick={() => setStartCorner(corner.index)}
               >
-                {label}
+                {corner.label}
               </button>
             ))}
           </div>
@@ -279,7 +289,7 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
       ) : null}
       {step === "origin" && kind === "roofline" ? (
         <div className="flex flex-col gap-3">
-          <p className="text-[15px] leading-6">Which end is the controller end?</p>
+          <p className="text-[15px] leading-6">The controller plugs in at one end of the roof.</p>
           <button type="button" className={`min-h-11 rounded-lg border text-base ${!startAtFarEnd ? "border-primary" : "border-border"}`} onClick={() => setStartAtFarEnd(false)}>This end</button>
           <button type="button" className={`min-h-11 rounded-lg border text-base ${startAtFarEnd ? "border-primary" : "border-border"}`} onClick={() => setStartAtFarEnd(true)}>The far end</button>
         </div>
@@ -317,39 +327,16 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
             }}
           />
           <label className="flex flex-col gap-2 text-[15px]">
-            Light spacing (cm)
+            {unit === "ft" ? "Light spacing (inches)" : "Light spacing (cm)"}
             <input
               inputMode="decimal"
-              value={spacingCm}
+              value={spacingField(spacingCm, unit)}
               onChange={(event) => {
-                setSpacingCm(event.target.value);
+                setSpacingCm(spacingFromField(event.target.value, unit, spacingCm));
                 setProductId(null);
               }}
               className="min-h-11 w-full rounded-md border border-input bg-[#07080a] px-3 text-base text-foreground outline-none focus:border-primary"
             />
-          </label>
-          <label className="flex flex-col gap-2 text-[15px]">
-            LED product
-            <select
-              value={productId ?? ""}
-              onChange={(event) => {
-                const id = event.target.value;
-                if (!id) {
-                  setProductId(null);
-                  setSpacingCm("10");
-                  return;
-                }
-                const product = products.find((row) => row.id === id);
-                setProductId(id);
-                if (product) setSpacingCm(String(Math.round((product.pitchMm / 10) * 100) / 100));
-              }}
-              className="min-h-11 w-full rounded-md border border-input bg-[#07080a] px-3 text-base text-foreground"
-            >
-              <option value="">10 cm</option>
-              {products.map((product) => (
-                <option key={product.id} value={product.id}>{product.name}</option>
-              ))}
-            </select>
           </label>
         </div>
       ) : null}
@@ -538,7 +525,21 @@ function buildMeasurements(input: {
   }
 }
 
-function stepTitle(step: Step): string {
+function spacingField(cm: string, unit: PropLengthUnit): string {
+  if (unit !== "ft") return cm;
+  const n = Number(cm);
+  if (!Number.isFinite(n)) return cm;
+  return String(Math.round((n / 2.54) * 100) / 100);
+}
+
+function spacingFromField(value: string, unit: PropLengthUnit, previousCm: string): string {
+  if (unit !== "ft") return value;
+  const inches = Number(value);
+  if (!Number.isFinite(inches)) return previousCm;
+  return String(inches * 2.54);
+}
+
+function stepTitle(step: Step, kind: PropKind | null): string {
   switch (step) {
     case "name":
       return "What should this prop be called?";
@@ -549,7 +550,7 @@ function stepTitle(step: Step): string {
     case "review":
       return "Here is the prop";
     case "origin":
-      return "Which corner is the controller end?";
+      return kind === "roofline" ? "Which end is the controller end?" : "Which corner is the controller end?";
     case "draw":
       return "Draw the prop";
     case "sections":

@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { AllOffControl, type LiveHint } from "@/components/all-off-control";
 import { cn } from "@/lib/utils";
 
-type ShellNav = "lights" | "discover" | "light" | "catalog" | "backups" | "sync" | "looks" | "yard" | "settings";
+type ShellNav = "home" | "lights" | "discover" | "light" | "catalog" | "backups" | "sync" | "looks" | "yard" | "settings";
 
 const MORE: { href: string; label: string; nav: ShellNav }[] = [
   { href: "/discover", label: "Find Lights", nav: "discover" },
@@ -101,20 +101,6 @@ export function PhoneChrome({
                   </Link>
                 </li>
               ))}
-              <li>
-                <button
-                  type="button"
-                  className="flex min-h-14 w-full items-center rounded-xl border border-border bg-card px-4 text-left text-[18px]"
-                  onClick={() => {
-                    setMore(false);
-                    window.setTimeout(() => {
-                      document.querySelector<HTMLButtonElement>("[aria-keyshortcuts='?']")?.click();
-                    }, 0);
-                  }}
-                >
-                  Shortcuts
-                </button>
-              </li>
             </ul>
           </div>
           <div

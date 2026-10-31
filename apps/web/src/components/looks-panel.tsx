@@ -55,7 +55,7 @@ function newLookId(): string {
 }
 
 /** Looks library, nightly Schedule, and a bulk push of the same WLED preset slots. */
-export function LooksPanel({ lights, initial }: { lights: LightView[]; initial: LooksPayload }) {
+export function LooksPanel({ lights, initial, firstRun = false }: { lights: LightView[]; initial: LooksPayload; firstRun?: boolean }) {
   const [looks, setLooks] = useState<Look[]>(initial.looks);
   const [playlists, setPlaylists] = useState<LookPlaylist[]>(initial.playlists);
   const [schedule, setSchedule] = useState<NightlySchedule>(
@@ -72,6 +72,7 @@ export function LooksPanel({ lights, initial }: { lights: LightView[]; initial: 
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const [result, setResult] = useState<SyncResult | null>(null);
   const playlist = playlists[0] ?? null;
+  const [showAll, setShowAll] = useState(!firstRun);
 
   const usedSlots = useMemo(
     () => [...looks.map((row) => row.slot), ...playlists.map((row) => row.slot)],
@@ -156,6 +157,23 @@ export function LooksPanel({ lights, initial }: { lights: LightView[]; initial: 
   }
 
   const disabled = Boolean(busy);
+
+  if (firstRun && !showAll) {
+    const look = looks[0];
+    return (
+      <section className="flex flex-1 flex-col gap-5 px-5 py-8">
+        <h1 className="text-[26px] font-semibold">Looks</h1>
+        <p className="text-[15px] leading-6 text-muted-foreground">One look for the whole yard, and a time to turn it on.</p>
+        {look ? <p className="text-[17px] font-medium">{look.name}</p> : null}
+        <label className="flex min-h-11 items-center gap-3 text-[16px]">
+          <input className="size-6" type="checkbox" checked={schedule.enabled} onChange={(event) => setSchedule({ ...schedule, enabled: event.target.checked })} />
+          Turn on at sunset
+        </label>
+        <Button className="min-h-12" disabled={disabled} onClick={() => void saveLibrary()}>Save</Button>
+        <Button variant="outline" className="min-h-12" onClick={() => setShowAll(true)}>More looks</Button>
+      </section>
+    );
+  }
 
   return (
     <section className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8">

@@ -591,6 +591,10 @@ export function createApp(deps: AppDeps) {
     palette: () => settings.read().palette,
     refresh: refreshOne,
     applyDrafts: applyDraftsToController,
+    endBlink: async (lightId) => {
+      if (live.get(lightId)?.kind !== "blink") return;
+      await live.end(lightId, "complete");
+    },
   });
   const yardUndo = new FileYardUndoStore(join(dirname(deps.store.path), "yard-undo.json"));
   registerYardRoutes(app, {

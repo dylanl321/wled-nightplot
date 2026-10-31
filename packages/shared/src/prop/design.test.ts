@@ -41,8 +41,8 @@ describe("light count from measurements", () => {
     });
     expect(built.ok).toBe(true);
     if (!built.ok) return;
-    expect(built.design.edges.map((edge) => edge.ledCount)).toEqual([13, 9, 12, 9]);
-    expect(built.design.ledCount).toBe(43);
+    expect(built.design.edges.map((edge) => edge.ledCount)).toEqual([12, 9, 12, 9]);
+    expect(built.design.ledCount).toBe(42);
     expect(built.layout.corners).toHaveLength(4);
   });
 
@@ -88,7 +88,7 @@ describe("light count from measurements", () => {
     expect(built.ok).toBe(true);
     if (!built.ok) return;
     expect(built.design.edges).toHaveLength(4);
-    expect(built.design.ledCount).toBe(28);
+    expect(built.design.ledCount).toBe(24);
   });
 
   it("orders an 8-sided well house as tops, then each wall from the right, then one diagonal", () => {
@@ -111,7 +111,7 @@ describe("light count from measurements", () => {
     expect(built.layout.run.some((edge) => edge.id.startsWith("post."))).toBe(false);
     expect(built.design.edges).toHaveLength(40);
     expect(built.design.ledCount).toBe(built.design.edges.reduce((sum, edge) => sum + edge.ledCount, 0));
-    expect(built.sections.map((section) => section.name)[0]).toBe("Wall 1");
+    expect(built.sections.map((section) => section.name)[0]).toBe("Front");
     expect(built.sections).toHaveLength(8);
     const top = built.layout.run.find((edge) => edge.id === "top.0");
     const right = built.layout.run.find((edge) => edge.id === "right.0");
@@ -121,7 +121,7 @@ describe("light count from measurements", () => {
     expect(top?.to).not.toBe(leftOfNext?.to);
   });
 
-  it("counts a 6 m line at 10 cm as 61 lights, including both ends", () => {
+  it("counts a 6 m line at 10 cm as 60 lights, one per spacing along that edge", () => {
     const built = compilePropDesign({
       kind: "roofline",
       unit: "m",
@@ -131,7 +131,7 @@ describe("light count from measurements", () => {
     });
     expect(built.ok).toBe(true);
     if (!built.ok) return;
-    expect(built.design.ledCount).toBe(61);
+    expect(built.design.ledCount).toBe(60);
   });
 
   it("refuses custom draw", () => {
@@ -229,7 +229,7 @@ describe("placement", () => {
     });
     expect(plan.ok).toBe(true);
     if (!plan.ok) return;
-    expect(plan.absoluteStart).toBe(11);
+    expect(plan.absoluteStart).toBe(10);
     expect(plan.summary).toContain("after Eave");
   });
 
@@ -255,6 +255,53 @@ describe("placement", () => {
     if (plan.ok) return;
     expect(plan.message).toContain("Nothing will be sent");
     expect(plan.message).toContain("122");
+  });
+
+  it("writes each section range with that section's name and colour", () => {
+    const built = compilePropDesign({
+      kind: "window",
+      unit: "ft",
+      pitchMm: pitch,
+      ledProductId: null,
+      measurements: { shape: "window", width: 4, height: 3 },
+    });
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    const sections = built.sections.map((section, index) => index === 0 ? { ...section, name: "Sill", color: "#ff2d2d" } : section);
+    const prop = {
+      id: "window",
+      label: "Front window",
+      kind: "window" as const,
+      elementIds: [],
+      design: built.design,
+      layout: built.layout,
+      sections,
+    };
+    const plan = planPropPlacement({
+      prop,
+      output: { id: "out", index: 0, start: 0, ledCount: 200 },
+      lightName: "Porch",
+      place: { startIndex: 0, afterPropId: null },
+      props: [prop],
+      attachments: [],
+      maxSegments: 2,
+    });
+    expect(plan.ok).toBe(false);
+    if (plan.ok) return;
+    expect(plan.message).toMatch(/can hold 2/);
+    const allowed = planPropPlacement({
+      prop,
+      output: { id: "out", index: 0, start: 0, ledCount: 200 },
+      lightName: "Porch",
+      place: { startIndex: 0, afterPropId: null },
+      props: [prop],
+      attachments: [],
+    });
+    expect(allowed.ok).toBe(true);
+    if (!allowed.ok) return;
+    const sill = allowed.segments.filter((segment) => segment.label === "Front window · Sill");
+    expect(sill.length).toBeGreaterThan(0);
+    expect(sill.every((segment) => segment.color === "#ff2d2d")).toBe(true);
   });
 });
 

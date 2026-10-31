@@ -1,4 +1,4 @@
-import type { Light, LightsPayload, Prop, PropAttachment } from "@nightplot/shared";
+import type { LightsPayload, Prop, PropAttachment } from "@nightplot/shared";
 import { AppShell } from "@/components/app-shell";
 import { AttachProp } from "@/components/props/attach-prop";
 import { ServerDown } from "@/components/server-down";
@@ -17,11 +17,13 @@ export default async function AttachPropPage({ params }: { params: Promise<{ id:
     return <AppShell lightCount={0} nav="lights"><ServerDown detail="Could not open Attach." /></AppShell>;
   }
   const prop = propsResult.value.props.find((row) => row.id === id);
-  const lights: Pick<Light, "id" | "name" | "outputs" | "ledCount">[] = lightsResult.value.lights.map((light) => ({
+  const lights = lightsResult.value.lights.map((light) => ({
     id: light.id,
     name: light.name,
     outputs: light.outputs,
     ledCount: light.ledCount,
+    lastSnapshot: light.lastSnapshot,
+    elementCount: light.elementCount,
   }));
   return (
     <AppShell lights={lightsResult.value.lights} lightCount={lightsResult.value.lights.length} nav="lights" sessions={lightsResult.value.sessions}>
@@ -31,6 +33,7 @@ export default async function AttachPropPage({ params }: { params: Promise<{ id:
           lights={lights}
           props={propsResult.value.props}
           attachments={propsResult.value.attachments}
+          sessions={lightsResult.value.sessions ?? []}
         />
       ) : (
         <div className="mx-auto flex max-w-[560px] flex-col gap-3 px-4 py-8">

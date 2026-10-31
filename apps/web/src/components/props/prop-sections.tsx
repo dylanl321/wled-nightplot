@@ -4,13 +4,14 @@ import {
   countLayout,
   describeIndexRanges,
   designFromLayout,
+  sectionLightCount,
   extendEdge,
+  layoutStrings,
   formatTypedRanges,
   parseTypedRanges,
   pathEdgeIndexRanges,
   sectionIndexRanges,
   wellHouseEdgeLabel,
-  type PropIndexRange,
   type PropLayout,
   type PropMeasurements,
   type PropSection,
@@ -35,7 +36,7 @@ export function PropSectionsStep({
   onInvalid: (message: string | null) => void;
 }) {
   const [activeId, setActiveId] = useState(sections[0]?.id ?? "");
-  const [edgeId, setEdgeId] = useState<string | null>(layout.run.find((edge) => edge.kind === "lit")?.id ?? null);
+  const [edgeId, setEdgeId] = useState<string | null>(sections[0]?.edgeIds[0] ?? layoutStrings(layout).flatMap((string) => string.run).find((edge) => edge.kind === "lit")?.id ?? null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const active = sections.find((section) => section.id === activeId) ?? sections[0] ?? null;
   const labels = useMemo(() => {
@@ -66,10 +67,14 @@ export function PropSectionsStep({
   function toggle(id: string) {
     setEdgeId(id);
     if (!active) return;
-    const edgeIds = active.edgeIds.includes(id)
-      ? active.edgeIds.filter((edge) => edge !== id)
-      : [...active.edgeIds, id];
-    patchActive({ edgeIds });
+    if (active.edgeIds.includes(id)) {
+      patchActive({ edgeIds: active.edgeIds.filter((edge) => edge !== id) });
+      return;
+    }
+    commit(sections.map((section) => {
+      if (section.id === active.id) return { ...section, edgeIds: [...section.edgeIds, id] };
+      return { ...section, edgeIds: section.edgeIds.filter((edge) => edge !== id) };
+    }));
   }
 
   function setDraft(value: string) {
@@ -98,9 +103,62 @@ export function PropSectionsStep({
     onLayout(extendEdge(layout, edgeId, delta * layout.pitchM));
   }
 
+  function chooseSection(id: string) {
+    setActiveId(id);
+    const section = sections.find((row) => row.id === id);
+    const first = section?.edgeIds[0];
+    if (first) setEdgeId(first);
+  }
+
+  const lightsHere = report ? sectionLightCount(report.ranges) : 0;
+
   return (
-    <div className="flex flex-col gap-4">
-      <p className="text-[15px] leading-6">Tap edges to add or remove them from this section. The numbers follow the path.</p>
+    <div className="flex flex-col gap-4" style={{ overflowAnchor: "none" }}>
+      {active ? (
+        <>
+          <label className="flex flex-col gap-2 text-[15px]">
+            Section name
+            <input
+              aria-label="Section name"
+              value={active.name}
+              onChange={(event) => patchActive({ name: event.target.value.slice(0, 64) || active.name })}
+              className="min-h-11 w-full rounded-md border border-input bg-[#07080a] px-3 text-base text-foreground outline-none focus:border-primary"
+            />
+          </label>
+          <label className="flex min-h-11 items-center justify-between gap-3 text-[15px]">
+            Colour
+            <input
+              aria-label="Section colour"
+              type="color"
+              value={active.color ?? "#ffb000"}
+              onChange={(event) => patchActive({ color: event.target.value })}
+              className="h-11 w-16 cursor-pointer rounded-md border border-border bg-transparent"
+            />
+          </label>
+          <p className="text-[17px] font-medium">{lightsHere === 1 ? "1 light" : `${lightsHere} lights`}</p>
+        </>
+      ) : (
+        <p className="text-[15px] text-muted-foreground">Add a section, then tap the edges that belong to it.</p>
+      )}
+      <ul className="flex flex-col gap-2">
+        {sections.map((section) => {
+          const row = reports.find((item) => item.sectionId === section.id);
+          return (
+            <li key={section.id}>
+              <button
+                type="button"
+                aria-pressed={section.id === active?.id}
+                onClick={() => chooseSection(section.id)}
+                className={`flex min-h-11 w-full items-center gap-3 rounded-xl border px-3 text-left ${section.id === active?.id ? "border-primary bg-card" : "border-border"}`}
+              >
+                <span className="size-4 shrink-0 rounded-full" style={{ background: section.color ?? "#888" }} />
+                <span className="min-w-0 flex-1 truncate text-[15px]">{section.name}</span>
+                <span className="shrink-0 text-[13px] text-muted-foreground">{row ? sectionLightCount(row.ranges) : 0}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
       <PathFigure
         layout={layout}
         sections={sections}
@@ -109,13 +167,11 @@ export function PropSectionsStep({
         labels={labels}
         onEdge={toggle}
       />
-      {active ? (
-        <p className="text-[17px] font-medium leading-6">{report ? describeIndexRanges(report.ranges) : "No LEDs in this section yet."}</p>
-      ) : null}
       <div className="flex flex-col gap-2">
         {edgeChoices(layout, active).map((edge) => {
           const on = active?.edgeIds.includes(edge.id) ?? false;
-          const name = labels.get(edge.id) ?? wellHouseEdgeLabel(edge.id) ?? edge.id;
+          const raw = labels.get(edge.id) ?? wellHouseEdgeLabel(edge.id) ?? edge.id;
+          const name = shortEdgeName(raw);
           return (
             <button
               key={edge.id}
@@ -129,75 +185,41 @@ export function PropSectionsStep({
           );
         })}
       </div>
-      {selected ? (
-        <div className="flex items-center justify-between gap-2">
-          <p className="min-w-0 truncate text-[15px]">{labels.get(selected.edgeId) ?? selected.edgeId}</p>
-          <div className="flex shrink-0 items-center gap-2">
-            <button type="button" aria-label="Fewer lights on this edge" className="min-h-11 min-w-11 rounded-lg border border-border text-[20px]" onClick={() => nudge(-1)}>−</button>
-            <span className="min-w-8 text-center font-mono text-[16px]">{selected.lights}</span>
-            <button type="button" aria-label="More lights on this edge" className="min-h-11 min-w-11 rounded-lg border border-border text-[20px]" onClick={() => nudge(1)}>+</button>
-          </div>
-        </div>
-      ) : null}
-      {active ? (
-        <>
-          <label className="flex flex-col gap-2 text-[15px]">
-            Section name
-            <input
-              aria-label="Section name"
-              value={active.name}
-              onChange={(event) => patchActive({ name: event.target.value.slice(0, 64) || active.name })}
-              className="min-h-11 w-full rounded-md border border-input bg-[#07080a] px-3 text-base text-foreground outline-none focus:border-primary"
-            />
-          </label>
-          <label className="flex items-center justify-between gap-3 text-[15px]">
-            Colour
-            <input
-              aria-label="Section colour"
-              type="color"
-              value={active.color ?? "#ffb000"}
-              onChange={(event) => patchActive({ color: event.target.value })}
-              className="h-11 w-14 cursor-pointer rounded-md border border-border bg-transparent"
-            />
-          </label>
-          <label className="flex flex-col gap-2 text-[15px]">
-            Pinned ranges
-            <input
-              aria-label="Pinned ranges"
-              value={draft}
-              placeholder="10-16, 50-66"
-              onChange={(event) => setDraft(event.target.value)}
-              className="min-h-11 w-full rounded-md border border-input bg-[#07080a] px-3 text-base text-foreground outline-none focus:border-primary"
-            />
-          </label>
+      <details className="rounded-xl border border-border px-3 py-2">
+        <summary className="flex min-h-11 cursor-pointer items-center text-[15px]">Advanced</summary>
+        <div className="flex flex-col gap-3 pb-2">
+          <p className="text-[15px] leading-6 text-muted-foreground">
+            {report && report.ranges.length > 0 ? describeIndexRanges(report.ranges) : "No lights in this section yet."}
+          </p>
+          {selected ? (
+            <div className="flex items-center justify-between gap-2">
+              <p className="min-w-0 truncate text-[15px]">{shortEdgeName(labels.get(selected.edgeId) ?? selected.edgeId)}</p>
+              <div className="flex shrink-0 items-center gap-2">
+                <button type="button" aria-label="Fewer lights on this edge" className="min-h-11 min-w-11 rounded-lg border border-border text-[20px]" onClick={() => nudge(-1)}>−</button>
+                <span className="min-w-8 text-center font-mono text-[16px]">{selected.lights}</span>
+                <button type="button" aria-label="More lights on this edge" className="min-h-11 min-w-11 rounded-lg border border-border text-[20px]" onClick={() => nudge(1)}>+</button>
+              </div>
+            </div>
+          ) : null}
+          {active ? (
+            <label className="flex flex-col gap-2 text-[15px]">
+              Light numbers
+              <input
+                aria-label="Pinned ranges"
+                value={draft}
+                placeholder="10-16, 50-66"
+                onChange={(event) => setDraft(event.target.value)}
+                className="min-h-11 w-full rounded-md border border-input bg-[#07080a] px-3 text-base text-foreground outline-none focus:border-primary"
+              />
+            </label>
+          ) : null}
           <p className="text-[13px] leading-5 text-muted-foreground">Type lights by hand when you want a range that stays put. 10-16 includes both ends.</p>
           {problem ? <p className="text-[15px] text-destructive">{problem}</p> : null}
-          {!problem && (typed.warnings[0] || report?.warnings[0]) ? (
-            <p className="text-[15px] text-amber-200">{typed.warnings[0] ?? report?.warnings[0]}</p>
-          ) : null}
-        </>
-      ) : (
-        <p className="text-[15px] text-muted-foreground">Add a section, then tap the edges that belong to it.</p>
-      )}
-      <ul className="flex flex-col gap-2">
-        {sections.map((section) => {
-          const row = reports.find((item) => item.sectionId === section.id);
-          return (
-            <li key={section.id}>
-              <button
-                type="button"
-                aria-pressed={section.id === active?.id}
-                onClick={() => setActiveId(section.id)}
-                className={`flex min-h-11 w-full items-center gap-3 rounded-xl border px-3 text-left ${section.id === active?.id ? "border-primary bg-card" : "border-border"}`}
-              >
-                <span className="h-4 w-4 shrink-0 rounded-full" style={{ background: section.color ?? "#888" }} />
-                <span className="min-w-0 flex-1 truncate text-[15px]">{section.name}</span>
-                <span className="shrink-0 text-[13px] text-muted-foreground">{row ? rangeCount(row.ranges) : 0}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+          {!problem ? reports.flatMap((row) => row.warnings).filter((warning, index, all) => all.indexOf(warning) === index).map((warning) => (
+            <p key={warning} className="text-[15px] text-amber-200">{warning}</p>
+          )) : null}
+        </div>
+      </details>
       <div className="flex gap-2">
         <button type="button" className="min-h-11 flex-1 rounded-lg border border-border text-base" onClick={addSection}>New section</button>
         {active ? (
@@ -218,18 +240,12 @@ export function PropSectionsStep({
   );
 }
 
-function edgeChoices(layout: PropLayout, active: PropSection | null) {
-  const lit = layout.run.filter((edge) => edge.kind === "lit");
-  const wall = active?.id.match(/^wall\.(\d+)$/)?.[1];
-  if (wall != null) {
-    return lit.filter((edge) => edge.id.endsWith(`.${wall}`) || active?.edgeIds.includes(edge.id));
-  }
-  if (lit.length <= 8) return lit;
-  return lit.filter((edge) => active?.edgeIds.includes(edge.id));
+function shortEdgeName(name: string): string {
+  return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
-function rangeCount(ranges: readonly PropIndexRange[]): number {
-  return ranges.reduce((sum, range) => sum + Math.max(0, range.stop - range.start), 0);
+function edgeChoices(layout: PropLayout, _active: PropSection | null) {
+  return layoutStrings(layout).flatMap((string) => string.run.filter((edge) => edge.kind === "lit"));
 }
 
 function PathFigure({
@@ -266,15 +282,17 @@ function PathFigure({
         className="h-full w-full touch-manipulation"
       >
         <g transform={`translate(0 ${bounds.minY + bounds.maxY}) scale(1 -1)`}>
-          {layout.run.map((edge) => {
+          {layoutStrings(layout).flatMap((string) => string.run.map((edge, index) => ({ edge, order: index + 1 }))).map(({ edge, order }) => {
             const from = layout.corners.find((corner) => corner.id === edge.from);
             const to = layout.corners.find((corner) => corner.id === edge.to);
             if (!from || !to || edge.kind === "wire") return null;
             const on = active?.edgeIds.includes(edge.id) ?? false;
             const colour = on ? (active?.color ?? "#ffb000") : (colourOf.get(edge.id) ?? "#4a463c");
             const name = labels.get(edge.id) ?? wellHouseEdgeLabel(edge.id) ?? edge.id;
+            const mx = (from.x + to.x) / 2;
+            const my = (from.y + to.y) / 2;
             return (
-              <g key={edge.id} role="button" tabIndex={0} aria-label={name} aria-pressed={on} onClick={() => onEdge(edge.id)} onKeyDown={(event) => {
+              <g key={edge.id} role="button" tabIndex={0} aria-label={`${order}. ${name}`} aria-pressed={on} onClick={() => onEdge(edge.id)} onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
                   onEdge(edge.id);
@@ -290,6 +308,7 @@ function PathFigure({
                   strokeWidth={edge.id === selectedEdgeId ? span * 0.035 : span * 0.02}
                   strokeLinecap="round"
                 />
+                <text x={mx} y={my} fill="#e8e2d6" fontSize={span * 0.09} textAnchor="middle" transform={`translate(${mx} ${my}) scale(1 -1) translate(${-mx} ${-my})`}>{order}</text>
               </g>
             );
           })}

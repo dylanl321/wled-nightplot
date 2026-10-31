@@ -6,8 +6,8 @@
 
 import type { Element, Light, LightOutput } from "../lights.ts";
 import { legacyOutputId } from "../outputs.ts";
-import { countLayout, layoutFromMeasurements, wellHouseEdgeLabel, wellHouseEdgeOrder, type PropLayout } from "./layout.ts";
-import { defaultSections, isLegacyWellHouseLayout } from "./sections.ts";
+import { countLayout, layoutFromMeasurements, layoutStrings, wellHouseEdgeLabel, wellHouseEdgeOrder, windowSideNames, type PropLayout } from "./layout.ts";
+import { defaultSections, isLegacyWellHouseLayout, sectionIndexRanges } from "./sections.ts";
 import { defaultWireframeSpec } from "./wireframe.ts";
 import {
   isPropDesign,
@@ -167,28 +167,12 @@ function measurementParams(measurements: PropMeasurements): Record<string, numbe
   }
 }
 
-function windowEdgeNames(layout: PropLayout): string[] {
-  const clockwise = layout.template?.params.clockwise === 1;
-  const start = layout.template?.params.start ?? 0;
-  const ring = clockwise ? [0, 3, 2, 1] : [0, 1, 2, 3];
-  const at = Math.max(0, ring.indexOf(start));
-  const order = [...ring.slice(at), ...ring.slice(0, at)];
-  const side = (a: number, b: number) => {
-    const key = [a, b].sort((left, right) => left - right).join("-");
-    if (key === "0-1") return "Bottom";
-    if (key === "1-2") return "Right";
-    if (key === "2-3") return "Top";
-    return "Left";
-  };
-  return order.map((corner, index) => side(corner, order[(index + 1) % order.length]!));
-}
-
 function edgeNames(measurements: PropMeasurements, layout: PropLayout): string[] {
   switch (measurements.shape) {
     case "roofline":
       return ["Along the roof"];
     case "window":
-      return windowEdgeNames(layout);
+      return windowSideNames(layout);
     case "arch":
       return ["Left side", "Right side"];
     case "tree":
@@ -277,15 +261,13 @@ function archEdges(
   const widthMm = lengthToMm(width, unit);
   const heightMm = lengthToMm(height, unit);
   if (widthMm === null || heightMm === null) return { ok: false, message: "Enter a width and a height greater than zero." };
-  const total = lightsAlong(archLengthMm(widthMm, heightMm), pitchMm);
-  const left = Math.ceil(total / 2);
-  const right = total - left;
   const halfMm = archLengthMm(widthMm, heightMm) / 2;
+  const each = lightsAlong(halfMm, pitchMm);
   return {
     ok: true,
     edges: [
-      edge("arch-left", "Left side", halfMm, left),
-      edge("arch-right", "Right side", halfMm, right),
+      edge("arch-left", "Left side", halfMm, each),
+      edge("arch-right", "Right side", halfMm, each),
     ],
   };
 }
@@ -481,9 +463,9 @@ export type PlacementPlan =
   | { ok: false; message: string };
 
 /**
- * One WLED segment per lit edge. Section index ranges live in
- * `sectionIndexRanges` for a later ledmap compiler; this plan does not
- * fold a section's ranges into one segment.
+ * One WLED segment per section range. A section with several ranges becomes
+ * several segments that share its name and colour. Folding those into one
+ * segment with a ledmap is a later slice.
  */
 export function planPropPlacement(input: {
   prop: Prop;
@@ -492,6 +474,10 @@ export function planPropPlacement(input: {
   place: { startIndex: number | null; afterPropId: string | null };
   props: readonly Prop[];
   attachments: readonly PropAttachment[];
+  /** WLED `leds.maxseg` when the controller reported one. Unknown does not refuse. */
+  maxSegments?: number | null;
+  /** Ranges already saved on this controller, not counting this prop. */
+  otherRangeCount?: number;
 }): PlacementPlan {
   const count = input.prop.design?.ledCount;
   if (count === null || count === undefined) {
@@ -509,33 +495,68 @@ export function planPropPlacement(input: {
   if (resolved.startIndex + count > input.output.ledCount) {
     return {
       ok: false,
-      message: `${input.lightName} output ${input.output.index + 1} reports ${input.output.ledCount} lights. This prop needs ${count}. Nothing will be sent.`,
+      message: `${input.lightName} has ${input.output.ledCount} lights on output ${input.output.index + 1}. ${input.prop.label} needs ${count}. Nothing will be sent.`,
     };
   }
   const absoluteStart = input.output.start + resolved.startIndex;
-  const edges = input.prop.design?.edges ?? [];
-  const segments: PropSegmentDraft[] = [];
-  let cursor = absoluteStart;
-  for (const item of edges) {
-    if (item.ledCount < 1) continue;
-    segments.push({
-      label: `${input.prop.label} · ${item.label}`,
-      start: cursor,
-      stop: cursor + item.ledCount,
-      outputId: input.output.id,
-    });
-    cursor += item.ledCount;
-  }
+  const segments = segmentsForProp(input.prop, absoluteStart, input.output.id);
   if (segments.length === 0) return { ok: false, message: "This prop has no edges to write." };
+  const others = input.otherRangeCount ?? 0;
+  if (typeof input.maxSegments === "number" && others + segments.length > input.maxSegments) {
+    return {
+      ok: false,
+      message: `${input.lightName} can hold ${input.maxSegments} ranges. ${input.prop.label} needs ${segments.length}${others > 0 ? `, and ${others} are already saved` : ""}. Nothing will be sent.`,
+    };
+  }
   const where = input.place.afterPropId
     ? `after ${input.props.find((row) => row.id === input.place.afterPropId)?.label ?? "the previous prop"}`
     : "from the first light";
+  const extraStrings = input.prop.layout ? Math.max(0, layoutStrings(input.prop.layout).length - 1) : 0;
+  const extra = extraStrings > 0
+    ? ` ${extraStrings === 1 ? "Another string stays on the prop" : `${extraStrings} other strings stay on the prop`} until you attach it to an output.`
+    : "";
   return {
     ok: true,
     absoluteStart,
     segments,
-    summary: `${count} lights on ${input.lightName} · output ${input.output.index + 1}, ${where}.`,
+    summary: `${count} lights on ${input.lightName} · output ${input.output.index + 1}, ${where}.${extra}`,
   };
+}
+
+function segmentsForProp(prop: Prop, absoluteStart: number, outputId: string): PropSegmentDraft[] {
+  if (prop.layout && prop.sections && prop.sections.length > 0) {
+    const firstId = layoutStrings(prop.layout)[0]?.id ?? "s1";
+    const reports = sectionIndexRanges(prop.layout, prop.sections);
+    const fromSections: PropSegmentDraft[] = [];
+    for (const report of reports) {
+      for (const range of report.ranges) {
+        if (range.stop <= range.start) continue;
+        if ((range.stringId ?? firstId) !== firstId) continue;
+        fromSections.push({
+          label: `${prop.label} · ${report.name}`,
+          start: absoluteStart + range.start,
+          stop: absoluteStart + range.stop,
+          outputId,
+          ...(report.color ? { color: report.color } : {}),
+        });
+      }
+    }
+    if (fromSections.length > 0) return fromSections;
+  }
+  const edges = prop.design?.edges ?? [];
+  const fromEdges: PropSegmentDraft[] = [];
+  let cursor = absoluteStart;
+  for (const item of edges) {
+    if (item.ledCount < 1) continue;
+    fromEdges.push({
+      label: `${prop.label} · ${item.label}`,
+      start: cursor,
+      stop: cursor + item.ledCount,
+      outputId,
+    });
+    cursor += item.ledCount;
+  }
+  return fromEdges;
 }
 
 function resolveStartIndex(input: {

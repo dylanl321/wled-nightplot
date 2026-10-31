@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   addCorner,
+  addStringAt,
   closeLoop,
+  continueToCorner,
+  continueToPoint,
   countLayout,
   emptyTrace,
   gapLabel,
@@ -29,33 +32,35 @@ function chain(lengthsM: number[]): PropLayout {
 }
 
 describe("light count along a run", () => {
-  it("counts 122/91/122/91 cm at 10 cm as 13/9/12/9 = 43", () => {
+  it("gives equal lengths the same count: 122/91/122/91 cm at 10 cm is 12/9/12/9", () => {
     const counted = countLayout(chain([1.22, 0.91, 1.22, 0.91]));
-    expect(counted.edges.map((edge) => edge.lights)).toEqual([13, 9, 12, 9]);
-    expect(counted.total).toBe(43);
+    expect(counted.edges.map((edge) => edge.lights)).toEqual([12, 9, 12, 9]);
+    expect(counted.total).toBe(42);
   });
 
-  it("puts a light that lands on a corner onto the next edge", () => {
-    const counted = countLayout(chain([0.2, 0.2]));
-    expect(counted.edges.map((edge) => edge.lights)).toEqual([2, 3]);
-    expect(counted.total).toBe(5);
+  it("counts each edge from its own length, so a new edge does not change the others", () => {
+    const before = countLayout(chain([1.22, 1.22]));
+    const after = countLayout(chain([1.22, 1.22, 0.5]));
+    expect(before.edges.map((edge) => edge.lights)).toEqual([12, 12]);
+    expect(after.edges.slice(0, 2).map((edge) => edge.lights)).toEqual([12, 12]);
+    expect(after.edges[2]?.lights).toBe(5);
   });
 
   it("restarts counting after a wire and gives the wire no lights", () => {
     const layout = chain([1, 0.5, 1]);
     layout.run[1] = { ...layout.run[1]!, kind: "wire" };
     const counted = countLayout(layout);
-    expect(counted.edges.map((edge) => edge.lights)).toEqual([11, 0, 11]);
-    expect(counted.total).toBe(22);
+    expect(counted.edges.map((edge) => edge.lights)).toEqual([10, 0, 10]);
+    expect(counted.total).toBe(20);
   });
 
   it("consumes hidden lights without drawing them", () => {
     const layout = chain([1, 0.2, 1]);
     layout.run[1] = { ...layout.run[1]!, kind: "hidden", hiddenCount: 2 };
     const counted = countLayout(layout);
-    expect(counted.edges.map((edge) => edge.kind === "hidden" ? edge.hidden : edge.lights)).toEqual([10, 2, 11]);
+    expect(counted.edges.map((edge) => edge.kind === "hidden" ? edge.hidden : edge.lights)).toEqual([10, 2, 10]);
     expect(counted.edges[1]).toMatchObject({ lights: 0, hidden: 2 });
-    expect(counted.total).toBe(23);
+    expect(counted.total).toBe(20);
   });
 
   it("counts a 40 ft roofline at 10 cm as 122 lights", () => {
@@ -218,6 +223,38 @@ describe("trace edits", () => {
     const moved = moveCorner(layout, "c2", 2, 0);
     expect(moved.run[0]?.lockedLengthM).toBeUndefined();
     expect(moved.corners[1]).toMatchObject({ x: 2, y: 0 });
+  });
+});
+
+describe("strings", () => {
+  it("backtracks over an existing edge as a second lit run", () => {
+    let layout = continueToPoint(emptyTrace("m", 0.1), "s1", 1, 0, "lit");
+    const end = layout.corners[1]!.id;
+    const start = layout.corners[0]!.id;
+    layout = continueToCorner(layout, "s1", start, "lit");
+    expect(layout.run).toHaveLength(2);
+    expect(layout.run[1]).toMatchObject({ from: end, to: start, kind: "lit" });
+    expect(countLayout(layout).edges.map((edge) => edge.lights)).toEqual([10, 10]);
+  });
+
+  it("marks a dark run with no lights and keeps the next run's own count", () => {
+    let layout = continueToPoint(emptyTrace("m", 0.1), "s1", 1, 0, "lit");
+    layout = continueToPoint(layout, "s1", 1, 1, "wire");
+    layout = continueToPoint(layout, "s1", 2, 1, "lit");
+    expect(layout.run.map((edge) => edge.kind)).toEqual(["lit", "wire", "lit"]);
+    expect(countLayout(layout).edges.map((edge) => edge.lights)).toEqual([10, 0, 10]);
+  });
+
+  it("starts a second string at its own wire-in point with its own count", () => {
+    let layout = continueToPoint(emptyTrace("m", 0.1), "s1", 1, 0, "lit");
+    layout = addStringAt(layout, 0, 2);
+    const second = layout.strings?.[1];
+    expect(second?.run).toEqual([]);
+    expect(second?.startId).not.toBe(layout.strings?.[0]?.startId);
+    layout = continueToPoint(layout, second!.id, 1, 2, "lit");
+    const counts = countLayout(layout).edges.map((edge) => edge.lights);
+    expect(counts).toEqual([10, 10]);
+    expect(layout.run).toHaveLength(1);
   });
 });
 

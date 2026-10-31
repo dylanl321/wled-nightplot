@@ -270,6 +270,9 @@ try {
       await page.getByRole("button", { name: /Well house/ }).click();
       await page.getByRole("button", { name: "Next", exact: true }).click();
       await page.getByRole("button", { name: "Next", exact: true }).click();
+      await page.getByRole("button", { name: "Name sections" }).waitFor();
+      assertFits(`${viewport.name} well-house-path`, await measure(page));
+      await page.getByRole("button", { name: "Name sections" }).click();
       await page.getByRole("heading", { name: "Name the sections" }).waitFor();
       assertFits(`${viewport.name} well-house-sections`, await measure(page));
       console.log(`ok ${viewport.name} well-house-sections`);

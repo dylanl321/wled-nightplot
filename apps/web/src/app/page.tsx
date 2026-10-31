@@ -36,7 +36,7 @@ export default async function YardPage() {
   }));
 
   return (
-    <AppShell lights={lights.value.lights} lightCount={lights.value.lights.length} nav="lights" sessions={lights.value.sessions}>
+    <AppShell lights={lights.value.lights} lightCount={lights.value.lights.length} nav="home" sessions={lights.value.sessions}>
       <YardHome
         props={propsResult.status === "fulfilled" ? propsResult.value.props : []}
         attachments={attachments}

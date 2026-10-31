@@ -9,7 +9,7 @@
  */
 
 import { rangesOverlap } from "../range.ts";
-import { countLayout, cornerById, type PropLayout } from "./layout.ts";
+import { cornerById, edgeLengthM, layoutStrings, lightsOnLength, windowSideNames, type LayoutEdge, type PropLayout } from "./layout.ts";
 import {
   isPropSection,
   type PropIndexRange,
@@ -20,6 +20,7 @@ const SECTION_COLOURS = ["#ffb000", "#3d8bfd", "#ff5a5a", "#3dd68c", "#c084fc", 
 
 export type PathEdgeRange = {
   edgeId: string;
+  stringId: string;
   start: number;
   stop: number;
   lights: number;
@@ -44,20 +45,40 @@ export type SectionColourPlan = {
   ranges: PropIndexRange[];
 };
 
+function runLights(layout: PropLayout, edge: LayoutEdge): { lights: number; hidden: number } {
+  if (edge.kind === "wire") return { lights: 0, hidden: 0 };
+  const count = lightsOnLength(edgeLengthM(layout, edge), layout.pitchM);
+  if (edge.kind === "hidden") return { lights: 0, hidden: count };
+  return { lights: count, hidden: 0 };
+}
+
 export function pathEdgeIndexRanges(layout: PropLayout): PathEdgeRange[] {
-  const counted = countLayout(layout);
-  let cursor = 0;
-  return counted.edges.map((edge) => {
-    const start = cursor;
-    const consumed = edge.lights + edge.hidden;
-    cursor += consumed;
-    return {
-      edgeId: edge.id,
-      start,
-      stop: start + edge.lights,
-      lights: edge.lights,
-    };
-  });
+  const ranges: PathEdgeRange[] = [];
+  const strings = layoutStrings(layout);
+  const named = strings.length > 1;
+  for (const string of strings) {
+    let cursor = 0;
+    for (const edge of string.run) {
+      const counted = runLights(layout, edge);
+      const start = cursor;
+      cursor += counted.lights + counted.hidden;
+      ranges.push({
+        edgeId: edge.id,
+        stringId: named ? string.id : "s1",
+        start,
+        stop: start + counted.lights,
+        lights: counted.lights,
+      });
+    }
+  }
+  return ranges;
+}
+
+const WALL_NAMES = ["Front", "Right", "Back", "Left"] as const;
+
+/** Front, Right, Back, Left, then Wall 5… when a well house has more than four walls. */
+export function wallSectionName(index: number): string {
+  return WALL_NAMES[index] ?? `Wall ${index + 1}`;
 }
 
 export function defaultSections(layout: PropLayout): PropSection[] {
@@ -65,7 +86,7 @@ export function defaultSections(layout: PropLayout): PropSection[] {
     const sides = layout.net.sides;
     return Array.from({ length: sides }, (_, index) => ({
       id: `wall.${index}`,
-      name: `Wall ${index + 1}`,
+      name: wallSectionName(index),
       edgeIds: [
         `top.${index}`,
         `right.${index}`,
@@ -77,13 +98,29 @@ export function defaultSections(layout: PropLayout): PropSection[] {
       color: SECTION_COLOURS[index % SECTION_COLOURS.length],
     }));
   }
+  const names = edgeSectionNames(layout);
   return layout.run.filter((edge) => edge.kind === "lit").map((edge, index) => ({
     id: `section.${edge.id}`,
-    name: `Section ${index + 1}`,
+    name: names[index] ?? `Side ${index + 1}`,
     edgeIds: [edge.id],
     pinnedRanges: [],
     color: SECTION_COLOURS[index % SECTION_COLOURS.length],
   }));
+}
+
+function edgeSectionNames(layout: PropLayout): string[] {
+  const type = layout.template?.type;
+  if (type === "window") return windowSideNames(layout);
+  if (type === "roofline") return ["Along the roof"];
+  if (type === "arch" || type === "tree") return ["Left side", "Right side"];
+  if (type === "stake-row") {
+    return layout.run.filter((edge) => edge.kind === "lit").map((_, index) => `Stake ${index + 1}`);
+  }
+  return layout.run.filter((edge) => edge.kind === "lit").map((_, index) => `Side ${index + 1}`);
+}
+
+export function sectionLightCount(ranges: readonly PropIndexRange[]): number {
+  return ranges.reduce((sum, range) => sum + Math.max(0, range.stop - range.start), 0);
 }
 
 /**
@@ -98,7 +135,8 @@ export function isLegacyWellHouseLayout(layout: PropLayout): boolean {
 export function sectionIndexRanges(layout: PropLayout, sections: readonly PropSection[]): SectionRangeReport[] {
   const spans = pathEdgeIndexRanges(layout);
   const byId = new Map(spans.map((span) => [span.edgeId, span]));
-  const pathEnd = countLayout(layout).total;
+  const firstId = layoutStrings(layout)[0]?.id ?? "s1";
+  const pathEnd = spans.filter((span) => span.stringId === firstId).reduce((max, span) => Math.max(max, span.stop), 0);
   const reports = sections.map((section) => reportSection(section, byId, pathEnd));
   for (let index = 0; index < reports.length; index += 1) {
     for (let other = index + 1; other < reports.length; other += 1) {
@@ -106,8 +144,8 @@ export function sectionIndexRanges(layout: PropLayout, sections: readonly PropSe
       const right = reports[other]!;
       if (rangesOverlapAny(left.ranges, right.ranges)) {
         const warning = `${left.name} overlaps ${right.name}.`;
-        left.warnings.push(warning);
-        right.warnings.push(warning);
+        if (!left.warnings.includes(warning)) left.warnings.push(warning);
+        if (!right.warnings.includes(warning)) right.warnings.push(warning);
       }
     }
   }
@@ -206,7 +244,7 @@ export function parsePropSections(value: unknown): PropSection[] | null {
 
 /** Lengthen or shorten one edge by moving its far corner. Shared corners on that wall follow. */
 export function extendEdge(layout: PropLayout, edgeId: string, deltaM: number): PropLayout {
-  const edge = layout.run.find((row) => row.id === edgeId);
+  const edge = layoutStrings(layout).flatMap((string) => string.run).find((row) => row.id === edgeId);
   if (!edge || edge.kind !== "lit" || !Number.isFinite(deltaM) || deltaM === 0) return layout;
   const from = cornerById(layout, edge.from);
   const to = cornerById(layout, edge.to);
@@ -239,7 +277,11 @@ function reportSection(
       warnings.push(`${section.name} names an edge that is not on this path.`);
       continue;
     }
-    if (span.stop > span.start) derivedParts.push({ start: span.start, stop: span.stop });
+    if (span.stop > span.start) {
+      derivedParts.push(span.stringId === "s1"
+        ? { start: span.start, stop: span.stop }
+        : { start: span.start, stop: span.stop, stringId: span.stringId });
+    }
   }
   const derived = mergeRanges(derivedParts);
   const pinned: PropIndexRange[] = [];
@@ -273,21 +315,25 @@ function reportSection(
   };
 }
 
+function sameString(left: PropIndexRange, right: PropIndexRange): boolean {
+  return (left.stringId ?? "s1") === (right.stringId ?? "s1");
+}
+
 function mergeRanges(ranges: readonly PropIndexRange[]): PropIndexRange[] {
   const sorted = ranges.filter((range) => range.stop > range.start)
-    .map((range) => ({ start: range.start, stop: range.stop }))
-    .sort((left, right) => left.start - right.start || left.stop - right.stop);
+    .map((range) => ({ ...range }))
+    .sort((left, right) => (left.stringId ?? "s1").localeCompare(right.stringId ?? "s1") || left.start - right.start || left.stop - right.stop);
   const merged: PropIndexRange[] = [];
   for (const range of sorted) {
     const last = merged[merged.length - 1];
-    if (last && range.start <= last.stop) last.stop = Math.max(last.stop, range.stop);
+    if (last && sameString(last, range) && range.start <= last.stop) last.stop = Math.max(last.stop, range.stop);
     else merged.push({ ...range });
   }
   return merged;
 }
 
 function rangesOverlapAny(left: readonly PropIndexRange[], right: readonly PropIndexRange[]): boolean {
-  return left.some((range) => right.some((other) => rangesOverlap(range, other)));
+  return left.some((range) => right.some((other) => sameString(range, other) && rangesOverlap(range, other)));
 }
 
 function unique(values: readonly string[]): string[] {
