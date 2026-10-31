@@ -55,6 +55,7 @@ export function PropLayoutEditor({
   const [sheet, setSheet] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
   const [ask, setAsk] = useState(false);
   const [asked, setAsked] = useState(false);
   const [activeString, setActiveString] = useState(layoutStrings(initial)[0]?.id ?? "s1");
@@ -316,7 +317,9 @@ export function PropLayoutEditor({
   const counted = countLayout(layout);
   const corners = layout.corners.map((corner) => drag?.id === corner.id ? { ...corner, x: drag.x, y: drag.y } : corner);
   const drawing = { ...layout, corners };
-  const zoomed = view.ppm * layout.pitchM >= 12;
+  const pickedRun = layoutStrings(layout).flatMap((string) => string.run.map((edge, index) => ({ edge, order: index + 1 }))).find((row) => row.edge.id === picked) ?? null;
+  const pickedCount = pickedRun ? counted.edges.find((row) => row.id === pickedRun.edge.id) : null;
+  const pickedLength = pickedRun ? lengthLabel(edgeLengthM(layout, pickedRun.edge), layout.units) : null;
   const stringLights = layout.stringLights;
   const spare = stringLights == null ? null : stringLights - counted.total;
   const short = spare != null && spare < 0;
@@ -348,47 +351,53 @@ export function PropLayoutEditor({
         >
           <Grid layout={drawing} view={view} width={size.w} height={size.h} />
           {guide ? <Guide view={view} guide={guide} anchor={anchorOf(drawing, drag?.id)} /> : null}
-          {layoutStrings(drawing).flatMap((string) => string.run.map((edge, index) => ({ edge, order: index + 1 }))).map(({ edge, order }) => {
-            const from = corners.find((corner) => corner.id === edge.from);
-            const to = corners.find((corner) => corner.id === edge.to);
-            if (!from || !to) return null;
-            const a = toScreen(from.x, from.y, view);
-            const b = toScreen(to.x, to.y, view);
-            const row = counted.edges.find((item) => item.id === edge.id);
-            const label = lengthLabel(edgeLengthM(drawing, edge), layout.units);
-            const mid = edgeLabelPoint(a, b);
-            const pixelLen = Math.hypot(b.x - a.x, b.y - a.y);
-            const caption = pixelLen < 80
-              ? String(order)
-              : `${order} · ${label.whole}${zoomed && label.extra ? ` ${label.extra}` : ""} · ${row?.lights ?? 0}`;
-            return (
-              <g key={edge.id}>
-                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={edge.kind === "wire" ? "#8a8478" : "#d4a574"} strokeWidth={edge.kind === "wire" ? 2 : 3} strokeDasharray={edge.kind === "wire" ? "6 4" : undefined} />
-                <Chevron a={a} b={b} />
-                <g
-                  onPointerDown={(event) => {
-                    event.stopPropagation();
-                    setSheet(edge.id);
-                  }}
-                >
-                  <rect x={mid.x - 48} y={mid.y - 22} width={96} height={44} fill="transparent" />
-                  <text
-                    x={mid.x}
-                    y={mid.y}
-                    textAnchor="middle"
-                    fill={row?.lights === 0 ? "#f5c16c" : "#e8e2d6"}
-                    fontSize={14}
+          {(() => {
+            const runs = layoutStrings(drawing).flatMap((string) => string.run.map((edge, index) => ({ edge, order: index + 1 })));
+            const spots = runs.flatMap(({ edge, order }) => {
+              const from = corners.find((corner) => corner.id === edge.from);
+              const to = corners.find((corner) => corner.id === edge.to);
+              if (!from || !to) return [];
+              const a = toScreen(from.x, from.y, view);
+              const b = toScreen(to.x, to.y, view);
+              return [{ edge, order, a, b, at: edgeLabelPoint(a, b) }];
+            });
+            const labels = separateLabels(spots.map((spot) => spot.at));
+            return spots.map((spot, index) => {
+              const label = labels[index] ?? spot.at;
+              const row = counted.edges.find((item) => item.id === spot.edge.id);
+              return (
+                <g key={spot.edge.id}>
+                  <line x1={spot.a.x} y1={spot.a.y} x2={spot.b.x} y2={spot.b.y} stroke={spot.edge.kind === "wire" ? "#8a8478" : "#d4a574"} strokeWidth={spot.edge.kind === "wire" ? 2 : 3} strokeDasharray={spot.edge.kind === "wire" ? "6 4" : undefined} />
+                  <line
+                    x1={spot.a.x}
+                    y1={spot.a.y}
+                    x2={spot.b.x}
+                    y2={spot.b.y}
+                    stroke="transparent"
+                    strokeWidth={28}
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                      setPicked(spot.edge.id);
+                    }}
+                  />
+                  <Chevron a={spot.a} b={spot.b} />
+                  <g
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                      setPicked(spot.edge.id);
+                    }}
                   >
-                    {caption}
-                  </text>
-                  {edge.lockedLengthM ? <LockIcon x={mid.x + caption.length * 3.4} y={mid.y - 12} /> : null}
+                    <circle cx={label.x} cy={label.y} r={12} fill={picked === spot.edge.id ? "#1c2430" : "#12141a"} stroke={row?.lights === 0 ? "#f5c16c" : "#e8e2d6"} />
+                    <text x={label.x} y={label.y + 4} textAnchor="middle" fill={row?.lights === 0 ? "#f5c16c" : "#e8e2d6"} fontSize={12}>{spot.order}</text>
+                    {spot.edge.lockedLengthM ? <LockIcon x={label.x + 10} y={label.y - 14} /> : null}
+                  </g>
                 </g>
-              </g>
-            );
-          })}
-          {preview ? <CornerDot view={view} x={preview.x} y={preview.y} index={corners.length + 1} ghost /> : null}
-          {corners.map((corner, index) => (
-            <CornerDot key={corner.id} view={view} x={corner.x} y={corner.y} index={index + 1} start={layoutStrings(layout).some((string) => string.startId === corner.id)} />
+              );
+            });
+          })()}
+          {preview ? <CornerDot view={view} x={preview.x} y={preview.y} ghost /> : null}
+          {corners.map((corner) => (
+            <CornerDot key={corner.id} view={view} x={corner.x} y={corner.y} start={layoutStrings(layout).some((string) => string.startId === corner.id)} />
           ))}
         </svg>
         {magnifier ? <Magnifier magnifier={magnifier} layout={drawing} /> : null}
@@ -398,6 +407,12 @@ export function PropLayoutEditor({
         </div>
       </div>
       </div>
+      {pickedRun && pickedLength && pickedCount ? (
+        <div className="flex min-h-11 items-center gap-2 border-t border-border bg-background px-3 py-2 text-[15px]">
+          <p className="min-w-0 flex-1">Run {pickedRun.order} · {pickedLength.whole}{pickedLength.extra ? ` ${pickedLength.extra}` : ""} · {pickedCount.lights} lights</p>
+          <button type="button" className="min-h-11 shrink-0 px-3 text-primary" onClick={() => setSheet(pickedRun.edge.id)}>Change</button>
+        </div>
+      ) : null}
       <div className="flex gap-2 border-t border-border bg-background p-2">
         <DockButton onClick={undo} disabled={past.length === 0}>Undo</DockButton>
         <DockButton onClick={redo} disabled={future.length === 0}>Redo</DockButton>
@@ -464,24 +479,58 @@ function DockButton({ onClick, disabled, pressed, children }: { onClick: () => v
   );
 }
 
-function CornerDot({ view, x, y, index, start, ghost }: { view: View; x: number; y: number; index: number; start?: boolean; ghost?: boolean }) {
+function CornerDot({ view, x, y, start, ghost }: { view: View; x: number; y: number; start?: boolean; ghost?: boolean }) {
   const screen = toScreen(x, y, view);
   return (
     <g>
       <circle cx={screen.x} cy={screen.y} r={22} fill="transparent" />
       <circle cx={screen.x} cy={screen.y} r={6} fill={ghost ? "none" : start ? "#7ee0d0" : "#d4a574"} stroke="#d4a574" />
-      <text x={screen.x + 12} y={start ? screen.y + 4 : screen.y - 10} textAnchor="start" fontSize={12} className="fill-foreground">{start ? "Wire in" : index}</text>
+      {start ? <text x={screen.x + 12} y={screen.y + 4} textAnchor="start" fontSize={12} className="fill-foreground">Wire in</text> : null}
     </g>
   );
 }
 
-function edgeLabelPoint(a: { x: number; y: number }, b: { x: number; y: number }): { x: number; y: number } {
+function edgeLabelPoint(a: { x: number; y: number }, b: { x: number; y: number }): { x: number; y: number; nx: number; ny: number } {
   const mx = (a.x + b.x) / 2;
   const my = (a.y + b.y) / 2;
   const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
   const nx = -(b.y - a.y) / len;
   const ny = (b.x - a.x) / len;
-  return { x: mx + nx * 16, y: my + ny * 16 };
+  return { x: mx, y: my, nx, ny };
+}
+
+/** Keep run-number badges off the line and clear of each other. */
+function separateLabels(seeds: { x: number; y: number; nx: number; ny: number }[]): { x: number; y: number }[] {
+  const placed: { x: number; y: number }[] = [];
+  const gap = 26;
+  return seeds.map((seed) => {
+    const tx = seed.ny;
+    const ty = -seed.nx;
+    let chosen = { x: seed.x + seed.nx * 18, y: seed.y + seed.ny * 18 };
+    let bestClearance = -1;
+    for (const dist of [18, 30, 42, 54]) {
+      for (const side of [1, -1]) {
+        for (const along of [0, 12, -12, 22, -22]) {
+          const next = {
+            x: seed.x + seed.nx * dist * side + tx * along,
+            y: seed.y + seed.ny * dist * side + ty * along,
+          };
+          const clearance = placed.reduce((min, point) => Math.min(min, Math.hypot(point.x - next.x, point.y - next.y)), 999);
+          if (clearance > bestClearance) {
+            bestClearance = clearance;
+            chosen = next;
+          }
+          if (clearance >= gap) return finish(next);
+        }
+      }
+    }
+    return finish(chosen);
+
+    function finish(point: { x: number; y: number }): { x: number; y: number } {
+      placed.push(point);
+      return point;
+    }
+  });
 }
 
 function Chevron({ a, b }: { a: { x: number; y: number }; b: { x: number; y: number } }) {
@@ -639,14 +688,17 @@ function now(): number {
 }
 
 function fitView(layout: PropLayout, width: number, height: number): View {
-  const span = bounds(layout).span;
-  const framed = span < 0.15 ? 12 * FT : span * 1.25;
-  return center(layout, width, height, framed);
-}
-
-function center(layout: PropLayout, width: number, height: number, span: number): View {
   const box = bounds(layout);
-  const ppm = clampPpm(Math.min(width, height) / span, layout, width, height);
+  const worldW = Math.max(box.maxX - box.minX, layout.pitchM * 2);
+  const worldH = Math.max(box.maxY - box.minY, layout.pitchM * 2);
+  const marginX = 56;
+  const marginY = 36;
+  const ppm = clampPpm(
+    Math.min(Math.max(80, width - marginX) / worldW, Math.max(80, height - marginY) / worldH),
+    layout,
+    width,
+    height,
+  );
   const cx = (box.minX + box.maxX) / 2;
   const cy = (box.minY + box.maxY) / 2;
   return { ppm, ox: width / 2 - cx * ppm, oy: height / 2 + cy * ppm };
