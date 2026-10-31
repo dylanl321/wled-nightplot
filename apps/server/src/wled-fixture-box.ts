@@ -87,17 +87,37 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     leds: { count: ledCount, rgbw: initialBuses.some((bus) => WHITE_NATIVE_TYPES.has(bus.type)), maxseg: options.maxSegments ?? 32 },
   };
   const cfgEnabled = options.cfgEnabled ?? true;
+  type FixtureTimer = {
+    en: boolean;
+    hour: number;
+    min: number;
+    macro: number;
+    dow: number;
+    start?: { mon: number; day: number };
+    end?: { mon: number; day: number };
+  };
+  const emptyTimer = (): FixtureTimer => ({
+    en: false, hour: 0, min: 0, macro: 0, dow: 127, start: { mon: 1, day: 1 }, end: { mon: 12, day: 31 },
+  });
   const cfg: {
     id: { name: string };
     def: { on: boolean; bri: number; ps: number };
     light: { tr: { dur: number } };
     hw: { led: { maxpwr: number; total: number; ins: BusIns[] } };
-    if: { sync: { port0: number; port1: number; recv: Record<string, boolean | number>; send: Record<string, boolean | number> } };
+    if: {
+      sync: { port0: number; port1: number; recv: Record<string, boolean | number>; send: Record<string, boolean | number> };
+      ntp: { en: boolean; host: string; tz: number; offset: number; ampm: boolean; ln: number; lt: number };
+    };
+    timers: { ins: FixtureTimer[] };
   } = {
     // WLED defaults (cfg.cpp): broadcast off, receive group 1 with every field.
-    if: { sync: { port0: 21324, port1: 65506,
-      recv: { bri: true, col: true, fx: true, pal: true, grp: 1, seg: false, sb: false },
-      send: { en: false, dir: false, btn: false, va: false, hue: true, grp: 1, ret: 0 } } },
+    if: {
+      sync: { port0: 21324, port1: 65506,
+        recv: { bri: true, col: true, fx: true, pal: true, grp: 1, seg: false, sb: false },
+        send: { en: false, dir: false, btn: false, va: false, hue: true, grp: 1, ret: 0 } },
+      ntp: { en: false, host: "1.wled.pool.ntp.org", tz: 0, offset: 0, ampm: false, ln: 0, lt: 0 },
+    },
+    timers: { ins: Array.from({ length: 10 }, () => emptyTimer()) },
     id: { name: info.name },
     def: { on: true, bri: 128, ps: 0 },
     light: { tr: { dur: 7 } },
@@ -180,7 +200,11 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       def?: { on?: unknown; bri?: unknown; ps?: unknown };
       light?: { tr?: { dur?: unknown } };
       hw?: { led?: { maxpwr?: unknown; ins?: unknown } };
-      if?: { sync?: { recv?: Record<string, unknown>; send?: Record<string, unknown> } };
+      if?: {
+        sync?: { recv?: Record<string, unknown>; send?: Record<string, unknown> };
+        ntp?: Record<string, unknown>;
+      };
+      timers?: { ins?: unknown };
     };
     for (const side of ["recv", "send"] as const) {
       const incoming = next.if?.sync?.[side];
@@ -211,6 +235,43 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     }
     if (Array.isArray(next.hw?.led?.ins) && !busMismatch) {
       applyIns(next.hw.led.ins);
+    }
+    const ntp = next.if?.ntp;
+    if (ntp && typeof ntp === "object") {
+      if (typeof ntp.en === "boolean") cfg.if.ntp.en = ntp.en;
+      if (typeof ntp.host === "string" && ntp.host.trim()) cfg.if.ntp.host = ntp.host.trim().slice(0, 33);
+      if (typeof ntp.tz === "number" && Number.isInteger(ntp.tz)) cfg.if.ntp.tz = ntp.tz;
+      if (typeof ntp.offset === "number" && Number.isInteger(ntp.offset)) cfg.if.ntp.offset = ntp.offset;
+      if (typeof ntp.ampm === "boolean") cfg.if.ntp.ampm = ntp.ampm;
+      if (typeof ntp.ln === "number" && Number.isFinite(ntp.ln)) cfg.if.ntp.ln = ntp.ln;
+      if (typeof ntp.lt === "number" && Number.isFinite(ntp.lt)) cfg.if.ntp.lt = ntp.lt;
+    }
+    if (Array.isArray(next.timers?.ins)) applyTimers(next.timers.ins);
+  }
+
+  /** Same index jump as wled00/cfg.cpp: hour 255 in slots 0–7 writes sunset slot 8. */
+  function applyTimers(ins: unknown[]) {
+    let it = 0;
+    for (const row of ins) {
+      if (it > 9) break;
+      if (!row || typeof row !== "object") continue;
+      const incoming = row as Record<string, unknown>;
+      const hour = typeof incoming.hour === "number" ? Math.round(incoming.hour) : 0;
+      if (it < 8 && hour === 255) it = 8;
+      const start = incoming.start && typeof incoming.start === "object" ? incoming.start as { mon?: unknown; day?: unknown } : null;
+      const end = incoming.end && typeof incoming.end === "object" ? incoming.end as { mon?: unknown; day?: unknown } : null;
+      cfg.timers.ins[it] = {
+        en: incoming.en === true,
+        hour,
+        min: typeof incoming.min === "number" ? Math.round(incoming.min) : 0,
+        macro: typeof incoming.macro === "number" ? Math.round(incoming.macro) : 0,
+        dow: typeof incoming.dow === "number" ? Math.round(incoming.dow) : 127,
+        ...(it < 8 ? {
+          start: { mon: typeof start?.mon === "number" ? start.mon : 1, day: typeof start?.day === "number" ? start.day : 1 },
+          end: { mon: typeof end?.mon === "number" ? end.mon : 12, day: typeof end?.day === "number" ? end.day : 31 },
+        } : {}),
+      };
+      it += 1;
     }
   }
 
@@ -544,6 +605,9 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     },
     get lastUploadName() {
       return lastUploadName;
+    },
+    presets() {
+      return presetsText();
     },
     handle,
     listen(port = 0, hostname = "127.0.0.1"): Server {

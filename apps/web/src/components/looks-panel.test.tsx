@@ -1,0 +1,82 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { DEFAULT_LOOKS, DEFAULT_PLAYLIST, LOOK_CAPTION } from "@nightplot/shared";
+import { lightView } from "@/test/fixtures";
+import { LooksPanel, type LooksPayload } from "./looks-panel";
+
+const lights = [
+  lightView({ id: "porch", name: "Porch", reachability: "online", propCount: 1 }),
+  lightView({ id: "eave", name: "Eave", reachability: "online", propCount: 0 }),
+];
+
+const initial: LooksPayload = {
+  version: 1,
+  looks: DEFAULT_LOOKS,
+  playlists: [DEFAULT_PLAYLIST],
+  schedule: null,
+  yard: {
+    lights: lights.map((light) => ({ id: light.id, name: light.name })),
+    props: [{ id: "prop-window", lightId: "porch", lightName: "Porch", label: "Front window", kind: "window", elementIds: ["el-1"] }],
+    elements: [{ id: "el-1", lightId: "porch", lightName: "Porch", label: "Front window · top", start: 0, stop: 20 }],
+  },
+  caption: LOOK_CAPTION,
+};
+
+describe("Looks", () => {
+  it("saves an edited Look and shows Prop overrides when Props exist", async () => {
+    const puts: Record<string, unknown>[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      puts.push(body);
+      return new Response(JSON.stringify({ ...initial, looks: body.looks, playlists: body.playlists, schedule: body.schedule }));
+    }));
+    render(<LooksPanel lights={lights} initial={initial} />);
+    expect(screen.getByRole("button", { name: "Override this Prop" })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Warm white name"), { target: { value: "Amber porch" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save library" }));
+    await waitFor(() => expect(puts[0]).toMatchObject({
+      looks: expect.arrayContaining([expect.objectContaining({ name: "Amber porch", slot: 1 })]),
+    }));
+    expect(await screen.findByText("Saved in Nightplot. Push to write the controllers.")).toBeTruthy();
+  });
+
+  it("pushes selected Lights and lists per-Light results", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/looks" && init?.method === "PUT") {
+        return new Response(JSON.stringify(initial));
+      }
+      if (path === "/api/looks/push") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { lightIds: string[]; includeSchedule: boolean };
+        expect(body.lightIds).toEqual(["porch"]);
+        expect(body.includeSchedule).toBe(false);
+        return new Response(JSON.stringify({
+          kind: "looks",
+          rows: [{ lightId: "porch", lightName: "Porch", status: "matched", detail: "Reports the 7 Looks as the same preset numbers.", safetyBackupId: "b1" }],
+          message: "1 of 1 report the Looks.",
+          caption: LOOK_CAPTION,
+        }));
+      }
+      return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+    }));
+    render(<LooksPanel lights={lights} initial={initial} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /Eave/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Push Looks" }));
+    expect(await screen.findByText("1 of 1 report the Looks.")).toBeTruthy();
+    expect(screen.getByText(/Safety backup b1/)).toBeTruthy();
+  });
+
+  it("turns on a Look through the existing preset path", async () => {
+    const posts: { path: string; body: Record<string, unknown> }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      posts.push({ path, body });
+      return new Response(JSON.stringify({ kind: "preset", sourceLightId: null, rows: [], message: "2 of 2 report the preset on.", caption: "" }));
+    }));
+    render(<LooksPanel lights={lights} initial={initial} />);
+    fireEvent.click(screen.getByRole("button", { name: "Turn on Warm white" }));
+    expect(await screen.findByText("2 of 2 report the preset on.")).toBeTruthy();
+    expect(posts[0]).toEqual({ path: "/api/sync/preset", body: { lightIds: ["porch", "eave"], presetId: 1 } });
+  });
+});

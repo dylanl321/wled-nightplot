@@ -8,6 +8,7 @@ import { recoverInterruptedRestore } from "./store/nightplot-restore.ts";
 import { FileLedProductsStore } from "./store/led-products-store.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
 import { FileSettingsStore } from "./store/settings-store.ts";
+import { FileLooksStore } from "./store/looks-store.ts";
 import { FileSetupProfilesStore } from "./store/setup-profiles-store.ts";
 import { createWledCfgReader, createWledCfgWriter } from "./wled/cfg.ts";
 import { createWledConfigExportReader, createWledNativeFilesReader, createWledNativeFilesWriter } from "./wled/native-backup.ts";
@@ -28,6 +29,7 @@ const settingsPath = resolve(process.env.NIGHTPLOT_SETTINGS_PATH ?? join(dirname
 const setupProfilesPath = resolve(
   process.env.NIGHTPLOT_SETUP_PROFILES_PATH ?? join(dirname(storePath), "setup-profiles.json"),
 );
+const looksPath = resolve(process.env.NIGHTPLOT_LOOKS_PATH ?? join(dirname(storePath), "looks.json"));
 recoverInterruptedRestore(storePath);
 const products = new FileLedProductsStore(productsPath);
 const settings = new FileSettingsStore(settingsPath);
@@ -40,6 +42,7 @@ const app = createApp({
   settings,
   products,
   profiles: new FileSetupProfilesStore(setupProfilesPath),
+  looks: new FileLooksStore(looksPath),
   probe: createWledProbe(),
   write: createWledWriter(),
   readLive: createWledLiveReader(),
@@ -61,4 +64,5 @@ serve({ fetch: app.fetch, port, hostname }, (info) => {
   console.log(`settings  ${settingsPath}`);
   console.log(`led products  ${productsPath} (${seededProducts.length})`);
   console.log(`setup profiles  ${setupProfilesPath}`);
+  console.log(`looks  ${looksPath}`);
 });
