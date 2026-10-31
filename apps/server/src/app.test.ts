@@ -6,7 +6,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION,
   LOOK_OFF_SLOT,
+  compileWireframe,
+  defaultWireframeSpec,
+  faceElementId,
   listStripPresets,
+  parseLedmapJson,
   provisionApplyBodyFromPreset,
 } from "@nightplot/shared";
 import { createApp, type AppDeps } from "./app.ts";
@@ -166,6 +170,7 @@ function testApp(overrides: Partial<AppDeps> = {}) {
   const products = overrides.products ?? new FileLedProductsStore(join(dir, "led-products.json"));
   const box = memoryBox();
   const cfg = memoryCfg();
+  let ledmapJson: string | null = null;
   const probe: ProbeFn = overrides.probe ?? box.probe;
   const app = createApp({
     store,
@@ -182,6 +187,8 @@ function testApp(overrides: Partial<AppDeps> = {}) {
     })),
     writeNativeFiles: overrides.writeNativeFiles,
     readConfigExport: overrides.readConfigExport,
+    readLedmap: overrides.readLedmap ?? (async () => ledmapJson),
+    writeLedmap: overrides.writeLedmap ?? (async (_target, json) => { ledmapJson = json; }),
     writeCfg: overrides.writeCfg ?? cfg.write,
     collect: overrides.collect ?? (async () => []),
     now: overrides.now ?? (() => new Date("2026-09-26T18:00:00.000Z")),
@@ -4656,6 +4663,54 @@ describe("fleet setup", () => {
       expect.objectContaining({ start: 30, stop: 40, outputId: "out-a" }),
       expect.objectContaining({ start: 40, stop: 50, outputId: "out-b" }),
     ]);
+  });
+
+  it("creates a wireframe Prop from a lock-only spec and Applies ledmap plus face Segments", async () => {
+    const { app, store } = testApp();
+    const enroll = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.80" }),
+    });
+    const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+    const spec = defaultWireframeSpec({ sides: 4 });
+    spec.locks = [{ role: "top.0.end", physicalIndex: 8 }];
+    spec.hidden = [{ afterRole: "top.0.end", count: 2, reason: "wire" }];
+    const res = await app.request(`/api/lights/${id}/props`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "wireframe", label: "Well house", wireframe: spec, apply: true }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      apply: { matched: boolean };
+      prop: { id: string; kind: string; elementIds: string[] };
+      elements: { id: string; label: string; start: number; stop: number }[];
+    };
+    expect(body.apply.matched).toBe(true);
+    expect(body.prop.kind).toBe("wireframe");
+    expect(body.elements).toHaveLength(4);
+    expect(body.elements[0]?.id).toBe(faceElementId(body.prop.id, 0));
+    expect(store.findById(id)?.lastLedmap?.digest).toMatch(/^ledmap1:/);
+    const second = await app.request(`/api/lights/${id}/props`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "wireframe", wireframe: defaultWireframeSpec({ sides: 4 }) }),
+    });
+    expect(second.status).toBe(422);
+    const patched = await app.request(`/api/lights/${id}/props/${body.prop.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        wireframe: { ...spec, locks: [...spec.locks, { role: "bottom.0.end", physicalIndex: 20 }] },
+      }),
+    });
+    expect(patched.status).toBe(200);
+    const again = (await patched.json()) as { prop: { elementIds: string[] }; elements: { id: string }[] };
+    expect(again.elements[0]?.id).toBe(faceElementId(body.prop.id, 0));
+    expect(again.prop.elementIds[0]).toBe(faceElementId(body.prop.id, 0));
+    const compiled = compileWireframe(spec, 60);
+    expect(parseLedmapJson(JSON.stringify({ map: compiled.ledmap }))).toEqual(compiled.ledmap);
   });
 
   it("applies a setup profile to online Lights and lists a dead one", async () => {

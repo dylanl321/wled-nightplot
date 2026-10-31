@@ -30,7 +30,7 @@ export const SEASON_KIND = "nightplot-season";
 export const SEASON_VERSION = 1;
 
 export const SEASON_CAPTION =
-  "One file for next season: Lights, outputs, Segments, Props, setup profiles, Looks, playlist and Schedule. Optional WLED cfg/presets are extras. Restore shows a diff, then can re-push to controllers matched by MAC. Looks in the file replace the library; a file without Looks leaves the current library. Not Hardware Done.";
+  "One file for next season: Lights, outputs, Segments, Props (including wireframe path, locks and hidden spans), setup profiles, Looks, playlist and Schedule. Optional WLED cfg/presets/ledmap are extras. Restore shows a diff, then can re-push to controllers matched by MAC. Looks in the file replace the library; a file without Looks leaves the current library. Not Hardware Done.";
 
 export type SeasonDeviceFiles = {
   lightId: string;
@@ -40,6 +40,8 @@ export type SeasonDeviceFiles = {
   firmware: string | null;
   cfgJson?: string;
   presetsJson?: string;
+  /** Last read `/ledmap.json`. Missing is not an empty map. */
+  ledmapJson?: string;
 };
 
 export type SeasonDocument = {
@@ -108,6 +110,7 @@ export function seasonDigest(document: SeasonDocument): string {
       lightId: row.lightId,
       mac: row.mac,
       hasFiles: Boolean(row.cfgJson && row.presetsJson),
+      hasLedmap: Boolean(row.ledmapJson),
     })),
   });
 }
@@ -137,8 +140,8 @@ export function diffSeason(current: SeasonDocument, incoming: SeasonDocument): S
       incoming.elements.map((row) => ({ id: row.id, name: `${row.label} ${row.start}–${row.stop}`, key: elementKey(row) })),
     ),
     props: diffNamed(
-      current.props.map((row) => ({ id: row.id, name: row.label, key: `${row.id}:${row.label}:${row.kind}:${row.elementIds.join(",")}` })),
-      incoming.props.map((row) => ({ id: row.id, name: row.label, key: `${row.id}:${row.label}:${row.kind}:${row.elementIds.join(",")}` })),
+      current.props.map((row) => ({ id: row.id, name: row.label, key: propKey(row) })),
+      incoming.props.map((row) => ({ id: row.id, name: row.label, key: propKey(row) })),
     ),
     profiles: diffNamed(
       current.setupProfiles.map((row) => ({ id: row.id, name: row.name, key: JSON.stringify(row) })),
@@ -215,6 +218,7 @@ export function applyHostMatch(light: Light, match: SeasonHostMatch): Light {
 export function deviceFilesFromNative(input: {
   light: Pick<Light, "id" | "hostname" | "port" | "mac" | "firmware">;
   files: Pick<WledBackupFiles, "cfgJson" | "presetsJson"> | null;
+  ledmapJson?: string | null;
 }): SeasonDeviceFiles {
   return {
     lightId: input.light.id,
@@ -224,6 +228,7 @@ export function deviceFilesFromNative(input: {
     firmware: input.light.firmware,
     ...(input.files?.cfgJson ? { cfgJson: input.files.cfgJson } : {}),
     ...(input.files?.presetsJson ? { presetsJson: input.files.presetsJson } : {}),
+    ...(input.ledmapJson ? { ledmapJson: input.ledmapJson } : {}),
   };
 }
 
@@ -373,7 +378,8 @@ function isSeasonDevice(value: unknown): value is SeasonDeviceFiles {
     (row.mac === null || typeof row.mac === "string") &&
     (row.firmware === null || typeof row.firmware === "string") &&
     (row.cfgJson === undefined || typeof row.cfgJson === "string") &&
-    (row.presetsJson === undefined || typeof row.presetsJson === "string");
+    (row.presetsJson === undefined || typeof row.presetsJson === "string") &&
+    (row.ledmapJson === undefined || typeof row.ledmapJson === "string");
 }
 
 function diffNamed(
@@ -398,6 +404,10 @@ function diffNamed(
 
 function lightKey(light: Light): string {
   return [light.name, light.mac ? normalizeMac(light.mac) : "", light.hostKey, light.ledCount, JSON.stringify(light.outputs ?? [])].join("|");
+}
+
+function propKey(prop: Prop): string {
+  return `${prop.id}:${prop.label}:${prop.kind}:${prop.elementIds.join(",")}:${JSON.stringify(prop.wireframe ?? null)}`;
 }
 
 function elementKey(element: Element): string {

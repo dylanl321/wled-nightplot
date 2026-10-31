@@ -32,6 +32,7 @@ describe("Looks", () => {
     }));
     render(<LooksPanel lights={lights} initial={initial} />);
     expect(screen.getByRole("button", { name: "Override this Prop" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Override this face" })).toBeNull();
     fireEvent.change(screen.getByLabelText("Warm white name"), { target: { value: "Amber porch" } });
     fireEvent.click(screen.getByRole("button", { name: "Save library" }));
     await waitFor(() => expect(puts[0]).toMatchObject({
@@ -78,5 +79,44 @@ describe("Looks", () => {
     fireEvent.click(screen.getByRole("button", { name: "Turn on Warm white" }));
     expect(await screen.findByText("2 of 2 report the preset on.")).toBeTruthy();
     expect(posts[0]).toEqual({ path: "/api/sync/preset", body: { lightIds: ["porch", "eave"], presetId: 1 } });
+  });
+
+  it("offers a wireframe face override when a wireframe Prop exists", async () => {
+    const puts: Record<string, unknown>[] = [];
+    const withWireframe: LooksPayload = {
+      ...initial,
+      yard: {
+        ...initial.yard,
+        props: [{
+          id: "prop-well",
+          lightId: "porch",
+          lightName: "Porch",
+          label: "Well house",
+          kind: "wireframe",
+          elementIds: ["well-face-0"],
+          wireframe: {
+            template: "polygon-prism-box-x",
+            sides: 8,
+            pitchMm: 100,
+            path: null,
+            locks: [],
+            hidden: [],
+            sharedPostRule: "half",
+          },
+        }],
+      },
+    };
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      puts.push(body);
+      return new Response(JSON.stringify({ ...withWireframe, looks: body.looks }));
+    }));
+    render(<LooksPanel lights={lights} initial={withWireframe} />);
+    fireEvent.click(screen.getByRole("button", { name: "Override this face" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save library" }));
+    await waitFor(() => {
+      const looks = puts[0]?.looks as { overrides?: { wireframeGroup?: string }[] }[];
+      expect(looks?.[0]?.overrides?.some((row) => row.wireframeGroup === "face.0")).toBe(true);
+    });
   });
 });

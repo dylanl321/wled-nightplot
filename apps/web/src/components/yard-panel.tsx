@@ -295,6 +295,7 @@ function YardRow({
       <dl className="grid gap-1 text-[13px] sm:grid-cols-2">
         <Compare label="Firmware" compare={row.firmware} />
         <Compare label="Outputs" compare={row.outputs} />
+        <Compare label="Ledmap" compare={row.ledmap} />
         <Compare label="Looks" compare={row.looks} />
         <Compare label="Schedule" compare={row.schedule} />
         <Compare label="Sync" compare={row.sync} />

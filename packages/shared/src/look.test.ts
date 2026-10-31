@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Element } from "./lights.ts";
 import type { Prop } from "./prop/types.ts";
+import { defaultWireframeSpec } from "./prop/wireframe.ts";
 import {
   LOOK_OFF_SLOT,
   buildLookPreset,
   buildManagedPresets,
   lookTargets,
+  lookTargetsForLook,
   managedPresetSlotsMatch,
   mergeWledPresets,
   nextLookSlot,
@@ -153,6 +155,46 @@ describe("validateLooksLibrary", () => {
     expect(validateLooksLibrary([], [])).toMatch(/at least one Look/);
     expect(validateLooksLibrary([look(), look({ id: "other", name: "Other", slot: 1 })], [])).toMatch(/already taken/);
     expect(validateLooksLibrary([look()], [{ id: "pl", name: "Nightly", slot: 16, lookIds: ["missing"], durationTenths: 10, transitionTenths: 0 }])).toMatch(/not in the library/);
+  });
+});
+
+describe("wireframe Look overrides", () => {
+  it("colours a face group without duplicating that face Segment", () => {
+    const spec = defaultWireframeSpec({ sides: 4 });
+    const compiledFaces = [
+      { id: "well-face-0", lightId: "light-1", label: "Well · face 1", start: 0, stop: 6 },
+      { id: "well-face-1", lightId: "light-1", label: "Well · face 2", start: 6, stop: 12 },
+      { id: "well-face-2", lightId: "light-1", label: "Well · face 3", start: 12, stop: 18 },
+      { id: "well-face-3", lightId: "light-1", label: "Well · face 4", start: 18, stop: 24 },
+    ];
+    const well: Prop = {
+      id: "well",
+      lightId: "light-1",
+      label: "Well",
+      kind: "wireframe",
+      elementIds: compiledFaces.map((row) => row.id),
+      wireframe: spec,
+    };
+    const painted = look({
+      overrides: [{
+        propId: "well",
+        wireframeGroup: "face.0",
+        sharedPostRule: "half",
+        style: { ...style, color: "#ff0000" },
+      }, {
+        propId: "well",
+        wireframeGroup: "tops",
+        style: { ...style, color: "#00ff00" },
+      }],
+    });
+    const geometry = { ledCount: 24, elements: compiledFaces, props: [well] };
+    const targets = lookTargets(geometry);
+    expect(targets[0]?.wireframeGroup).toBe("face.0");
+    expect(resolveLookStyle(painted, targets[0]!).color).toBe("#ff0000");
+    const extras = lookTargetsForLook(painted, geometry);
+    expect(extras.some((row) => row.wireframeGroup === "face.0")).toBe(true);
+    expect(extras.filter((row) => row.wireframeGroup === "face.0")).toHaveLength(1);
+    expect(extras.some((row) => row.wireframeGroup === "tops")).toBe(true);
   });
 });
 

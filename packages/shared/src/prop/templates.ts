@@ -86,6 +86,15 @@ export const PROP_TEMPLATES: readonly PropTemplate[] = [
     tapRoles: ["Start", "Next corner or end"],
     moreRole: "Next corner or end",
   },
+  {
+    kind: "wireframe",
+    label: "Wireframe",
+    summary: "Unfolded box+X. Draw one line in pixel order, or lock corners on the lit string.",
+    minTaps: 0,
+    maxTaps: 0,
+    pairing: "polyline",
+    tapRoles: [],
+  },
 ];
 
 export function propTemplate(kind: PropKind): PropTemplate {
@@ -95,7 +104,8 @@ export function propTemplate(kind: PropKind): PropTemplate {
     case "arch":
     case "tree":
     case "stake-row":
-    case "custom": {
+    case "custom":
+    case "wireframe": {
       const found = PROP_TEMPLATES.find((row) => row.kind === kind);
       if (found) return found;
       throw new Error(`Prop template ${kind} is missing`);
@@ -282,6 +292,7 @@ function sideNames(kind: PropKind, count: number): string[] {
       return Array.from({ length: count }, (_, index) => `stake ${index + 1}`);
     case "roofline":
     case "custom":
+    case "wireframe":
       return Array.from({ length: count }, (_, index) => `run ${index + 1}`);
     default: {
       const _never: never = kind;

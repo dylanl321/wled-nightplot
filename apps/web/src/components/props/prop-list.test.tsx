@@ -33,6 +33,10 @@ describe("Prop list", () => {
     render(
       <PropList
         lightId="light-garage"
+        lightName="Garage"
+        ledCount={60}
+        rgbw={false}
+        unreachable={false}
         props={[{
           id: "prop-1",
           lightId: "light-garage",

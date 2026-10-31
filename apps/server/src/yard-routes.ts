@@ -276,6 +276,11 @@ async function checkYard(deps: YardRouteDeps): Promise<{
       try { presetsRaw = await deps.readPresets(targetOf(light)); }
       catch { presetsRaw = null; }
     }
+    let ledmapRaw: string | null = null;
+    if (reachable) {
+      try { ledmapRaw = await deps.readLedmap(targetOf(light)); }
+      catch { ledmapRaw = null; }
+    }
     return buildYardCheckRow({
       light,
       live,
@@ -287,6 +292,7 @@ async function checkYard(deps: YardRouteDeps): Promise<{
       provision,
       presetsRaw,
       cfg,
+      ledmapRaw,
     });
   });
   return { rows, checkedAt: deps.now(), caption: YARD_CAPTION, undo: deps.undo.read() };
