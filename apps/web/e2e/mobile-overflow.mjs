@@ -107,7 +107,7 @@ async function measure(page) {
       if (style.display === "none" || style.visibility === "hidden") continue;
       const rect = el.getBoundingClientRect();
       if (rect.width < 2 || rect.height < 2) continue;
-      if (rect.right > vw + 1 || rect.left < -1) {
+      if ((rect.right > vw + 1 || rect.left < -1) && !clippedToViewport(el, vw)) {
         bleeds.push(`${el.tagName.toLowerCase()} ${String(el.className).slice(0, 80)} right=${Math.round(rect.right)} left=${Math.round(rect.left)}`);
         if (bleeds.length >= 8) break;
       }
@@ -116,6 +116,19 @@ async function measure(page) {
         if (scrolls.length >= 8) break;
       }
     }
+    function clippedToViewport(el, width) {
+      let node = el.parentElement;
+      while (node && node !== document.body) {
+        const style = getComputedStyle(node);
+        if (style.overflowX === "hidden" || style.overflowX === "clip") {
+          const box = node.getBoundingClientRect();
+          if (box.width > 0 && box.left >= -1 && box.right <= width + 1) return true;
+        }
+        node = node.parentElement;
+      }
+      return false;
+    }
+
     return {
       overflow: doc.scrollWidth - vw,
       bleeds,
@@ -210,6 +223,19 @@ try {
       await page.getByRole("dialog").waitFor({ state: "visible" });
       assertFits(`${viewport.name} add-prop`, await measure(page));
       console.log(`ok ${viewport.name} add-prop`);
+      await page.getByRole("button", { name: /Wireframe/ }).click();
+      assertFits(`${viewport.name} add-prop-wireframe`, await measure(page));
+      console.log(`ok ${viewport.name} add-prop-wireframe`);
+      await page.getByRole("button", { name: "Open the net" }).click();
+      await page.getByRole("dialog", { name: /Wireframe on/ }).waitFor({ state: "visible" });
+      assertFits(`${viewport.name} wireframe-draw`, await measure(page));
+      console.log(`ok ${viewport.name} wireframe-draw`);
+      await page.getByRole("button", { name: "Lock corners on the strip" }).click();
+      assertFits(`${viewport.name} wireframe-lock`, await measure(page));
+      console.log(`ok ${viewport.name} wireframe-lock`);
+      await page.getByRole("button", { name: "Review this wireframe" }).click();
+      assertFits(`${viewport.name} wireframe-review`, await measure(page));
+      console.log(`ok ${viewport.name} wireframe-review`);
     } catch (error) {
       failed += 1;
       console.error(String(error));
