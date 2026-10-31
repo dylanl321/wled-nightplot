@@ -10,7 +10,7 @@ type AppShellProps = {
   children: ReactNode;
   lights?: LightView[];
   lightCount: number;
-  nav: "lights" | "discover" | "light" | "catalog" | "backups" | "sync" | "settings";
+  nav: "lights" | "discover" | "light" | "catalog" | "backups" | "sync" | "looks" | "settings";
   activeLightId?: string;
   sessions?: LiveHint[];
 };
@@ -37,6 +37,9 @@ export function AppShell({
           </NavLink>
           <NavLink href="/backups" active={nav === "backups"}>
             Backups
+          </NavLink>
+          <NavLink href="/looks" active={nav === "looks"}>
+            Looks
           </NavLink>
           <NavLink href="/sync" active={nav === "sync"}>
             Sync

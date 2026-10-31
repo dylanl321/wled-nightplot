@@ -3,7 +3,7 @@
 See [Locate and create Segments](docs/segment-locate.md) for the persistent
 cursor, auto-scan, keyboard controls, and adjustable Preview background brightness.
 
-Nightplot Configure is a LAN utility for a yard of WLED controllers. Find them on the network, enroll them as **Lights**, describe each controller’s **outputs** and **Segments**, **Preview** colour on the beads, then **Apply**. **Blink** identifies a box; **All Off** sits on the rack. A setup profile can be applied to many selected Lights at once.
+Nightplot Configure is a LAN utility for a yard of WLED controllers. Find them on the network, enroll them as **Lights**, describe each controller’s **outputs** and **Segments**, **Preview** colour on the beads, then **Apply**. **Blink** identifies a box; **All Off** sits on the rack. A setup profile can be applied to many selected Lights at once. **Looks** push the same numbered WLED presets and a nightly **Schedule** to every selected controller.
 
 The top-level [Settings page](http://127.0.0.1:43180/settings) saves shared Nightplot preferences in `data/settings.json` (or `NIGHTPLOT_SETTINGS_PATH`). It controls the dark/light theme, visible-tab background Find interval (Off, 30, 60, 120 seconds), an eight-colour Segment palette, and opt-in backup retention. Manual Find is always available. A stale browser revision must reload before saving. Preference Save never writes WLED; each Light still has its own Settings tab for hardware and network.
 
@@ -20,6 +20,8 @@ GitHub: [`dylanl321/wled-nightplot`](https://github.com/dylanl321/wled-nightplot
 - A **Light** is one enrolled controller. It may drive several **outputs** (WLED buses / strips).
 - A **Segment** is an inclusive–exclusive range on one output. Gaps between Segments are allowed; overlap is not.
 - A **Prop** is a named, typed shape on one Light (roofline, window, arch, tree, stake row, custom). It is made of one or more Segments on any output. Gaps between those Segments are allowed.
+- A **Look** is a named colour / effect / palette / speed / brightness. The library has a whole-yard default and optional overrides per Prop, Prop kind, or Segment. Nightplot pushes each Look as the same numbered WLED preset on every selected Light.
+- A **Schedule** is a nightly on (sunset or a clock time), the Look or playlist to run, and an off time. It is written as WLED timers with NTP and location, so it runs with Nightplot closed.
 - A **setup profile** is a saved LED type / colour order / brightness / current limit / name pattern applied to many Lights.
 - **Preview** writes a temporary colour and brightness, then restores (or cancels without restore). Locate hops update that session — they do not take a new snapshot, and they do not claim a `/json/live` report unless one was read.
 - **Apply** writes declared ranges (or Strip / Safe fields) and re-reads the controller. Success only when the readback matches.
@@ -35,7 +37,7 @@ GitHub: [`dylanl321/wled-nightplot`](https://github.com/dylanl321/wled-nightplot
 - Light cards show “Answered Ns ago” from the last controller answer, including cached Online-looking rows; the age updates while the page is visible without probing. A missing answer is unknown, not recent. Unreachable beads stay grey with last-seen copy.
 - After a confirmed Segment Apply, Nightplot keeps an independent baseline for that controller. A fresh readback with different known ranges or colour shows a conflict banner on the Light; this is not proof who changed it. Preview/Blink and missing reads never raise one. Replacement and successful Strip hardware changes clear that baseline; inspecting and same-controller readdressing do not.
 - All Off cancels without restoring the previous look.
-- **Backups** stores Nightplot Lights, Segments, Props, LED products, Activity, and preferences (when present) on the data volume, plus per-Light native WLED `/cfg.json` and `/presets.json` files. Nightplot restore replaces that Nightplot data through one staged intent that can finish after a crash — it does not Apply and does not upload WLED files. An older backup without preferences leaves current Settings in place. Uploading saved configuration and presets is a separate, MAC/firmware-checked step with a fresh safety backup first. Before Apply, Strip Apply, Safe settings, or a setup-profile write, both native files and Nightplot data must be saved, or that Light’s lasting write is refused. Bulk setup prefers that automatic backup as Undo — there is no confirm step. Preview, Blink, and All Off do not auto-backup. Passwords are not included; treat exports as private. This is not whole-device recovery and not Hardware Done.
+- **Backups** stores Nightplot Lights, Segments, Props, LED products, Activity, and preferences (when present) on the data volume, plus per-Light native WLED `/cfg.json` and `/presets.json` files. Looks stay in `looks.json` and are not in a Nightplot restore yet. Nightplot restore replaces that Nightplot data through one staged intent that can finish after a crash — it does not Apply and does not upload WLED files. An older backup without preferences leaves current Settings in place. Uploading saved configuration and presets is a separate, MAC/firmware-checked step with a fresh safety backup first. Before Apply, Strip Apply, Safe settings, or a setup-profile write, both native files and Nightplot data must be saved, or that Light’s lasting write is refused. Bulk setup prefers that automatic backup as Undo — there is no confirm step. Preview, Blink, and All Off do not auto-backup. Passwords are not included; treat exports as private. This is not whole-device recovery and not Hardware Done.
 - **Remove this Light** runs checks (Segments, live sessions, controller state). Unknown is not safe; there is no “I understand” override.
 - Safe settings and first-time Strip provision write only understood, fingerprinted fields. On a Light’s Settings tab, **Device display name** writes WLED’s name through Safe settings **Apply settings**, not a Nightplot-only alias; only changed fields are sent. The hostname is shown separately beneath the Light title and in Network (with its port), and changing the connection address does not rename the controller. Unsupported firmware is refused — nothing is written. A `buildSafeWrite` refuse 422 includes `safeWrite`. Safe settings shows that as the write-failure panel (Sent / Read back) and hides the notice while it is up — not two identical destructive lines. A GET/load refuse on Safe settings or Strip uses the form banner once — not a second notice and not a doubled caption.
 - Settings Power budget is a planning scenario, not live current: set a colour per saved Segment (and RGBW white) plus brightness to estimate up to 20 mA per full channel per LED. It compares to WLED’s reported Safe current limit when available; a disabled/unknown limit is not zero headroom. It excludes uncovered LEDs and electrical losses, controller draw, effects and power-supply ratings. It does not write WLED or prove a strip safe.
@@ -81,7 +83,7 @@ docker compose up --build
 - App: [http://127.0.0.1:43180](http://127.0.0.1:43180)
 - API: [http://127.0.0.1:43181](http://127.0.0.1:43181)
 
-Store volume: `lights-store` → `/data` (`lights.json`, `settings.json`, `led-products.json`, `activity.json`, `backups/`). `pnpm dev` bind stays loopback; compose publishes `0.0.0.0` on purpose.
+Store volume: `lights-store` → `/data` (`lights.json`, `settings.json`, `led-products.json`, `activity.json`, `setup-profiles.json`, `looks.json`, `backups/`). `pnpm dev` bind stays loopback; compose publishes `0.0.0.0` on purpose.
 
 GHCR build: Actions → Docker → Run workflow, or push to `main` / a `v*` tag. Images push only when GHCR login succeeds. Workflow does not run on pull requests.
 
@@ -186,6 +188,9 @@ Enrolled Lights, declared Segments, and Props persist in `data/lights.json` (ove
 | POST | `/api/sync/preset` | `{ lightIds, presetId }` — send WLED `ps` to each Light that has that preset, then reread `state.ps`. A Light without it is refused and listed. |
 | GET | `/api/sync/udp` | Each Light's WLED UDP sync (`cfg.if.sync`): groups it sends and receives. Unread is `null`, not none. |
 | POST | `/api/sync/udp` | `{ group, roles: { [lightId]: "leader" \| "follower" \| "off" } }` — one leader per group. After a native safety backup, write `if.sync` send/receive for that group only (other groups kept; followers receive brightness, colour, effects and palette, never segment bounds), then reread `/json/cfg`. Refused on firmware outside the verified table. |
+| GET | `/api/looks` | Looks library, playlists, nightly Schedule, and the yard’s Props / Segments for overrides. Missing `data/looks.json` seeds the built-in library. No WLED write. |
+| PUT | `/api/looks` | `{ looks, playlists, schedule }` — save the library in Nightplot. Does not write WLED. |
+| POST | `/api/looks/push` | `{ lightIds, includeSchedule?, udp? }` — write the same numbered WLED preset slots (and optional playlist / Off / timers / NTP / UDP sync) to each Light after a native safety backup, then reread. Bounded concurrency. One dead controller is listed and does not stop the rest. Not Apply. |
 | GET | `/api/lights/:id/delete-checks` | Segments / live sessions / controller state. Unknown is not safe. |
 | DELETE | `/api/lights/:id` | 422 until every check is `ok`. Saves a Nightplot data snapshot first; refuses if that backup cannot persist. Does not write the controller. |
 | GET | `/api/lights/:id/safe` | Fingerprinted Safe settings from `/json/cfg`. Empty fingerprint → refuse. |
@@ -200,6 +205,7 @@ Enrolled Lights, declared Segments, and Props persist in `data/lights.json` (ove
 | --- | --- |
 | `/` | Lights cards, multi-select, Apply setup profile, found banner. All Off on the top bar / thumb bar |
 | `/backups` | Managed Nightplot backups — list, details, pin, download (including separate WLED files), clear with confirmation, review Nightplot restore or WLED upload. Nightplot restore does not Apply. |
+| `/looks` | Looks library, playlist, nightly Schedule, and push to selected Lights. Same WLED preset numbers on every box. Schedule is WLED timers + NTP. Optional UDP sync group in the same push. Turn on a Look uses the existing Sync preset path. |
 | `/sync` | Push from one Light to others: Copy presets, Copy colours and effects, or Turn on a preset on every chosen Light. Each Light is reread and listed. **Keep in step with WLED sync** sets a WLED UDP sync group (one leader, followers) so the controllers follow each other without Nightplot. |
 | `/led-products` | Shared LED product catalog — list / create / edit / delete recipes (LED type / IC, pitch or COB section length). Voltage and similar facts are under Advanced. Delete refuses while Lights still attach that recipe; unknown or partial attach counts are not safe. Node count, GPIO, and ranges stay on each Light. A catalog-only load miss keeps enrolled Lights; it does not claim the configure server is down. |
 | `/discover` | Find starts on its own while this page is open. Find Lights retries that scan. **Add all found** enrolls every valid candidate and lists added / already enrolled / failed. Type an address to add one. A Find load miss still lists enrolled Lights; it does not claim the configure server is down. |
@@ -210,8 +216,8 @@ Enrolled Lights, declared Segments, and Props persist in `data/lights.json` (ove
 
 | Path | What |
 | --- | --- |
-| `apps/web` | Quiet-utility top bar, Lights cards, Discover, LED product catalog, Backups, Segments, Settings, All Off, Remove, `StripBeads` |
-| `apps/server` | Discover/connect, JSON Light store, LED product catalog, managed backups, WLED snapshot + live + Apply + Strip provision + All Off + Delete + Safe settings + fixture |
+| `apps/web` | Quiet-utility top bar, Lights cards, Discover, LED product catalog, Backups, Looks, Sync, Segments, Settings, All Off, Remove, `StripBeads` |
+| `apps/server` | Discover/connect, JSON Light store, LED product catalog, Looks library, managed backups, WLED snapshot + live + Apply + Strip provision + All Off + Delete + Safe settings + fixture |
 | `packages/shared` | LAN guard, WLED parse, catalogs, Light / Segment types, portable Effect contract |
 | `docs/ui/` | Bead-language prototype. The running shell is the v3 top bar. See [docs/ui/README.md](docs/ui/README.md). |
 | `docs/PLANE.md` | CONFIG tickets, REST-only Plane duties. |

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   FIRST_LOCATE_UNKNOWN_SEGMENTS_CAPTION,
+  LOOK_OFF_SLOT,
   listStripPresets,
   provisionApplyBodyFromPreset,
 } from "@nightplot/shared";
@@ -13,6 +14,7 @@ import { ALL_OFF_PROBE_CONCURRENCY, FIND_PROBE_CONCURRENCY } from "./discovery/m
 import { FileLedProductsStore } from "./store/led-products-store.ts";
 import { FileActivityStore } from "./store/activity-store.ts";
 import { FileBackupStore } from "./store/backup-store.ts";
+import { FileLooksStore } from "./store/looks-store.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
 import { FileSettingsStore } from "./store/settings-store.ts";
 import { createFixtureBox } from "./wled-fixture-box.ts";
@@ -5406,6 +5408,155 @@ describe("Inspect stripKind seed", () => {
     expect(body.light.stripKind).toBe("ws281x");
     expect(body.light.lastSeenAt).toBeTruthy();
     expect(readCfg).not.toHaveBeenCalled();
+  });
+});
+
+describe("Looks library and nightly Schedule", () => {
+  const servers: Server[] = [];
+
+  afterEach(async () => {
+    await Promise.all(servers.splice(0).map((item) => new Promise<void>((resolve) => item.close(() => resolve()))));
+  });
+
+  async function liveLooksApp(box: ReturnType<typeof createFixtureBox>) {
+    const http = box.listen(0, "127.0.0.1");
+    servers.push(http);
+    const port = await listenReady(http);
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-looks-api-"));
+    const app = createApp({
+      store: new FileLightsStore(join(dir, "lights.json")),
+      backups: new FileBackupStore(join(dir, "backups")),
+      looks: new FileLooksStore(join(dir, "looks.json")),
+      probe: (target) => probeWled(target, fetch, 500),
+      write: async () => true,
+      readLive: async () => ({ source: "fixture", leds: [] }),
+      readCfg: createWledCfgReader(),
+      writeCfg: createWledCfgWriter(),
+      collect: async () => [],
+    });
+    return { app, port, host: `127.0.0.1:${port}`, box };
+  }
+
+  it("seeds the library, saves a Prop override, and does not write WLED on save", async () => {
+    const { app } = testApp();
+    const listed = (await (await app.request("/api/looks")).json()) as { looks: { name: string; slot: number }[] };
+    expect(listed.looks[0]).toMatchObject({ name: "Warm white", slot: 1 });
+    const saved = await app.request("/api/looks", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        looks: [{
+          id: "look-warm", name: "Amber", slot: 1,
+          style: { fx: 0, pal: 0, sx: 1, ix: 1, bri: 40, color: "#ffa000" },
+          overrides: [{ propKind: "window", style: { fx: 13, pal: 3, sx: 90, ix: 90, bri: 40, color: "#ff0000", color2: "#ffffff" } }],
+        }],
+        playlists: [],
+        schedule: null,
+      }),
+    });
+    expect(saved.status).toBe(200);
+    const body = (await saved.json()) as { looks: { name: string; overrides: { propKind: string }[] }[] };
+    expect(body.looks[0]).toMatchObject({ name: "Amber", overrides: [{ propKind: "window" }] });
+
+    const draft = {
+      enabled: false,
+      on: { kind: "sunset", offsetMinutes: 0 },
+      off: { hour: 23, minute: 0 },
+      run: { kind: "look", lookId: "look-warm" },
+      ntp: { host: "1.wled.pool.ntp.org", tz: 8, utcOffsetSecs: 0, latitude: 0, longitude: 0 },
+      weekdays: 127,
+    };
+    const savedDraft = await app.request("/api/looks", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ looks: body.looks, playlists: [], schedule: draft }),
+    });
+    expect(savedDraft.status).toBe(200);
+    const blocked = await app.request("/api/looks", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ looks: body.looks, playlists: [], schedule: { ...draft, enabled: true } }),
+    });
+    expect(blocked.status).toBe(400);
+    expect(((await blocked.json()) as { message: string }).message).toMatch(/latitude and longitude/);
+  });
+
+  it("pushes the same preset slots to two Lights, applies a Prop override, writes sunset timers, and lists a dead box without stopping the rest", async () => {
+    const live = createFixtureBox({ name: "Porch", ledCount: 80 });
+    const other = createFixtureBox({ name: "Eave", ledCount: 40 });
+    const a = await liveLooksApp(live);
+    const b = await liveLooksApp(other);
+    const enrollA = await a.app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: a.host }),
+    });
+    const enrollB = await a.app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: b.host }),
+    });
+    const porch = ((await enrollA.json()) as { light: { id: string } }).light.id;
+    const eave = ((await enrollB.json()) as { light: { id: string } }).light.id;
+    const propRes = await a.app.request(`/api/lights/${porch}/props`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "window",
+        label: "Front window",
+        apply: false,
+        taps: [{ index: 0 }, { index: 9 }, { index: 19 }, { index: 29 }, { index: 39 }],
+      }),
+    });
+    expect(propRes.status).toBe(200);
+
+    const saved = await a.app.request("/api/looks", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        looks: [{
+          id: "look-warm", name: "Warm white", slot: 1,
+          style: { fx: 0, pal: 0, sx: 128, ix: 128, bri: 180, color: "#ffa000" },
+          overrides: [{ propKind: "window", style: { fx: 13, pal: 3, sx: 96, ix: 160, bri: 180, color: "#ff0000", color2: "#ffffff" } }],
+        }],
+        playlists: [{ id: "playlist-nightly", name: "Nightly", slot: 16, lookIds: ["look-warm"], durationTenths: 100, transitionTenths: 7 }],
+        schedule: {
+          enabled: true,
+          on: { kind: "sunset", offsetMinutes: 0 },
+          off: { hour: 23, minute: 0 },
+          run: { kind: "playlist", playlistId: "playlist-nightly" },
+          ntp: { host: "1.wled.pool.ntp.org", tz: 8, utcOffsetSecs: 0, latitude: 42.3, longitude: -83.7 },
+          weekdays: 127,
+        },
+      }),
+    });
+    expect(saved.status).toBe(200);
+
+    const push = await a.app.request("/api/looks/push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightIds: [porch, eave, "missing"], includeSchedule: true }),
+    });
+    expect(push.status).toBe(200);
+    const result = (await push.json()) as {
+      kind: string;
+      rows: { lightId: string; status: string; detail: string }[];
+      message: string;
+    };
+    expect(result.kind).toBe("looks+schedule");
+    expect(result.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ lightId: porch, status: "matched" }),
+      expect.objectContaining({ lightId: eave, status: "matched" }),
+      expect.objectContaining({ lightId: "missing", status: "refused" }),
+    ]));
+    expect(result.message).toMatch(/2 of 3/);
+
+    const porchPresets = JSON.parse(live.presets()) as Record<string, { n?: string; seg?: { fx: number; start: number }[] }>;
+    expect(porchPresets["1"]?.n).toBe("Warm white");
+    expect(porchPresets["1"]?.seg?.[0]).toMatchObject({ fx: 13, start: 0 });
+    expect(porchPresets[String(LOOK_OFF_SLOT)]).toEqual({ n: "Off", on: false });
+    expect(live.cfg.if.ntp).toMatchObject({ en: true, tz: 8, lt: 42.3, ln: -83.7 });
+    expect(live.cfg.timers.ins[8]).toMatchObject({ en: true, hour: 255, macro: 16 });
+    expect(live.cfg.timers.ins[1]).toMatchObject({ en: true, hour: 23, macro: LOOK_OFF_SLOT });
+
+    const eavePresets = JSON.parse(other.presets()) as Record<string, { seg?: { fx: number }[] }>;
+    expect(eavePresets["1"]?.seg?.[0]?.fx).toBe(0);
   });
 });
 

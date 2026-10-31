@@ -46,6 +46,13 @@ export async function postJson<T>(
   return sendJson<T>(path, "POST", body);
 }
 
+export async function putJson<T>(
+  path: string,
+  body?: unknown,
+): Promise<{ ok: true; status: number; data: T } | { ok: false; status: number; data: ApiFail }> {
+  return sendJson<T>(path, "PUT", body);
+}
+
 export async function patchJson<T>(
   path: string,
   body?: unknown,
@@ -62,7 +69,7 @@ export async function deleteJson<T>(
 
 async function sendJson<T>(
   path: string,
-  method: "POST" | "PATCH" | "DELETE",
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
   body?: unknown,
 ): Promise<{ ok: true; status: number; data: T } | { ok: false; status: number; data: ApiFail }> {
   const res = await fetch(apiUrl(path), {

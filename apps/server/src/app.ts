@@ -150,7 +150,9 @@ import { FileLedProductsStore } from "./store/led-products-store.ts";
 import { FileSettingsStore } from "./store/settings-store.ts";
 import { StoreUnreadableError } from "./store/store-error.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
+import { FileLooksStore } from "./store/looks-store.ts";
 import { FileSetupProfilesStore } from "./store/setup-profiles-store.ts";
+import { registerLookRoutes } from "./look-routes.ts";
 import type { ProbeFn } from "./wled/client.ts";
 import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
 import {
@@ -175,6 +177,7 @@ export type AppDeps = {
   settings?: FileSettingsStore;
   products?: FileLedProductsStore;
   profiles?: FileSetupProfilesStore;
+  looks?: FileLooksStore;
   probe: ProbeFn;
   collect: CollectFn;
   write: WriteStateFn;
@@ -199,6 +202,9 @@ export function createApp(deps: AppDeps) {
   const profiles =
     deps.profiles ??
     new FileSetupProfilesStore(join(tmpdir(), `nightplot-setup-profiles-${randomUUID()}.json`));
+  const looks =
+    deps.looks ??
+    new FileLooksStore(join(tmpdir(), `nightplot-looks-${randomUUID()}.json`));
   const backups = deps.backups ?? new FileBackupStore(join(tmpdir(), `nightplot-backups-${randomUUID()}`), () => settings.read().backupRetention);
   const readNativeFiles = deps.readNativeFiles ?? createWledNativeFilesReader();
   const writeNativeFiles = deps.writeNativeFiles ?? createWledNativeFilesWriter();
@@ -541,6 +547,19 @@ export function createApp(deps: AppDeps) {
     store: deps.store,
     live,
     write: deps.write,
+    readCfg: deps.readCfg,
+    writeCfg: deps.writeCfg,
+    readPresets: deps.readPresets ?? createWledPresetsReader(),
+    writePresets: deps.writePresets ?? createWledPresetsWriter(),
+    refreshOne,
+    captureDevice: (reason, light, snap) => captureDevice(reason, light, snap),
+    record,
+  });
+
+  registerLookRoutes(app, {
+    store: deps.store,
+    looks,
+    live,
     readCfg: deps.readCfg,
     writeCfg: deps.writeCfg,
     readPresets: deps.readPresets ?? createWledPresetsReader(),

@@ -378,6 +378,49 @@ describe("headless WLED sim e2e: Sync across Lights", () => {
     expect(off.body.rows[0]).toMatchObject({ status: "matched" });
   }, 30_000);
 
+  it("pushes Looks and a sunset Schedule to every sim, and lists a missing Light without stopping", async () => {
+    const [a, b] = await Promise.all([startSim(), startSim()]);
+    const { app } = appAgainstHttp();
+    const porch = await enroll(app, `${a.host}:${a.httpPort}`);
+    const eave = await enroll(app, `${b.host}:${b.httpPort}`);
+    const saved = await app.request("/api/looks", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        looks: [{
+          id: "look-warm", name: "Warm white", slot: 1,
+          style: { fx: 0, pal: 0, sx: 128, ix: 128, bri: 180, color: "#ffa000" },
+          overrides: [],
+        }],
+        playlists: [{ id: "playlist-nightly", name: "Nightly", slot: 16, lookIds: ["look-warm"], durationTenths: 100, transitionTenths: 7 }],
+        schedule: {
+          enabled: true,
+          on: { kind: "sunset", offsetMinutes: 0 },
+          off: { hour: 23, minute: 0 },
+          run: { kind: "playlist", playlistId: "playlist-nightly" },
+          ntp: { host: "1.wled.pool.ntp.org", tz: 8, utcOffsetSecs: 0, latitude: 42.3, longitude: -83.7 },
+          weekdays: 127,
+        },
+      }),
+    });
+    expect(saved.status).toBe(200);
+    const pushed = await post(app, "/api/looks/push", {
+      lightIds: [porch.id, eave.id, "missing"], includeSchedule: true,
+    });
+    expect(pushed.status).toBe(200);
+    expect(pushed.body.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ lightId: porch.id, status: "matched" }),
+      expect.objectContaining({ lightId: eave.id, status: "matched" }),
+      expect.objectContaining({ lightId: "missing", status: "refused" }),
+    ]));
+    const presets = JSON.parse(await createWledPresetsReader()({ hostname: a.host, port: a.httpPort })) as Record<string, { n?: string }>;
+    expect(presets["1"]?.n).toBe("Warm white");
+    expect(presets["16"]?.n).toBe("Nightly");
+    const cfg = (await (await fetch(`${a.baseUrl}/json/cfg`)).json()) as { if: { ntp: { en: boolean; tz: number } }; timers: { ins: { hour: number; macro: number }[] } };
+    expect(cfg.if.ntp).toMatchObject({ en: true, tz: 8 });
+    expect(cfg.timers.ins[8]).toMatchObject({ hour: 255, macro: 16 });
+  }, 30_000);
+
   it("asks before copying presets to a Light with a different length, and lists offline targets", async () => {
     const [a, b, gone] = await Promise.all([startSim(), startSim({ NIGHTPLOT_SIM_LEDS: "90" }), startSim()]);
     const { app } = appAgainstHttp();
