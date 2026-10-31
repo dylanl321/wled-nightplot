@@ -4,13 +4,17 @@ Non-negotiables for Nightplot Configure. Product copy lives in [AGENTS.md](AGENT
 
 ## What this is
 
-A LAN utility: discover a WLED controller, enroll it as a Light, describe Elements as ranges on the strip, Preview live, Apply, manage a few, All Off.
+A LAN utility for a yard of WLED controllers: Find them, enroll them as Lights, describe each controller’s outputs and Segments, Preview live, Apply, manage a fleet, All Off.
 
 ## Product words
 
-Use: **Lights**, **Elements**, Preview, Apply, Blink, All Off.
+Use: **Lights**, **Segments**, Preview, Apply, Blink, All Off.
 
-A Light is one enrolled controller + one strip. An Element is a contiguous inclusive–exclusive range on that strip.
+Fleet and show words are also in play: **Yard**, **Prop**, **Zone**, **Look**, **Schedule**.
+
+A Light is one enrolled controller. It may drive several outputs (WLED buses). A Segment is an inclusive–exclusive range on one output. Gaps between Segments are allowed; overlap is not.
+
+Existing `Element` types and `elements` store keys stay compatible.
 
 ## Honesty
 
@@ -21,10 +25,16 @@ A Light is one enrolled controller + one strip. An Element is a contiguous inclu
 - A registered catalog member is a slot in the table. It is not proof hardware passed. A stub endpoint must say it sent nothing.
 - The local fixture is a software stub for development. A green readback there is not Hardware Done.
 - A headless sim/e2e lane is a software path only. It is not Hardware Done. Metal benches stay human.
+- Unknown is not empty. A missing read is not a successful write.
+- Lasting writes are readback-verified. Mismatch is not success.
 
 ## Fail closed
 
-Safe settings and first-time strip provision write only understood, fingerprinted fields. Empty fingerprint, unsupported firmware, multi-bus, or a type this table does not own → refuse. Nothing is written. A mismatch stays on the failure UI.
+Safe settings and strip provision write only understood, fingerprinted fields. Empty fingerprint, unsupported firmware, or a type this table does not own → refuse that write. Nothing is written for that field set. A mismatch stays on the failure UI.
+
+Multi-bus is not a refuse. Read and write every `hw.led.ins[]` entry this table understands; clone the rest. Analog / network / multi-pin buses stay listed and are not converted.
+
+Bulk writes take an automatic background backup and prefer one Undo over a blocking confirm. Fail closed per controller: one dead box does not stop the rest.
 
 Find uses an advertised port (SSDP `LOCATION`, mDNS SRV) or leaves the row as needs host:port. Do not invent `:80` so a non-80 WLED looks addable.
 
@@ -32,7 +42,7 @@ Public internet addresses are refused before HTTP. See [SECURITY.md](SECURITY.md
 
 ## One code basis
 
-Do not fork the Lights / Elements / live stack per vendor or strip type. New controllers or strip types register a catalog member. They do not rewrite the rack.
+Do not fork the Lights / Segments / live stack per vendor or strip type. New controllers or strip types register a catalog member. They do not rewrite the rack.
 
 | Seam | First member | Home |
 | --- | --- | --- |
@@ -46,6 +56,8 @@ Do not fork the Lights / Elements / live stack per vendor or strip type. New con
 
 Work the CONFIG series in order. R6 is Safe settings (the small `WledSafeSettings` set, fingerprint-gated). Gaps are not the next R-slice. Do not start the next CONFIG ticket in the same run.
 
+GitHub epic slices may change fleet behaviour. They still do not fold adjacent CONFIG gaps into the same run.
+
 ## Persistence
 
-Enrolled Lights and declared Elements persist in `data/lights.json` (`FileLightsStore`). Operator LED products persist in `data/led-products.json` (`FileLedProductsStore` list / create / update). The LED product catalog is the shared type / IC recipe. Length, GPIO, Element ranges, and field overrides live on the Light. Catalog edit mutates the recipe only — it does not write WLED. Strip-assist helpers do not replace catalog attach. Attach is not Apply. A catalog row is not Hardware Done.
+Enrolled Lights, outputs, and declared Segments persist in `data/lights.json` (`FileLightsStore`). A missing `outputs` row migrates to one output from `ledCount` / `stripKind`. Operator LED products persist in `data/led-products.json` (`FileLedProductsStore` list / create / update). Setup profiles persist in `data/setup-profiles.json`. The LED product catalog is the shared type / IC recipe. Length, GPIO, Segment ranges, and field overrides live on the Light / output. Catalog edit mutates the recipe only — it does not write WLED. Strip-assist helpers do not replace catalog attach. Attach is not Apply. A catalog row is not Hardware Done.

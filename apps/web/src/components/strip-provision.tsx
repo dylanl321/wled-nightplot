@@ -270,6 +270,27 @@ export function StripProvisionPanel({
         </p>
       </fieldset>
 
+      {read.buses > 1 ? (
+        <div className="rounded-xl border border-border bg-[#0e1014] p-4">
+          <p className="text-[13px] leading-5 text-[#c9c3b8]">
+            This controller has {read.buses} outputs. Apply writes the first understood
+            bus and leaves the others as they are. A setup profile can write every
+            understood bus.
+          </p>
+          <ul className="mt-2 space-y-1 font-mono text-[12px] text-quiet">
+            {read.outputs.map((bus) => (
+              <li key={bus.index}>
+                Output {bus.index + 1}
+                {bus.settings.length != null ? ` · ${bus.settings.length} LEDs` : ""}
+                {bus.settings.gpio != null ? ` · GPIO ${bus.settings.gpio}` : ""}
+                {bus.settings.ledType !== "unknown" ? ` · ${provisionLedTypeLabel(bus.settings.ledType)}` : ""}
+                {bus.refuse ? ` · ${bus.refuse}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {read.refuse || unreachable ? (
         <div className="rounded-[14px] border border-[#5a2f33] bg-[#1a1113] p-4">
           <p className="text-[15px] font-semibold text-destructive">

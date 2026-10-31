@@ -81,4 +81,25 @@ describe("lights store ledProductId", () => {
       error: "invalid",
     });
   });
+
+  it("migrates a pre-fleet Light to one output without dropping Segments", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-lights-"));
+    const file = join(dir, "lights.json");
+    writeFileSync(
+      file,
+      `${JSON.stringify({
+        version: 1,
+        lights: [{ ...base }],
+        elements: [{ id: "roof", lightId: base.id, label: "Roofline", start: 0, stop: 20 }],
+      })}\n`,
+    );
+    const store = new FileLightsStore(file);
+    const light = store.findById(base.id);
+    expect(light?.outputs).toEqual([
+      expect.objectContaining({ index: 0, start: 0, ledCount: 60, stripKind: "ws281x" }),
+    ]);
+    expect(store.elementsFor(base.id)).toEqual([
+      expect.objectContaining({ id: "roof", start: 0, stop: 20 }),
+    ]);
+  });
 });

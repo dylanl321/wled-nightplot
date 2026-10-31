@@ -248,6 +248,73 @@ describe("LightsHome cached beads", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("does not probe setup profiles until the saved-profile control is used", () => {
+    const fetch = fetchSpy();
+    render(
+      <LightsHome
+        unenrolled={[]}
+        lights={[lightView(), lightView({ id: "light-porch", name: "Porch", displayHost: "192.168.1.41" })]}
+      />,
+    );
+    expect(screen.getByText("Select Lights to apply a setup profile.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Apply setup profile" }).hasAttribute("disabled")).toBe(true);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("posts Apply setup profile for the selected Lights and lists per-Light results", async () => {
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/api/lights/setup-profile") && init?.method === "POST") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            results: [
+              { lightId: "light-garage", name: "Garage", status: "applied" },
+              { lightId: "light-porch", name: "Porch", status: "failed", reason: "This Light hasn’t answered." },
+            ],
+            message: "Applied on 1. 1 failed.",
+          }),
+        };
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(
+      <LightsHome
+        unenrolled={[]}
+        lights={[
+          lightView({ reachability: "online", on: true }),
+          lightView({
+            id: "light-porch",
+            name: "Porch",
+            displayHost: "192.168.1.41",
+            hostKey: "192.168.1.41:80",
+            reachability: "online",
+            on: true,
+          }),
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Garage" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Porch" }));
+    fireEvent.change(screen.getByPlaceholderText("yard-{nn}"), { target: { value: "yard-{nn}" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Apply setup profile" }));
+    });
+
+    expect(String(fetch.mock.calls[0]?.[0])).toMatch(/\/api\/lights\/setup-profile$/);
+    const body = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)) as {
+      lightIds: string[];
+      profile: { namePattern?: string };
+    };
+    expect(body.lightIds).toEqual(["light-garage", "light-porch"]);
+    expect(body.profile.namePattern).toBe("yard-{nn}");
+    expect(screen.getByText("Garage · Applied")).toBeTruthy();
+    expect(screen.getByText("Porch · This Light hasn’t answered.")).toBeTruthy();
+  });
+
   it("shows Espalexa portWarning on the unenrolled tray", () => {
     render(
       <LightsHome

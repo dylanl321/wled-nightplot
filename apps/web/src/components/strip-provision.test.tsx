@@ -33,6 +33,22 @@ const provision: ProvisionRead = {
     nativeOrder: 0,
     colorOrder: "GRB",
   },
+  outputs: [
+    {
+      index: 0,
+      start: 0,
+      settings: {
+        ledType: "ws281x",
+        length: 60,
+        gpio: 16,
+        nativeType: 22,
+        nativeOrder: 0,
+        colorOrder: "GRB",
+      },
+      refuse: null,
+      writable: true,
+    },
+  ],
   fingerprint: {
     firmware: "WLED 0.15.4",
     source: "cfg",

@@ -6,7 +6,8 @@ import type { WledSnapshot } from "./wled/snapshot.ts";
 import type { NightplotSettings } from "./settings.ts";
 
 export type BackupReason = "manual" | "pre-apply" | "pre-safe" | "pre-provision" |
-  "pre-delete" | "pre-replacement" | "pre-catalog" | "pre-restore" | "pre-sync";
+  "pre-delete" | "pre-replacement" | "pre-catalog" | "pre-restore" | "pre-sync" |
+  "pre-setup-profile";
 
 /** Whether this backup holds both native WLED files. Incomplete is an honest miss, not a restore source. */
 export type DeviceCaptureStatus = "complete" | "incomplete" | "none";

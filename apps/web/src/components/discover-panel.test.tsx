@@ -196,3 +196,61 @@ describe("DiscoverPanel portWarning", () => {
     expect(screen.getByRole("button", { name: "Type host:port" })).toBeTruthy();
   });
 });
+
+describe("DiscoverPanel Add all found", () => {
+  it("enrolls every found candidate and lists per-host results", async () => {
+    const fetch = vi.fn(async (url: string) => {
+      if (String(url).includes("/api/lights/bulk")) {
+        return new Response(
+          JSON.stringify({
+            results: [
+              { host: "192.168.1.80", status: "added", name: "Porch rail" },
+              { host: "192.168.1.81", status: "already-enrolled", reason: "Garage is already on Lights." },
+              { host: "192.168.1.82", status: "failed", reason: "Didn’t answer." },
+            ],
+            message: "1 added · 1 already enrolled · 1 failed",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    render(
+      <DiscoverPanel
+        enrolled={[]}
+        initialCandidates={[
+          discoverRow({
+            key: "192.168.1.80:80",
+            hostname: "192.168.1.80",
+            displayHost: "192.168.1.80",
+            status: "found",
+            reason: null,
+            reasonCode: null,
+            name: "Porch rail",
+            ledCount: 60,
+            bead: "#ffa000",
+          }),
+          discoverRow({
+            key: "192.168.1.81:80",
+            hostname: "192.168.1.81",
+            displayHost: "192.168.1.81",
+            status: "found",
+            reason: null,
+            reasonCode: null,
+            name: "Garage",
+            ledCount: 60,
+            bead: "#ffa000",
+          }),
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Add all found/ }));
+    expect(await screen.findByText(/Added as Porch rail/)).toBeTruthy();
+    expect(screen.getByText(/Garage is already on Lights/)).toBeTruthy();
+    expect(screen.getByText(/Didn’t answer/)).toBeTruthy();
+    expect(fetch.mock.calls.some((call) => String(call[0]).includes("/api/lights/bulk"))).toBe(true);
+  });
+});

@@ -1,6 +1,6 @@
 # Architecture
 
-One code basis. New controllers or strip types register a catalog member; they do not fork the Lights / Elements / live stack.
+One code basis. New controllers or strip types register a catalog member; they do not fork the Lights / Segments / live stack.
 
 This is early software. Paths below are the real tree on `main`.
 
@@ -49,14 +49,16 @@ Routes and API: [README.md](../README.md#ui) / [README.md](../README.md#api).
 
 | Symbol | File | Meaning |
 | --- | --- | --- |
-| `Light` | `packages/shared/src/lights.ts` | One enrolled controller + one strip. `ledProductId` is a catalog attach (null = manual fields) |
-| `Element` | same | Inclusive–exclusive range on that strip |
+| `Light` | `packages/shared/src/lights.ts` | One enrolled controller. Optional `outputs[]` (WLED buses); missing rows migrate to one output. `ledProductId` is a catalog attach (null = manual fields) |
+| `LightOutput` | same | One `hw.led.ins[]` bus: index, start, length, GPIO, type |
+| `Element` | same | Inclusive–exclusive range; optional `outputId`; gaps allowed |
+| `SetupProfile` | `packages/shared/src/setup-profile.ts` | Saved fleet setup (LED type, colour order, Safe fields, name pattern) |
 | `validateDeclaredRanges` | `packages/shared/src/range.ts` | Invert, overlap, `over-ledCount`. Start at or past `ledCount` (or stop below 0) is past strip even when inverted |
 | `BeadColor` | `packages/shared/src/bead.ts` | Colour, `null` (off), or `"unknown"` (grey) |
 | `stripHonestyForLight` | `packages/shared/src/strip/honesty.ts` | rgb / rgbw + chip caption from product, else `stripKind` |
 | `WledSnapshot` | `packages/shared/src/wled/snapshot.ts` | Parsed `/json` (info + state) |
 | `WledSafeSettings` | `packages/shared/src/safe.ts` | Small Safe set; fingerprint-gated |
-| `WledStripProvision` | `packages/shared/src/provision.ts` | First-time bus: type / length / GPIO plus live `nativeOrder` / `colorOrder`. `buildProvisionWrite` authors `order: 0` (GRBW / `COL_ORDER_GRB` on RGBW) only on native type change; same-type length / GPIO clones the live `order` |
+| `WledStripProvision` | `packages/shared/src/provision.ts` | Per-bus type / length / GPIO plus live `nativeOrder` / `colorOrder`. `parseWledProvision` reads every `hw.led.ins[]` entry. `buildProvisionWrite` patches the first understood bus and clones the rest. `buildProvisionOutputsWrite` patches many buses. Authors `order: 0` only on native type change unless a setup profile sets colour order |
 | `LedProduct` | `packages/shared/src/strip/products.ts` | Operator LED SKU. `formFactor` is metadata. `driverId` must be a registered strip driver |
 | `EffectDefinition` | `packages/shared/src/effect/types.ts` | Portable Effect source. Colour is a function of normalized position `u` and time `t`. Node count is not in the source |
 | `EffectBinding` | same | Maps a definition onto a Light and optional Segment, with parameter values only |

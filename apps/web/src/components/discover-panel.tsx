@@ -1,6 +1,6 @@
 "use client";
 
-import type { DiscoverRow, LightView } from "@nightplot/shared";
+import type { BulkEnrollRow, DiscoverRow, LightView } from "@nightplot/shared";
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { useDiscoveryCandidates } from "@/components/discovery-watch";
@@ -21,7 +21,8 @@ export function DiscoverPanel({
   const router = useRouter();
   const [address, setAddress] = useState("");
   const [rows, setRows] = useState<DiscoverRow[]>(initialCandidates);
-  const [busy, setBusy] = useState<"scan" | "probe" | "add" | "blink" | null>(null);
+  const [busy, setBusy] = useState<"scan" | "probe" | "add" | "add-all" | "blink" | null>(null);
+  const [bulkResults, setBulkResults] = useState<BulkEnrollRow[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [findLoadError, setFindLoadError] = useState<string | null>(
@@ -101,6 +102,32 @@ export function DiscoverPanel({
     router.refresh();
   }
 
+  async function addAllFound() {
+    const hosts = found.map((row) => row.displayHost);
+    if (hosts.length === 0) return;
+    setBusy("add-all");
+    setNotice(null);
+    setInfo(null);
+    setBulkResults(null);
+    const res = await postJson<{ results: BulkEnrollRow[]; message?: string }>(
+      "/api/lights/bulk",
+      { hosts },
+    );
+    setBusy(null);
+    if (!res.ok) {
+      setNotice(res.data.message ?? "Add all found did not run.");
+      return;
+    }
+    setBulkResults(res.data.results);
+    const failed = res.data.results.filter((row) => row.status === "failed");
+    if (failed.length > 0 && failed.length === res.data.results.length) {
+      setNotice(res.data.message ?? "Nothing added.");
+    } else if (res.data.message) {
+      setInfo(res.data.message);
+    }
+    router.refresh();
+  }
+
   function focusTypedAddress(hostname: string) {
     setAddress(`${hostname}:`);
     setNotice(null);
@@ -150,16 +177,47 @@ export function DiscoverPanel({
           refused before a probe. Find only offers Add when the box advertised
           a port (SSDP LOCATION or mDNS SRV). No port → type host:port.
         </p>
-        <Button
-          type="button"
-          size="lg"
-          className="w-fit"
-          disabled={busy !== null}
-          onClick={() => void scan()}
-        >
-          {busy === "scan" ? "Looking…" : "Find Lights"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Button
+            type="button"
+            size="lg"
+            className="w-fit"
+            disabled={busy !== null}
+            onClick={() => void scan()}
+          >
+            {busy === "scan" ? "Looking…" : "Find Lights"}
+          </Button>
+          {found.length > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              className="w-fit"
+              disabled={busy !== null}
+              onClick={() => void addAllFound()}
+            >
+              {busy === "add-all" ? "Adding…" : `Add all found (${found.length})`}
+            </Button>
+          ) : null}
+        </div>
       </div>
+
+      {bulkResults ? (
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-[#0e1014] p-[18px]">
+          <p className="font-medium">Add all found</p>
+          {bulkResults.map((row) => (
+            <p key={`${row.host}-${row.status}`} className="text-[13px] leading-5 text-[#c9c3b8]">
+              <span className="font-mono">{row.host}</span>
+              {" · "}
+              {row.status === "added"
+                ? `Added${row.name ? ` as ${row.name}` : ""}`
+                : row.status === "already-enrolled"
+                  ? row.reason ?? "Already enrolled"
+                  : row.reason ?? "Failed"}
+            </p>
+          ))}
+        </div>
+      ) : null}
 
       {found.map((row) => (
         <FoundCard

@@ -139,6 +139,18 @@ describe("validateDeclaredRanges", () => {
     ).toEqual([]);
   });
 
+  it("accepts gapped Segments on one strip", () => {
+    expect(
+      validateDeclaredRanges(
+        [
+          { id: "roof", label: "Roofline", start: 0, stop: 20 },
+          { id: "win", label: "Window", start: 40, stop: 60 },
+        ],
+        60,
+      ),
+    ).toEqual([]);
+  });
+
   it("finds the first free span for a new Segment", () => {
     expect(firstFreeRange([{ start: 0, stop: 24 }], 60)).toEqual({
       start: 24,

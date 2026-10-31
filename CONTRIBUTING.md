@@ -1,6 +1,6 @@
 # Contributing
 
-Nightplot Configure is a LAN utility: find a WLED controller, enroll it as a Light, describe Elements as ranges, Preview live, Apply, manage a few, All Off. Read [AGENTS.md](AGENTS.md) and [CONSTITUTION.md](CONSTITUTION.md) before changing behaviour. Plane coordinates and agent duties: [docs/PLANE.md](docs/PLANE.md).
+Nightplot Configure is a LAN utility for a yard of WLED controllers: find them, enroll them as Lights, describe outputs and Segments, Preview live, Apply, manage a fleet, All Off. Read [AGENTS.md](AGENTS.md) and [CONSTITUTION.md](CONSTITUTION.md) before changing behaviour. Plane coordinates and agent duties: [docs/PLANE.md](docs/PLANE.md).
 
 ## Run
 
@@ -22,16 +22,18 @@ v2 prototype: `pnpm proto` → `http://127.0.0.1:43182`. See [docs/ui/README.md]
 
 ## Product words
 
-Use: **Lights**, **Elements**, Preview, Apply, Blink, All Off.
+Use: **Lights**, **Segments**, Preview, Apply, Blink, All Off.
 
-A Light is one enrolled controller + one strip. An Element is a contiguous inclusive–exclusive range on that strip.
+Fleet and show words are also in play: **Yard**, **Prop**, **Zone**, **Look**, **Schedule**.
 
-Use this product’s vocabulary in chrome, routes, and user-facing copy.
+A Light is one enrolled controller. It may drive several outputs. A Segment is an inclusive–exclusive range on one output. Gaps are allowed.
+
+Use this product’s vocabulary in chrome, routes, and user-facing copy. Existing `Element` types and `elements` keys stay compatible.
 
 ## PR expectations
 
-- One CONFIG slice per PR. Gaps are not the next R-slice. Do not start the next CONFIG ticket in the same run.
-- Title like `CONFIG-N: …`. Body includes `Fixes CONFIG-N` (or equivalent) so intake can match.
+- One CONFIG slice per PR, or one GitHub epic slice when that is the ticket. Gaps are not the next R-slice. Do not start the next CONFIG ticket in the same run.
+- Title like `CONFIG-N: …` or the GitHub issue it closes. Body includes `Fixes CONFIG-N` or `Fixes #N` so intake can match.
 - CHANGELOG and public docs land in the **same commit** as the code they describe.
 - `pnpm lint`, `pnpm typecheck` and `pnpm test` pass (CI runs all three on every pull request).
 - Honesty stays: unreachable beads stay grey with last-seen (never last colour); Preview is temporary and Apply persists; Safe / provision refuse unsupported firmware; the fixture is a development stub, not Hardware Done.

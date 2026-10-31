@@ -15,7 +15,23 @@ export type LightReachability = "online" | "no-answer";
 export type LightNameSource = "info" | "cfg";
 
 /**
- * A Light is one enrolled controller + one strip.
+ * One WLED bus / strip on an enrolled controller.
+ * `start` is the first LED index of this output on the controller’s combined strip.
+ */
+export type LightOutput = {
+  id: string;
+  index: number;
+  start: number;
+  ledCount: number;
+  stripKind: string;
+  gpio: number | null;
+  nativeType: number | null;
+  nativeOrder: number | null;
+  colorOrder: string | null;
+};
+
+/**
+ * A Light is one enrolled controller. It may drive several outputs (WLED buses).
  */
 export type Light = {
   id: string;
@@ -47,6 +63,11 @@ export type Light = {
    * Bookkeeping only — not a WLED write, not Hardware Done.
    */
   ledProductId: string | null;
+  /**
+   * WLED `hw.led.ins[]` outputs on this controller. Missing on pre-fleet
+   * store rows — readers migrate to a single output from `ledCount` / `stripKind`.
+   */
+  outputs?: LightOutput[];
   lastSnapshot?: WledSnapshot | null;
   lastSnapshotAt?: string | null;
   /** Last confirmed Segment Apply; not rewritten by Inspect or readdressing. */
@@ -59,7 +80,8 @@ export function normalizeLightLedProductId(value: unknown): string | null {
 }
 
 /**
- * An Element is a contiguous inclusive–exclusive range on a Light’s strip.
+ * An Element is an inclusive–exclusive range on one output. Gaps between
+ * Segments on the same output are allowed; overlap is not.
  */
 export type Element = {
   id: string;
@@ -69,6 +91,11 @@ export type Element = {
   stop: number;
   /** Optional saved RGBW colour; absent on older saved Segments. */
   color?: { hex: string; white: number };
+  /**
+   * Output this Segment lives on. Missing → first output (legacy single-strip).
+   * `start`/`stop` stay in the controller’s combined LED index space.
+   */
+  outputId?: string;
 };
 
 /** Live view: bead colour comes from the current snapshot, never a stored last colour. */
