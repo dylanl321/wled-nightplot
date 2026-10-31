@@ -4,6 +4,8 @@
  * Segments are generated when the prop is attached and Applied.
  */
 
+import { isPropLayout, type PropLayout } from "./layout.ts";
+
 export const PROP_KINDS = ["roofline", "window", "arch", "tree", "stake-row", "custom", "wireframe"] as const;
 export type PropKind = (typeof PROP_KINDS)[number];
 
@@ -111,6 +113,8 @@ export type Prop = {
   wireframe?: WireframeSpec;
   /** Present on props designed from measurements, and filled in for older rows on read. */
   design?: PropDesign;
+  /** Corners and wiring order. Light counts are derived from this, not stored on it. */
+  layout?: PropLayout;
 };
 
 export type PropTap = {
@@ -267,6 +271,7 @@ export function isProp(value: unknown): value is Prop {
   const legacy = typeof row.lightId === "string" && elementIds !== undefined && elementIds.length > 0;
   if (!designed && !legacy) return false;
   if (designed && !isPropDesign(row.design)) return false;
+  if (row.layout !== undefined && !isPropLayout(row.layout)) return false;
   if (row.kind === "wireframe" || row.wireframe !== undefined) return isWireframeSpec(row.wireframe);
   return true;
 }

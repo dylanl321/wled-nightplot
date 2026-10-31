@@ -3,18 +3,24 @@
 import {
   compilePropDesign,
   DEFAULT_PITCH_MM,
+  emptyTrace,
+  METRES_PER_FOOT,
+  rooflineLayout,
+  windowLayout,
   type PropKind,
+  type PropLayout,
   type PropLengthUnit,
   type PropMeasurements,
 } from "@nightplot/shared";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { PropLayoutEditor } from "@/components/props/prop-layout-editor";
 import { PropShapeArt } from "@/components/props/prop-shape-art";
 import { Button } from "@/components/ui/button";
 import { postJson } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type Step = "name" | "shape" | "size" | "review" | "custom";
+type Step = "name" | "shape" | "size" | "review" | "origin" | "draw";
 
 const SHAPES: { kind: PropKind; title: string; blurb: string }[] = [
   { kind: "roofline", title: "Roofline", blurb: "One line along the roof" },
@@ -45,6 +51,10 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
   const [side, setSide] = useState("4");
   const [postHeight, setPostHeight] = useState("4");
   const [postTouched, setPostTouched] = useState(false);
+  const [startCorner, setStartCorner] = useState<0 | 1 | 2 | 3>(0);
+  const [clockwise, setClockwise] = useState(true);
+  const [startAtFarEnd, setStartAtFarEnd] = useState(false);
+  const [drawLayout, setDrawLayout] = useState<PropLayout | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -66,7 +76,7 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
   function back() {
     setNotice(null);
     if (step === "shape") setStep("name");
-    else if (step === "size" || step === "custom") setStep("shape");
+    else if (step === "size" || step === "origin") setStep(step === "origin" ? "size" : "shape");
     else if (step === "review") setStep("size");
   }
 
@@ -85,7 +95,12 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
         setNotice("Pick a shape.");
         return;
       }
-      setStep(kind === "custom" ? "custom" : "size");
+      if (kind === "custom") {
+        setDrawLayout(emptyTrace(unit, (Number.isFinite(pitchMm) && pitchMm > 0 ? pitchMm : DEFAULT_PITCH_MM) / 1000));
+        setStep("draw");
+        return;
+      }
+      setStep("size");
       return;
     }
     if (step === "size") {
@@ -93,8 +108,56 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
         setNotice(compiled && !compiled.ok ? compiled.message : "Check the measurements.");
         return;
       }
-      setStep("review");
+      setStep(kind === "window" || kind === "roofline" ? "origin" : "review");
     }
+  }
+
+  function drawing(): PropLayout {
+    const pitchM = (Number.isFinite(pitchMm) && pitchMm > 0 ? pitchMm : DEFAULT_PITCH_MM) / 1000;
+    const toM = (value: string) => Number(value) * (unit === "ft" ? METRES_PER_FOOT : 1);
+    if (kind === "window") {
+      return windowLayout({
+        widthM: toM(width),
+        heightM: toM(height),
+        units: unit,
+        pitchM,
+        startCorner,
+        clockwise,
+        params: { width: Number(width), height: Number(height) },
+      });
+    }
+    if (kind === "roofline") {
+      return rooflineLayout({
+        lengthM: toM(length),
+        units: unit,
+        pitchM,
+        startAtFarEnd,
+        params: { length: Number(length) },
+      });
+    }
+    return emptyTrace(unit, pitchM);
+  }
+
+  async function saveLayout(layout: PropLayout) {
+    if (!kind) return;
+    setBusy(true);
+    setNotice(null);
+    const res = await postJson<{ message?: string }>("/api/props", {
+      label: name.trim(),
+      kind,
+      unit,
+      pitchMm: Number.isFinite(pitchMm) && pitchMm > 0 ? pitchMm : DEFAULT_PITCH_MM,
+      ledProductId: productId,
+      measurements: kind === "custom" ? { shape: "custom" } : measurements,
+      layout,
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setNotice(res.data.message ?? "The prop was not saved.");
+      return;
+    }
+    router.push("/");
+    router.refresh();
   }
 
   async function save() {
@@ -116,6 +179,17 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
     }
     router.push("/");
     router.refresh();
+  }
+
+  if (step === "draw") {
+    return (
+      <PropLayoutEditor
+        initial={drawLayout ?? emptyTrace(unit)}
+        mode={kind === "custom" ? "trace" : "edit"}
+        onBack={() => setStep(kind === "custom" ? "shape" : "origin")}
+        onDone={(layout) => void saveLayout(layout)}
+      />
+    );
   }
 
   return (
@@ -152,12 +226,32 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
           ))}
         </div>
       ) : null}
-      {step === "custom" ? (
-        <div className="flex flex-col gap-3 rounded-[14px] border border-border bg-card p-4">
-          <PropShapeArt kind="custom" />
-          <p className="text-[15px] leading-6">
-            Custom draw is not ready yet. Pick a template shape — roofline, window, arch, mini tree, stake row, or well house — and set the size by typing. Nothing is saved from this step.
-          </p>
+      {step === "origin" && kind === "window" ? (
+        <div className="flex flex-col gap-3">
+          <p className="text-[15px] leading-6">Tap the corner where the controller end of the string starts, then choose the direction.</p>
+          <div className="grid grid-cols-2 gap-2">
+            {(["Bottom left", "Bottom right", "Top right", "Top left"] as const).map((label, index) => (
+              <button
+                key={label}
+                type="button"
+                className={`min-h-[72px] rounded-xl border p-3 text-left text-[15px] ${startCorner === index ? "border-primary bg-card" : "border-border"}`}
+                onClick={() => setStartCorner(index as 0 | 1 | 2 | 3)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button type="button" className={`min-h-11 flex-1 rounded-lg border text-base ${clockwise ? "border-primary" : "border-border"}`} onClick={() => setClockwise(true)}>Clockwise</button>
+            <button type="button" className={`min-h-11 flex-1 rounded-lg border text-base ${!clockwise ? "border-primary" : "border-border"}`} onClick={() => setClockwise(false)}>Counter-clockwise</button>
+          </div>
+        </div>
+      ) : null}
+      {step === "origin" && kind === "roofline" ? (
+        <div className="flex flex-col gap-3">
+          <p className="text-[15px] leading-6">Which end is the controller end?</p>
+          <button type="button" className={`min-h-11 rounded-lg border text-base ${!startAtFarEnd ? "border-primary" : "border-border"}`} onClick={() => setStartAtFarEnd(false)}>This end</button>
+          <button type="button" className={`min-h-11 rounded-lg border text-base ${startAtFarEnd ? "border-primary" : "border-border"}`} onClick={() => setStartAtFarEnd(true)}>The far end</button>
         </div>
       ) : null}
       {step === "size" && kind && kind !== "custom" ? (
@@ -255,12 +349,14 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
         <Button type="button" variant="outline" className="min-h-11 flex-1 text-base" onClick={back} disabled={step === "name" || busy}>
           Back
         </Button>
-        {step === "review" ? (
+        {step === "origin" ? (
+          <Button type="button" className="min-h-11 flex-1 text-base" onClick={() => { setDrawLayout(drawing()); setStep("draw"); }}>Next</Button>
+        ) : step === "review" ? (
           <Button type="button" className="min-h-11 flex-1 text-base" onClick={() => void save()} disabled={busy || !compiled?.ok}>
             {busy ? "Saving…" : "Save"}
           </Button>
         ) : (
-          <Button type="button" className="min-h-11 flex-1 text-base" onClick={next} disabled={step === "custom" || busy}>
+          <Button type="button" className="min-h-11 flex-1 text-base" onClick={next} disabled={busy}>
             Next
           </Button>
         )}
@@ -407,8 +503,10 @@ function stepTitle(step: Step): string {
       return "How big is it?";
     case "review":
       return "Here is the prop";
-    case "custom":
-      return "Custom draw";
+    case "origin":
+      return "Which corner is the controller end?";
+    case "draw":
+      return "Draw the prop";
     default: {
       const _never: never = step;
       return _never;

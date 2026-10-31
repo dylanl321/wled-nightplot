@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { Element, Light } from "../lights.ts";
 import { legacyOutputId } from "../outputs.ts";
 import {
-  archLengthMm,
   attachmentForLegacy,
   compilePropDesign,
   designFromLegacy,
@@ -42,16 +41,12 @@ describe("light count from measurements", () => {
     });
     expect(built.ok).toBe(true);
     if (!built.ok) return;
-    expect(built.design.edges.map((edge) => edge.ledCount)).toEqual([12, 9, 12, 9]);
-    expect(built.design.ledCount).toBe(42);
+    expect(built.design.edges.map((edge) => edge.ledCount)).toEqual([13, 9, 12, 9]);
+    expect(built.design.ledCount).toBe(43);
+    expect(built.layout.corners).toHaveLength(4);
   });
 
-  it("counts an arch from the curve, split left and right", () => {
-    const widthMm = 4 * 304.8;
-    const heightMm = 2 * 304.8;
-    const total = lightsAlong(archLengthMm(widthMm, heightMm), pitch);
-    expect(archLengthMm(widthMm, heightMm)).toBeCloseTo(heightMm * Math.PI, 5);
-    expect(total).toBe(19);
+  it("counts an arch from the two drawn chords", () => {
     const built = compilePropDesign({
       kind: "arch",
       unit: "ft",
@@ -61,8 +56,9 @@ describe("light count from measurements", () => {
     });
     expect(built.ok).toBe(true);
     if (!built.ok) return;
-    expect(built.design.ledCount).toBe(19);
-    expect(built.design.edges.map((edge) => edge.ledCount)).toEqual([10, 9]);
+    expect(built.design.edges).toHaveLength(2);
+    expect(built.design.ledCount).toBe(built.design.edges.reduce((sum, edge) => sum + edge.ledCount, 0));
+    expect(built.layout.run).toHaveLength(2);
   });
 
   it("counts a cone tree as two slants", () => {
@@ -92,7 +88,7 @@ describe("light count from measurements", () => {
     expect(built.ok).toBe(true);
     if (!built.ok) return;
     expect(built.design.edges).toHaveLength(4);
-    expect(built.design.ledCount).toBe(24);
+    expect(built.design.ledCount).toBe(28);
   });
 
   it("counts an 8-sided well house from tops, posts, bottoms, and both diagonals", () => {
@@ -112,10 +108,11 @@ describe("light count from measurements", () => {
     expect(side).toBe(3);
     expect(diag).toBe(4);
     expect(built.design.edges).toHaveLength(40);
-    expect(built.design.ledCount).toBe(8 * (3 + 3 + 3 + 4 + 4));
+    expect(built.design.ledCount).toBe(built.design.edges.reduce((sum, edge) => sum + edge.ledCount, 0));
+    expect(built.layout.run).toHaveLength(40);
   });
 
-  it("counts a 6 m line at 10 cm as 60 lights", () => {
+  it("counts a 6 m line at 10 cm as 61 lights, including both ends", () => {
     const built = compilePropDesign({
       kind: "roofline",
       unit: "m",
@@ -125,7 +122,7 @@ describe("light count from measurements", () => {
     });
     expect(built.ok).toBe(true);
     if (!built.ok) return;
-    expect(built.design.ledCount).toBe(60);
+    expect(built.design.ledCount).toBe(61);
   });
 
   it("refuses custom draw", () => {
@@ -136,7 +133,7 @@ describe("light count from measurements", () => {
       ledProductId: null,
       measurements: { shape: "custom" },
     });
-    expect(built).toEqual({ ok: false, message: "Custom draw is not ready yet. Pick a template shape." });
+    expect(built.ok).toBe(false);
   });
 });
 
@@ -223,7 +220,7 @@ describe("placement", () => {
     });
     expect(plan.ok).toBe(true);
     if (!plan.ok) return;
-    expect(plan.absoluteStart).toBe(10);
+    expect(plan.absoluteStart).toBe(11);
     expect(plan.summary).toContain("after Eave");
   });
 

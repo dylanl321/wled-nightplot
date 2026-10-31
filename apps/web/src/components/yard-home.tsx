@@ -101,11 +101,16 @@ export function YardHome({
                           ? "Controller missing"
                           : propAttachmentLabel(attachment, light.name, output?.index ?? null)}
                     </p>
-                    {!attachment ? (
-                      <Link href={`/props/${prop.id}/attach`} className="mt-2 inline-flex min-h-11 items-center text-[15px] text-primary">
-                        Attach
+                    <span className="mt-2 flex gap-4">
+                      <Link href={`/props/${prop.id}/edit`} className="inline-flex min-h-11 items-center text-[15px] text-primary">
+                        Edit
                       </Link>
-                    ) : null}
+                      {!attachment ? (
+                        <Link href={`/props/${prop.id}/attach`} className="inline-flex min-h-11 items-center text-[15px] text-primary">
+                          Attach
+                        </Link>
+                      ) : null}
+                    </span>
                   </div>
                 </li>
               );
