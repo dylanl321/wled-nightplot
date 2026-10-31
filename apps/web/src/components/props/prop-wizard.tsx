@@ -29,7 +29,7 @@ const SHAPES: { kind: PropKind; title: string; blurb: string }[] = [
   { kind: "tree", title: "Mini tree", blurb: "A cone" },
   { kind: "stake-row", title: "Stake row", blurb: "Uprights in a row" },
   { kind: "wireframe", title: "Well house", blurb: "Box and X on each side" },
-  { kind: "custom", title: "Custom draw", blurb: "Your own line" },
+  { kind: "custom", title: "Draw it", blurb: "Your own line" },
 ];
 
 export type SpacingChoice = { id: string; name: string; pitchMm: number };
@@ -184,6 +184,7 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
   if (step === "draw") {
     return (
       <PropLayoutEditor
+        name={name.trim() || "New prop"}
         initial={drawLayout ?? emptyTrace(unit)}
         mode={kind === "custom" ? "trace" : "edit"}
         onBack={() => setStep(kind === "custom" ? "shape" : "origin")}
@@ -193,8 +194,12 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[560px] flex-1 flex-col gap-5 px-4 pt-5 pb-44">
-      <p className="text-[13px] text-muted-foreground">New prop</p>
+    <div className="mx-auto flex min-h-dvh w-full max-w-[560px] flex-1 flex-col">
+      <header className="flex h-14 shrink-0 items-center gap-1 px-1">
+        <button type="button" className="min-h-11 px-3 text-[16px]" onClick={step === "name" ? () => router.push("/") : back}>Back</button>
+        <p className="min-w-0 flex-1 truncate text-[17px] font-medium">{name.trim() || "New prop"}</p>
+      </header>
+      <div className="flex flex-1 flex-col gap-5 px-4 pb-28">
       <h1 className="text-[26px] font-semibold tracking-[-0.01em]">{stepTitle(step)}</h1>
       {step === "name" ? (
         <label className="flex flex-col gap-2 text-[15px]">
@@ -342,8 +347,9 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
         </div>
       ) : null}
       {notice ? <p className="text-[15px] text-destructive">{notice}</p> : null}
+      </div>
       <div
-        className="fixed inset-x-0 z-20 flex gap-2 border-t border-border bg-background px-4 py-3 bottom-[var(--phone-chrome)] lg:bottom-0"
+        className="fixed inset-x-0 bottom-0 z-20 mx-auto flex w-full max-w-[560px] gap-2 border-t border-border bg-background px-4 py-3"
         style={{ paddingLeft: "max(1rem, env(safe-area-inset-left))", paddingRight: "max(1rem, env(safe-area-inset-right))" }}
       >
         <Button type="button" variant="outline" className="min-h-11 flex-1 text-base" onClick={back} disabled={step === "name" || busy}>

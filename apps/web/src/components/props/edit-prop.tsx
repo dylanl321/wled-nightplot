@@ -28,6 +28,7 @@ export function EditProp({ prop }: { prop: Prop }) {
     <>
       {notice ? <p className="px-4 pt-4 text-[15px] text-destructive">{notice}</p> : null}
       <PropLayoutEditor
+        name={prop.label}
         initial={initial}
         mode={prop.kind === "custom" ? "trace" : "edit"}
         onBack={() => router.push("/")}

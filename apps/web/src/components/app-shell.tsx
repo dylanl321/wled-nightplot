@@ -14,6 +14,8 @@ type AppShellProps = {
   nav: "lights" | "discover" | "light" | "catalog" | "backups" | "sync" | "looks" | "yard" | "settings";
   activeLightId?: string;
   sessions?: LiveHint[];
+  /** Prop drawing and the New prop wizard fill the phone. All Off and the bottom bar stay off those screens. */
+  immersive?: boolean;
 };
 
 export function AppShell({
@@ -21,13 +23,17 @@ export function AppShell({
   lights = [],
   nav,
   sessions = [],
+  immersive = false,
 }: AppShellProps) {
   const lightsActive = nav === "lights" || nav === "light" || nav === "discover";
 
   return (
     <DiscoveryProvider>
-    <div className="flex min-h-dvh flex-col bg-background text-foreground [--phone-chrome:calc(9rem+env(safe-area-inset-bottom))] lg:[--phone-chrome:0px]">
-      <header
+    <div className={cn(
+      "flex min-h-dvh flex-col bg-background text-foreground",
+      immersive ? "[--phone-chrome:0px]" : "[--phone-chrome:calc(9rem+env(safe-area-inset-bottom))] lg:[--phone-chrome:0px]",
+    )}>
+      {immersive ? null : <header
         className="flex h-auto min-h-14 items-center gap-2.5 border-b border-border px-5 lg:h-14 lg:gap-7 lg:bg-rail lg:px-6"
         style={{
           paddingTop: "env(safe-area-inset-top)",
@@ -61,11 +67,11 @@ export function AppShell({
         <div className="hidden lg:block">
           <AllOffControl size="bar" lights={lights} sessions={sessions} />
         </div>
-      </header>
+      </header>}
 
-      <main className="flex min-h-0 flex-1 flex-col pb-[var(--phone-chrome)] lg:pb-0">{children}</main>
+      <main className={cn("flex min-h-0 flex-1 flex-col", immersive ? "pb-0" : "pb-[var(--phone-chrome)] lg:pb-0")}>{children}</main>
 
-      <PhoneChrome nav={nav} lights={lights} sessions={sessions} />
+      {immersive ? null : <PhoneChrome nav={nav} lights={lights} sessions={sessions} />}
     </div>
     </DiscoveryProvider>
   );

@@ -26,7 +26,7 @@ describe("New prop wizard", () => {
     render(<PropWizard products={[]} />);
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Ridge" } });
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    fireEvent.click(screen.getByRole("button", { name: /Custom draw/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Draw it/ }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByRole("button", { name: "Trace", pressed: true })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();

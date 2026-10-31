@@ -27,11 +27,13 @@ type View = { ppm: number; ox: number; oy: number };
 const FT = 0.3048;
 
 export function PropLayoutEditor({
+  name,
   initial,
   mode: initialMode,
   onDone,
   onBack,
 }: {
+  name: string;
   initial: PropLayout;
   mode: GestureMode;
   onDone: (layout: PropLayout) => void;
@@ -52,7 +54,7 @@ export function PropLayoutEditor({
   const [ask, setAsk] = useState(false);
   const [asked, setAsked] = useState(false);
   const [gap, setGap] = useState<string | null>(null);
-  const [size, setSize] = useState({ w: 390, h: 520 });
+  const [size, setSize] = useState({ w: 0, h: 0 });
   const [magnifier, setMagnifier] = useState<{ x: number; y: number; wx: number; wy: number } | null>(null);
   const frame = useRef<HTMLDivElement>(null);
   const gesture = useRef<GestureState>(idleGesture(initialMode));
@@ -82,7 +84,7 @@ export function PropLayoutEditor({
   useEffect(() => {
     if (opened.current || size.w < 40) return;
     opened.current = true;
-    setView(openingView(initial, size.w, size.h));
+    setView(fitView(initial, size.w, size.h));
   }, [initial, size.h, size.w]);
 
   useEffect(() => {
@@ -293,20 +295,23 @@ export function PropLayoutEditor({
   const spare = stringLights == null ? null : stringLights - counted.total;
   const short = spare != null && spare < 0;
 
+  const totalText = stringLights == null
+    ? `${counted.total} lights · string length unknown`
+    : `${counted.total} lights · string has ${stringLights} · ${short ? `${Math.abs(spare ?? 0)} short` : `${spare} spare`}`;
+
   return (
-    <div className="fixed inset-x-0 top-14 z-20 flex max-w-full flex-col overflow-hidden bg-background landscape:flex-row" style={{ bottom: "var(--phone-chrome)" }}>
-      <div ref={frame} className="relative min-h-0 min-w-0 flex-1 overflow-hidden" style={{ touchAction: "none" }}>
-        <div className={`flex items-center gap-3 border-b px-3 py-2 text-[15px] ${short ? "bg-amber-500/15 text-amber-200" : "text-foreground"}`}>
-          <span className="min-w-0 flex-1">
-            {counted.total} lights
-            {stringLights == null ? "" : ` · string has ${stringLights} · ${short ? `${Math.abs(spare ?? 0)} short` : `${spare} spare`}`}
-          </span>
-          <button type="button" className="min-h-11 shrink-0 px-2 text-muted-foreground" onClick={onBack}>Back</button>
-        </div>
-        {gap ? <p className="px-3 text-[14px] text-red-400">{gap}</p> : null}
+    <div className="flex h-dvh max-h-dvh w-full max-w-full flex-col overflow-hidden bg-background landscape:flex-row">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
+      <header className="flex h-14 shrink-0 items-center gap-1 bg-background px-1">
+        <button type="button" className="min-h-11 shrink-0 px-3 text-[16px]" onClick={onBack}>Back</button>
+        <h1 className="min-w-0 flex-1 truncate text-[17px] font-medium">{name}</h1>
+      </header>
+      <p className={`shrink-0 bg-background px-4 pb-2 text-[15px] ${short ? "text-amber-200" : "text-foreground"}`}>{totalText}</p>
+      {gap ? <p className="bg-background px-4 text-[14px] text-red-400">{gap}</p> : null}
+      <div ref={frame} className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-background" style={{ touchAction: "none" }}>
         <svg
           data-testid="layout-canvas"
-          className="h-[calc(100%-44px)] w-full touch-none"
+          className="block h-full w-full touch-none"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -324,23 +329,30 @@ export function PropLayoutEditor({
             const b = toScreen(to.x, to.y, view);
             const row = counted.edges.find((item) => item.id === edge.id);
             const label = lengthLabel(edgeLengthM(drawing, edge), layout.units);
+            const mid = edgeLabelPoint(a, b);
+            const caption = `${label.whole}${zoomed && label.extra ? ` ${label.extra}` : ""} · ${row?.lights ?? 0}`;
             return (
               <g key={edge.id}>
                 <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={edge.kind === "wire" ? "#8a8478" : "#d4a574"} strokeWidth={edge.kind === "wire" ? 2 : 3} strokeDasharray={edge.kind === "wire" ? "6 4" : undefined} />
                 <Chevron a={a} b={b} />
-                <text
-                  x={(a.x + b.x) / 2}
-                  y={(a.y + b.y) / 2 - 10}
-                  textAnchor="middle"
-                  className={row?.lights === 0 ? "fill-amber-300" : "fill-foreground"}
-                  fontSize={zoomed ? 13 : 0}
+                <g
                   onPointerDown={(event) => {
                     event.stopPropagation();
                     setSheet(edge.id);
                   }}
                 >
-                  {label.whole}{zoomed && label.extra ? ` ${label.extra}` : ""} · {row?.lights ?? 0}{edge.lockedLengthM ? " ●" : ""}
-                </text>
+                  <rect x={mid.x - 48} y={mid.y - 22} width={96} height={44} fill="transparent" />
+                  <text
+                    x={mid.x}
+                    y={mid.y}
+                    textAnchor="middle"
+                    fill={row?.lights === 0 ? "#f5c16c" : "#e8e2d6"}
+                    fontSize={14}
+                  >
+                    {caption}
+                  </text>
+                  {edge.lockedLengthM ? <LockIcon x={mid.x + caption.length * 3.4} y={mid.y - 12} /> : null}
+                </g>
               </g>
             );
           })}
@@ -350,10 +362,11 @@ export function PropLayoutEditor({
           ))}
         </svg>
         {magnifier ? <Magnifier magnifier={magnifier} layout={drawing} /> : null}
-        <div className="absolute left-2 top-14 flex gap-2">
+        <div className="absolute left-2 top-2 flex gap-2">
           <ModeButton active={mode === "trace"} onClick={() => switchMode("trace")}>Trace</ModeButton>
           <ModeButton active={mode === "edit"} onClick={() => switchMode("edit")}>Edit</ModeButton>
         </div>
+      </div>
       </div>
       <div className="flex gap-2 border-t border-border bg-background p-2 landscape:w-16 landscape:flex-col landscape:border-t-0 landscape:border-l">
         <DockButton onClick={undo} disabled={past.length === 0}>Undo</DockButton>
@@ -418,13 +431,33 @@ function CornerDot({ view, x, y, index, start, ghost }: { view: View; x: number;
   );
 }
 
-function Chevron({ a, b }: { a: { x: number; y: number }; b: { x: number; y: number } }) {
+function edgeLabelPoint(a: { x: number; y: number }, b: { x: number; y: number }): { x: number; y: number } {
   const mx = (a.x + b.x) / 2;
   const my = (a.y + b.y) / 2;
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const nx = -(b.y - a.y) / len;
+  const ny = (b.x - a.x) / len;
+  return { x: mx + nx * 16, y: my + ny * 16 };
+}
+
+function Chevron({ a, b }: { a: { x: number; y: number }; b: { x: number; y: number } }) {
   const angle = Math.atan2(b.y - a.y, b.x - a.x);
-  const x2 = mx + Math.cos(angle) * 8;
-  const y2 = my + Math.sin(angle) * 8;
-  return <line x1={mx} y1={my} x2={x2} y2={y2} stroke="#d4a574" strokeWidth={2} />;
+  const x = a.x + (b.x - a.x) * 0.72;
+  const y = a.y + (b.y - a.y) * 0.72;
+  const size = 8;
+  const tip = [x + Math.cos(angle) * size, y + Math.sin(angle) * size];
+  const left = [x + Math.cos(angle + 2.6) * size, y + Math.sin(angle + 2.6) * size];
+  const right = [x + Math.cos(angle - 2.6) * size, y + Math.sin(angle - 2.6) * size];
+  return <polygon points={`${tip[0]},${tip[1]} ${left[0]},${left[1]} ${right[0]},${right[1]}`} fill="#d4a574" />;
+}
+
+function LockIcon({ x, y }: { x: number; y: number }) {
+  return (
+    <g transform={`translate(${x} ${y})`} fill="none" stroke="#e8e2d6" strokeWidth={1.4}>
+      <rect x={0} y={5} width={9} height={7} rx={1} />
+      <path d="M2 5 V3.2 a2.5 2.5 0 0 1 5 0 V5" />
+    </g>
+  );
 }
 
 function Guide({ view, guide, anchor }: { view: View; guide: { x: number; y: number }; anchor: { x: number; y: number } | null }) {
@@ -561,14 +594,10 @@ function now(): number {
   return typeof performance === "undefined" ? Date.now() : performance.now();
 }
 
-function openingView(layout: PropLayout, width: number, height: number): View {
-  const span = Math.max(20 * FT, bounds(layout).span * 1.2, 10 * FT);
-  return center(layout, width, height, span);
-}
-
 function fitView(layout: PropLayout, width: number, height: number): View {
-  const span = Math.max(bounds(layout).span * 1.2, 10 * FT);
-  return center(layout, width, height, span);
+  const span = bounds(layout).span;
+  const framed = span < 0.15 ? 12 * FT : span * 1.25;
+  return center(layout, width, height, framed);
 }
 
 function center(layout: PropLayout, width: number, height: number, span: number): View {
@@ -581,8 +610,8 @@ function center(layout: PropLayout, width: number, height: number, span: number)
 
 function clampPpm(ppm: number, layout: PropLayout, width: number, height: number): number {
   const maxIn = 48 / layout.pitchM;
-  const span = Math.max(bounds(layout).span * 1.2, 20 * FT);
-  const minOut = Math.min(width, height) / span;
+  const span = Math.max(bounds(layout).span * 1.25, 12 * FT);
+  const minOut = Math.min(width, height) / Math.max(span, 40 * FT);
   return Math.min(maxIn, Math.max(minOut, ppm));
 }
 
