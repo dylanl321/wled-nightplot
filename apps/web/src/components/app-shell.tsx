@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { AllOffControl, type LiveHint } from "@/components/all-off-control";
 import { DiscoveryProvider } from "@/components/discovery-watch";
+import { PhoneChrome } from "@/components/phone-chrome";
 import { ShortcutOverlay } from "@/components/shortcut-overlay";
 import { cn } from "@/lib/utils";
 
@@ -25,10 +26,17 @@ export function AppShell({
 
   return (
     <DiscoveryProvider>
-    <div className="flex min-h-dvh flex-col bg-background text-foreground">
-      <header className="flex h-[52px] items-center gap-2.5 border-b border-border px-5 lg:h-14 lg:gap-7 lg:bg-rail lg:px-6">
+    <div className="flex min-h-dvh flex-col bg-background text-foreground [--phone-chrome:calc(9rem+env(safe-area-inset-bottom))] lg:[--phone-chrome:0px]">
+      <header
+        className="flex h-auto min-h-14 items-center gap-2.5 border-b border-border px-5 lg:h-14 lg:gap-7 lg:bg-rail lg:px-6"
+        style={{
+          paddingTop: "env(safe-area-inset-top)",
+          paddingLeft: "max(1.25rem, env(safe-area-inset-left))",
+          paddingRight: "max(1.25rem, env(safe-area-inset-right))",
+        }}
+      >
         <Brand markClassName="h-2.5 w-9 lg:h-3 lg:w-11" />
-        <nav className="hidden items-center gap-1 lg:flex">
+        <nav className="hidden items-center gap-1 lg:flex" aria-label="Nightplot">
           <NavLink href="/" active={lightsActive}>
             Lights
           </NavLink>
@@ -53,16 +61,11 @@ export function AppShell({
         <div className="hidden lg:block">
           <AllOffControl size="bar" lights={lights} sessions={sessions} />
         </div>
-        <div className="lg:hidden">
-          <Link href="/settings" className="text-[13px] text-muted-foreground">Settings</Link>
-        </div>
       </header>
 
-      <main className="flex min-h-0 flex-1 flex-col">{children}</main>
+      <main className="flex min-h-0 flex-1 flex-col pb-[var(--phone-chrome)] lg:pb-0">{children}</main>
 
-      <div className="border-t border-border bg-rail px-4 pb-7 pt-3 lg:hidden">
-        <AllOffControl size="thumb" lights={lights} sessions={sessions} />
-      </div>
+      <PhoneChrome nav={nav} lights={lights} sessions={sessions} />
     </div>
     </DiscoveryProvider>
   );
@@ -70,7 +73,7 @@ export function AppShell({
 
 function Brand({ markClassName }: { markClassName: string }) {
   return (
-    <Link href="/" className="flex items-center gap-2.5 text-inherit">
+    <Link href="/" className="flex min-h-11 items-center gap-2.5 text-inherit">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src="/logo-mark.svg" alt="" className={markClassName} />
       <span className="font-serif text-[17px] text-primary">Nightplot</span>

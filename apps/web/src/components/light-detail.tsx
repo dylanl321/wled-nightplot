@@ -154,7 +154,7 @@ export function LightDetail({
     : snapshotLabel(detail.snapshotAt).replace(/^Snapshot/, "Updated");
 
   return (
-    <div className="mx-auto flex w-full max-w-[1100px] flex-1 flex-col gap-4 px-6 pt-6 pb-32 sm:px-10">
+    <div className="mx-auto flex w-full max-w-[1100px] flex-1 flex-col gap-4 px-4 pt-5 pb-8 sm:px-10 sm:pt-6 sm:pb-32">
       <p className="text-[13px] text-muted-foreground">
         <Link href="/" className="hover:text-foreground">
           Lights
@@ -171,22 +171,22 @@ export function LightDetail({
             <span className="size-[7px] rounded-full" style={{ background: status.dot }} />
             {status.label}
           </span>
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
-            <div className="text-right">
-              <span className="text-[13px] text-muted-foreground">
+          <div className="flex w-full flex-col gap-3 sm:ml-auto sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+            <div className="sm:text-right">
+              <span className="text-[15px] text-muted-foreground sm:text-[13px]">
                 {light.ledCount} LEDs{stripLength ? ` · ${stripLength}` : ""} · {light.stripChip}
               </span>
               {stripLength ? (
-                <span className="mt-0.5 block text-[11px] text-quiet">{PHYSICAL_LENGTH_CAPTION}</span>
+                <span className="mt-0.5 block text-[13px] text-quiet sm:text-[11px]">{PHYSICAL_LENGTH_CAPTION}</span>
               ) : null}
             </div>
-            <span className="text-[12px] text-muted-foreground" suppressHydrationWarning>
+            <span className="text-[14px] text-muted-foreground sm:text-[12px]" suppressHydrationWarning>
               {updated}
             </span>
             <Button
               type="button"
               variant="outline"
-              className="h-[34px] px-3 text-[13px]"
+              className="h-11 w-full px-4 text-[15px] sm:h-[34px] sm:w-auto sm:px-3 sm:text-[13px]"
               onClick={() => void refresh()}
               disabled={busy !== null}
             >
@@ -195,7 +195,7 @@ export function LightDetail({
             <Button
               type="button"
               variant="outline"
-              className="h-[34px] px-3 text-[13px]"
+              className="h-11 w-full px-4 text-[15px] sm:h-[34px] sm:w-auto sm:px-3 sm:text-[13px]"
               onClick={() => void blink()}
               disabled={unreachable || Boolean(blinkReason) || busy !== null}
             >
@@ -214,7 +214,7 @@ export function LightDetail({
           ].filter(Boolean).join(" and ")} changed since {new Date(detail.applyConflict.at).toLocaleString()}.
             Review the controller before another Apply. Nightplot cannot tell what changed it.</p>
         </div> : null}
-        <div className="flex gap-6 border-b border-border">
+        <div className="flex gap-2 border-b border-border">
           <TabButton active={tab === "elements"} onClick={() => goTab("elements")}>
             Segments
           </TabButton>
@@ -301,7 +301,7 @@ function TabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "pb-2.5 text-[14px]",
+        "min-h-11 flex-1 px-2 text-[16px] sm:flex-none sm:px-3 sm:text-[14px] sm:pb-2.5",
         active
           ? "font-medium shadow-[inset_0_-2px_0_#d4a574]"
           : "text-muted-foreground",

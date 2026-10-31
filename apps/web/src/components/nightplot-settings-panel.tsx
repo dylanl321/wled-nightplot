@@ -6,7 +6,7 @@ import { useState } from "react";
 import type { BackupSummary } from "@nightplot/shared";
 import { fetchJson, patchJson, postJson } from "@/lib/api";
 
-const inputClass = "rounded border border-border bg-card px-3 py-2 text-foreground";
+const inputClass = "box-border w-full min-w-0 max-w-full rounded border border-border bg-card px-3 py-2 text-foreground";
 
 export function NightplotSettingsPanel({ initial, products, lights }: {
   initial: NightplotSettings; products: LedProduct[]; lights: LightView[];
@@ -75,7 +75,7 @@ export function NightplotSettingsPanel({ initial, products, lights }: {
     </section>
     <section className="space-y-3 rounded-lg border border-border bg-card p-5"><h2 className="text-lg">Segment colours</h2>
       <p className="text-muted-foreground">Palette changes are suggestions for new Segments; they do not recolour saved Segments.</p>
-      <div className="grid gap-3 sm:grid-cols-2">{draft.palette.map((color, index) => <div key={index} className="flex items-center gap-2">
+      <div className="grid gap-3 sm:grid-cols-2">{draft.palette.map((color, index) => <div key={index} className="flex min-w-0 items-center gap-2">
         <input aria-label={`Colour ${index + 1}`} type="color" value={color.hex} onChange={(event) =>
           change({ palette: draft.palette.map((entry, i) => i === index ? { ...entry, hex: event.target.value } : entry) })} />
         <input aria-label={`Name ${index + 1}`} className={inputClass} maxLength={32} value={color.name} onChange={(event) =>

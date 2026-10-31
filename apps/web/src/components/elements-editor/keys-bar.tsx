@@ -10,7 +10,7 @@ export function Key({ children }: { children: ReactNode }) {
 }
 
 function Group({ keys, children }: { keys: string[]; children: ReactNode }) {
-  return <span className="inline-flex flex-wrap items-center gap-1.5">{keys.map((key) => <Key key={key}>{key}</Key>)}{children}</span>;
+  return <span className="hidden flex-wrap items-center gap-1.5 lg:inline-flex">{keys.map((key) => <Key key={key}>{key}</Key>)}{children}</span>;
 }
 
 export function KeysBar({ state, hues, live, spacingMm }: {

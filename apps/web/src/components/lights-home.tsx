@@ -171,7 +171,7 @@ function LightCard({
         aria-label={`Open ${light.name}`}
       />
       <div className="pointer-events-none flex flex-wrap items-center gap-3">
-        <label className="pointer-events-auto relative z-10 flex items-center gap-2 text-[13px] text-muted-foreground">
+        <label className="pointer-events-auto relative z-10 flex min-h-11 min-w-11 items-center justify-center gap-2 text-[13px] text-muted-foreground">
           <input
             type="checkbox"
             checked={selected}
@@ -197,7 +197,7 @@ function LightCard({
         </Button>
       </div>
       {blinkNotice ? <p className="pointer-events-none text-[13px] text-destructive">{blinkNotice}</p> : null}
-      <div className="pointer-events-none overflow-x-auto">
+      <div className="pointer-events-none min-w-0">
         <StripBeads
           id={`rack-${light.id}`}
           count={Math.max(light.ledCount, 1)}

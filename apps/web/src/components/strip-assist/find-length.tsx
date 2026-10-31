@@ -207,13 +207,13 @@ export function FindLengthFlow({
       aria-modal="true"
       aria-label={`Find length · ${outputLabel}`}
       onKeyDown={keyDown}
-      className="fixed inset-0 z-50 overflow-y-auto bg-background px-5 text-foreground"
+      className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-background px-5 text-foreground"
       style={{
         paddingTop: "max(20px, env(safe-area-inset-top))",
         paddingBottom: "max(24px, env(safe-area-inset-bottom))",
       }}
     >
-      <div className="mx-auto flex min-h-full w-full max-w-lg flex-col gap-5">
+      <div className="mx-auto flex min-h-0 w-full max-w-lg flex-1 flex-col gap-5 overflow-y-auto">
         <header className="flex items-center justify-between gap-4">
           <div>
             <p className="text-[12px] text-primary">Strip · Find length</p>
@@ -417,7 +417,7 @@ function SearchStep({
           ? `Search narrowed to ${isolated} LEDs. Confirm if the physical end matches.`
           : "Look at the physical end. Is it lit?"}
       </p>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="mt-auto grid grid-cols-2 gap-3">
         <button
           type="button"
           disabled={cannotAnswer}
@@ -435,7 +435,7 @@ function SearchStep({
           No · still dark
         </button>
       </div>
-      <div className="grid grid-cols-6 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         {[...FIND_LENGTH_NUDGES].reverse().map((step) => (
           <button
             key={`-${step}`}

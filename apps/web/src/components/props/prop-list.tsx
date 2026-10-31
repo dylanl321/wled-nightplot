@@ -41,7 +41,7 @@ export function PropList({
         <p className="text-[12px] text-muted-foreground">Named shapes on this Light. Gaps between their Segments stay unused.</p>
         <Button
           type="button"
-          className="ml-auto h-[34px] px-3 text-[13px]"
+          className="h-11 w-full px-4 text-[15px] sm:ml-auto sm:h-[34px] sm:w-auto sm:px-3 sm:text-[13px]"
           onClick={onAdd}
           disabled={disabled}
           title={disabledReason}

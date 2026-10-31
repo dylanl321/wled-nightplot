@@ -383,11 +383,10 @@ function stripSvg(o: StripBeadsProps) {
     "svg",
     {
       viewBox: `0 0 ${W} ${H}`,
-      width: W,
-      height: H,
+      width: "100%",
       role: "img",
       "aria-label": o.ariaLabel ?? "LED strip",
-      style: { display: "block", maxWidth: "100%", height: "auto", overflow: "visible" },
+      style: { display: "block", maxWidth: W, height: "auto", overflow: "visible" },
     },
     h("defs", null, defs),
     h("g", null, k.slice(0, railN)),

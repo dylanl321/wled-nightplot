@@ -83,17 +83,17 @@ export function CursorControls({
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const button = "h-[30px] rounded-md border border-input px-2 text-[12px] text-[#c9c3b8] disabled:opacity-40";
+  const button = "min-h-11 rounded-md border border-input px-3 text-[15px] text-[#c9c3b8] disabled:opacity-40 lg:h-[30px] lg:min-h-0 lg:px-2 lg:text-[12px]";
   return (
-    <section aria-label="Locate and create Segments" className="flex flex-wrap items-center gap-2 border-t border-border px-5 py-2.5 text-[12px]">
+    <section aria-label="Locate and create Segments" className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3 text-[14px] lg:px-5 lg:py-2.5 lg:text-[12px]">
       <span className="text-muted-foreground">Cursor</span>
-      <div className="flex h-[30px] overflow-hidden rounded-md border border-input">
-        <button type="button" onClick={() => go(cursor - 1)} disabled={!hasStrip || cursor === 0} aria-label="Previous LED" className="w-7 border-r border-border disabled:opacity-40">−</button>
-        <Input aria-label="Cursor LED" inputMode="numeric" className="h-full w-14 rounded-none border-0 p-0 text-center font-mono text-[12px]"
+      <div className="flex h-11 overflow-hidden rounded-md border border-input lg:h-[30px]">
+        <button type="button" onClick={() => go(cursor - 1)} disabled={!hasStrip || cursor === 0} aria-label="Previous LED" className="w-11 border-r border-border disabled:opacity-40 lg:w-7">−</button>
+        <Input aria-label="Cursor LED" inputMode="numeric" className="h-full w-16 rounded-none border-0 p-0 text-center font-mono text-base lg:w-14 lg:text-[12px]"
           value={positionText ?? cursor} onChange={(event) => setPositionText(event.target.value)}
           onBlur={() => { if (positionText !== null && /^\d+$/.test(positionText)) go(Number(positionText)); else setPositionText(null); }}
           onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
-        <button type="button" onClick={() => go(cursor + 1)} disabled={!hasStrip || cursor >= state.ledCount - 1} aria-label="Next LED" className="w-7 border-l border-border disabled:opacity-40">+</button>
+        <button type="button" onClick={() => go(cursor + 1)} disabled={!hasStrip || cursor >= state.ledCount - 1} aria-label="Next LED" className="w-11 border-l border-border disabled:opacity-40 lg:w-7">+</button>
       </div>
       <span className="mr-1 font-mono text-muted-foreground">of {Math.max(0, state.ledCount - 1)}</span>
       <div className="flex" role="group" aria-label="Edge navigation">
@@ -108,15 +108,15 @@ export function CursorControls({
         {state.markedStart !== null ? `Start at ${state.markedStart}` : "[ Mark start"}
       </button>
       <button type="button" className={button} disabled={state.markedStart === null} onClick={() => { setRunning(false); dispatch({ type: "mark-end" }); }}>Mark end ]</button>
-      <div className="ml-auto flex items-center gap-2">
-        <button type="button" className={`${button} w-[30px] px-0`} aria-label={`Scan direction: ${direction === 1 ? "forward" : "backward"}`} onClick={() => { setRunning(false); setDirection(direction === 1 ? -1 : 1); }}>{direction === 1 ? "→" : "←"}</button>
+      <div className="flex w-full flex-wrap items-center gap-2 lg:ml-auto lg:w-auto">
+        <button type="button" className={`${button} w-11 px-0 lg:w-[30px]`} aria-label={`Scan direction: ${direction === 1 ? "forward" : "backward"}`} onClick={() => { setRunning(false); setDirection(direction === 1 ? -1 : 1); }}>{direction === 1 ? "→" : "←"}</button>
         <div className="flex rounded-md border border-input p-0.5" role="group" aria-label="Scan speed">
-          {[1, 3, 5, 10].map((value) => <button type="button" key={value} aria-label={`${value} LEDs/s`} aria-pressed={value === speed} onClick={() => setSpeed(value)} className={`h-6 min-w-6 rounded px-1.5 font-mono text-[11px] ${speed === value ? "bg-[#2f3542] text-foreground" : "text-muted-foreground"}`}>{value}</button>)}
+          {[1, 3, 5, 10].map((value) => <button type="button" key={value} aria-label={`${value} LEDs/s`} aria-pressed={value === speed} onClick={() => setSpeed(value)} className={`h-11 min-w-11 rounded px-2 font-mono text-[15px] lg:h-6 lg:min-w-6 lg:px-1.5 lg:text-[11px] ${speed === value ? "bg-[#2f3542] text-foreground" : "text-muted-foreground"}`}>{value}</button>)}
         </div>
         <span className="text-muted-foreground">LEDs/s</span>
         <Button onClick={toggleScan} disabled={blocked || !hasStrip || (!scanning && atEnd)} aria-label={scanning ? "Pause scan" : "Scan"}
-          className={`h-[30px] gap-2 border border-[#1f4a45] px-3 text-[12px] ${scanning ? "bg-online text-[#0c0d10]" : "bg-transparent text-online hover:bg-online/10"}`}>
-          {scanning ? "Pause" : "Scan"}<span className="font-mono text-[10px] font-normal">Space</span>
+          className={`h-11 gap-2 border border-[#1f4a45] px-3 text-[15px] lg:h-[30px] lg:text-[12px] ${scanning ? "bg-online text-[#0c0d10]" : "bg-transparent text-online hover:bg-online/10"}`}>
+          {scanning ? "Pause" : "Scan"}<span className="hidden font-mono text-[10px] font-normal lg:inline">Space</span>
         </Button>
       </div>
     </section>
