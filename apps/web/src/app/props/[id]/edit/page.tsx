@@ -18,7 +18,7 @@ export default async function EditPropPage({ params }: { params: Promise<{ id: s
   }
   const prop = propsResult.value.props.find((row) => row.id === id);
   return (
-    <AppShell lights={lightsResult.value.lights} lightCount={lightsResult.value.lights.length} nav="lights" sessions={lightsResult.value.sessions}>
+    <AppShell immersive lights={lightsResult.value.lights} lightCount={lightsResult.value.lights.length} nav="lights" sessions={lightsResult.value.sessions}>
       {prop ? <EditProp prop={prop} /> : (
         <div className="mx-auto flex max-w-[560px] flex-col gap-3 px-4 py-8">
           <h1 className="text-[26px] font-semibold">That prop is not in the yard</h1>

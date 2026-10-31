@@ -68,12 +68,7 @@ export function YardHome({
         <p className="text-[15px] text-muted-foreground">The checklist is done. This is not Hardware Done until you look at the yard.</p>
       )}
       <section className="flex flex-col gap-3" aria-label="Props">
-        <div className="flex items-center gap-3">
-          <h2 className="text-[20px] font-semibold">Props</h2>
-          <Button asChild className="ml-auto min-h-11">
-            <Link href="/props/new">New prop</Link>
-          </Button>
-        </div>
+        <h2 className="text-[20px] font-semibold">Props</h2>
         {props.length === 0 ? (
           <p className="rounded-[14px] border border-border bg-card px-4 py-5 text-[15px] leading-6 text-muted-foreground">
             No props yet. A prop is a shape — a roofline, a window, an arch — and it does not need a controller.

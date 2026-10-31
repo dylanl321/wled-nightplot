@@ -260,10 +260,10 @@ try {
       await page.getByRole("button", { name: "Done" }).waitFor();
       assertFits(`${viewport.name} new-prop-editor`, await measure(page));
       console.log(`ok ${viewport.name} new-prop`);
-      await page.getByRole("button", { name: "Back" }).click();
-      await page.getByRole("button", { name: "Back" }).click();
-      await page.getByRole("button", { name: "Back" }).click();
-      await page.getByRole("button", { name: /Custom draw/ }).click();
+      await page.getByRole("button", { name: "Back" }).first().click();
+      await page.getByRole("button", { name: "Back" }).first().click();
+      await page.getByRole("button", { name: "Back" }).first().click();
+      await page.getByRole("button", { name: /Draw it/ }).click();
       await page.getByRole("button", { name: "Next", exact: true }).click();
       await page.getByRole("button", { name: "Done" }).waitFor();
       assertFits(`${viewport.name} new-prop-custom`, await measure(page));

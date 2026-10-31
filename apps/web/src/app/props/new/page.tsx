@@ -22,7 +22,7 @@ export default async function NewPropPage() {
     })
     : [];
   return (
-    <AppShell lights={lightsResult.value.lights} lightCount={lightsResult.value.lights.length} nav="lights" sessions={lightsResult.value.sessions}>
+    <AppShell immersive lights={lightsResult.value.lights} lightCount={lightsResult.value.lights.length} nav="lights" sessions={lightsResult.value.sessions}>
       <PropWizard products={products} />
     </AppShell>
   );

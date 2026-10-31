@@ -16,7 +16,7 @@ describe("Your yard", () => {
       />,
     );
     expect(screen.getByRole("heading", { name: "Your yard" })).toBeTruthy();
-    expect(screen.getAllByRole("link", { name: "New prop" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "New prop" })).toHaveLength(1);
     expect(screen.getAllByText("Next")).toHaveLength(1);
     expect(screen.getAllByText("Not yet").length).toBeGreaterThan(0);
     expect(screen.getByText("No props yet. A prop is a shape — a roofline, a window, an arch — and it does not need a controller.")).toBeTruthy();
