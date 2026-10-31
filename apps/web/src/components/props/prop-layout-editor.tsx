@@ -30,12 +30,14 @@ export function PropLayoutEditor({
   name,
   initial,
   mode: initialMode,
+  doneLabel = "Done",
   onDone,
   onBack,
 }: {
   name: string;
   initial: PropLayout;
   mode: GestureMode;
+  doneLabel?: string;
   onDone: (layout: PropLayout) => void;
   onBack: () => void;
 }) {
@@ -373,7 +375,7 @@ export function PropLayoutEditor({
         <DockButton onClick={redo} disabled={future.length === 0}>Redo</DockButton>
         <DockButton onClick={() => setSnap((value) => !value)} pressed={snap}>Snap</DockButton>
         <DockButton onClick={fit}>Fit</DockButton>
-        <DockButton onClick={() => onDone(layout)}>Done</DockButton>
+        <DockButton onClick={() => onDone(layout)}>{doneLabel}</DockButton>
       </div>
       {toast ? (
         <div className="absolute bottom-20 left-3 right-3 flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 text-[14px] landscape:bottom-3 landscape:right-20">

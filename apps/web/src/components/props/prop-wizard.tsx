@@ -2,6 +2,7 @@
 
 import {
   compilePropDesign,
+  defaultSections,
   DEFAULT_PITCH_MM,
   emptyTrace,
   METRES_PER_FOOT,
@@ -11,16 +12,18 @@ import {
   type PropLayout,
   type PropLengthUnit,
   type PropMeasurements,
+  type PropSection,
 } from "@nightplot/shared";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { PropLayoutEditor } from "@/components/props/prop-layout-editor";
+import { PropSectionsStep } from "@/components/props/prop-sections";
 import { PropShapeArt } from "@/components/props/prop-shape-art";
 import { Button } from "@/components/ui/button";
 import { postJson } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type Step = "name" | "shape" | "size" | "review" | "origin" | "draw";
+type Step = "name" | "shape" | "size" | "review" | "origin" | "draw" | "sections";
 
 const SHAPES: { kind: PropKind; title: string; blurb: string }[] = [
   { kind: "roofline", title: "Roofline", blurb: "One line along the roof" },
@@ -28,7 +31,7 @@ const SHAPES: { kind: PropKind; title: string; blurb: string }[] = [
   { kind: "arch", title: "Arch", blurb: "A curve between two bases" },
   { kind: "tree", title: "Mini tree", blurb: "A cone" },
   { kind: "stake-row", title: "Stake row", blurb: "Uprights in a row" },
-  { kind: "wireframe", title: "Well house", blurb: "Box and X on each side" },
+  { kind: "wireframe", title: "Well house", blurb: "One string around the walls" },
   { kind: "custom", title: "Draw it", blurb: "Your own line" },
 ];
 
@@ -55,6 +58,10 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
   const [clockwise, setClockwise] = useState(true);
   const [startAtFarEnd, setStartAtFarEnd] = useState(false);
   const [drawLayout, setDrawLayout] = useState<PropLayout | null>(null);
+  const [sectionLayout, setSectionLayout] = useState<PropLayout | null>(null);
+  const [sections, setSections] = useState<PropSection[]>([]);
+  const [sectionBack, setSectionBack] = useState<Step>("size");
+  const [rangeError, setRangeError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -78,6 +85,10 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
     if (step === "shape") setStep("name");
     else if (step === "size" || step === "origin") setStep(step === "origin" ? "size" : "shape");
     else if (step === "review") setStep("size");
+    else if (step === "sections") {
+      if (sectionBack === "draw" && sectionLayout) setDrawLayout(sectionLayout);
+      setStep(sectionBack);
+    }
   }
 
   function next() {
@@ -108,8 +119,20 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
         setNotice(compiled && !compiled.ok ? compiled.message : "Check the measurements.");
         return;
       }
-      setStep(kind === "window" || kind === "roofline" ? "origin" : "review");
+      if (kind === "window" || kind === "roofline") {
+        setStep("origin");
+        return;
+      }
+      if (compiled.ok) openSections(compiled.layout, "size");
     }
+  }
+
+  function openSections(layout: PropLayout, backTo: Step) {
+    setSectionLayout(layout);
+    setSections(defaultSections(layout));
+    setSectionBack(backTo);
+    setRangeError(null);
+    setStep("sections");
   }
 
   function drawing(): PropLayout {
@@ -138,8 +161,8 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
     return emptyTrace(unit, pitchM);
   }
 
-  async function saveLayout(layout: PropLayout) {
-    if (!kind) return;
+  async function saveSections() {
+    if (!kind || !sectionLayout || rangeError) return;
     setBusy(true);
     setNotice(null);
     const res = await postJson<{ message?: string }>("/api/props", {
@@ -148,8 +171,9 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
       unit,
       pitchMm: Number.isFinite(pitchMm) && pitchMm > 0 ? pitchMm : DEFAULT_PITCH_MM,
       ledProductId: productId,
-      measurements: kind === "custom" ? { shape: "custom" } : measurements,
-      layout,
+      measurements: measurements ?? { shape: "custom" },
+      layout: sectionLayout,
+      sections,
     });
     setBusy(false);
     if (!res.ok) {
@@ -187,14 +211,15 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
         name={name.trim() || "New prop"}
         initial={drawLayout ?? emptyTrace(unit)}
         mode={kind === "custom" ? "trace" : "edit"}
+        doneLabel="Name sections"
         onBack={() => setStep(kind === "custom" ? "shape" : "origin")}
-        onDone={(layout) => void saveLayout(layout)}
+        onDone={(layout) => openSections(layout, "draw")}
       />
     );
   }
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-[560px] flex-1 flex-col">
+    <div className="mx-auto flex min-h-dvh w-full max-w-[560px] flex-1 flex-col overflow-x-hidden">
       <header className="flex h-14 shrink-0 items-center gap-1 px-1">
         <button type="button" className="min-h-11 px-3 text-[16px]" onClick={step === "name" ? () => router.push("/") : back}>Back</button>
         <p className="min-w-0 flex-1 truncate text-[17px] font-medium">{name.trim() || "New prop"}</p>
@@ -328,6 +353,16 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
           </label>
         </div>
       ) : null}
+      {step === "sections" && sectionLayout ? (
+        <PropSectionsStep
+          layout={sectionLayout}
+          sections={sections}
+          measurements={measurements ?? { shape: "custom" }}
+          onLayout={setSectionLayout}
+          onSections={setSections}
+          onInvalid={setRangeError}
+        />
+      ) : null}
       {step === "review" && compiled?.ok ? (
         <div className="flex flex-col gap-4">
           {kind ? <PropShapeArt kind={kind} /> : null}
@@ -357,6 +392,10 @@ export function PropWizard({ products }: { products: SpacingChoice[] }) {
         </Button>
         {step === "origin" ? (
           <Button type="button" className="min-h-11 flex-1 text-base" onClick={() => { setDrawLayout(drawing()); setStep("draw"); }}>Next</Button>
+        ) : step === "sections" ? (
+          <Button type="button" className="min-h-11 flex-1 text-base" onClick={() => void saveSections()} disabled={busy || Boolean(rangeError) || !sectionLayout}>
+            {busy ? "Saving…" : "Save"}
+          </Button>
         ) : step === "review" ? (
           <Button type="button" className="min-h-11 flex-1 text-base" onClick={() => void save()} disabled={busy || !compiled?.ok}>
             {busy ? "Saving…" : "Save"}
@@ -513,6 +552,8 @@ function stepTitle(step: Step): string {
       return "Which corner is the controller end?";
     case "draw":
       return "Draw the prop";
+    case "sections":
+      return "Name the sections";
     default: {
       const _never: never = step;
       return _never;

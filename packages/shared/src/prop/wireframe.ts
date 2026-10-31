@@ -164,6 +164,12 @@ export function clampSides(value: number): number {
   return Math.min(WIREFRAME_SIDES_MAX, Math.max(WIREFRAME_SIDES_MIN, value));
 }
 
+/**
+ * Legacy ledmap order: one shared post per wall, then two diagonal passes.
+ * The well house template uses `wellHouseEdgeOrder` (own left and right edges,
+ * one diagonal per wall). This order stays until the ledmap compiler reads
+ * the prop path.
+ */
 export function defaultWiringOrder(sides: number): string[] {
   const count = clampSides(sides);
   const tops = Array.from({ length: count }, (_, index) => `top.${index}`);

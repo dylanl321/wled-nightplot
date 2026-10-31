@@ -91,7 +91,7 @@ describe("light count from measurements", () => {
     expect(built.design.ledCount).toBe(28);
   });
 
-  it("counts an 8-sided well house from tops, posts, bottoms, and both diagonals", () => {
+  it("orders an 8-sided well house as tops, then each wall from the right, then one diagonal", () => {
     const built = compilePropDesign({
       kind: "wireframe",
       unit: "ft",
@@ -103,13 +103,22 @@ describe("light count from measurements", () => {
     if (!built.ok) return;
     expect(built.wireframe?.sides).toBe(8);
     expect(built.wireframe?.path).toBeNull();
-    const side = lightsAlong(304.8, pitch);
-    const diag = lightsAlong(Math.hypot(304.8, 304.8), pitch);
-    expect(side).toBe(3);
-    expect(diag).toBe(4);
+    expect(built.layout.run.map((edge) => edge.id).slice(0, 8)).toEqual([
+      "top.0", "top.1", "top.2", "top.3", "top.4", "top.5", "top.6", "top.7",
+    ]);
+    expect(built.layout.run.map((edge) => edge.id).slice(8, 11)).toEqual(["right.7", "bottom.7", "left.7"]);
+    expect(built.layout.run.filter((edge) => edge.id.startsWith("diag."))).toHaveLength(8);
+    expect(built.layout.run.some((edge) => edge.id.startsWith("post."))).toBe(false);
     expect(built.design.edges).toHaveLength(40);
     expect(built.design.ledCount).toBe(built.design.edges.reduce((sum, edge) => sum + edge.ledCount, 0));
-    expect(built.layout.run).toHaveLength(40);
+    expect(built.sections.map((section) => section.name)[0]).toBe("Wall 1");
+    expect(built.sections).toHaveLength(8);
+    const top = built.layout.run.find((edge) => edge.id === "top.0");
+    const right = built.layout.run.find((edge) => edge.id === "right.0");
+    const leftOfNext = built.layout.run.find((edge) => edge.id === "left.1");
+    expect(top && right && leftOfNext).toBeTruthy();
+    expect(right?.from).not.toBe(leftOfNext?.from);
+    expect(top?.to).not.toBe(leftOfNext?.to);
   });
 
   it("counts a 6 m line at 10 cm as 61 lights, including both ends", () => {

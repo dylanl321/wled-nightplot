@@ -115,6 +115,27 @@ export type Prop = {
   design?: PropDesign;
   /** Corners and wiring order. Light counts are derived from this, not stored on it. */
   layout?: PropLayout;
+  /**
+   * Named groups of path edges. Index ranges are derived from the layout.
+   * Pinned ranges are typed by hand and stay put when the path changes.
+   */
+  sections?: PropSection[];
+};
+
+/** Inclusive start, exclusive stop, in path-index order (the first light of the path is 0). */
+export type PropIndexRange = {
+  start: number;
+  stop: number;
+};
+
+export type PropSection = {
+  id: string;
+  name: string;
+  /** Edge ids on `layout.run`. Ranges move when those edges' light counts change. */
+  edgeIds: string[];
+  pinnedRanges: PropIndexRange[];
+  /** Preview colour stored on the prop. Looks do not read this yet. */
+  color?: string;
 };
 
 export type PropTap = {
@@ -272,6 +293,30 @@ export function isProp(value: unknown): value is Prop {
   if (!designed && !legacy) return false;
   if (designed && !isPropDesign(row.design)) return false;
   if (row.layout !== undefined && !isPropLayout(row.layout)) return false;
+  if (row.sections !== undefined && !isPropSectionList(row.sections)) return false;
   if (row.kind === "wireframe" || row.wireframe !== undefined) return isWireframeSpec(row.wireframe);
   return true;
+}
+
+export function isPropIndexRange(value: unknown): value is PropIndexRange {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Partial<PropIndexRange>;
+  return Number.isInteger(row.start) && Number.isInteger(row.stop) &&
+    (row.start ?? -1) >= 0 && (row.stop ?? 0) > (row.start ?? 0);
+}
+
+export function isPropSection(value: unknown): value is PropSection {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Partial<PropSection>;
+  if (typeof row.id !== "string" || !row.id) return false;
+  if (typeof row.name !== "string" || !row.name.trim()) return false;
+  if (!Array.isArray(row.edgeIds) || !row.edgeIds.every((id) => typeof id === "string" && id.length > 0)) return false;
+  if (!Array.isArray(row.pinnedRanges) || !row.pinnedRanges.every(isPropIndexRange)) return false;
+  if (row.color !== undefined && (typeof row.color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(row.color))) return false;
+  return true;
+}
+
+function isPropSectionList(value: unknown): value is PropSection[] {
+  return Array.isArray(value) && value.every(isPropSection) &&
+    new Set(value.map((section) => section.id)).size === value.length;
 }

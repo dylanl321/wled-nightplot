@@ -487,6 +487,49 @@ function stakeLayout(heightM: number, stakes: number, units: LayoutUnits, pitchM
   return { source: "template", template: { type: "stake-row", params }, units, pitchM, startOffsetM: 0, corners, run };
 }
 
+/**
+ * Physical order of one well-house string.
+ * Tops left to right, then each wall from the right (down its own right edge,
+ * along the bottom right-to-left, up its own left edge), then one diagonal
+ * per wall alternating down and up. Walls do not share a post.
+ */
+export function wellHouseEdgeOrder(sides: number): string[] {
+  const count = Math.max(0, Math.round(sides));
+  const tops = Array.from({ length: count }, (_, index) => `top.${index}`);
+  const back: string[] = [];
+  for (let index = count - 1; index >= 0; index -= 1) {
+    back.push(`right.${index}`, `bottom.${index}`, `left.${index}`);
+  }
+  const diagonals = Array.from({ length: count }, (_, index) => (
+    index % 2 === 0 ? `diag.down.${index}` : `diag.up.${index}`
+  ));
+  return [...tops, ...back, ...diagonals];
+}
+
+export function wellHouseEdgeLabel(id: string): string | null {
+  const match = /^(top|right|bottom|left|diag\.down|diag\.up)\.(\d+)$/.exec(id);
+  if (!match) return null;
+  const role = match[1] as "top" | "right" | "bottom" | "left" | "diag.down" | "diag.up";
+  const wall = Number(match[2]) + 1;
+  switch (role) {
+    case "top":
+      return `Wall ${wall} top`;
+    case "right":
+      return `Wall ${wall} right`;
+    case "bottom":
+      return `Wall ${wall} bottom`;
+    case "left":
+      return `Wall ${wall} left`;
+    case "diag.down":
+    case "diag.up":
+      return `Wall ${wall} diagonal`;
+    default: {
+      const _never: never = role;
+      return _never;
+    }
+  }
+}
+
 function wellHouseLayout(input: {
   units: LayoutUnits;
   pitchM: number;
@@ -496,18 +539,33 @@ function wellHouseLayout(input: {
   const sides = Math.round(input.params.sides ?? 0);
   const side = toM(input.params.side ?? 0);
   const height = toM(input.params.height ?? 0);
-  if (sides < 3 || !(side > 0) || !(height > 0)) return null;
-  const diag = Math.hypot(side, height);
-  let cursor = 0;
-  const corners: LayoutCorner[] = [{ id: "c1", x: 0, y: 0 }];
-  const run: LayoutEdge[] = [];
-  wiringOrder(sides).forEach((edge, index) => {
-    const length = edge.kind === "post" ? height : edge.kind === "diag" ? diag : side;
-    cursor += length;
-    const next = { id: `c${index + 2}`, x: cursor, y: 0 };
-    corners.push(next);
-    run.push({ id: `e${index + 1}`, from: corners[index]!.id, to: next.id, kind: "lit" });
-  });
+  if (sides < 3 || sides > 16 || !(side > 0) || !(height > 0)) return null;
+  const gap = Math.max(side, height) * 0.45;
+  const corners: LayoutCorner[] = [];
+  const byId = new Map<string, LayoutEdge>();
+  for (let index = 0; index < sides; index += 1) {
+    const x = index * (side + gap);
+    const tl = `w${index}-tl`;
+    const tr = `w${index}-tr`;
+    const br = `w${index}-br`;
+    const bl = `w${index}-bl`;
+    corners.push(
+      { id: tl, x, y: height },
+      { id: tr, x: x + side, y: height },
+      { id: br, x: x + side, y: 0 },
+      { id: bl, x, y: 0 },
+    );
+    byId.set(`top.${index}`, { id: `top.${index}`, from: tl, to: tr, kind: "lit" });
+    byId.set(`right.${index}`, { id: `right.${index}`, from: tr, to: br, kind: "lit" });
+    byId.set(`bottom.${index}`, { id: `bottom.${index}`, from: br, to: bl, kind: "lit" });
+    byId.set(`left.${index}`, { id: `left.${index}`, from: bl, to: tl, kind: "lit" });
+    if (index % 2 === 0) {
+      byId.set(`diag.down.${index}`, { id: `diag.down.${index}`, from: tl, to: br, kind: "lit" });
+    } else {
+      byId.set(`diag.up.${index}`, { id: `diag.up.${index}`, from: bl, to: tr, kind: "lit" });
+    }
+  }
+  const run = wellHouseEdgeOrder(sides).map((id) => byId.get(id)).filter((edge): edge is LayoutEdge => Boolean(edge));
   return {
     source: "template",
     template: { type: "wireframe", params: input.params },
@@ -518,18 +576,6 @@ function wellHouseLayout(input: {
     corners,
     run,
   };
-}
-
-function wiringOrder(sides: number): { kind: "top" | "bottom" | "post" | "diag" }[] {
-  const rows: { kind: "top" | "bottom" | "post" | "diag" }[] = [];
-  for (let index = 0; index < sides; index += 1) rows.push({ kind: "top" });
-  for (let index = 0; index < sides; index += 1) {
-    rows.push({ kind: "post" });
-    rows.push({ kind: "bottom" });
-  }
-  for (let index = 0; index < sides; index += 1) rows.push({ kind: "diag" });
-  for (let index = 0; index < sides; index += 1) rows.push({ kind: "diag" });
-  return rows;
 }
 
 function startIdOf(layout: PropLayout): string {
