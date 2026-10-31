@@ -31,7 +31,7 @@ export function writeNightplotStoresConsistent(paths: NightplotRestorePaths, dat
   const files = [
     {
       dest: paths.lights,
-      body: `${JSON.stringify({ version: 1, lights: data.lights, elements: data.elements, props: data.props ?? [] }, null, 2)}\n`,
+      body: `${JSON.stringify({ version: 1, lights: data.lights, elements: data.elements, props: data.props ?? [], attachments: data.attachments ?? [] }, null, 2)}\n`,
     },
     {
       dest: paths.products,
@@ -78,6 +78,7 @@ export function writeSeasonStoresConsistent(
     lights: unknown[];
     elements: unknown[];
     props: unknown[];
+    attachments?: unknown[];
     looks?: unknown;
     profiles?: unknown[];
   },
@@ -85,7 +86,7 @@ export function writeSeasonStoresConsistent(
   const files = [
     {
       dest: paths.lights,
-      body: `${JSON.stringify({ version: 1, lights: data.lights, elements: data.elements, props: data.props }, null, 2)}\n`,
+      body: `${JSON.stringify({ version: 1, lights: data.lights, elements: data.elements, props: data.props, attachments: data.attachments ?? [] }, null, 2)}\n`,
     },
     ...(paths.looks && data.looks
       ? [{ dest: paths.looks, body: `${JSON.stringify(data.looks, null, 2)}\n` }]

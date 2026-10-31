@@ -13,18 +13,18 @@ export default async function LightPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ mode?: string; tab?: string }>;
+  searchParams: Promise<{ mode?: string; tab?: string; check?: string }>;
 }) {
   const { id } = await params;
   const query = await searchParams;
   const tab =
-    query.tab === "settings" || query.tab === "elements" || query.tab === "activity"
+    query.tab === "settings" || query.tab === "elements" || query.tab === "activity" || query.tab === "overview"
       ? query.tab
       : query.mode === "ranges" || query.mode === "live"
         ? "elements"
         : query.mode === "inspect" || query.mode === "strip" || query.mode === "safe"
           ? "settings"
-          : "elements";
+          : "overview";
 
   const [lightsResult, detailResult] = await Promise.allSettled([
     fetchJson<LightsPayload>("/api/lights"),
@@ -66,7 +66,7 @@ export default async function LightPage({
       activeLightId={id}
       sessions={model.lights.sessions}
     >
-      <LightDetail initial={model.detail} tab={tab} mode={query.mode === "inspect" || query.mode === "ranges" || query.mode === "live" || query.mode === "safe" || query.mode === "strip" ? query.mode : undefined} />
+      <LightDetail initial={model.detail} tab={tab} checkWireframe={query.check === "wireframe"} mode={query.mode === "inspect" || query.mode === "ranges" || query.mode === "live" || query.mode === "safe" || query.mode === "strip" ? query.mode : undefined} />
     </AppShell>
   );
 }

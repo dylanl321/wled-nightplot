@@ -19,7 +19,7 @@ GitHub: [`dylanl321/wled-nightplot`](https://github.com/dylanl321/wled-nightplot
 
 - A **Light** is one enrolled controller. It may drive several **outputs** (WLED buses / strips).
 - A **Segment** is an inclusive–exclusive range on one output. Gaps between Segments are allowed; overlap is not.
-- A **Prop** is a named, typed shape on one Light (roofline, window, arch, tree, stake row, custom, or a wireframe box+X). It is made of one or more Segments on any output. Gaps between those Segments are allowed.
+- A **Prop** is a named shape you can design before any controller is connected (roofline, window, arch, mini tree, stake row, well house, or custom draw once that interaction exists). It stores measurements, spacing, and a computed light count. Attachment to a controller output is optional. Segments are generated when you attach and Apply. Gaps between those Segments are allowed.
 - A **Look** is a named colour / effect / palette / speed / brightness. The library has a whole-yard default and optional overrides per Prop, Prop kind, or Segment. Nightplot pushes each Look as the same numbered WLED preset on every selected Light.
 - A **Schedule** is a nightly on (sunset or a clock time), the Look or playlist to run, and an off time. It is written as WLED timers with NTP and location, so it runs with Nightplot closed.
 - **Yard** is the check of every enrolled Light: reachability, firmware, output/LED counts, last-pushed Looks / Schedule / sync, wireframe ledmap, and whether the box is lit. Sweep turns on the first Look. Fix rewrites drift and rereads.

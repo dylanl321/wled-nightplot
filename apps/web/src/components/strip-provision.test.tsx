@@ -840,7 +840,7 @@ describe("Strip provision", () => {
       await screen.findByText("Door 0–60 was clipped to 0–30. It ran past the new strip (30 LEDs)."),
     ).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Segments" }));
+    fireEvent.click(screen.getByRole("button", { name: "Advanced editor" }));
     expect((await screen.findAllByText("0–30")).length).toBeGreaterThan(0);
     expect(screen.queryByText("0–60")).toBeNull();
   });

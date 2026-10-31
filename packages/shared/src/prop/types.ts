@@ -1,7 +1,10 @@
 /**
- * A Prop is a named, typed shape on one Light. It is made of one or more
- * Segments on any output. Gaps between those Segments are allowed.
+ * A Prop is a named shape you can design before any controller is connected.
+ * Attachment to a controller output is optional and stored separately.
+ * Segments are generated when the prop is attached and Applied.
  */
+
+import { isPropLayout, type PropLayout } from "./layout.ts";
 
 export const PROP_KINDS = ["roofline", "window", "arch", "tree", "stake-row", "custom", "wireframe"] as const;
 export type PropKind = (typeof PROP_KINDS)[number];
@@ -49,15 +52,69 @@ export type WireframeSpec = {
   sharedPostRule: SharedPostRule;
 };
 
+export const PROP_LENGTH_UNITS = ["ft", "m"] as const;
+export type PropLengthUnit = (typeof PROP_LENGTH_UNITS)[number];
+
+/** Numbers are in the prop's unit (feet or metres), not millimetres. */
+export type PropMeasurements =
+  | { shape: "roofline"; length: number }
+  | { shape: "window"; width: number; height: number }
+  | { shape: "arch"; width: number; height: number }
+  | { shape: "tree"; height: number; base: number }
+  | { shape: "stake-row"; stakes: number; height: number }
+  | { shape: "wireframe"; sides: number; side: number; height: number }
+  | { shape: "custom" }
+  | { shape: "legacy" };
+
+export type PropEdge = {
+  id: string;
+  label: string;
+  /** 0 when the length was never measured (a migrated tap-built prop). */
+  lengthMm: number;
+  ledCount: number;
+};
+
+export type PropDesign = {
+  unit: PropLengthUnit;
+  /** Null when a migrated prop has no known spacing. Not a silent 10 cm. */
+  pitchMm: number | null;
+  ledProductId: string | null;
+  measurements: PropMeasurements;
+  /** Null only when a migrated prop's ranges are missing. Not the same as zero. */
+  ledCount: number | null;
+  edges: PropEdge[];
+};
+
+/**
+ * Where a designed prop sits on a controller. Absent means not attached.
+ * `startIndex` is the first light on that output, or null when this prop
+ * starts after another prop on the same output.
+ */
+export type PropAttachment = {
+  propId: string;
+  lightId: string;
+  outputId: string;
+  startIndex: number | null;
+  afterPropId: string | null;
+};
+
 export type Prop = {
   id: string;
-  lightId: string;
+  /**
+   * Set while attached, including props saved before attachments existed.
+   * Omitted on a design that is not attached.
+   */
+  lightId?: string;
   label: string;
   kind: PropKind;
-  /** Ordered Segment ids that make this Prop. */
+  /** Generated range ids. Empty until attach/Apply. */
   elementIds: string[];
   /** Guess-then-lock wireframe. Required when kind is wireframe. */
   wireframe?: WireframeSpec;
+  /** Present on props designed from measurements, and filled in for older rows on read. */
+  design?: PropDesign;
+  /** Corners and wiring order. Light counts are derived from this, not stored on it. */
+  layout?: PropLayout;
 };
 
 export type PropTap = {
@@ -130,22 +187,91 @@ function isWireframeHiddenSpan(value: unknown): value is WireframeHiddenSpan {
   );
 }
 
+function isPositive(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function isPropMeasurements(value: unknown): value is PropMeasurements {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as { shape?: unknown };
+  switch (row.shape) {
+    case "roofline":
+      return isPositive((row as { length?: unknown }).length);
+    case "window":
+    case "arch":
+      return isPositive((row as { width?: unknown }).width) && isPositive((row as { height?: unknown }).height);
+    case "tree":
+      return isPositive((row as { height?: unknown }).height) && isPositive((row as { base?: unknown }).base);
+    case "stake-row": {
+      const stakes = (row as { stakes?: unknown }).stakes;
+      return Number.isInteger(stakes) && (stakes as number) >= 1 && (stakes as number) <= 64 &&
+        isPositive((row as { height?: unknown }).height);
+    }
+    case "wireframe": {
+      const sides = (row as { sides?: unknown }).sides;
+      return Number.isInteger(sides) && (sides as number) >= 3 && (sides as number) <= 16 &&
+        isPositive((row as { side?: unknown }).side) && isPositive((row as { height?: unknown }).height);
+    }
+    case "custom":
+    case "legacy":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function isPropEdge(value: unknown): value is PropEdge {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Partial<PropEdge>;
+  return typeof row.id === "string" && row.id.length > 0 &&
+    typeof row.label === "string" && row.label.length > 0 &&
+    typeof row.lengthMm === "number" && Number.isFinite(row.lengthMm) && row.lengthMm >= 0 &&
+    Number.isInteger(row.ledCount) && (row.ledCount ?? -1) >= 0;
+}
+
+export function isPropDesign(value: unknown): value is PropDesign {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Partial<PropDesign>;
+  const pitchOk = row.pitchMm === null || (typeof row.pitchMm === "number" && Number.isFinite(row.pitchMm) && row.pitchMm > 0);
+  const countOk = row.ledCount === null || (Number.isInteger(row.ledCount) && (row.ledCount ?? -1) >= 0);
+  return (row.unit === "ft" || row.unit === "m") &&
+    pitchOk &&
+    (row.ledProductId === null || (typeof row.ledProductId === "string" && row.ledProductId.length > 0)) &&
+    isPropMeasurements(row.measurements) &&
+    countOk &&
+    Array.isArray(row.edges) &&
+    row.edges.every(isPropEdge);
+}
+
+export function isPropAttachment(value: unknown): value is PropAttachment {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Partial<PropAttachment>;
+  const indexOk = row.startIndex === null || (Number.isInteger(row.startIndex) && (row.startIndex ?? -1) >= 0);
+  const afterOk = row.afterPropId === null || (typeof row.afterPropId === "string" && row.afterPropId.length > 0);
+  if (!indexOk || !afterOk) return false;
+  if ((row.startIndex === null) === (row.afterPropId === null)) return false;
+  return typeof row.propId === "string" && row.propId.length > 0 &&
+    typeof row.lightId === "string" && row.lightId.length > 0 &&
+    typeof row.outputId === "string" && row.outputId.length > 0;
+}
+
 export function isProp(value: unknown): value is Prop {
   if (!value || typeof value !== "object") return false;
   const row = value as Partial<Prop>;
-  const base =
-    typeof row.id === "string" &&
-    row.id.length > 0 &&
-    typeof row.lightId === "string" &&
-    row.lightId.length > 0 &&
-    typeof row.label === "string" &&
-    isPropKind(row.kind) &&
-    Array.isArray(row.elementIds) &&
-    row.elementIds.length > 0 &&
-    row.elementIds.every((id) => typeof id === "string" && id.length > 0) &&
-    new Set(row.elementIds).size === row.elementIds.length;
+  const elementIds = row.elementIds;
+  const idsOk = Array.isArray(elementIds) &&
+    elementIds.every((id) => typeof id === "string" && id.length > 0) &&
+    new Set(elementIds).size === elementIds.length;
+  const lightOk = row.lightId === undefined || (typeof row.lightId === "string" && row.lightId.length > 0);
+  const base = typeof row.id === "string" && row.id.length > 0 &&
+    typeof row.label === "string" && row.label.length > 0 &&
+    isPropKind(row.kind) && idsOk && lightOk;
   if (!base) return false;
-  if (row.kind === "wireframe") return isWireframeSpec(row.wireframe);
-  if (row.wireframe !== undefined) return isWireframeSpec(row.wireframe);
+  const designed = row.design !== undefined;
+  const legacy = typeof row.lightId === "string" && elementIds !== undefined && elementIds.length > 0;
+  if (!designed && !legacy) return false;
+  if (designed && !isPropDesign(row.design)) return false;
+  if (row.layout !== undefined && !isPropLayout(row.layout)) return false;
+  if (row.kind === "wireframe" || row.wireframe !== undefined) return isWireframeSpec(row.wireframe);
   return true;
 }

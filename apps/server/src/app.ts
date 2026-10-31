@@ -154,6 +154,7 @@ import type { FileLightsStore } from "./store/lights-store.ts";
 import { FileLooksStore } from "./store/looks-store.ts";
 import { FileSetupProfilesStore } from "./store/setup-profiles-store.ts";
 import { registerLookRoutes } from "./look-routes.ts";
+import { registerPropSetupRoutes } from "./prop-setup-routes.ts";
 import { registerSeasonRoutes } from "./season-routes.ts";
 import { registerYardRoutes } from "./yard-routes.ts";
 import { FileYardUndoStore } from "./store/yard-undo-store.ts";
@@ -585,6 +586,12 @@ export function createApp(deps: AppDeps) {
     record,
   };
   registerLookRoutes(app, lookDeps);
+  registerPropSetupRoutes(app, {
+    store: deps.store,
+    palette: () => settings.read().palette,
+    refresh: refreshOne,
+    applyDrafts: applyDraftsToController,
+  });
   const yardUndo = new FileYardUndoStore(join(dirname(deps.store.path), "yard-undo.json"));
   registerYardRoutes(app, {
     ...lookDeps,

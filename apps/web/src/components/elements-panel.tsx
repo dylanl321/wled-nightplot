@@ -80,6 +80,7 @@ export function ElementsPanel({
   onDetail,
   onSettings,
   onRefresh,
+  openWireframe = false,
 }: {
   detail: LightDetailPayload;
   busy: Busy;
@@ -89,6 +90,7 @@ export function ElementsPanel({
   onDetail: (next: LightDetailPayload) => void;
   onSettings: () => void;
   onRefresh: () => void;
+  openWireframe?: boolean;
 }) {
   const light = detail.light;
   const { state, dispatch, dirtyCount, draftReady, storageAvailable } = useEditorState(
@@ -532,6 +534,7 @@ export function ElementsPanel({
         elements={detail.elements}
         disabled={dirtyCount > 0 || live || busy !== null || Boolean(detail.session) || frozenPreview}
         disabledReason={dirtyCount > 0 ? "Save or revert unsaved Segment edits first." : live ? "End Preview first." : undefined}
+        openWireframe={openWireframe}
         onAdd={() => {
           setLive(false);
           setAddPropOpen(true);

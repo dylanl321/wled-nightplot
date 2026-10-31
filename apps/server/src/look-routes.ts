@@ -103,7 +103,10 @@ function yardFrom(store: FileLightsStore): {
   const nameOf = (lightId: string) => lights.find((light) => light.id === lightId)?.name ?? lightId;
   return {
     lights: lights.map((light) => ({ id: light.id, name: light.name })),
-    props: store.loadProps().map((prop) => ({ ...prop, lightName: nameOf(prop.lightId) })),
+    props: store.loadProps().map((prop) => ({
+      ...prop,
+      lightName: prop.lightId ? nameOf(prop.lightId) : "Not attached",
+    })),
     elements: store.loadElements().map((element) => ({
       id: element.id,
       lightId: element.lightId,

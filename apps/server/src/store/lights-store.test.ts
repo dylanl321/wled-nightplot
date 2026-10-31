@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -132,7 +132,7 @@ describe("lights store ledProductId", () => {
     ]);
   });
 
-  it("drops a Prop when replaceElements removes every Segment it named", () => {
+  it("keeps a designed Prop when replaceElements removes every Segment it named", () => {
     const dir = mkdtempSync(join(tmpdir(), "nightplot-lights-"));
     const file = join(dir, "lights.json");
     const store = new FileLightsStore(file);
@@ -148,6 +148,47 @@ describe("lights store ledProductId", () => {
       elementIds: ["top"],
     }]);
     store.replaceElements(base.id, []);
-    expect(store.propsFor(base.id)).toEqual([]);
+    expect(store.propsFor(base.id)).toEqual([
+      expect.objectContaining({ id: "prop-window", label: "Front", elementIds: [] }),
+    ]);
+  });
+
+  it("migrates a light-tied Prop into a standalone design plus an attachment", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-lights-"));
+    const file = join(dir, "lights.json");
+    writeFileSync(file, `${JSON.stringify({
+      version: 1,
+      lights: [{ ...base }],
+      elements: [
+        { id: "top", lightId: base.id, label: "Front · top", start: 0, stop: 10 },
+        { id: "right", lightId: base.id, label: "Front · right", start: 10, stop: 24 },
+      ],
+      props: [{
+        id: "prop-window",
+        lightId: base.id,
+        label: "Front",
+        kind: "window",
+        elementIds: ["top", "right"],
+      }],
+    })}\n`);
+    const store = new FileLightsStore(file);
+    expect(store.loadProps()).toEqual([
+      expect.objectContaining({
+        id: "prop-window",
+        lightId: base.id,
+        design: expect.objectContaining({
+          measurements: { shape: "legacy" },
+          ledCount: 24,
+          pitchMm: null,
+        }),
+      }),
+    ]);
+    expect(store.loadAttachments()).toEqual([
+      expect.objectContaining({ propId: "prop-window", lightId: base.id, startIndex: 0, afterPropId: null }),
+    ]);
+    store.replace(store.findById(base.id)!);
+    const saved = JSON.parse(readFileSync(file, "utf8")) as { props: { design: { measurements: { shape: string } } }[]; attachments: unknown[] };
+    expect(saved.props[0]?.design.measurements.shape).toBe("legacy");
+    expect(saved.attachments).toHaveLength(1);
   });
 });

@@ -54,7 +54,7 @@ export function PhoneChrome({
         <AllOffControl size="thumb" lights={lights} sessions={sessions} />
       </div>
       <nav aria-label="Nightplot" className="grid grid-cols-5 border-t border-border">
-        <PhoneLink href="/" active={nav === "lights" || nav === "light"}>Lights</PhoneLink>
+        <PhoneLink href="/lights" active={nav === "lights" || nav === "light"}>Lights</PhoneLink>
         <PhoneLink href="/looks" active={nav === "looks"}>Looks</PhoneLink>
         <PhoneLink href="/yard" active={nav === "yard"}>Yard</PhoneLink>
         <PhoneLink href="/sync" active={nav === "sync"}>Sync</PhoneLink>
