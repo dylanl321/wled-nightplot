@@ -37,6 +37,18 @@ export class FileSetupProfilesStore {
     return true;
   }
 
+  replaceAll(profiles: SetupProfile[]): SetupProfile[] {
+    if (!profiles.every(isSetupProfile)) {
+      throw new StoreUnreadableError(
+        "Setup profiles store",
+        this.filePath,
+        "a profile row Nightplot does not understand",
+      );
+    }
+    this.write(profiles);
+    return profiles;
+  }
+
   private read(): SetupProfile[] {
     let parsed: FileShape;
     try {

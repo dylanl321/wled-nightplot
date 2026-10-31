@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   CURRENT_SLICE,
   allOffNoAnswerReason,
@@ -153,6 +153,9 @@ import type { FileLightsStore } from "./store/lights-store.ts";
 import { FileLooksStore } from "./store/looks-store.ts";
 import { FileSetupProfilesStore } from "./store/setup-profiles-store.ts";
 import { registerLookRoutes } from "./look-routes.ts";
+import { registerSeasonRoutes } from "./season-routes.ts";
+import { registerYardRoutes } from "./yard-routes.ts";
+import { FileYardUndoStore } from "./store/yard-undo-store.ts";
 import type { ProbeFn } from "./wled/client.ts";
 import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
 import {
@@ -556,7 +559,7 @@ export function createApp(deps: AppDeps) {
     record,
   });
 
-  registerLookRoutes(app, {
+  const lookDeps = {
     store: deps.store,
     looks,
     live,
@@ -565,8 +568,28 @@ export function createApp(deps: AppDeps) {
     readPresets: deps.readPresets ?? createWledPresetsReader(),
     writePresets: deps.writePresets ?? createWledPresetsWriter(),
     refreshOne,
-    captureDevice: (reason, light, snap) => captureDevice(reason, light, snap),
+    captureDevice: (reason: Parameters<typeof captureDevice>[0], light: Light, snap: WledSnapshot) =>
+      captureDevice(reason, light, snap),
     record,
+  };
+  registerLookRoutes(app, lookDeps);
+  const yardUndo = new FileYardUndoStore(join(dirname(deps.store.path), "yard-undo.json"));
+  registerYardRoutes(app, {
+    ...lookDeps,
+    undo: yardUndo,
+    write: deps.write,
+    writeNativeFiles,
+    backupsRead: (id) => backups.read(id),
+    now: nowIso,
+  });
+  registerSeasonRoutes(app, {
+    ...lookDeps,
+    profiles,
+    probe: deps.probe,
+    readNativeFiles,
+    discoverRows: () => session.rows,
+    captureNightplot: (reason) => capture(reason),
+    now: nowIso,
   });
 
   app.get("/api/activity", (c) => c.json({ entries: activity.list(c.req.query("lightId")) }));

@@ -609,6 +609,9 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     presets() {
       return presetsText();
     },
+    setPresets(raw: string) {
+      exportedPresets = raw;
+    },
     handle,
     listen(port = 0, hostname = "127.0.0.1"): Server {
       return createServer(handle).listen(port, hostname);

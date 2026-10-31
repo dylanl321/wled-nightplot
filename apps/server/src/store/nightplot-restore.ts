@@ -10,6 +10,12 @@ export type NightplotRestorePaths = {
   settings?: string;
 };
 
+export type SeasonRestorePaths = {
+  lights: string;
+  looks?: string;
+  profiles?: string;
+};
+
 export type RestoreIntent = {
   ready: true;
   files: { dest: string; staged: string }[];
@@ -63,6 +69,50 @@ export function writeNightplotStoresConsistent(paths: NightplotRestorePaths, dat
 
 export function recoverInterruptedRestore(storePath: string): void {
   finishRestoreIntent(restoreIntentPath(storePath));
+}
+
+/** Stage season files (Lights / Props / Looks / setup profiles), then rename. */
+export function writeSeasonStoresConsistent(
+  paths: SeasonRestorePaths,
+  data: {
+    lights: unknown[];
+    elements: unknown[];
+    props: unknown[];
+    looks?: unknown;
+    profiles?: unknown[];
+  },
+): void {
+  const files = [
+    {
+      dest: paths.lights,
+      body: `${JSON.stringify({ version: 1, lights: data.lights, elements: data.elements, props: data.props }, null, 2)}\n`,
+    },
+    ...(paths.looks && data.looks
+      ? [{ dest: paths.looks, body: `${JSON.stringify(data.looks, null, 2)}\n` }]
+      : []),
+    ...(paths.profiles && data.profiles
+      ? [{ dest: paths.profiles, body: `${JSON.stringify({ version: 1, profiles: data.profiles }, null, 2)}\n` }]
+      : []),
+  ];
+  const staged = files.map((file) => ({ dest: file.dest, staged: `${file.dest}.restore-new`, body: file.body }));
+  const intent = restoreIntentPath(paths.lights);
+  try {
+    for (const row of staged) {
+      mkdirSync(dirname(row.dest), { recursive: true });
+      writeFileSync(row.staged, row.body, "utf8");
+    }
+    writeFileSync(intent, `${JSON.stringify({
+      ready: true,
+      files: staged.map(({ dest, staged: stagedPath }) => ({ dest, staged: stagedPath })),
+    } satisfies RestoreIntent)}\n`);
+  } catch (error) {
+    for (const row of staged) {
+      try { unlinkSync(row.staged); } catch { /* keep the first failure */ }
+    }
+    try { unlinkSync(intent); } catch { /* keep the first failure */ }
+    throw error;
+  }
+  finishRestoreIntent(intent);
 }
 
 export function finishRestoreIntent(intentPath: string): void {

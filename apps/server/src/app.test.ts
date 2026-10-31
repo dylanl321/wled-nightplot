@@ -5560,6 +5560,193 @@ describe("Looks library and nightly Schedule", () => {
   });
 });
 
+describe("Yard check and season save", () => {
+  const servers: Server[] = [];
+
+  afterEach(async () => {
+    await Promise.all(servers.splice(0).map((item) => new Promise<void>((resolve) => item.close(() => resolve()))));
+  });
+
+  async function liveYardApp(box: ReturnType<typeof createFixtureBox>) {
+    const http = box.listen(0, "127.0.0.1");
+    servers.push(http);
+    const port = await listenReady(http);
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-yard-api-"));
+    const store = new FileLightsStore(join(dir, "lights.json"));
+    const app = createApp({
+      store,
+      backups: new FileBackupStore(join(dir, "backups")),
+      looks: new FileLooksStore(join(dir, "looks.json")),
+      probe: (target) => probeWled(target, fetch, 500),
+      write: async () => true,
+      readLive: async () => ({ source: "fixture", leds: [] }),
+      readCfg: createWledCfgReader(),
+      writeCfg: createWledCfgWriter(),
+      collect: async () => [],
+    });
+    return { app, port, host: `127.0.0.1:${port}`, box, store, dir };
+  }
+
+  it("rereads drift, fixes one Light, and does not stop a dead box", async () => {
+    const live = createFixtureBox({ name: "Porch", ledCount: 80 });
+    const other = createFixtureBox({ name: "Eave", ledCount: 40 });
+    const a = await liveYardApp(live);
+    const b = await liveYardApp(other);
+    const enrollA = await a.app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: a.host }),
+    });
+    const enrollB = await a.app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: b.host }),
+    });
+    const porch = ((await enrollA.json()) as { light: { id: string } }).light.id;
+    const eave = ((await enrollB.json()) as { light: { id: string } }).light.id;
+    await a.app.request("/api/looks", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        looks: [{
+          id: "look-warm", name: "Warm white", slot: 1,
+          style: { fx: 0, pal: 0, sx: 128, ix: 128, bri: 180, color: "#ffa000" },
+          overrides: [],
+        }],
+        playlists: [],
+        schedule: null,
+      }),
+    });
+    const firstCheck = (await (await a.app.request("/api/yard-check")).json()) as {
+      rows: { lightId: string; looks: { status: string }; canFix: boolean }[];
+    };
+    expect(firstCheck.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ lightId: porch, looks: expect.objectContaining({ status: "not-pushed" }), canFix: true }),
+    ]));
+
+    const push = await a.app.request("/api/looks/push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightIds: [porch], includeSchedule: false }),
+    });
+    expect(push.status).toBe(200);
+    expect(a.store.findById(porch)?.lastLookPush?.includeSchedule).toBe(false);
+
+    live.setPresets(JSON.stringify({ "0": {}, "1": { n: "Drifted" } }));
+    const drifted = (await (await a.app.request("/api/yard-check")).json()) as {
+      rows: { lightId: string; looks: { status: string }; canFix: boolean }[];
+    };
+    expect(drifted.rows.find((row) => row.lightId === porch)?.looks.status).toBe("mismatch");
+
+    const fix = await a.app.request("/api/yard-check/fix", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lightIds: [porch, eave, "missing"] }),
+    });
+    expect(fix.status).toBe(200);
+    const fixed = (await fix.json()) as { rows: { lightId: string; status: string }[]; undo: { backupIds: string[] } | null };
+    expect(fixed.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ lightId: porch, status: "matched" }),
+      expect.objectContaining({ lightId: "missing", status: "refused" }),
+    ]));
+    expect(fixed.undo?.backupIds.length).toBeGreaterThan(0);
+    const porchPresets = JSON.parse(live.presets()) as Record<string, { n?: string }>;
+    expect(porchPresets["1"]?.n).toBe("Warm white");
+  });
+
+  it("exports a season file with Looks and restores it, rematching a changed IP by MAC", async () => {
+    const live = createFixtureBox({ name: "Porch", ledCount: 60 });
+    const a = await liveYardApp(live);
+    const enrolled = await a.app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: a.host }),
+    });
+    const porch = ((await enrolled.json()) as { light: { id: string; mac: string } }).light;
+    await a.app.request("/api/looks", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        looks: [{
+          id: "look-warm", name: "Warm white", slot: 1,
+          style: { fx: 0, pal: 0, sx: 128, ix: 128, bri: 180, color: "#ffa000" },
+          overrides: [],
+        }],
+        playlists: [],
+        schedule: null,
+      }),
+    });
+    const exported = (await (await a.app.request("/api/season/export")).json()) as {
+      document: { looks: { looks: { name: string }[] }; lights: { id: string; hostname: string; port: number; mac: string }[] };
+      digest: string;
+    };
+    expect(exported.document.looks.looks[0]?.name).toBe("Warm white");
+
+    await a.app.request("/api/looks", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        looks: [{
+          id: "look-cool", name: "Cool white", slot: 2,
+          style: { fx: 0, pal: 0, sx: 128, ix: 128, bri: 200, color: "#ffffff" },
+          overrides: [],
+        }],
+        playlists: [],
+        schedule: null,
+      }),
+    });
+    const stale = {
+      ...exported.document,
+      lights: exported.document.lights.map((light) => ({ ...light, hostname: "127.0.0.1", port: 1, hostKey: "127.0.0.1:1" })),
+    };
+    const review = await a.app.request("/api/season/review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ document: stale }),
+    });
+    expect(review.status).toBe(200);
+    const reviewed = (await review.json()) as { expectedDigest: string; expectedCurrentDigest: string; looksMissing: boolean };
+    expect(reviewed.looksMissing).toBe(false);
+
+    const restore = await a.app.request("/api/season/restore", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        document: stale,
+        expectedDigest: reviewed.expectedDigest,
+        expectedCurrentDigest: reviewed.expectedCurrentDigest,
+        confirm: true,
+        pushToControllers: true,
+      }),
+    });
+    expect(restore.status).toBe(200);
+    const restoredLooks = (await (await a.app.request("/api/looks")).json()) as { looks: { name: string }[] };
+    expect(restoredLooks.looks[0]?.name).toBe("Warm white");
+    const rematched = a.store.findById(porch.id);
+    expect(rematched?.hostKey).toBe(a.host);
+    expect(rematched?.mac).toBe(porch.mac);
+  });
+
+  it("review names a rematch host collision so Restore is not offered as safe", async () => {
+    const live = createFixtureBox({ name: "Porch", ledCount: 60 });
+    const other = createFixtureBox({ name: "Eave", ledCount: 40 });
+    const a = await liveYardApp(live);
+    const b = await liveYardApp(other);
+    await a.app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: a.host }),
+    });
+    await a.app.request("/api/lights", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: b.host }),
+    });
+    const exported = (await (await a.app.request("/api/season/export")).json()) as { document: unknown };
+    const closed = servers.pop();
+    if (closed) await new Promise<void>((resolve) => closed.close(() => resolve()));
+    const review = await a.app.request("/api/season/review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ document: exported.document }),
+    });
+    expect(review.status).toBe(200);
+    const reviewed = (await review.json()) as { hostCollision: boolean; message: string };
+    expect(reviewed.hostCollision).toBe(true);
+    expect(reviewed.message).toMatch(/Review this season file/);
+  });
+});
+
 function listen(server: Server): Promise<number> {
   return new Promise((resolve, reject) => {
     server.listen(0, "127.0.0.1", () => {
