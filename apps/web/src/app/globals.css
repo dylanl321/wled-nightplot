@@ -91,6 +91,62 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Phone is the yard surface. 16px fields avoid iOS focus zoom.
+   44px is the minimum hit size. Desktop (lg) keeps the denser sizes. */
+@media (max-width: 1023px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]):not([type="color"]),
+  select,
+  textarea {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  input[type="color"],
+  input[type="range"] {
+    min-height: 44px;
+  }
+
+  input[type="color"] {
+    min-width: 44px;
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 22px;
+    height: 22px;
+    flex: 0 0 auto;
+  }
+
+  label:has(> input[type="checkbox"]),
+  label:has(> input[type="radio"]) {
+    min-height: 44px;
+  }
+
+  button:not(.sr-only),
+  [role="button"],
+  a[data-slot="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  input,
+  select,
+  textarea,
+  button,
+  a,
+  label {
+    scroll-margin-bottom: calc(var(--phone-chrome, 9rem) + 12px);
+    scroll-margin-top: 8px;
+  }
+
+  select,
+  textarea,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]) {
+    max-width: 100%;
+    min-width: 0;
+  }
+}
+
 a {
   color: inherit;
   text-decoration: none;

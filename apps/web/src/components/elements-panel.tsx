@@ -544,8 +544,8 @@ export function ElementsPanel({
       />
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,340px),1fr))] items-start gap-3.5">
-      <div className="min-w-0 overflow-x-auto rounded-[14px] border border-border bg-[#0e1014]">
-        <div className="grid min-w-[310px] grid-cols-[10px_minmax(70px,1fr)_64px_34px_44px_44px] sm:grid-cols-[14px_minmax(0,1fr)_84px_44px_60px_56px] gap-1 border-b border-border px-3 sm:gap-2 sm:px-[18px] py-2.5 text-[12px] text-muted-foreground">
+      <div className="min-w-0 rounded-[14px] border border-border bg-[#0e1014]">
+        <div className="hidden gap-2 border-b border-border px-[18px] py-2.5 text-[12px] text-muted-foreground lg:grid lg:grid-cols-[14px_minmax(0,1fr)_84px_44px_60px_56px]">
           <span />
           <span>Segment</span>
           <span>LEDs</span>
@@ -569,23 +569,27 @@ export function ElementsPanel({
                   key={element.id}
                   type="button"
                   onClick={(event) => dispatch({ type: "select-row", id: element.id, shift: event.shiftKey })}
-                  className="grid w-full min-w-[310px] grid-cols-[10px_minmax(70px,1fr)_64px_34px_44px_44px] sm:grid-cols-[14px_minmax(0,1fr)_84px_44px_60px_56px] items-center gap-1 border-b border-border px-3 sm:gap-2 sm:px-[18px] py-3 text-left"
+                  className="grid w-full grid-cols-[14px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-b border-border px-4 py-3 text-left lg:grid-cols-[14px_minmax(0,1fr)_84px_44px_60px_56px] lg:gap-2 lg:px-[18px]"
                   style={{
                     background: selected ? "#12141a" : "transparent",
                     boxShadow: selected ? `inset 2px 0 0 ${hue}` : "none",
                   }}
                 >
-                  <span className="size-2.5 rounded-[3px]" style={{ background: hue }} />
-                  <span className="min-w-0 text-[13px] font-medium [overflow-wrap:anywhere]">{element.label}</span>
+                  <span className="col-start-1 row-span-2 row-start-1 mt-1 size-2.5 self-start rounded-[3px] lg:row-span-1 lg:mt-0 lg:self-center" style={{ background: hue }} />
+                  <span className="col-start-2 row-start-1 min-w-0 text-[16px] font-medium [overflow-wrap:anywhere] lg:text-[13px]">{element.label}</span>
+                  <span className="col-start-2 row-start-2 flex flex-wrap items-baseline gap-x-2 font-mono text-[14px] text-muted-foreground lg:contents">
                   <span
-                    className={cn("font-mono text-[13px]", word ? "text-destructive" : "text-[#c9c3b8]")}
+                    className={cn("lg:col-start-3 lg:row-start-1 lg:text-[13px]", word ? "text-destructive" : "text-[#c9c3b8]")}
                     title={length ? PHYSICAL_LENGTH_CAPTION : undefined}
                   >
                     {element.start}–{element.stop}
                   </span>
-                  <span className="font-mono text-[12px] text-muted-foreground">{count || "—"}</span>
-                  <span className="font-mono text-[12px] text-muted-foreground" title={length ? PHYSICAL_LENGTH_CAPTION : undefined}>{length ?? "—"}</span>
-                  <span className={cn("text-[13px]", word ? "text-destructive" : "text-muted-foreground")}>
+                  <span aria-hidden className="lg:hidden">·</span>
+                  <span className="lg:col-start-4 lg:row-start-1 lg:text-[12px]">{count || "—"}</span>
+                  <span aria-hidden className="lg:hidden">·</span>
+                  <span className="lg:col-start-5 lg:row-start-1 lg:text-[12px]" title={length ? PHYSICAL_LENGTH_CAPTION : undefined}>{length ?? "—"}</span>
+                  </span>
+                  <span className={cn("col-start-3 row-span-2 row-start-1 self-center text-[14px] lg:col-start-6 lg:row-span-1 lg:text-[13px]", word ? "text-destructive" : "text-muted-foreground")}>
                     {selected ? (
                       <span className="sr-only" aria-label="Segment kind">
                         {word ?? "ok"}
@@ -599,7 +603,7 @@ export function ElementsPanel({
         )}
         <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-[12px]">
           <span className="text-muted-foreground">Free</span>
-          {gaps(state.els, light.ledCount).map((run) => <button type="button" key={run.start} className="rounded-md border border-dashed border-[#3a4150] px-2 py-1" onClick={() => dispatch({ type: "add-gap", start: run.start, stop: run.stop })}>
+          {gaps(state.els, light.ledCount).map((run) => <button type="button" key={run.start} className="min-h-11 rounded-md border border-dashed border-[#3a4150] px-3 py-2 text-[14px]" onClick={() => dispatch({ type: "add-gap", start: run.start, stop: run.stop })}>
             <span className="font-mono">{run.start}–{run.stop} · {run.stop - run.start}</span><span className="ml-1.5 text-primary">+ Add</span>
           </button>)}
           {gaps(state.els, light.ledCount).length === 0 ? <span className="text-muted-foreground">Every LED is in a Segment.</span> : null}
@@ -615,7 +619,7 @@ export function ElementsPanel({
       ) : null}
 
       {dirtyCount > 0 ? (
-        <div className="fixed bottom-5 left-1/2 z-20 flex w-[min(1020px,calc(100%-48px))] -translate-x-1/2 flex-wrap items-center gap-2.5 rounded-xl border border-input bg-[#12141a] px-3.5 py-3 shadow-[0_-12px_40px_rgba(0,0,0,0.5)]">
+        <div className="fixed inset-x-3 bottom-[var(--phone-chrome,0px)] z-40 flex flex-wrap items-center gap-2.5 rounded-xl border border-input bg-[#12141a] px-3.5 py-3 shadow-[0_-12px_40px_rgba(0,0,0,0.5)] lg:inset-x-auto lg:bottom-5 lg:left-1/2 lg:w-[min(1020px,calc(100%-48px))] lg:-translate-x-1/2">
           <span className="text-[14px] text-primary">
             {dirtyCount} unsaved change{dirtyCount === 1 ? "" : "s"}
           </span>

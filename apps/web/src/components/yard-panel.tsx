@@ -222,7 +222,7 @@ export function YardPanel({
         </label>
         <div className="flex flex-wrap gap-3">
           <Button variant="outline" disabled={disabled} onClick={() => void saveSeason()}>Save season</Button>
-          <label className="inline-flex h-10 items-center rounded-lg border border-input px-4 text-sm font-semibold">
+          <label className="inline-flex min-h-11 items-center rounded-lg border border-input px-4 text-base font-semibold">
             Choose season file
             <input
               type="file"

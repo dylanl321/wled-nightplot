@@ -224,9 +224,9 @@ function Stepper({
     <label className="flex min-w-0 flex-col gap-1.5">
       <span className={`text-[12px] text-muted-foreground ${labelClass ?? ""}`}>{label}</span>
       <span
-        className={`flex h-[34px] min-w-0 overflow-hidden rounded-md border bg-[#07080a] ${invalid ? "border-destructive" : "border-input"}`}
+        className={`flex h-11 min-w-0 overflow-hidden rounded-md border bg-[#07080a] lg:h-[34px] ${invalid ? "border-destructive" : "border-input"}`}
       >
-        <button type="button" onClick={onMinus} aria-label={`Decrease ${label}`} className="w-7 border-r border-border text-muted-foreground">
+        <button type="button" onClick={onMinus} aria-label={`Decrease ${label}`} className="w-11 border-r border-border text-muted-foreground lg:w-7">
           −
         </button>
         <input
@@ -235,9 +235,9 @@ function Stepper({
           size={1}
           aria-label={ariaLabel}
           onChange={(event) => onChange(parseIndex(event.target.value, value))}
-          className="min-w-0 flex-1 border-none bg-transparent text-center font-mono text-[13px] outline-none"
+          className="min-w-0 flex-1 border-none bg-transparent text-center font-mono text-base outline-none lg:text-[13px]"
         />
-        <button type="button" onClick={onPlus} aria-label={`Increase ${label}`} className="w-7 border-l border-border text-muted-foreground">
+        <button type="button" onClick={onPlus} aria-label={`Increase ${label}`} className="w-11 border-l border-border text-muted-foreground lg:w-7">
           +
         </button>
       </span>

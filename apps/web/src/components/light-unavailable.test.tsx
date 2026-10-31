@@ -31,7 +31,7 @@ describe("LightUnavailable detail miss", () => {
     expect(screen.getByText(/Enrolled Lights stay listed/)).toBeTruthy();
     expect(screen.getByText("This Light failed")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Back to Lights" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Lights" })).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: "Lights" }).length).toBeGreaterThan(0);
 
     const body = document.body.textContent ?? "";
     expect(body).not.toMatch(/list is not loaded/);

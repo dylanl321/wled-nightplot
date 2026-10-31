@@ -61,28 +61,28 @@ export function ShortcutOverlay() {
   return <>
     <button ref={trigger} type="button" onClick={() => setOpen(true)}
       aria-keyshortcuts="?" aria-haspopup="dialog" aria-expanded={open}
-      className="rounded-md px-2 py-1 text-[13px] text-muted-foreground hover:bg-secondary/60">
+      className="hidden min-h-11 items-center rounded-md px-3 py-1 text-[13px] text-muted-foreground hover:bg-secondary/60 lg:inline-flex">
       Shortcuts <kbd className="ml-1 rounded border border-input px-1 font-mono">?</kbd>
     </button>
-    {open ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
+    {open ? <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/75 p-0 lg:items-center lg:p-4"
       onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
       <div role="dialog" aria-modal="true" aria-labelledby="nightplot-shortcuts-title"
-        className="max-h-[min(760px,90dvh)] w-full max-w-lg overflow-y-auto rounded-xl border border-border bg-card p-5 shadow-2xl">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 id="nightplot-shortcuts-title" className="text-lg font-semibold">Keyboard shortcuts</h2>
-            <p className="mt-1 text-[13px] text-muted-foreground">Press ? anywhere outside a text field to open this sheet. Escape closes it.</p>
-          </div>
-          <button ref={close} type="button" onClick={() => setOpen(false)}
-            className="rounded-md border border-input px-3 py-1.5 text-[13px]">Close</button>
+        className="relative flex max-h-[100dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-border bg-card shadow-2xl lg:max-h-[min(760px,90dvh)] lg:max-w-lg lg:rounded-xl">
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        <div className="lg:pr-28">
+          <h2 id="nightplot-shortcuts-title" className="text-lg font-semibold">Keyboard shortcuts</h2>
+          <p className="mt-1 text-[13px] text-muted-foreground">Press ? anywhere outside a text field to open this sheet. Escape closes it.</p>
         </div>
         <h3 className="mt-5 text-sm font-semibold">On a Light’s Segments tab</h3>
         <p className="mt-1 text-[12px] text-muted-foreground">Editor keys do not act while typing in a field. These edit the draft or move focus; they do not Apply to a Light.</p>
-        <dl className="mt-3 grid grid-cols-[minmax(105px,auto)_1fr] gap-x-4 gap-y-2 text-[12px]">
+        <dl className="mt-3 grid grid-cols-[minmax(0,8.5rem)_minmax(0,1fr)] gap-x-4 gap-y-2 text-[14px] lg:grid-cols-[minmax(105px,auto)_1fr] lg:text-[12px]">
           {SEGMENT_SHORTCUTS.map(([keys, meaning]) => <div key={keys} className="col-span-2 grid grid-cols-subgrid gap-x-4 border-t border-border pt-2">
-            <dt className="font-mono text-primary">{keys}</dt><dd>{meaning}</dd>
+            <dt className="font-mono text-primary [overflow-wrap:anywhere]">{keys}</dt><dd className="[overflow-wrap:anywhere]">{meaning}</dd>
           </div>)}
         </dl>
+        </div>
+        <button ref={close} type="button" onClick={() => setOpen(false)}
+          className="min-h-14 w-full shrink-0 border-t border-border bg-card px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-[16px] font-semibold lg:absolute lg:top-5 lg:right-5 lg:min-h-11 lg:w-auto lg:rounded-md lg:border lg:border-input lg:px-3 lg:pb-1.5 lg:text-[13px]">Close</button>
       </div>
     </div> : null}
   </>;

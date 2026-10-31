@@ -231,11 +231,11 @@ export function AddPropFlow({
       aria-modal="true"
       aria-label={`Add prop on ${lightName}`}
       onKeyDown={keyDown}
-      className="fixed inset-0 z-50 overflow-y-auto bg-background px-5 text-foreground"
-      style={{ paddingTop: "max(20px, env(safe-area-inset-top))", paddingBottom: "max(24px, env(safe-area-inset-bottom))" }}
+      className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-background px-5 text-foreground"
+      style={{ paddingTop: "max(20px, env(safe-area-inset-top))" }}
     >
-      <div className="mx-auto flex min-h-full w-full max-w-lg flex-col gap-6">
-        <header className="flex items-center justify-between gap-4">
+      <div className="mx-auto flex min-h-0 w-full max-w-lg flex-1 flex-col gap-4">
+        <header className="flex shrink-0 items-center justify-between gap-4">
           <div>
             <p className="text-[12px] text-primary">Add prop · {phaseLabel(phase)}</p>
             <h2 className="text-[20px] font-semibold">{lightName}</h2>
@@ -245,8 +245,9 @@ export function AddPropFlow({
           </Button>
         </header>
 
+        <div className="min-h-0 flex-1 overflow-y-auto">
         {phase === "pick" ? (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 pb-4">
             <p className="text-[14px] text-muted-foreground">
               Pick a shape. Then walk the lit cursor and tap each corner or end. You never type a count. A wireframe is an unfolded box+X — draw one line, or lock from the cursor only.
             </p>
@@ -275,20 +276,6 @@ export function AddPropFlow({
                 className="h-12 rounded-xl border border-input bg-[#07080a] px-3 text-[16px] text-foreground outline-none focus:border-primary"
               />
             </label>
-            {kind === "wireframe" ? (
-              <div className="flex flex-col gap-3">
-                <Button type="button" className={TOUCH} onClick={() => setPhase("draw")} disabled={ledCount < 1 || !label.trim()}>
-                  Open the net
-                </Button>
-                <Button type="button" variant="outline" className="min-h-14 text-[16px]" onClick={() => setPhase("lock")} disabled={ledCount < 1 || !label.trim()}>
-                  Lock from the lit cursor
-                </Button>
-              </div>
-            ) : (
-              <Button type="button" className={TOUCH} onClick={() => setPhase("walk")} disabled={ledCount < 1 || !label.trim()}>
-                Walk the strip
-              </Button>
-            )}
           </div>
         ) : null}
 
@@ -317,13 +304,11 @@ export function AddPropFlow({
                 <button type="button" aria-label="Previous LED" disabled={cursor <= 0} onClick={() => step(-1)} className="min-h-28 rounded-2xl border border-input bg-secondary text-[56px] disabled:opacity-40">←</button>
                 <button type="button" aria-label="Next LED" disabled={cursor >= ledCount - 1} onClick={() => step(1)} className="min-h-28 rounded-2xl border border-input bg-secondary text-[56px] disabled:opacity-40">→</button>
               </div>
-              <div className="grid w-full grid-cols-3 gap-2">
-                {NUDGES.map((amount) => (
-                  <div key={amount} className="grid grid-cols-2 gap-1">
-                    <Button type="button" variant="outline" className="min-h-12" onClick={() => step(-amount)} disabled={cursor <= 0}>−{amount}</Button>
-                    <Button type="button" variant="outline" className="min-h-12" onClick={() => step(amount)} disabled={cursor >= ledCount - 1}>+{amount}</Button>
-                  </div>
-                ))}
+              <div className="grid w-full grid-cols-2 gap-2">
+                {NUDGES.flatMap((amount) => [
+                  <Button key={`minus-${amount}`} type="button" variant="outline" className="min-h-12" onClick={() => step(-amount)} disabled={cursor <= 0}>−{amount}</Button>,
+                  <Button key={`plus-${amount}`} type="button" variant="outline" className="min-h-12" onClick={() => step(amount)} disabled={cursor >= ledCount - 1}>+{amount}</Button>,
+                ])}
               </div>
             </div>
             {taps.length > 0 ? (
@@ -333,19 +318,6 @@ export function AddPropFlow({
                 ))}
               </ol>
             ) : null}
-            <div className="flex flex-col gap-3">
-              {nextRole ? (
-                <Button type="button" className={TOUCH} onClick={mark} disabled={unreachable || Boolean(locate.error)}>
-                  Mark {nextRole.toLowerCase()}
-                </Button>
-              ) : null}
-              <Button type="button" variant="outline" className="min-h-14 text-[16px]" onClick={undoMark} disabled={taps.length === 0}>
-                Undo last mark
-              </Button>
-              <Button type="button" className="min-h-14 text-[16px]" onClick={() => setPhase("review")} disabled={!canFinish}>
-                Review this Prop
-              </Button>
-            </div>
           </div>
         ) : null}
 
@@ -372,21 +344,61 @@ export function AddPropFlow({
               </p>
             ) : null}
             {notice ? <p role="alert" className="text-[13px] text-destructive">{notice}</p> : null}
-            <Button type="button" className={TOUCH} onClick={() => void submit(true)} disabled={!review.ok || busy !== null || unreachable}>
-              {busy === "apply" ? "Applying…" : "Apply this Prop"}
-            </Button>
-            {busy === "apply" ? <LedLoader label="Applying" /> : null}
-            <Button type="button" variant="outline" className="min-h-14 text-[16px]" onClick={() => void submit(false)} disabled={!review.ok || busy !== null}>
-              {busy === "save" ? "Saving…" : "Save without Apply"}
-            </Button>
-            <Button type="button" variant="outline" onClick={() => { setApply(null); setNotice(null); setPhase("walk"); }}>
-              Back to marks
-            </Button>
             <p className="text-center text-[12px] text-muted-foreground">
               Preview is temporary. Apply persists. Fixture or sim green is not Hardware Done.
             </p>
           </div>
         ) : null}
+        </div>
+        <div
+          className="flex shrink-0 flex-col gap-2 border-t border-border bg-background py-3"
+          style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
+        >
+          {phase === "pick" && kind === "wireframe" ? (
+            <>
+              <Button type="button" className={TOUCH} onClick={() => setPhase("draw")} disabled={ledCount < 1 || !label.trim()}>
+                Open the net
+              </Button>
+              <Button type="button" variant="outline" className="min-h-14 text-[16px]" onClick={() => setPhase("lock")} disabled={ledCount < 1 || !label.trim()}>
+                Lock from the lit cursor
+              </Button>
+            </>
+          ) : null}
+          {phase === "pick" && kind !== "wireframe" ? (
+            <Button type="button" className={TOUCH} onClick={() => setPhase("walk")} disabled={ledCount < 1 || !label.trim()}>
+              Walk the strip
+            </Button>
+          ) : null}
+          {phase === "walk" ? (
+            <>
+              {nextRole ? (
+                <Button type="button" className={TOUCH} onClick={mark} disabled={unreachable || Boolean(locate.error)}>
+                  Mark {nextRole.toLowerCase()}
+                </Button>
+              ) : null}
+              <Button type="button" variant="outline" className="min-h-14 text-[16px]" onClick={undoMark} disabled={taps.length === 0}>
+                Undo last mark
+              </Button>
+              <Button type="button" className="min-h-14 text-[16px]" onClick={() => setPhase("review")} disabled={!canFinish}>
+                Review this Prop
+              </Button>
+            </>
+          ) : null}
+          {phase === "review" ? (
+            <>
+              <Button type="button" className={TOUCH} onClick={() => void submit(true)} disabled={!review.ok || busy !== null || unreachable}>
+                {busy === "apply" ? "Applying…" : "Apply this Prop"}
+              </Button>
+              {busy === "apply" ? <LedLoader label="Applying" /> : null}
+              <Button type="button" variant="outline" className="min-h-14 text-[16px]" onClick={() => void submit(false)} disabled={!review.ok || busy !== null}>
+                {busy === "save" ? "Saving…" : "Save without Apply"}
+              </Button>
+              <Button type="button" variant="outline" className="min-h-11" onClick={() => { setApply(null); setNotice(null); setPhase("walk"); }}>
+                Back to marks
+              </Button>
+            </>
+          ) : null}
+        </div>
       </div>
     </div>
   );
