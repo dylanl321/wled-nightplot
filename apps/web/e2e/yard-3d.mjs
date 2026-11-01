@@ -77,6 +77,23 @@ async function launch() {
   }
 }
 
+async function show3d(page) {
+  const button = page.getByRole("button", { name: "3D" });
+  await button.waitFor();
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await button.click();
+    const view = page.locator("[data-yard-3d=view] canvas");
+    const fallback = page.locator("[data-yard-3d=fallback]");
+    const opened = await Promise.race([
+      view.waitFor({ state: "visible", timeout: 20000 }).then(() => "view"),
+      fallback.waitFor({ state: "visible", timeout: 20000 }).then(() => "fallback"),
+    ]).catch(() => null);
+    if (opened === "fallback") throw new Error(`3D fell back: ${await fallback.innerText()}`);
+    if (opened === "view") return;
+  }
+  throw new Error("3D did not open");
+}
+
 async function fits(page) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   if (overflow > 1) throw new Error(`page scrolls sideways by ${overflow}px`);
@@ -205,9 +222,10 @@ try {
             },
           }),
         });
-        await page.reload({ waitUntil: "domcontentloaded" });
-        await page.getByRole("button", { name: "3D" }).click();
-        await page.locator("[data-yard-3d=view] canvas").waitFor();
+        await page.reload({ waitUntil: "load" });
+        await page.getByRole("heading", { name: "Your yard" }).waitFor();
+        await page.getByRole("button", { name: "2D", pressed: true }).waitFor();
+        await show3d(page);
         await page.locator("[data-house=yes]").waitFor();
         await page.locator("[data-yard-ready=yes]").waitFor();
         await page.getByRole("button", { name: "Street" }).click();
