@@ -17,6 +17,9 @@ export type Size = { w: number; h: number };
 export type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
 export type ZoomLimits = { minPpm: number; maxPpm: number };
 
+/** Konva shape name for a press that pans like empty space. */
+export const BACKGROUND_NAME = "background";
+
 /** A press that moves less than this (screen px) is a tap, not a pan. */
 export const TAP_SLOP_PX = 6;
 /** One press of Zoom in or Zoom out. */
