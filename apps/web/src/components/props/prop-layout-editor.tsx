@@ -6,27 +6,37 @@ import {
   continueToPoint,
   countLayout,
   edgeLengthM,
+  ensureStrings,
   gapLabel,
   gridSizeM,
-  idleGesture,
   isClosed,
-  ensureStrings,
   layoutStrings,
   lengthLabel,
   moveCorner,
-  reduceGesture,
   setEdgeLength,
   snapPoint,
-  type GestureHit,
-  type GestureMode,
-  type GestureState,
+  stringById,
+  stringEndId,
   type PropLayout,
 } from "@nightplot/shared";
+import type Konva from "konva";
 import { useEffect, useRef, useState } from "react";
+import { Circle, Group, Line, Text } from "react-konva";
+import { EditorStage, boundsOf, toScreen, toWorld, type Camera, type EditorStageHandle, type Point } from "@/components/canvas";
 import { Button } from "@/components/ui/button";
 
-type View = { ppm: number; ox: number; oy: number };
+/** Trace adds runs from the wire-in. Edit moves corners. Both pan, zoom, and select. */
+export type EditorMode = "trace" | "edit";
+
 const FT = 0.3048;
+const LIT = "#d4a574";
+const WIRE = "#8a8478";
+const START = "#7ee0d0";
+const INK = "#e8e2d6";
+const WARN = "#f5c16c";
+
+type Drag = { id: string; x: number; y: number; screen: Point; guide: string | null };
+type Ghost = { x: number; y: number; guide: string | null };
 
 export function PropLayoutEditor({
   name,
@@ -38,20 +48,18 @@ export function PropLayoutEditor({
 }: {
   name: string;
   initial: PropLayout;
-  mode: GestureMode;
+  mode: EditorMode;
   doneLabel?: string;
   onDone: (layout: PropLayout) => void;
   onBack: () => void;
 }) {
   const [layout, setLayout] = useState(initial);
-  const [mode, setMode] = useState<GestureMode>(initialMode);
+  const [mode, setMode] = useState<EditorMode>(initialMode);
   const [past, setPast] = useState<PropLayout[]>([]);
   const [future, setFuture] = useState<PropLayout[]>([]);
-  const [view, setView] = useState<View>({ ppm: 60, ox: 40, oy: 320 });
   const [snap, setSnap] = useState(true);
-  const [preview, setPreview] = useState<{ x: number; y: number } | null>(null);
-  const [drag, setDrag] = useState<{ id: string; x: number; y: number } | null>(null);
-  const [guide, setGuide] = useState<{ x: number; y: number; kind: string } | null>(null);
+  const [ghost, setGhost] = useState<Ghost | null>(null);
+  const [drag, setDrag] = useState<Drag | null>(null);
   const [sheet, setSheet] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -62,46 +70,12 @@ export function PropLayoutEditor({
   const [dark, setDark] = useState(false);
   const [placing, setPlacing] = useState(false);
   const [gap, setGap] = useState<string | null>(null);
-  const [size, setSize] = useState({ w: 0, h: 0 });
-  const [magnifier, setMagnifier] = useState<{ x: number; y: number; wx: number; wy: number } | null>(null);
-  const frame = useRef<HTMLDivElement>(null);
-  const gesture = useRef<GestureState>(idleGesture(initialMode));
+  const stage = useRef<EditorStageHandle>(null);
   const layoutRef = useRef(layout);
-  const viewRef = useRef(view);
-  const snapRef = useRef(snap);
-  const askedRef = useRef(asked);
-  const activeRef = useRef(activeString);
-  const darkRef = useRef(dark);
-  const placingRef = useRef(placing);
-  const nudgeRef = useRef<(key: string) => void>(() => {});
-  const fitRef = useRef<() => void>(() => {});
-  layoutRef.current = layout;
-  viewRef.current = view;
-  snapRef.current = snap;
-  askedRef.current = asked;
-  activeRef.current = activeString;
-  darkRef.current = dark;
-  placingRef.current = placing;
+  const keyRef = useRef<(event: KeyboardEvent) => void>(() => {});
 
   useEffect(() => {
-    const node = frame.current;
-    if (!node) return;
-    const measure = () => setSize({ w: node.clientWidth || 390, h: node.clientHeight || 520 });
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-
-  const opened = useRef(false);
-  useEffect(() => {
-    if (opened.current || size.w < 40) return;
-    opened.current = true;
-    setView(fitView(initial, size.w, size.h));
-  }, [initial, size.h, size.w]);
-
-  useEffect(() => {
+    layoutRef.current = layout;
     try {
       localStorage.setItem("nightplot-prop-layout-draft", JSON.stringify(layout));
     } catch {
@@ -110,29 +84,39 @@ export function PropLayoutEditor({
   }, [layout]);
 
   useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      const meta = event.metaKey || event.ctrlKey;
-      if (meta && event.key.toLowerCase() === "z") {
-        event.preventDefault();
-        if (event.shiftKey) redo();
-        else undo();
-      } else if (event.key === "f" || event.key === "F") {
-        event.preventDefault();
-        fitRef.current();
-      } else if (event.key === "Enter" || event.key === "Escape") {
-        event.preventDefault();
-        onDone(layoutRef.current);
-      } else if (event.key.startsWith("Arrow")) {
-        nudgeRef.current(event.key);
-      }
-    }
+    const onKey = (event: KeyboardEvent) => keyRef.current(event);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onDone]);
+  }, []);
+
+  useEffect(() => {
+    keyRef.current = onKey;
+  });
+
+  function onKey(event: KeyboardEvent) {
+    if (typing(event.target)) return;
+    const meta = event.metaKey || event.ctrlKey;
+    if (meta && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      if (event.shiftKey) redo();
+      else undo();
+    } else if (event.key === "f" || event.key === "F") {
+      event.preventDefault();
+      stage.current?.fit();
+    } else if (event.key === "Enter" || event.key === "Escape") {
+      event.preventDefault();
+      onDone(layoutRef.current);
+    } else if (event.key.startsWith("Arrow") && selected) {
+      event.preventDefault();
+      nudge(event.key);
+    }
+  }
 
   function commit(next: PropLayout, notice?: string) {
-    setPast((rows) => [...rows.slice(-49), layoutRef.current]);
+    const current = layoutRef.current;
+    setPast((rows) => [...rows.slice(-49), current]);
     setFuture([]);
+    layoutRef.current = next;
     setLayout(next);
     setToast(notice ?? null);
     const closing = next.run[next.run.length - 1];
@@ -143,40 +127,32 @@ export function PropLayoutEditor({
   }
 
   function undo() {
-    setPast((rows) => {
-      const previous = rows[rows.length - 1];
-      if (!previous) return rows;
-      setFuture((ahead) => [layoutRef.current, ...ahead]);
-      setLayout(previous);
-      return rows.slice(0, -1);
-    });
+    const previous = past[past.length - 1];
+    if (!previous) return;
+    const current = layoutRef.current;
+    setFuture((ahead) => [current, ...ahead]);
+    setPast((rows) => rows.slice(0, -1));
+    layoutRef.current = previous;
+    setLayout(previous);
     setToast(null);
   }
 
   function redo() {
-    setFuture((rows) => {
-      const next = rows[0];
-      if (!next) return rows;
-      setPast((behind) => [...behind, layoutRef.current]);
-      setLayout(next);
-      return rows.slice(1);
-    });
-  }
-
-  function fit() {
-    setView(fitView(layoutRef.current, size.w, size.h));
-    gesture.current = reduceGesture(gesture.current, { type: "fit", t: now() }).state;
-    setPreview(null);
-    setMagnifier(null);
+    const next = future[0];
+    if (!next) return;
+    const current = layoutRef.current;
+    setPast((behind) => [...behind, current]);
+    setFuture((rows) => rows.slice(1));
+    layoutRef.current = next;
+    setLayout(next);
   }
 
   function nudge(key: string) {
-    if (!selected) return;
     const step = gridSizeM(layoutRef.current.units);
     const delta = key === "ArrowLeft" ? [-step, 0] : key === "ArrowRight" ? [step, 0] : key === "ArrowUp" ? [0, step] : [0, -step];
     const corner = layoutRef.current.corners.find((row) => row.id === selected);
     if (!corner) return;
-    commit(moveCorner(layoutRef.current, selected, corner.x + delta[0]!, corner.y + delta[1]!));
+    commit(moveCorner(layoutRef.current, corner.id, corner.x + delta[0]!, corner.y + delta[1]!));
   }
 
   function applyLength(edgeId: string, lengthM: number) {
@@ -186,103 +162,25 @@ export function PropLayoutEditor({
     setSheet(null);
   }
 
-  function onPointerDown(event: React.PointerEvent<SVGSVGElement>) {
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const local = localPoint(event);
-    const world = toWorld(local.x, local.y, viewRef.current);
-    const hit = hitOf(local, layoutRef.current, viewRef.current);
-    const result = reduceGesture(gesture.current, { type: "down", pointerId: event.pointerId, x: world.x, y: world.y, t: now(), hit });
-    gesture.current = result.state;
-    for (const effect of result.effects) {
-      if (effect.type === "preview") showPreview(effect.x, effect.y, local, event.altKey, event.shiftKey);
-      if (effect.type === "cancel") clearPointer();
-      if (effect.type === "edge") setSheet(effect.id);
-    }
-  }
-
-  function onPointerMove(event: React.PointerEvent<SVGSVGElement>) {
-    const local = localPoint(event);
-    const world = toWorld(local.x, local.y, viewRef.current);
-    const result = reduceGesture(gesture.current, { type: "move", pointerId: event.pointerId, x: world.x, y: world.y, t: now() });
-    gesture.current = result.state;
-    for (const effect of result.effects) {
-      if (effect.type === "preview") showPreview(effect.x, effect.y, local, event.altKey, event.shiftKey);
-      if (effect.type === "drag") showDrag(effect.cornerId, effect.x, effect.y, local, event.altKey, event.shiftKey);
-      if (effect.type === "pan") setView((current) => ({ ...current, ox: current.ox + effect.dx, oy: current.oy + effect.dy }));
-      if (effect.type === "pinch") pinch(effect.ratio, effect.cx, effect.cy);
-      if (effect.type === "cancel") clearPointer();
-    }
-  }
-
-  function onPointerUp(event: React.PointerEvent<SVGSVGElement>) {
-    const local = localPoint(event);
-    const world = toWorld(local.x, local.y, viewRef.current);
-    const result = reduceGesture(gesture.current, { type: "up", pointerId: event.pointerId, x: world.x, y: world.y, t: now() });
-    gesture.current = result.state;
-    for (const effect of result.effects) {
-      if (effect.type === "commit") dropCorner(effect.x, effect.y, event.altKey, event.shiftKey);
-      if (effect.type === "commit-drag") {
-        setSelected(effect.cornerId);
-        if (effect.tap && gesture.current.mode === "trace") {
-          if (placingRef.current) {
-            const next = addStringAt(layoutRef.current, 0, 0, effect.cornerId);
-            setActiveString(layoutStrings(next).at(-1)?.id ?? activeRef.current);
-            setPlacing(false);
-            commit(next);
-          } else {
-            commit(continueToCorner(layoutRef.current, activeRef.current, effect.cornerId, darkRef.current ? "wire" : "lit"));
-          }
-        } else if (!effect.tap) {
-          const snapped = snappedPoint(effect.x, effect.y, effect.cornerId, event.altKey, event.shiftKey);
-          commit(moveCorner(layoutRef.current, effect.cornerId, snapped.x, snapped.y));
-        }
-      }
-    }
-    clearPointer();
-  }
-
-  function showPreview(x: number, y: number, local: { x: number; y: number }, alt: boolean, shift: boolean) {
-    const snapped = snappedPoint(x, y, undefined, alt, shift);
-    setPreview(snapped);
-    setGuide(snapped.guide ? { x: snapped.x, y: snapped.y, kind: snapped.guide } : null);
-    setMagnifier({ x: local.x, y: local.y, wx: snapped.x, wy: snapped.y });
-  }
-
-  function showDrag(id: string, x: number, y: number, local: { x: number; y: number }, alt: boolean, shift: boolean) {
-    const snapped = snappedPoint(x, y, id, alt, shift);
-    setDrag({ id, x: snapped.x, y: snapped.y });
-    setGuide(snapped.guide ? { x: snapped.x, y: snapped.y, kind: snapped.guide } : null);
-    setMagnifier({ x: local.x, y: local.y, wx: snapped.x, wy: snapped.y });
-  }
-
-  function dropCorner(x: number, y: number, alt: boolean, shift: boolean) {
-    const snapped = snappedPoint(x, y, undefined, alt, shift);
-    if (placingRef.current) {
-      const next = addStringAt(layoutRef.current, snapped.x, snapped.y);
-      setActiveString(layoutStrings(next).at(-1)?.id ?? activeRef.current);
-      setPlacing(false);
-      commit(next);
-      return;
-    }
-    const next = continueToPoint(layoutRef.current, activeRef.current, snapped.x, snapped.y, darkRef.current ? "wire" : "lit");
-    const edge = layoutStrings(next).flatMap((string) => string.run).at(-1);
-    if (edge && edge.kind === "lit" && edgeLengthM(next, edge) < next.pitchM && !askedRef.current) {
-      setAsk(true);
-      setAsked(true);
-    }
-    commit(next);
-  }
-
-  function snappedPoint(x: number, y: number, exclude: string | undefined, alt: boolean, shift: boolean) {
+  /** Where a new point or a dragged corner lands, after snap. */
+  function snapped(x: number, y: number, exclude: string | undefined, alt: boolean, shift: boolean) {
     const current = layoutRef.current;
-    const anchorId = exclude
-      ? current.run.find((edge) => edge.to === exclude)?.from
-      : current.run.length > 0 ? current.run[current.run.length - 1]!.to : current.corners[0]?.id;
+    const strings = layoutStrings(current);
+    const allRuns = strings.flatMap((string) => string.run);
+    let anchorId: string | undefined;
+    let previous: (typeof allRuns)[number] | undefined;
+    if (exclude) {
+      previous = allRuns.find((edge) => edge.to === exclude);
+      anchorId = previous?.from;
+    } else {
+      const active = stringById(current, activeString);
+      anchorId = placing ? undefined : stringEndId(active);
+      previous = placing ? undefined : active.run[active.run.length - 1];
+    }
     const anchor = current.corners.find((corner) => corner.id === anchorId) ?? null;
-    const previous = current.run.length > 0 ? current.run[current.run.length - 1] : undefined;
     const from = previous ? current.corners.find((corner) => corner.id === previous.from) : undefined;
     const to = previous ? current.corners.find((corner) => corner.id === previous.to) : undefined;
-    const previousAngle = from && to ? Math.atan2(to.y - from.y, to.x - from.x) : null;
+    const previousAngle = !exclude && from && to ? Math.atan2(to.y - from.y, to.x - from.x) : null;
     return snapPoint({
       point: { x, y },
       anchor: anchor ? { x: anchor.x, y: anchor.y } : null,
@@ -291,38 +189,82 @@ export function PropLayoutEditor({
       excludeIds: exclude ? [exclude, anchorId ?? ""] : [anchorId ?? ""],
       pitchM: current.pitchM,
       gridM: gridSizeM(current.units),
-      snapOff: alt || !snapRef.current,
+      snapOff: alt || !snap,
       force45: shift,
     });
   }
 
-  function pinch(ratio: number, cx: number, cy: number) {
-    setView((current) => {
-      const world = toWorld(cx, cy, current);
-      const ppm = clampPpm(current.ppm * ratio, layoutRef.current, size.w, size.h);
-      return { ppm, ox: cx - world.x * ppm, oy: cy + world.y * ppm };
-    });
+  function addPoint(world: Point, alt: boolean, shift: boolean) {
+    const point = snapped(world.x, world.y, undefined, alt, shift);
+    setGhost(null);
+    if (placing) {
+      const next = addStringAt(layoutRef.current, point.x, point.y);
+      setActiveString(layoutStrings(next).at(-1)?.id ?? activeString);
+      setPlacing(false);
+      commit(next);
+      return;
+    }
+    const next = continueToPoint(layoutRef.current, activeString, point.x, point.y, dark ? "wire" : "lit");
+    const edge = stringById(next, activeString).run.at(-1);
+    if (edge && edge.kind === "lit" && edgeLengthM(next, edge) < next.pitchM && !asked) {
+      setAsk(true);
+      setAsked(true);
+    }
+    commit(next);
   }
 
-  function clearPointer() {
-    setPreview(null);
+  function tapCorner(cornerId: string) {
+    setSelected(cornerId);
+    if (mode !== "trace") return;
+    if (placing) {
+      const next = addStringAt(layoutRef.current, 0, 0, cornerId);
+      setActiveString(layoutStrings(next).at(-1)?.id ?? activeString);
+      setPlacing(false);
+      commit(next);
+      return;
+    }
+    commit(continueToCorner(layoutRef.current, activeString, cornerId, dark ? "wire" : "lit"));
+  }
+
+  function onCornerDrag(cornerId: string, event: Konva.KonvaEventObject<DragEvent>, camera: Camera, end: boolean) {
+    const node = event.target;
+    const world = toWorld(node.position(), camera);
+    const point = snapped(world.x, world.y, cornerId, event.evt.altKey, event.evt.shiftKey);
+    const screen = toScreen(point, camera);
+    node.position(screen);
+    if (!end) {
+      setDrag({ id: cornerId, x: point.x, y: point.y, screen, guide: point.guide });
+      return;
+    }
     setDrag(null);
-    setGuide(null);
-    setMagnifier(null);
+    setSelected(cornerId);
+    const corner = layoutRef.current.corners.find((row) => row.id === cornerId);
+    if (corner && (Math.abs(corner.x - point.x) > 1e-9 || Math.abs(corner.y - point.y) > 1e-9)) {
+      commit(moveCorner(layoutRef.current, cornerId, point.x, point.y));
+    }
   }
 
-  nudgeRef.current = nudge;
-  fitRef.current = fit;
+  function switchMode(next: EditorMode) {
+    setMode(next);
+    setGhost(null);
+    if (next === "edit") setPlacing(false);
+  }
 
   const counted = countLayout(layout);
-  const corners = layout.corners.map((corner) => drag?.id === corner.id ? { ...corner, x: drag.x, y: drag.y } : corner);
+  const corners = layout.corners.map((corner) => (drag?.id === corner.id ? { ...corner, x: drag.x, y: drag.y } : corner));
   const drawing = { ...layout, corners };
-  const pickedRun = layoutStrings(layout).flatMap((string) => string.run.map((edge, index) => ({ edge, order: index + 1 }))).find((row) => row.edge.id === picked) ?? null;
+  const strings = layoutStrings(drawing);
+  const runs = strings.flatMap((string) => string.run.map((edge, index) => ({ edge, order: index + 1, stringId: string.id })));
+  const starts = new Set(strings.map((string) => string.startId));
+  const pickedRun = runs.find((row) => row.edge.id === picked) ?? null;
   const pickedCount = pickedRun ? counted.edges.find((row) => row.id === pickedRun.edge.id) : null;
   const pickedLength = pickedRun ? lengthLabel(edgeLengthM(layout, pickedRun.edge), layout.units) : null;
   const stringLights = layout.stringLights;
   const spare = stringLights == null ? null : stringLights - counted.total;
   const short = spare != null && spare < 0;
+  const bounds = boundsOf(layout.corners) ?? { minX: 0, minY: 0, maxX: 1, maxY: 1 };
+  const guideAnchor = guideAnchorOf(drawing, drag?.id, stringEndId(stringById(drawing, activeString)), placing);
+  const guide = drag?.guide ? { x: drag.x, y: drag.y } : ghost?.guide ? { x: ghost.x, y: ghost.y } : null;
 
   const totalText = stringLights == null
     ? `${counted.total} lights`
@@ -331,81 +273,115 @@ export function PropLayoutEditor({
   return (
     <div className="flex h-dvh max-h-dvh w-full max-w-full flex-col overflow-hidden bg-background landscape:flex-row">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
-      <header className="flex h-14 shrink-0 items-center gap-1 bg-background px-1">
-        <button type="button" className="min-h-11 shrink-0 px-3 text-[16px]" onClick={onBack}>Back</button>
-        <h1 className="min-w-0 flex-1 truncate text-[17px] font-medium">{name}</h1>
-      </header>
-      <p className={`shrink-0 bg-background px-4 text-[15px] ${short ? "text-amber-200" : "text-foreground"}`}>{totalText}</p>
-      <p className="shrink-0 bg-background px-4 pb-2 text-[14px] leading-5 text-muted-foreground">{editorHint(mode, dark, placing)}</p>
-      {gap ? <p className="bg-background px-4 text-[14px] text-red-400">{gap}</p> : null}
-      <div ref={frame} className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-background" style={{ touchAction: "none" }}>
-        <svg
-          data-testid="layout-canvas"
-          className="block h-full w-full touch-none"
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-          role="img"
-          aria-label="Prop drawing"
-        >
-          <Grid layout={drawing} view={view} width={size.w} height={size.h} />
-          {guide ? <Guide view={view} guide={guide} anchor={anchorOf(drawing, drag?.id)} /> : null}
-          {(() => {
-            const runs = layoutStrings(drawing).flatMap((string) => string.run.map((edge, index) => ({ edge, order: index + 1 })));
-            const spots = runs.flatMap(({ edge, order }) => {
-              const from = corners.find((corner) => corner.id === edge.from);
-              const to = corners.find((corner) => corner.id === edge.to);
-              if (!from || !to) return [];
-              const a = toScreen(from.x, from.y, view);
-              const b = toScreen(to.x, to.y, view);
-              return [{ edge, order, a, b, at: edgeLabelPoint(a, b) }];
-            });
-            const labels = separateLabels(spots.map((spot) => spot.at));
-            return spots.map((spot, index) => {
-              const label = labels[index] ?? spot.at;
-              const row = counted.edges.find((item) => item.id === spot.edge.id);
+        <header className="flex h-14 shrink-0 items-center gap-1 bg-background px-1">
+          <button type="button" className="min-h-11 shrink-0 px-3 text-[16px]" onClick={onBack}>Back</button>
+          <h1 className="min-w-0 flex-1 truncate text-[17px] font-medium">{name}</h1>
+        </header>
+        <p className={`shrink-0 bg-background px-4 text-[15px] ${short ? "text-amber-200" : "text-foreground"}`}>{totalText}</p>
+        <p className="shrink-0 bg-background px-4 pb-2 text-[14px] leading-5 text-muted-foreground">{editorHint(mode, dark, placing)}</p>
+        {gap ? <p className="bg-background px-4 text-[14px] text-red-400">{gap}</p> : null}
+        <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
+          <EditorStage
+            ref={stage}
+            bounds={bounds}
+            limits={{ minPpm: 2, maxPpm: 48 / Math.max(layout.pitchM, 0.005) }}
+            fitMinSpanM={layout.corners.length < 2 ? 2 : layout.pitchM * 2}
+            gridM={gridSizeM(layout.units)}
+            label="Prop drawing"
+            testId="layout-canvas"
+            onBackgroundTap={(tap) => {
+              setPicked(null);
+              if (mode === "trace") addPoint(tap.world, tap.altKey, tap.shiftKey);
+              else setSelected(null);
+            }}
+            onHover={(hover) => {
+              if (!hover || mode !== "trace") return setGhost(null);
+              const point = snapped(hover.world.x, hover.world.y, undefined, hover.altKey, hover.shiftKey);
+              setGhost({ x: point.x, y: point.y, guide: point.guide });
+            }}
+            overlay={(camera) => {
+              const labels = badgeSpots(runs, corners, camera);
               return (
-                <g key={spot.edge.id}>
-                  <line x1={spot.a.x} y1={spot.a.y} x2={spot.b.x} y2={spot.b.y} stroke={spot.edge.kind === "wire" ? "#8a8478" : "#d4a574"} strokeWidth={spot.edge.kind === "wire" ? 2 : 3} strokeDasharray={spot.edge.kind === "wire" ? "6 4" : undefined} />
-                  <line
-                    x1={spot.a.x}
-                    y1={spot.a.y}
-                    x2={spot.b.x}
-                    y2={spot.b.y}
-                    stroke="transparent"
-                    strokeWidth={28}
-                    onPointerDown={(event) => {
-                      event.stopPropagation();
-                      setPicked(spot.edge.id);
-                    }}
-                  />
-                  <Chevron a={spot.a} b={spot.b} />
-                  <g
-                    onPointerDown={(event) => {
-                      event.stopPropagation();
-                      setPicked(spot.edge.id);
-                    }}
-                  >
-                    <circle cx={label.x} cy={label.y} r={12} fill={picked === spot.edge.id ? "#1c2430" : "#12141a"} stroke={row?.lights === 0 ? "#f5c16c" : "#e8e2d6"} />
-                    <text x={label.x} y={label.y + 4} textAnchor="middle" fill={row?.lights === 0 ? "#f5c16c" : "#e8e2d6"} fontSize={12}>{spot.order}</text>
-                    {spot.edge.lockedLengthM ? <LockIcon x={label.x + 10} y={label.y - 14} /> : null}
-                  </g>
-                </g>
+              <>
+                {guide && guideAnchor ? (
+                  <Line points={flat([toScreen(guideAnchor, camera), toScreen(guide, camera)])} stroke={START} strokeWidth={1} dash={[4, 3]} listening={false} />
+                ) : null}
+                {ghost && mode === "trace" && !drag ? (
+                  <>
+                    {guideAnchor && !placing ? (
+                      <Line points={flat([toScreen(guideAnchor, camera), toScreen(ghost, camera)])} stroke={dark ? WIRE : LIT} strokeWidth={2} opacity={0.5} dash={dark ? [6, 4] : undefined} listening={false} />
+                    ) : null}
+                    <Circle {...toScreen(ghost, camera)} radius={6} stroke={LIT} listening={false} />
+                  </>
+                ) : null}
+                {runs.map(({ edge, order }, index) => {
+                  const from = corners.find((corner) => corner.id === edge.from);
+                  const to = corners.find((corner) => corner.id === edge.to);
+                  if (!from || !to) return null;
+                  const a = toScreen(from, camera);
+                  const b = toScreen(to, camera);
+                  const label = labels[index]!;
+                  const row = counted.edges.find((item) => item.id === edge.id);
+                  const zero = row?.lights === 0 && edge.kind === "lit";
+                  const pick = () => setPicked(edge.id);
+                  return (
+                    <Group key={edge.id}>
+                      <Line
+                        points={[a.x, a.y, b.x, b.y]}
+                        stroke={edge.kind === "wire" ? WIRE : LIT}
+                        strokeWidth={edge.kind === "wire" ? 2 : picked === edge.id ? 5 : 3}
+                        dash={edge.kind === "wire" ? [6, 4] : undefined}
+                        hitStrokeWidth={28}
+                        onClick={pick}
+                        onTap={pick}
+                      />
+                      <Chevron a={a} b={b} />
+                      <Group x={label.x} y={label.y} onClick={pick} onTap={pick}>
+                        <Circle radius={12} fill={picked === edge.id ? "#1c2430" : "#12141a"} stroke={zero ? WARN : INK} />
+                        <Text text={String(order)} fontSize={12} fill={zero ? WARN : INK} width={24} offsetX={12} offsetY={6} align="center" listening={false} />
+                        {edge.lockedLengthM ? <LockMark /> : null}
+                      </Group>
+                    </Group>
+                  );
+                })}
+                {corners.map((corner) => {
+                  const at = toScreen(corner, camera);
+                  const start = starts.has(corner.id);
+                  return (
+                    <Group
+                      key={corner.id}
+                      x={at.x}
+                      y={at.y}
+                      draggable
+                      onDragStart={() => setGhost(null)}
+                      onDragMove={(event) => onCornerDrag(corner.id, event, camera, false)}
+                      onDragEnd={(event) => onCornerDrag(corner.id, event, camera, true)}
+                      onClick={() => tapCorner(corner.id)}
+                      onTap={() => tapCorner(corner.id)}
+                    >
+                      <Circle radius={22} fill="transparent" />
+                      <Circle radius={selected === corner.id ? 8 : 6} fill={start ? START : LIT} stroke={selected === corner.id ? INK : LIT} strokeWidth={selected === corner.id ? 2 : 1} />
+                      {start ? <Text text="Wire in" x={12} y={-6} fontSize={12} fill={INK} listening={false} /> : null}
+                    </Group>
+                  );
+                })}
+              </>
               );
-            });
-          })()}
-          {preview ? <CornerDot view={view} x={preview.x} y={preview.y} ghost /> : null}
-          {corners.map((corner) => (
-            <CornerDot key={corner.id} view={view} x={corner.x} y={corner.y} start={layoutStrings(layout).some((string) => string.startId === corner.id)} />
-          ))}
-        </svg>
-        {magnifier ? <Magnifier magnifier={magnifier} layout={drawing} /> : null}
-        <div className="absolute left-2 top-2 flex gap-2">
-          <ModeButton active={mode === "trace"} onClick={() => switchMode("trace")}>Trace</ModeButton>
-          <ModeButton active={mode === "edit"} onClick={() => switchMode("edit")}>Edit</ModeButton>
+            }}
+          />
+          {drag ? <Magnifier at={drag.screen} world={{ x: drag.x, y: drag.y }} layout={drawing} /> : null}
+          <div className="absolute left-2 top-2 flex gap-2">
+            <ModeButton active={mode === "trace"} onClick={() => switchMode("trace")}>Trace</ModeButton>
+            <ModeButton active={mode === "edit"} onClick={() => switchMode("edit")}>Edit</ModeButton>
+          </div>
+          <ul className="sr-only" aria-label="Strings">
+            {strings.map((string, index) => (
+              <li key={string.id}>
+                String {index + 1}: Wire in, {string.run.length} {string.run.length === 1 ? "run" : "runs"}
+              </li>
+            ))}
+          </ul>
         </div>
-      </div>
       </div>
       {pickedRun && pickedLength && pickedCount ? (
         <div className="flex min-h-11 items-center gap-2 border-t border-border bg-background px-3 py-2 text-[15px]">
@@ -417,7 +393,6 @@ export function PropLayoutEditor({
         <DockButton onClick={undo} disabled={past.length === 0}>Undo</DockButton>
         <DockButton onClick={redo} disabled={future.length === 0}>Redo</DockButton>
         <DockButton onClick={() => setSnap((value) => !value)} pressed={snap}>Snap</DockButton>
-        <DockButton onClick={fit}>Fit</DockButton>
       </div>
       <div className="flex gap-2 bg-background px-2 pb-2">
         <DockButton onClick={() => { setDark((value) => !value); setPlacing(false); }} pressed={dark}>Mark dark</DockButton>
@@ -434,12 +409,7 @@ export function PropLayoutEditor({
         </div>
       ) : null}
       {sheet ? (
-        <LengthSheet
-          layout={layout}
-          edgeId={sheet}
-          onClose={() => setSheet(null)}
-          onApply={(lengthM) => applyLength(sheet, lengthM)}
-        />
+        <LengthSheet layout={layout} edgeId={sheet} onClose={() => setSheet(null)} onApply={(lengthM) => applyLength(sheet, lengthM)} />
       ) : null}
       {ask ? (
         <div className="absolute inset-x-4 top-24 rounded-xl border border-amber-500/60 bg-card p-4 text-[15px]" role="dialog" aria-label="Short edge">
@@ -449,23 +419,18 @@ export function PropLayoutEditor({
       ) : null}
     </div>
   );
-
-  function switchMode(next: GestureMode) {
-    setMode(next);
-    gesture.current = { ...gesture.current, mode: next, pendingId: null, drag: null };
-  }
 }
 
-function editorHint(mode: GestureMode, dark: boolean, placing: boolean): string {
+function editorHint(mode: EditorMode, dark: boolean, placing: boolean): string {
   if (placing) return "Tap where the new string's wire comes in.";
   if (dark) return "The next run is dark: the wire jumps and no lights are on it.";
-  if (mode === "edit") return "Drag a corner to move it. Snap keeps it on the grid. Fit shows the whole drawing.";
-  return "Continue from where the wire comes in. Tap a corner to run there, or empty space for a new point.";
+  if (mode === "edit") return "Drag a corner to move it. Snap keeps it on the grid. Drag empty space to pan. Fit shows the whole drawing.";
+  return "Continue from where the wire comes in. Tap a corner to run there, or empty space for a new point. Drag to pan.";
 }
 
 function ModeButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: string }) {
   return (
-    <button type="button" onClick={onClick} className={`min-h-11 rounded-lg border px-3 text-[15px] ${active ? "border-primary bg-card" : "border-border"}`} aria-pressed={active}>
+    <button type="button" onClick={onClick} className={`min-h-11 rounded-lg border bg-background/90 px-3 text-[15px] ${active ? "border-primary bg-card" : "border-border"}`} aria-pressed={active}>
       {children}
     </button>
   );
@@ -479,45 +444,56 @@ function DockButton({ onClick, disabled, pressed, children }: { onClick: () => v
   );
 }
 
-function CornerDot({ view, x, y, start, ghost }: { view: View; x: number; y: number; start?: boolean; ghost?: boolean }) {
-  const screen = toScreen(x, y, view);
+function Chevron({ a, b }: { a: Point; b: Point }) {
+  const angle = Math.atan2(b.y - a.y, b.x - a.x);
+  const x = a.x + (b.x - a.x) * 0.72;
+  const y = a.y + (b.y - a.y) * 0.72;
+  const size = 8;
+  const points = [
+    x + Math.cos(angle) * size, y + Math.sin(angle) * size,
+    x + Math.cos(angle + 2.6) * size, y + Math.sin(angle + 2.6) * size,
+    x + Math.cos(angle - 2.6) * size, y + Math.sin(angle - 2.6) * size,
+  ];
+  return <Line points={points} closed fill={LIT} listening={false} />;
+}
+
+function LockMark() {
   return (
-    <g>
-      <circle cx={screen.x} cy={screen.y} r={22} fill="transparent" />
-      <circle cx={screen.x} cy={screen.y} r={6} fill={ghost ? "none" : start ? "#7ee0d0" : "#d4a574"} stroke="#d4a574" />
-      {start ? <text x={screen.x + 12} y={screen.y + 4} textAnchor="start" fontSize={12} className="fill-foreground">Wire in</text> : null}
-    </g>
+    <Group x={10} y={-14} listening={false}>
+      <Line points={[0, 5, 9, 5, 9, 12, 0, 12]} closed stroke={INK} strokeWidth={1.4} />
+      <Line points={[2, 5, 2, 3, 4.5, 0.8, 7, 3, 7, 5]} stroke={INK} strokeWidth={1.4} tension={0.4} />
+    </Group>
   );
 }
 
-function edgeLabelPoint(a: { x: number; y: number }, b: { x: number; y: number }): { x: number; y: number; nx: number; ny: number } {
-  const mx = (a.x + b.x) / 2;
-  const my = (a.y + b.y) / 2;
-  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-  const nx = -(b.y - a.y) / len;
-  const ny = (b.x - a.x) / len;
-  return { x: mx, y: my, nx, ny };
-}
-
 /** Keep run-number badges off the line and clear of each other. */
-function separateLabels(seeds: { x: number; y: number; nx: number; ny: number }[]): { x: number; y: number }[] {
-  const placed: { x: number; y: number }[] = [];
+function badgeSpots(
+  runs: { edge: { from: string; to: string } }[],
+  corners: readonly { id: string; x: number; y: number }[],
+  camera: Camera,
+): Point[] {
+  const placed: Point[] = [];
   const gap = 26;
-  return seeds.map((seed) => {
-    const tx = seed.ny;
-    const ty = -seed.nx;
-    let chosen = { x: seed.x + seed.nx * 18, y: seed.y + seed.ny * 18 };
-    let bestClearance = -1;
+  return runs.map(({ edge }) => {
+    const from = corners.find((corner) => corner.id === edge.from);
+    const to = corners.find((corner) => corner.id === edge.to);
+    if (!from || !to) return finish({ x: -999, y: -999 });
+    const a = toScreen(from, camera);
+    const b = toScreen(to, camera);
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const nx = -(b.y - a.y) / len;
+    const ny = (b.x - a.x) / len;
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    let chosen = { x: mx + nx * 18, y: my + ny * 18 };
+    let best = -1;
     for (const dist of [18, 30, 42, 54]) {
       for (const side of [1, -1]) {
         for (const along of [0, 12, -12, 22, -22]) {
-          const next = {
-            x: seed.x + seed.nx * dist * side + tx * along,
-            y: seed.y + seed.ny * dist * side + ty * along,
-          };
+          const next = { x: mx + nx * dist * side + ny * along, y: my + ny * dist * side - nx * along };
           const clearance = placed.reduce((min, point) => Math.min(min, Math.hypot(point.x - next.x, point.y - next.y)), 999);
-          if (clearance > bestClearance) {
-            bestClearance = clearance;
+          if (clearance > best) {
+            best = clearance;
             chosen = next;
           }
           if (clearance >= gap) return finish(next);
@@ -525,75 +501,26 @@ function separateLabels(seeds: { x: number; y: number; nx: number; ny: number }[
       }
     }
     return finish(chosen);
-
-    function finish(point: { x: number; y: number }): { x: number; y: number } {
-      placed.push(point);
-      return point;
-    }
   });
-}
 
-function Chevron({ a, b }: { a: { x: number; y: number }; b: { x: number; y: number } }) {
-  const angle = Math.atan2(b.y - a.y, b.x - a.x);
-  const x = a.x + (b.x - a.x) * 0.72;
-  const y = a.y + (b.y - a.y) * 0.72;
-  const size = 8;
-  const tip = [x + Math.cos(angle) * size, y + Math.sin(angle) * size];
-  const left = [x + Math.cos(angle + 2.6) * size, y + Math.sin(angle + 2.6) * size];
-  const right = [x + Math.cos(angle - 2.6) * size, y + Math.sin(angle - 2.6) * size];
-  return <polygon points={`${tip[0]},${tip[1]} ${left[0]},${left[1]} ${right[0]},${right[1]}`} fill="#d4a574" />;
-}
-
-function LockIcon({ x, y }: { x: number; y: number }) {
-  return (
-    <g transform={`translate(${x} ${y})`} fill="none" stroke="#e8e2d6" strokeWidth={1.4}>
-      <rect x={0} y={5} width={9} height={7} rx={1} />
-      <path d="M2 5 V3.2 a2.5 2.5 0 0 1 5 0 V5" />
-    </g>
-  );
-}
-
-function Guide({ view, guide, anchor }: { view: View; guide: { x: number; y: number }; anchor: { x: number; y: number } | null }) {
-  if (!anchor) return null;
-  const a = toScreen(anchor.x, anchor.y, view);
-  const b = toScreen(guide.x, guide.y, view);
-  return <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#7ee0d0" strokeDasharray="4 3" />;
-}
-
-function Grid({ layout, view, width, height }: { layout: PropLayout; view: View; width: number; height: number }) {
-  const grid = gridSizeM(layout.units);
-  const lines = [];
-  const left = toWorld(0, 0, view).x;
-  const right = toWorld(width, 0, view).x;
-  const top = toWorld(0, 0, view).y;
-  const bottom = toWorld(0, height, view).y;
-  const x0 = Math.floor(Math.min(left, right) / grid) * grid;
-  const x1 = Math.ceil(Math.max(left, right) / grid) * grid;
-  for (let x = x0; x <= x1 && lines.length < 80; x += grid) {
-    const screen = toScreen(x, 0, view);
-    lines.push(<line key={`x${x}`} x1={screen.x} y1={0} x2={screen.x} y2={height} stroke="#2a2e36" />);
+  function finish(point: Point): Point {
+    placed.push(point);
+    return point;
   }
-  const y0 = Math.floor(Math.min(top, bottom) / grid) * grid;
-  const y1 = Math.ceil(Math.max(top, bottom) / grid) * grid;
-  for (let y = y0; y <= y1 && lines.length < 160; y += grid) {
-    const screen = toScreen(0, y, view);
-    lines.push(<line key={`y${y}`} x1={0} y1={screen.y} x2={width} y2={screen.y} stroke="#2a2e36" />);
-  }
-  return <g>{lines}</g>;
 }
 
-function Magnifier({ magnifier, layout }: { magnifier: { x: number; y: number; wx: number; wy: number }; layout: PropLayout }) {
+function Magnifier({ at, world, layout }: { at: Point; world: Point; layout: PropLayout }) {
   const scale = 2.4;
   return (
-    <div className="pointer-events-none absolute h-24 w-24 overflow-hidden rounded-full border border-primary bg-background" style={{ left: magnifier.x - 48, top: Math.max(8, magnifier.y - 140) }}>
-      <svg viewBox={`${magnifier.wx - 0.35} ${-magnifier.wy - 0.35} ${0.7} ${0.7}`} className="h-full w-full" style={{ transform: `scale(${scale})` }}>
-        {layout.run.map((edge) => {
+    <div className="pointer-events-none absolute h-24 w-24 overflow-hidden rounded-full border border-primary bg-background" style={{ left: at.x - 48, top: Math.max(8, at.y - 140) }}>
+      <svg viewBox={`${world.x - 0.35} ${-world.y - 0.35} ${0.7} ${0.7}`} className="h-full w-full" style={{ transform: `scale(${scale})` }}>
+        {layoutStrings(layout).flatMap((string) => string.run).map((edge) => {
           const from = layout.corners.find((corner) => corner.id === edge.from);
           const to = layout.corners.find((corner) => corner.id === edge.to);
           if (!from || !to) return null;
-          return <line key={edge.id} x1={from.x} y1={-from.y} x2={to.x} y2={-to.y} stroke="#d4a574" strokeWidth={0.02} />;
+          return <line key={edge.id} x1={from.x} y1={-from.y} x2={to.x} y2={-to.y} stroke={LIT} strokeWidth={0.02} />;
         })}
-        <circle cx={magnifier.wx} cy={-magnifier.wy} r={0.03} fill="#7ee0d0" />
+        <circle cx={world.x} cy={-world.y} r={0.03} fill={START} />
       </svg>
     </div>
   );
@@ -610,7 +537,7 @@ function LengthSheet({
   onClose: () => void;
   onApply: (lengthM: number) => void;
 }) {
-  const edge = layout.run.find((row) => row.id === edgeId);
+  const edge = layoutStrings(layout).flatMap((string) => string.run).find((row) => row.id === edgeId);
   const lengthM = edge ? edgeLengthM(layout, edge) : 0;
   const per = layout.units === "ft" ? FT : 1;
   const [length, setLength] = useState(String(Math.round((lengthM / per) * 100) / 100));
@@ -651,72 +578,19 @@ function LengthSheet({
   );
 }
 
-function hitOf(local: { x: number; y: number }, layout: PropLayout, view: View): GestureHit {
-  for (const corner of layout.corners) {
-    const screen = toScreen(corner.x, corner.y, view);
-    if (Math.hypot(screen.x - local.x, screen.y - local.y) <= 22) return { kind: "corner", id: corner.id };
-  }
-  return { kind: "empty" };
-}
-
-function anchorOf(layout: PropLayout, cornerId: string | undefined): { x: number; y: number } | null {
-  if (!cornerId) {
-    const end = layout.run[layout.run.length - 1];
-    const corner = layout.corners.find((row) => row.id === (end?.to ?? layout.corners[0]?.id));
-    return corner ? { x: corner.x, y: corner.y } : null;
-  }
-  const edge = layout.run.find((row) => row.to === cornerId);
-  const corner = layout.corners.find((row) => row.id === edge?.from);
+/** The corner a snap guide or ghost run starts from: the dragged corner's run start, or the active string's end. */
+function guideAnchorOf(layout: PropLayout, dragId: string | undefined, endId: string, placing: boolean): Point | null {
+  const id = dragId
+    ? layoutStrings(layout).flatMap((string) => string.run).find((edge) => edge.to === dragId)?.from
+    : placing ? undefined : endId;
+  const corner = layout.corners.find((row) => row.id === id);
   return corner ? { x: corner.x, y: corner.y } : null;
 }
 
-function toScreen(x: number, y: number, view: View): { x: number; y: number } {
-  return { x: view.ox + x * view.ppm, y: view.oy - y * view.ppm };
+function flat(points: Point[]): number[] {
+  return points.flatMap((point) => [point.x, point.y]);
 }
 
-function toWorld(x: number, y: number, view: View): { x: number; y: number } {
-  return { x: (x - view.ox) / view.ppm, y: (view.oy - y) / view.ppm };
-}
-
-function localPoint(event: { currentTarget: SVGSVGElement; clientX: number; clientY: number }): { x: number; y: number } {
-  const box = event.currentTarget.getBoundingClientRect();
-  return { x: event.clientX - box.left, y: event.clientY - box.top };
-}
-
-function now(): number {
-  return typeof performance === "undefined" ? Date.now() : performance.now();
-}
-
-function fitView(layout: PropLayout, width: number, height: number): View {
-  const box = bounds(layout);
-  const worldW = Math.max(box.maxX - box.minX, layout.pitchM * 2);
-  const worldH = Math.max(box.maxY - box.minY, layout.pitchM * 2);
-  const marginX = 56;
-  const marginY = 36;
-  const ppm = clampPpm(
-    Math.min(Math.max(80, width - marginX) / worldW, Math.max(80, height - marginY) / worldH),
-    layout,
-    width,
-    height,
-  );
-  const cx = (box.minX + box.maxX) / 2;
-  const cy = (box.minY + box.maxY) / 2;
-  return { ppm, ox: width / 2 - cx * ppm, oy: height / 2 + cy * ppm };
-}
-
-function clampPpm(ppm: number, layout: PropLayout, width: number, height: number): number {
-  const maxIn = 48 / layout.pitchM;
-  const span = Math.max(bounds(layout).span * 1.25, 12 * FT);
-  const minOut = Math.min(width, height) / Math.max(span, 40 * FT);
-  return Math.min(maxIn, Math.max(minOut, ppm));
-}
-
-function bounds(layout: PropLayout): { minX: number; maxX: number; minY: number; maxY: number; span: number } {
-  const xs = layout.corners.map((corner) => corner.x);
-  const ys = layout.corners.map((corner) => corner.y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  return { minX, maxX, minY, maxY, span: Math.max(maxX - minX, maxY - minY, 0.01) };
+function typing(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 }
