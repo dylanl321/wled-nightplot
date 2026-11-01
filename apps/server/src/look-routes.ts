@@ -18,6 +18,7 @@ import {
   pinLookProps,
   runPresetSlot,
   scheduleMatches,
+  wledTimerDialect,
   validateLooksLibrary,
   validateSchedule,
   buildUdpSyncWrite,
@@ -348,7 +349,7 @@ export async function pushLooksToLight(
   const notes: string[] = [`Reports the ${document.looks.length} Looks as the same preset numbers.`, ...sectionNotes];
 
   if (input.includeSchedule && document.schedule && input.runSlot !== null) {
-    const planned = buildScheduleWrite(document.schedule, input.runSlot);
+    const planned = buildScheduleWrite(document.schedule, input.runSlot, wledTimerDialect(snap.firmware));
     if (!(await deps.writeCfg(targetOf(light), planned.body))) {
       return row(light, "failed", "Looks matched. WLED did not accept the Schedule (NTP / timers).", safety.id);
     }

@@ -840,6 +840,9 @@ export {
   WLED_SUNSET_HOUR,
   WLED_SUNSET_OFFSET_MAX,
   WLED_SUNSET_OFFSET_MIN,
+  WLED_SUNRISE_HOUR_V16,
+  WLED_SUNRISE_SLOT,
+  WLED_SUNSET_HOUR_V16,
   WLED_SUNSET_SLOT,
   WLED_TIMER_COUNT,
   WLED_TIMEZONES,
@@ -858,6 +861,7 @@ export {
   scheduleMatches,
   timersMatch,
   validateSchedule,
+  wledTimerDialect,
   wledTimezoneLabel,
   type NightlySchedule,
   type ScheduleNtp,
@@ -866,6 +870,7 @@ export {
   type ScheduleRun,
   type WledNtp,
   type WledTimer,
+  type WledTimerDialect,
 } from "./schedule.ts";
 export {
   YARD_CAPTION,

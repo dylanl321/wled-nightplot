@@ -25,6 +25,7 @@ import {
   buildScheduleWrite,
   runPresetSlot,
   scheduleMatches,
+  wledTimerDialect,
   type NightlySchedule,
 } from "./schedule.ts";
 import { parseWledUdpSync, udpSyncRole, type UdpSyncRole } from "./udp-sync.ts";
@@ -292,6 +293,8 @@ export function compareSchedule(input: {
   playlists: readonly LookPlaylist[];
   cfg: unknown;
   reachable: boolean;
+  /** Live firmware if known, else enrolled. Picks WLED's sunset layout. */
+  firmware?: string | null;
 }): YardCompare {
   if (!input.reachable) {
     return {
@@ -314,7 +317,7 @@ export function compareSchedule(input: {
   if (input.cfg == null) {
     return { status: "unknown", detail: "Schedule was last pushed; /json/cfg did not reread. Not treating as a match." };
   }
-  const planned = buildScheduleWrite(input.schedule, runSlot);
+  const planned = buildScheduleWrite(input.schedule, runSlot, wledTimerDialect(input.firmware));
   const matched = scheduleMatches(planned.expectedNtp, planned.expectedTimers, input.cfg);
   if (matched === null) {
     return { status: "unknown", detail: "Schedule was last pushed; timers or NTP were not reported. Not treating as a match." };
@@ -462,6 +465,7 @@ export function buildYardCheckRow(input: {
     playlists: input.playlists,
     cfg: input.cfg,
     reachable,
+    firmware: input.live?.firmware ?? input.light.firmware,
   });
   const sync = compareSync({ lastPush, cfg: input.cfg, reachable });
   const ledmap = compareLedmap({
