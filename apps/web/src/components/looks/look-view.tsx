@@ -53,6 +53,7 @@ export function LookView({ initial, lights, lookId, startProp }: { initial: Look
   const [toast, setToast] = useState<string | null>(null);
   const [capture, setCapture] = useState(false);
   const [preview, setPreview] = useState<PreviewState>({ on: false, rows: [], message: null });
+  const [street, setStreet] = useState(false);
   const inspector = useRef<HTMLElement | null>(null);
 
   useEffect(() => { if (!toast) return; const id = setTimeout(() => setToast(null), 6000); return () => clearTimeout(id); }, [toast]);
@@ -421,7 +422,11 @@ export function LookView({ initial, lights, lookId, startProp }: { initial: Look
           <p className="note">The drawing is close to WLED&apos;s effects, not exact. Preview on lights shows the real thing.</p>
         </aside>
         <div className="stagewrap">
-          <YardCanvas className="stage" drawn={drawn} props={props} look={look} labels selected={sel} section={section} dim onPick={pick}
+          <div className="viewswitch" role="group" aria-label="Yard view">
+            <button type="button" aria-pressed={!street} onClick={() => setStreet(false)}>2D</button>
+            <button type="button" aria-pressed={street} onClick={() => setStreet(true)}>Street</button>
+          </div>
+          <YardCanvas className="stage" drawn={drawn} props={props} look={look} labels selected={sel} section={section} dim depth={street} onPick={pick}
             ariaLabel={`${look.name} drawn on the yard`} />
           <div className={`chip ${previewOn ? "preview" : ""}`} role="status">{chip}</div>
           <div className="stagehint hidephone">Click a prop to select it, click again for a section. Esc goes back.</div>

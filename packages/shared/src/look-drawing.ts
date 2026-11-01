@@ -10,7 +10,7 @@ import { pathEdgeIndexRanges } from "./prop/sections.ts";
 import { yardLightPositions } from "./prop/space.ts";
 import type { Prop } from "./prop/types.ts";
 
-export type DrawnLight = { x: number; y: number; sectionId: string | null };
+export type DrawnLight = { x: number; y: number; /** Metres out from the front wall. 0 is that wall. */ z: number; sectionId: string | null };
 export type DrawnSection = { id: string; name: string; /** First and last light (inclusive) in this prop's drawn order. */ first: number; last: number };
 export type DrawnProp = { id: string; label: string; kind: Prop["kind"]; lights: DrawnLight[]; sections: DrawnSection[] };
 
@@ -24,7 +24,7 @@ export function drawnYard(props: readonly Prop[]): DrawnProp[] {
       const edge = ranges.find((row) => row.edgeId === light.edgeId && (row.stringId === light.stringId || row.stringId === "s1"));
       const inside = edge && light.index >= edge.start && light.index < edge.stop;
       const section = inside ? prop.sections?.find((row) => row.edgeIds.includes(light.edgeId)) : undefined;
-      return { x: light.x, y: light.y, sectionId: section?.id ?? null };
+      return { x: light.x, y: light.y, z: light.z, sectionId: section?.id ?? null };
     });
     const sections: DrawnSection[] = (prop.sections ?? []).flatMap((section) => {
       const idx = lights.map((light, index) => (light.sectionId === section.id ? index : -1)).filter((index) => index >= 0);

@@ -11,15 +11,12 @@
     "test": "vitest run",
     "test:mobile": "node e2e/mobile-overflow.mjs",
     "test:editor": "node e2e/editor-use-cases.mjs",
-    "test:yard3d": "node e2e/yard-3d.mjs",
+    "test:yard3d": "node e2e/yard-street.mjs",
     "test:looks": "node e2e/looks.mjs"
   },
   "dependencies": {
     "@nightplot/shared": "workspace:*",
     "@radix-ui/react-slot": "^1.2.3",
-    "@react-three/drei": "^10.7.9",
-    "@react-three/fiber": "^9.8.2",
-    "@react-three/postprocessing": "^3.2.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "konva": "^10.9.1",
@@ -27,8 +24,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-konva": "~19.2.7",
-    "tailwind-merge": "^3.3.1",
-    "three": "^0.187.0"
+    "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -37,7 +33,6 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@types/three": "^0.187.0",
     "@vitejs/plugin-react": "^5.0.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",

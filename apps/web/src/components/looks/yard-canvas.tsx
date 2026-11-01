@@ -1,6 +1,6 @@
 "use client";
 
-import { drawnLightColour, sampleLookStyle, type DrawnProp, type Look, type LookStyle, type Prop } from "@nightplot/shared";
+import { drawnLightColour, sampleLookStyle, streetProject, type DrawnProp, type FlatView, type Look, type LookStyle, type Prop } from "@nightplot/shared";
 import { useEffect, useRef } from "react";
 
 /** One clock for every canvas on the page, so thumbnails and strips move together. */
@@ -55,23 +55,26 @@ type Props = {
   dim?: boolean;
   /** The yard with no Look: every light in the warm "lit" colour. */
   neutral?: boolean;
+  /** Street: the same dots, with depth. Further back is smaller and higher. */
+  depth?: boolean;
   onPick?: (hit: { propId: string; index: number } | null, event: PointerEvent) => void;
   ariaLabel: string;
 };
 
 /** The yard front-on, each light the colour this Look gives it. A drawing, not the lights. */
-export function YardCanvas({ drawn, props, look, className, small, labels, selected, section, dim, neutral, onPick, ariaLabel }: Props) {
+export function YardCanvas({ drawn, props, look, className, small, labels, selected, section, dim, neutral, depth, onPick, ariaLabel }: Props) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   const viewRef = useRef<YardView | null>(null);
-  const state = useRef({ drawn, props, look, small, labels, selected, section, dim, neutral });
-  useEffect(() => { state.current = { drawn, props, look, small, labels, selected, section, dim, neutral }; });
+  const eye = useRef({ yaw: 0, zoom: 1 });
+  const state = useRef({ drawn, props, look, small, labels, selected, section, dim, neutral, depth });
+  useEffect(() => { state.current = { drawn, props, look, small, labels, selected, section, dim, neutral, depth }; });
 
   useEffect(() => {
     const cv = ref.current;
     if (!cv) return;
     const still = reducedMotion();
     const draw = (t: number) => {
-      const { drawn, props, look, small, labels, selected, section, dim, neutral } = state.current;
+      const { drawn, props, look, small, labels, selected, section, dim, neutral, depth } = state.current;
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const w = cv.clientWidth, h = cv.clientHeight;
       if (!w || !h) return;
@@ -80,35 +83,50 @@ export function YardCanvas({ drawn, props, look, className, small, labels, selec
       if (!g) return;
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.fillStyle = "#07080b"; g.fillRect(0, 0, w, h);
-      const view = fit(w, h, bounds(drawn), small ? 6 : 26);
+      let view = fit(w, h, bounds(drawn), small ? 6 : depth ? 36 : 26);
+      if (depth) {
+        const nearest = drawn.reduce((min, prop) => prop.lights.reduce((m, light) => Math.min(m, light.z), min), 0);
+        const persp = 8 / (8 + Math.max(-7.5, nearest));
+        view = { ...view, s: view.s / Math.max(1, persp) * 0.86 };
+      }
       viewRef.current = view;
-      const gy = toScreen(view, 0, 0)[1];
-      g.fillStyle = "#0e1117"; g.fillRect(0, gy, w, h - gy);
-      g.strokeStyle = "#1e232c"; g.beginPath(); g.moveTo(0, gy); g.lineTo(w, gy); g.stroke();
-      const r = Math.max(1.1, Math.min(4, view.s * 0.045));
+      const { yaw, zoom } = eye.current;
+      const place = (x: number, y: number, z = 0) => depth ? streetProject({ x, y, z }, view, yaw, zoom) : { ...flatPoint(view, x, y), scale: 1, fade: 1 };
+      if (depth) drawGround(g, w, h, view, yaw, zoom);
+      else {
+        const gy = toScreen(view, 0, 0)[1];
+        g.fillStyle = "#0e1117"; g.fillRect(0, gy, w, h - gy);
+        g.strokeStyle = "#1e232c"; g.beginPath(); g.moveTo(0, gy); g.lineTo(w, gy); g.stroke();
+      }
+      const r = Math.max(1.1, Math.min(4, view.s * 0.045 * (depth ? zoom : 1)));
       const time = still ? 0.7 : t;
-      for (const drawnProp of drawn) {
+      const order = depth ? [...drawn].sort((a, b) => meanZ(b) - meanZ(a)) : drawn;
+      if (depth) drawPosts(g, order, place);
+      for (const drawnProp of order) {
         const prop = props.find((row) => row.id === drawnProp.id);
         if (!prop) continue;
         const isSel = selected?.includes(prop.id) ?? false;
         const k = selected?.length && !isSel && dim ? 0.35 : 1;
         g.globalCompositeOperation = "lighter";
         drawnProp.lights.forEach((light, index) => {
-          const [x, y] = toScreen(view, light.x, light.y);
+          const at = place(light.x, light.y, light.z);
+          const x = at.x, y = at.y;
+          const dot = r * at.scale;
           const c = neutral ? [212, 165, 116] : look ? drawnLightColour(look, prop, drawnProp, index, time) : null;
           if (!c || c[0] + c[1] + c[2] < 6) {
             g.globalCompositeOperation = "source-over";
-            g.fillStyle = "#262a33"; g.beginPath(); g.arc(x, y, r * 0.7, 0, 7); g.fill();
+            g.fillStyle = "#262a33"; g.beginPath(); g.arc(x, y, Math.max(1, dot * 0.7), 0, 7); g.fill();
             g.globalCompositeOperation = "lighter";
             return;
           }
           const [cr, cg, cb] = [c[0]! | 0, c[1]! | 0, c[2]! | 0];
-          if (!small) { g.fillStyle = `rgba(${cr},${cg},${cb},${0.16 * k})`; g.beginPath(); g.arc(x, y, r * 3.2, 0, 7); g.fill(); }
-          g.fillStyle = `rgba(${cr},${cg},${cb},${k})`; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+          const dimmer = at.fade;
+          if (!small) { g.fillStyle = `rgba(${cr},${cg},${cb},${0.16 * k * dimmer})`; g.beginPath(); g.arc(x, y, dot * 3.2, 0, 7); g.fill(); }
+          g.fillStyle = `rgba(${cr},${cg},${cb},${k * dimmer})`; g.beginPath(); g.arc(x, y, Math.max(1.1, dot), 0, 7); g.fill();
         });
         g.globalCompositeOperation = "source-over";
         if (!drawnProp.lights.length || small) continue;
-        const pts = drawnProp.lights.map((light) => toScreen(view, light.x, light.y));
+        const pts = drawnProp.lights.map((light) => { const at = place(light.x, light.y, light.z); return [at.x, at.y] as [number, number]; });
         const bx0 = Math.min(...pts.map((p) => p[0])) - 9, bx1 = Math.max(...pts.map((p) => p[0])) + 9;
         const by0 = Math.min(...pts.map((p) => p[1])) - 9, by1 = Math.max(...pts.map((p) => p[1])) + 9;
         if (isSel) {
@@ -136,26 +154,141 @@ export function YardCanvas({ drawn, props, look, className, small, labels, selec
     const cv = ref.current;
     if (!cv || !onPick) return;
     const down = (event: PointerEvent) => {
-      const view = viewRef.current;
-      if (!view) return;
-      const box = cv.getBoundingClientRect();
-      const px = event.clientX - box.left, py = event.clientY - box.top;
-      let best: { propId: string; index: number } | null = null;
-      let bd = 22;
-      for (const prop of state.current.drawn) {
-        prop.lights.forEach((light, index) => {
-          const [x, y] = toScreen(view, light.x, light.y);
-          const d = Math.hypot(x - px, y - py);
-          if (d < bd) { bd = d; best = { propId: prop.id, index }; }
-        });
-      }
-      onPick(best, event);
+      if (state.current.depth) return;
+      onPick(hitAt(cv, event.clientX, event.clientY, viewRef.current, eye.current, false, state.current.drawn), event);
     };
     cv.addEventListener("pointerdown", down);
     return () => cv.removeEventListener("pointerdown", down);
   }, [onPick]);
 
-  return <canvas ref={ref} className={className} role="img" aria-label={ariaLabel} />;
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return;
+    const pointers = new Map<number, { x: number; y: number }>();
+    let drag: { x: number; yaw: number; moved: boolean } | null = null;
+    let pinch: { distance: number; zoom: number } | null = null;
+    const down = (event: PointerEvent) => {
+      if (!state.current.depth) return;
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      cv.setPointerCapture(event.pointerId);
+      if (pointers.size === 2) {
+        const [a, b] = [...pointers.values()];
+        pinch = { distance: Math.hypot(a!.x - b!.x, a!.y - b!.y) || 1, zoom: eye.current.zoom };
+        drag = null;
+        return;
+      }
+      drag = { x: event.clientX, yaw: eye.current.yaw, moved: false };
+    };
+    const move = (event: PointerEvent) => {
+      if (!pointers.has(event.pointerId)) return;
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (pointers.size >= 2 && pinch) {
+        const [a, b] = [...pointers.values()];
+        const distance = Math.hypot(a!.x - b!.x, a!.y - b!.y) || 1;
+        eye.current.zoom = clamp(pinch.zoom * distance / pinch.distance, 0.55, 2.4);
+        return;
+      }
+      if (!drag) return;
+      const dx = event.clientX - drag.x;
+      if (Math.abs(dx) > 5) drag.moved = true;
+      eye.current.yaw = clamp(drag.yaw - dx * 0.004, -0.45, 0.45);
+    };
+    const up = (event: PointerEvent) => {
+      const was = drag;
+      pointers.delete(event.pointerId);
+      if (pointers.size < 2) pinch = null;
+      if (pointers.size === 0) drag = null;
+      if (was && !was.moved && onPick) onPick(hitAt(cv, event.clientX, event.clientY, viewRef.current, eye.current, true, state.current.drawn), event);
+    };
+    const wheel = (event: WheelEvent) => {
+      if (!state.current.depth) return;
+      event.preventDefault();
+      eye.current.zoom = clamp(eye.current.zoom * (event.deltaY > 0 ? 0.92 : 1.08), 0.55, 2.4);
+    };
+    cv.addEventListener("pointerdown", down);
+    cv.addEventListener("pointermove", move);
+    cv.addEventListener("pointerup", up);
+    cv.addEventListener("pointercancel", up);
+    cv.addEventListener("wheel", wheel, { passive: false });
+    return () => {
+      cv.removeEventListener("pointerdown", down);
+      cv.removeEventListener("pointermove", move);
+      cv.removeEventListener("pointerup", up);
+      cv.removeEventListener("pointercancel", up);
+      cv.removeEventListener("wheel", wheel);
+    };
+  }, [onPick]);
+
+  return <canvas ref={ref} className={className} role="img" aria-label={ariaLabel} data-yard={depth ? "street" : "flat"} />;
+}
+
+function flatPoint(view: YardView, x: number, y: number): { x: number; y: number } {
+  const [sx, sy] = toScreen(view, x, y);
+  return { x: sx, y: sy };
+}
+
+function meanZ(prop: DrawnProp): number {
+  if (!prop.lights.length) return 0;
+  return prop.lights.reduce((sum, light) => sum + light.z, 0) / prop.lights.length;
+}
+
+function drawGround(g: CanvasRenderingContext2D, w: number, h: number, view: FlatView, yaw: number, zoom: number) {
+  const horizon = streetProject({ x: 0, y: STREET_EYE, z: 40 }, view, yaw, zoom).y;
+  g.fillStyle = "#0e1117";
+  g.fillRect(0, horizon, w, h - horizon);
+  g.strokeStyle = "#2a3140";
+  g.lineWidth = 1;
+  for (const z of [0, 2, 4, 6, 8]) {
+    const a = streetProject({ x: -8, y: 0, z }, view, yaw, zoom);
+    const b = streetProject({ x: 8, y: 0, z }, view, yaw, zoom);
+    g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
+  }
+  for (const x of [-6, -3, 0, 3, 6]) {
+    const a = streetProject({ x, y: 0, z: -2 }, view, yaw, zoom);
+    const b = streetProject({ x, y: 0, z: 10 }, view, yaw, zoom);
+    g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
+  }
+}
+
+const STREET_EYE = 1.6;
+
+function drawPosts(
+  g: CanvasRenderingContext2D,
+  props: readonly DrawnProp[],
+  place: (x: number, y: number, z?: number) => { x: number; y: number },
+) {
+  g.strokeStyle = "rgba(255,255,255,0.16)";
+  g.lineWidth = 1;
+  for (const prop of props) {
+    if (!prop.lights.length) continue;
+    const x = prop.lights.reduce((sum, light) => sum + light.x, 0) / prop.lights.length;
+    const y = prop.lights.reduce((sum, light) => sum + light.y, 0) / prop.lights.length;
+    const z = meanZ(prop);
+    if (y < 0.4) continue;
+    const foot = place(x, 0, z);
+    const head = place(x, y, z);
+    g.beginPath(); g.moveTo(foot.x, foot.y); g.lineTo(head.x, head.y); g.stroke();
+  }
+}
+
+function hitAt(cv: HTMLCanvasElement, clientX: number, clientY: number, view: YardView | null, eye: { yaw: number; zoom: number }, depth: boolean, drawn: readonly DrawnProp[]): { propId: string; index: number } | null {
+  if (!view) return null;
+  const box = cv.getBoundingClientRect();
+  const px = clientX - box.left, py = clientY - box.top;
+  let best: { propId: string; index: number } | null = null;
+  let bd = 22;
+  for (const prop of drawn) {
+    prop.lights.forEach((light, index) => {
+      const at = depth ? streetProject({ x: light.x, y: light.y, z: light.z }, view, eye.yaw, eye.zoom) : flatPoint(view, light.x, light.y);
+      const d = Math.hypot(at.x - px, at.y - py);
+      if (d < bd) { bd = d; best = { propId: prop.id, index }; }
+    });
+  }
+  return best;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 /** A short row of lights showing one style. */
