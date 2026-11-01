@@ -193,7 +193,26 @@ try {
         await page.getByRole("button", { name: "Stop", pressed: true }).waitFor();
         await page.getByRole("button", { name: "Overhead" }).click();
         await page.getByRole("button", { name: "Overhead", pressed: true }).waitFor();
-        await page.waitForTimeout(200);
+        const box = await canvas.boundingBox();
+        if (box) await page.mouse.dblclick(box.x + box.width * 0.82, box.y + 70);
+        await api("/api/yard-scene", {
+          method: "PUT",
+          body: JSON.stringify({
+            house: {
+              footprint: [{ x: -3, z: 2 }, { x: 3, z: 2 }, { x: 3, z: 7 }, { x: -3, z: 7 }],
+              eaveM: 2.5,
+              ridgeM: 1.2,
+            },
+          }),
+        });
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await page.getByRole("button", { name: "3D" }).click();
+        await page.locator("[data-yard-3d=view] canvas").waitFor();
+        await page.locator("[data-house=yes]").waitFor();
+        await page.locator("[data-yard-ready=yes]").waitFor();
+        await page.getByRole("button", { name: "Street" }).click();
+        await page.getByRole("button", { name: "Street", pressed: true }).waitFor();
+        await page.waitForTimeout(300);
       }
       await page.getByRole("region", { name: "Yard drawing" }).evaluate((node) => node.scrollIntoView({ block: "start" }));
       await fits(page);
@@ -213,6 +232,7 @@ try {
   if (lookSnapshot) {
     await api("/api/looks", { method: "PUT", body: JSON.stringify(lookSnapshot) }).catch(() => {});
   }
+  await api("/api/yard-scene", { method: "PUT", body: JSON.stringify({ house: null }) }).catch(() => {});
   await api(`/api/props/${id}`, { method: "DELETE" }).catch(() => {});
   stopChildren();
 }

@@ -1,11 +1,11 @@
 "use client";
 
-import { dragOnGround, lookFrame, toggleYardMount, turnYardPoint, yardCamera, yardLightPositions, yardLiveColour, yardPlacements, type Look, type Prop, type PropAttachment, type PropYardPoint, type YardLight, type YardLiveFeed, type YardView } from "@nightplot/shared";
+import { defaultHouse, dragOnGround, lookFrame, snapRoofline, toggleYardMount, turnYardPoint, yardCamera, yardLightPositions, yardLiveColour, yardPlacements, type Look, type Prop, type PropAttachment, type PropYardPoint, type YardHouse, type YardLight, type YardLiveFeed, type YardView } from "@nightplot/shared";
 import { fetchJson } from "@/lib/api";
 import { CameraControls, Grid, type CameraControls as CameraControlsImpl } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Color, Object3D, Plane, Vector3, type InstancedMesh } from "three";
+import { Color, DoubleSide, ExtrudeGeometry, Object3D, Plane, Raycaster, Shape, Vector2, Vector3, type InstancedMesh } from "three";
 
 const WARM = "#d4a574";
 const VIEWS: { id: YardView; label: string }[] = [
@@ -37,12 +37,15 @@ export function Yard3dCanvas({
   const [playing, setPlaying] = useState(false);
   const [feed, setFeed] = useState<YardLiveFeed[]>([]);
   const [word, setWord] = useState<ColourWord>("section");
+  const [house, setHouse] = useState<YardHouse | null>(null);
   const [draft, setDraft] = useState<{ id: string; at: PropYardPoint } | null>(null);
   const shown = useMemo(() => props.map((prop) => draft && prop.id === draft.id ? { ...prop, yard: draft.at } : prop), [props, draft]);
   const lights = useMemo(() => coloredLights(shown), [shown]);
   const framed = useMemo(() => coloredLights(props), [props]);
   const pickedPoint = yardPlacements(shown).find((row) => row.propId === picked)?.at;
   const controlsRef = useRef<CameraControlsImpl>(null);
+  const houseRef = useRef(house);
+  const saveHouseRef = useRef<(next: YardHouse | null) => Promise<void>>(async () => {});
   const dragRef = useRef<{ propId: string; from: { x: number; z: number }; point: PropYardPoint; at: PropYardPoint } | null>(null);
   const ground = useMemo(() => new Plane(new Vector3(0, 1, 0), 0), []);
   const groundHit = useMemo(() => new Vector3(), []);
@@ -51,7 +54,10 @@ export function Yard3dCanvas({
     dragRef.current = null;
     if (controlsRef.current) controlsRef.current.enabled = true;
     if (!drag) return;
-    const kept = await onPlace(drag.propId, drag.at);
+    const prop = props.find((row) => row.id === drag.propId);
+    const at = prop?.kind === "roofline" && house ? snapRoofline(drag.at, house) ?? drag.at : drag.at;
+    setDraft({ id: drag.propId, at });
+    const kept = await onPlace(drag.propId, at);
     if (!kept) setDraft(null);
   }
   function beginDrag(propId: string, from: { x: number; z: number }) {
@@ -61,6 +67,31 @@ export function Yard3dCanvas({
     onPick(propId);
   }
   const look = looks.find((row) => row.id === lookId) ?? null;
+  useEffect(() => {
+    let stop = false;
+    void fetchJson<{ house: YardHouse | null }>("/api/yard-scene")
+      .then((body) => { if (!stop) setHouse(body.house ?? null); })
+      .catch(() => { if (!stop) setHouse(null); });
+    return () => { stop = true; };
+  }, []);
+  async function saveHouse(next: YardHouse | null) {
+    const previous = house;
+    setHouse(next);
+    try {
+      const body = await fetchJson<{ house: YardHouse | null }>("/api/yard-scene", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ house: next }),
+      });
+      setHouse(body.house ?? null);
+    } catch {
+      setHouse(previous);
+    }
+  }
+  useLayoutEffect(() => {
+    houseRef.current = house;
+    saveHouseRef.current = saveHouse;
+  });
   useEffect(() => {
     if (attachments.length === 0) return;
     let stop = false;
@@ -74,7 +105,7 @@ export function Yard3dCanvas({
     return () => { stop = true; clearInterval(timer); };
   }, [attachments]);
   return (
-    <div className="absolute inset-0" data-yard-3d="view" data-yard-ready={ready ? "yes" : "no"} data-camera={view}>
+    <div className="absolute inset-0" data-yard-3d="view" data-yard-ready={ready ? "yes" : "no"} data-camera={view} data-house={house ? "yes" : "no"}>
       <Yard3dBoundary onFail={() => setReady(false)}>
         <Canvas
           className="touch-none"
@@ -82,7 +113,22 @@ export function Yard3dCanvas({
           dpr={[1, 1.5]}
           gl={{ antialias: true, alpha: false, powerPreference: "low-power" }}
           onPointerMissed={() => onPick(null)}
-          onCreated={({ gl }) => gl.setClearColor("#07080a")}
+          onCreated={({ gl, camera }) => {
+            gl.setClearColor("#07080a");
+            const raycaster = new Raycaster();
+            const pointer = new Vector2();
+            const hit = new Vector3();
+            const plane = new Plane(new Vector3(0, 1, 0), 0);
+            gl.domElement.addEventListener("dblclick", (event) => {
+              if (houseRef.current) return;
+              const rect = gl.domElement.getBoundingClientRect();
+              pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+              pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+              raycaster.setFromCamera(pointer, camera);
+              if (!raycaster.ray.intersectPlane(plane, hit)) return;
+              void saveHouseRef.current(defaultHouse({ x: hit.x, z: hit.z }));
+            });
+          }}
         >
           <color attach="background" args={["#07080a"]} />
           <Frame view={view} lights={framed} propId={picked} controlsRef={controlsRef} />
@@ -100,6 +146,13 @@ export function Yard3dCanvas({
               setDraft({ id: drag.propId, at });
             }}
             onPointerUp={() => { void finishDrag(); }}
+            onDoubleClick={(event) => {
+              if (house) return;
+              const hit = event.ray.intersectPlane(ground, groundHit);
+              if (!hit) return;
+              event.stopPropagation();
+              void saveHouse(defaultHouse({ x: hit.x, z: hit.z }));
+            }}
           >
             <planeGeometry args={[80, 80]} />
             <meshBasicMaterial color="#101218" />
@@ -121,6 +174,7 @@ export function Yard3dCanvas({
             <ringGeometry args={[0.15, 0.22, 40]} />
             <meshBasicMaterial color="#7ee0d0" />
           </mesh>
+          {house ? <HouseShape house={house} /> : null}
           <LightPoints
             lights={lights}
             props={props}
@@ -308,6 +362,54 @@ function LightPoints({
       <meshBasicMaterial toneMapped={false} />
     </instancedMesh>
   );
+}
+
+function HouseShape({ house }: { house: YardHouse }) {
+  const walls = useMemo(() => {
+    const shape = new Shape();
+    house.footprint.forEach((point, index) => {
+      if (index === 0) shape.moveTo(point.x, -point.z);
+      else shape.lineTo(point.x, -point.z);
+    });
+    shape.closePath();
+    return new ExtrudeGeometry(shape, { depth: house.eaveM, bevelEnabled: false });
+  }, [house]);
+  const roof = useMemo(() => roofPositions(house), [house]);
+  return (
+    <group>
+      <mesh geometry={walls} rotation={[-Math.PI / 2, 0, 0]}>
+        <meshBasicMaterial color="#3a4150" />
+        <lineSegments>
+          <edgesGeometry args={[walls]} />
+          <lineBasicMaterial color="#d4a574" />
+        </lineSegments>
+      </mesh>
+      {roof ? (
+        <mesh>
+          <bufferGeometry>
+            <bufferAttribute attach="attributes-position" args={[roof, 3]} />
+          </bufferGeometry>
+          <meshBasicMaterial color="#8a6a4a" side={DoubleSide} />
+        </mesh>
+      ) : null}
+    </group>
+  );
+}
+
+function roofPositions(house: YardHouse): Float32Array | null {
+  if (house.footprint.length !== 4) return null;
+  const [a, b, c, d] = house.footprint;
+  if (!a || !b || !c || !d) return null;
+  const y = house.eaveM;
+  const ridge = y + house.ridgeM;
+  const left = { x: (a.x + d.x) / 2, y: ridge, z: (a.z + d.z) / 2 };
+  const right = { x: (b.x + c.x) / 2, y: ridge, z: (b.z + c.z) / 2 };
+  return new Float32Array([
+    a.x, y, a.z, b.x, y, b.z, right.x, right.y, right.z,
+    a.x, y, a.z, right.x, right.y, right.z, left.x, left.y, left.z,
+    d.x, y, d.z, left.x, left.y, left.z, right.x, right.y, right.z,
+    d.x, y, d.z, right.x, right.y, right.z, c.x, y, c.z,
+  ]);
 }
 
 function Ready({ onReady }: { onReady: () => void }) {
