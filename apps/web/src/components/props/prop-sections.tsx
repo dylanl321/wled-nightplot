@@ -5,7 +5,9 @@ import {
   describeIndexRanges,
   designFromLayout,
   sectionLightCount,
-  extendEdge,
+  clearEdgeLights,
+  formatLength,
+  setEdgeLights,
   layoutStrings,
   formatTypedRanges,
   parseTypedRanges,
@@ -100,10 +102,17 @@ export function PropSectionsStep({
     commit([...sections, next]);
   }
 
+  // The stepper changes how many lights sit on the edge. The edge keeps its
+  // length, so no corner moves and no other edge changes.
   function nudge(delta: number) {
-    if (!edgeId) return;
-    onLayout(extendEdge(layout, edgeId, delta * layout.pitchM));
+    if (!edgeId || !selected) return;
+    onLayout(setEdgeLights(layout, edgeId, Math.max(0, selected.lights + delta)));
   }
+
+  const selectedEdge = edgeId
+    ? layoutStrings(layout).flatMap((string) => string.run).find((edge) => edge.id === edgeId) ?? null
+    : null;
+  const selectedLength = selectedEdge ? edgeLength(layout, selectedEdge.from, selectedEdge.to) : 0;
 
   function chooseSection(id: string) {
     setActiveId(id);
@@ -204,6 +213,21 @@ export function PropSectionsStep({
               </div>
             </div>
           ) : null}
+          {selected && selectedLength > 0 ? (
+            <p className="text-[13px] leading-5 text-muted-foreground">
+              {selected.lights === 1 ? "1 light" : `${selected.lights} lights`} on {formatLength(selectedLength, layout.units)}
+              {selected.lights > 0 ? `, about ${(selectedLength / selected.lights * 100).toFixed(1)} cm apart` : ""}.
+              {" "}The edge keeps its length.
+              {selectedEdge?.lockedLights != null ? (
+                <>
+                  {" "}
+                  <button type="button" className="underline underline-offset-4" onClick={() => onLayout(clearEdgeLights(layout, selectedEdge.id))}>
+                    Count from the length again
+                  </button>
+                </>
+              ) : null}
+            </p>
+          ) : null}
           {active ? (
             <label className="flex flex-col gap-2 text-[15px]">
               Light numbers
@@ -241,6 +265,12 @@ export function PropSectionsStep({
       </div>
     </div>
   );
+}
+
+function edgeLength(layout: PropLayout, fromId: string, toId: string): number {
+  const from = layout.corners.find((corner) => corner.id === fromId);
+  const to = layout.corners.find((corner) => corner.id === toId);
+  return from && to ? Math.hypot(to.x - from.x, to.y - from.y) : 0;
 }
 
 function shortEdgeName(name: string): string {
