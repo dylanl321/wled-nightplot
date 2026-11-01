@@ -131,19 +131,54 @@ export type Prop = {
    */
   sections?: PropSection[];
   /**
-   * Where the prop sits on the yard drawing, in metres: the drawing's own
-   * origin lands here. Absent means a default slot, so props never pile up.
+   * Where the prop sits on the yard, in metres: the drawing's own origin
+   * lands here. Absent means a default slot, so props never pile up.
+   * Older points are only `x` and `y`.
    */
   yard?: PropYardPoint;
 };
 
-export type PropYardPoint = { x: number; y: number };
+export const PROP_MOUNTS = ["upright", "flat"] as const;
+export type PropMount = (typeof PROP_MOUNTS)[number];
+
+/**
+ * Where a prop sits, in metres. `x` runs along the front of the house.
+ * `y` is up that front wall. `depth` is out from the wall, `facing` is
+ * degrees about the vertical, and `mount` stands the drawing up or lays
+ * it flat. A point saved before those existed is still just `x` and `y`.
+ */
+export type PropYardPoint = {
+  x: number;
+  y: number;
+  /** Metres out from the front wall. Absent means 0. */
+  depth?: number;
+  /** Degrees about the vertical. 0 faces the street. Absent means 0. */
+  facing?: number;
+  /** Absent means upright. */
+  mount?: PropMount;
+  /** Extra metres off the ground. Absent means none. */
+  heightM?: number;
+};
+
+const YARD_METRE_LIMIT = 10000;
+
+function yardMetres(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= YARD_METRE_LIMIT;
+}
+
+export function isPropMount(value: unknown): value is PropMount {
+  return value === "upright" || value === "flat";
+}
 
 export function isPropYardPoint(value: unknown): value is PropYardPoint {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const row = value as Partial<PropYardPoint>;
-  return typeof row.x === "number" && Number.isFinite(row.x) && Math.abs(row.x) <= 10000 &&
-    typeof row.y === "number" && Number.isFinite(row.y) && Math.abs(row.y) <= 10000;
+  if (!yardMetres(row.x) || !yardMetres(row.y)) return false;
+  if (row.depth !== undefined && !yardMetres(row.depth)) return false;
+  if (row.facing !== undefined && (typeof row.facing !== "number" || !Number.isFinite(row.facing) || Math.abs(row.facing) > 3600)) return false;
+  if (row.mount !== undefined && !isPropMount(row.mount)) return false;
+  if (row.heightM !== undefined && !yardMetres(row.heightM)) return false;
+  return true;
 }
 
 /** Inclusive start, exclusive stop, in path-index order (the first light of the path is 0). */
