@@ -13,6 +13,7 @@ import {
   resolveLookTarget,
   type Look,
 } from "./look.ts";
+import { migrateSectionColours } from "./look-design.ts";
 
 const style = { fx: 0, pal: 0, sx: 128, ix: 128, bri: 180, color: "#ffa000" };
 
@@ -65,13 +66,23 @@ describe("a Look on a Prop with sections", () => {
     expect(lookSectionNotes({ ledCount: 60, elements: attached, props: [prop(sections)] })).toEqual([]);
   });
 
-  it("a section with no override uses the colour stored on the section, in the Look's effect", () => {
+  it("while every section follows the Prop, the sections go out as one segment so an effect runs along the whole Prop", () => {
     const sparkle = { ...look(), style: { ...style, fx: 17 } };
     const preset = buildLookPreset(sparkle, lookTargets({ ledCount: 60, elements: attached, props: [prop(sections)] }), false);
-    const segs = preset.seg as { start: number; fx: number; col: number[][]; on: boolean }[];
-    expect(segs[0]).toMatchObject({ start: 5, fx: 17, on: true, col: [[255, 0, 0], [0, 0, 0], [0, 0, 0]] });
+    const segs = preset.seg as { start: number; stop: number; fx: number; col: number[][]; on: boolean }[];
+    expect(segs.map((row) => [row.start, row.stop])).toEqual([[5, 25], [40, 50]]);
+    expect(segs[0]).toMatchObject({ fx: 17, on: true, col: [[255, 160, 0], [0, 0, 0], [0, 0, 0]] });
+  });
+
+  it("section colours stored on the Prop are copied into Looks once, so the lights do not change", () => {
+    const migrated = migrateSectionColours({ version: 1, looks: [{ ...look(), style: { ...style, fx: 17 } }], playlists: [], schedule: null }, [prop(sections)]);
+    expect(migrated.sectionColoursMigrated).toBe(true);
+    const preset = buildLookPreset(migrated.looks[0]!, lookTargets({ ledCount: 60, elements: attached, props: [prop(sections)] }), false);
+    const segs = preset.seg as { start: number; fx: number; col: number[][] }[];
+    expect(segs[0]).toMatchObject({ start: 5, fx: 17, col: [[255, 0, 0], [0, 0, 0], [0, 0, 0]] });
     expect(segs[1]).toMatchObject({ start: 15, fx: 17, col: [[0, 0, 255], [0, 0, 0], [0, 0, 0]] });
     expect(segs[2]).toMatchObject({ start: 40, col: [[255, 160, 0], [0, 0, 0], [0, 0, 0]] });
+    expect(migrateSectionColours(migrated, [prop(sections)])).toBe(migrated);
   });
 
   it("a section override wins over the Prop, its kind, and the section colour; a Prop override wins over the section colour", () => {
@@ -97,7 +108,7 @@ describe("a Look on a Prop with sections", () => {
   it("a section override on another Prop with the same section id does not leak", () => {
     const other = look([{ propId: "prop-other", sectionId: "left", style: { ...style, color: "#123456" } }]);
     const targets = lookTargets({ ledCount: 60, elements: attached, props: [prop(sections)] });
-    expect(resolveLookStyle(other, targets[0]!).color).toBe("#ff0000");
+    expect(resolveLookStyle(other, targets[0]!).color).toBe("#ffa000");
   });
 
   it("names a section that is not one range instead of writing one wrong segment", () => {

@@ -79,6 +79,35 @@ export function restorePixelPreview(restore: WledNativeRestore, ledCount: number
   };
 }
 
+/**
+ * A whole Look shown for Preview: the Look's segments, and every other
+ * segment the Light had (or the last Preview wrote) cleared, so nothing
+ * from before shows through. Not saved as a preset.
+ */
+export function lookPreviewWrite(
+  look: { bri: number; seg: WledSegWrite[]; transition?: number },
+  restore: WledNativeRestore,
+  previous?: WledStateWrite,
+): WledStateWrite {
+  const seg = look.seg.map((segment, id) => ({ ...segment, id }));
+  const ids = new Set([
+    ...restore.seg.map((segment) => segment.id),
+    ...(previous?.seg ?? []).map((segment, index) => segment.id ?? index),
+  ]);
+  const clears = [...ids].filter((id) => id >= seg.length).sort((a, b) => a - b).map((id) => ({ id, start: 0, stop: 0 }));
+  return { on: true, bri: look.bri, tt: previous ? 0 : (look.transition ?? 7), seg: [...seg, ...clears] };
+}
+
+/** Put a Light back as it was before a Look Preview. */
+export function restoreLookPreview(restore: WledNativeRestore, previous?: WledStateWrite): WledStateWrite {
+  const kept = new Set(restore.seg.map((segment) => segment.id));
+  const clears = (previous?.seg ?? [])
+    .map((segment, index) => segment.id ?? index)
+    .filter((id) => !kept.has(id))
+    .map((id) => ({ id, start: 0, stop: 0 }));
+  return { on: restore.on, bri: restore.bri, tt: 0, seg: [...clears, ...restore.seg.map((segment) => ({ ...segment }))] };
+}
+
 /** Stable compare for Preview hop short-circuit. Same body → no controller POST. */
 export function writeBodiesEqual(a: WledStateWrite, b: WledStateWrite): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -571,6 +600,27 @@ function segsGeometryEqual(a: WledSegWrite, b: WledSegWrite): boolean {
 
 function segsEqual(a: WledSegWrite, b: WledSegWrite): boolean {
   return a.id === b.id && segsGeometryEqual(a, b);
+}
+
+/** GET a WLED JSON endpoint (`/json/eff`, `/json/fxdata`, `/json/pal`). Null on any failure. */
+export type ReadWledJsonFn = (target: HostPort, path: string) => Promise<unknown | null>;
+
+export function createWledJsonReader(fetchFn: typeof fetch = fetch, timeoutMs = 4000): ReadWledJsonFn {
+  return async (target, path) => {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
+    try {
+      const res = await fetchFn(`http://${hostForUrl(target.hostname)}:${target.port}${path}`, {
+        signal: ac.signal, headers: { Accept: "application/json" },
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
 }
 
 function hostForUrl(hostname: string): string {

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  lookIncludesProp,
   layoutStrings,
   propAttachmentLabel,
   propShapeChanged,
@@ -129,6 +130,17 @@ export function YardHome({
                     <p className="mt-1 text-[15px]">
                       {count === null || count === undefined ? "Light count unknown" : `${count} lights`}
                     </p>
+                    {looks.length > 0 ? (() => {
+                      const inLooks = looks.filter((look) => lookIncludesProp(look, prop.id)).length;
+                      return inLooks === 0 ? (
+                        <p className="text-[14px] text-muted-foreground">
+                          In no Look ·{" "}
+                          <Link href={`/looks?add=${encodeURIComponent(prop.id)}`} className="text-primary underline-offset-2 hover:underline">Add to Looks…</Link>
+                        </p>
+                      ) : (
+                        <p className="text-[14px] text-muted-foreground">In {inLooks} of {looks.length} Looks</p>
+                      );
+                    })() : null}
                     <p className="text-[14px] text-muted-foreground">
                       {!attachment
                         ? "Not attached"

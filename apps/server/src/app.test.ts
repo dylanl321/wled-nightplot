@@ -5607,8 +5607,11 @@ describe("Looks library and nightly Schedule", () => {
     expect(porchPresets["1"]?.seg?.[0]).toMatchObject({ fx: 13, start: 0 });
     expect(porchPresets[String(LOOK_OFF_SLOT)]).toEqual({ n: "Off", on: false });
     expect(live.cfg.if.ntp).toMatchObject({ en: true, tz: 8, lt: 42.3, ln: -83.7 });
-    expect(live.cfg.timers.ins[8]).toMatchObject({ en: true, hour: 255, macro: 16 });
-    expect(live.cfg.timers.ins[1]).toMatchObject({ en: true, hour: 23, macro: LOOK_OFF_SLOT });
+    // WLED 0.15.x: slot 8 is sunrise, slot 9 is sunset.
+    expect(live.cfg.timers.ins[9]).toMatchObject({ en: true, hour: 255, macro: 16 });
+    expect(live.cfg.timers.ins[8]).toMatchObject({ en: false, hour: 255, macro: 0 });
+    // The off time is a clock timer (slots 0–7); the planner puts it after any on timers.
+    expect(live.cfg.timers.ins.slice(0, 8).filter((timer) => timer.en)).toEqual([expect.objectContaining({ en: true, hour: 23, macro: LOOK_OFF_SLOT })]);
 
     const eavePresets = JSON.parse(other.presets()) as Record<string, { seg?: { fx: number }[] }>;
     expect(eavePresets["1"]?.seg?.[0]?.fx).toBe(0);

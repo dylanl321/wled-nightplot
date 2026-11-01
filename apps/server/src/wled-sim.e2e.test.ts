@@ -418,7 +418,9 @@ describe("headless WLED sim e2e: Sync across Lights", () => {
     expect(presets["16"]?.n).toBe("Nightly");
     const cfg = (await (await fetch(`${a.baseUrl}/json/cfg`)).json()) as { if: { ntp: { en: boolean; tz: number } }; timers: { ins: { hour: number; macro: number }[] } };
     expect(cfg.if.ntp).toMatchObject({ en: true, tz: 8 });
-    expect(cfg.timers.ins[8]).toMatchObject({ hour: 255, macro: 16 });
+    // WLED leaves out empty timers, so the last two are sunrise (unused) then sunset.
+    expect(cfg.timers.ins.at(-2)).toMatchObject({ hour: 255, macro: 0 });
+    expect(cfg.timers.ins.at(-1)).toMatchObject({ hour: 255, macro: 16 });
   }, 30_000);
 
   it("asks before copying presets to a Light with a different length, and lists offline targets", async () => {

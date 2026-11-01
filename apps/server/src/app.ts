@@ -157,6 +157,7 @@ import { FileLooksStore } from "./store/looks-store.ts";
 import { FileYardSceneStore } from "./store/yard-scene-store.ts";
 import { FileSetupProfilesStore } from "./store/setup-profiles-store.ts";
 import { registerLookRoutes } from "./look-routes.ts";
+import { registerLookLiveRoutes } from "./look-live-routes.ts";
 import { registerPropSetupRoutes } from "./prop-setup-routes.ts";
 import { registerSeasonRoutes } from "./season-routes.ts";
 import { registerYardRoutes } from "./yard-routes.ts";
@@ -181,7 +182,7 @@ import {
 } from "./wled/native-backup.ts";
 import { persistWireframeOnLight, specFromBody, writeAndVerifyLedmap } from "./wireframe-persist.ts";
 import { registerSyncRoutes } from "./sync-routes.ts";
-import { applyRangesWrite, type ReadLiveFn, type WriteStateFn } from "./wled/live.ts";
+import { applyRangesWrite, createWledJsonReader, type ReadLiveFn, type ReadWledJsonFn, type WriteStateFn } from "./wled/live.ts";
 
 export type AppDeps = {
   store: FileLightsStore;
@@ -205,6 +206,10 @@ export type AppDeps = {
   readLedmap?: ReadWledLedmap;
   writeLedmap?: WriteWledLedmap;
   writeCfg: WriteCfgFn;
+  /** WLED JSON GETs for the effect list. Defaults to a fetch reader. */
+  readJson?: ReadWledJsonFn;
+  /** Wait between Turn on rereads (ms). */
+  lookSettleMs?: number;
   now?: () => Date;
 };
 
@@ -554,6 +559,8 @@ export function createApp(deps: AppDeps) {
         return c.json({ error: "wled-restore-failed",
           message: `WLED did not accept the uploaded files. Nightplot data is unchanged. Safety backup ${safety.id} is kept. ${error instanceof Error ? error.message : ""}` }, 502);
       }
+      // The Light no longer holds what Nightplot last sent; say so rather than guess.
+      if (light.lastLookPush) deps.store.replace({ ...light, lastLookPush: null });
       return c.json({
         restored: true,
         kind: "wled-native",
@@ -593,6 +600,8 @@ export function createApp(deps: AppDeps) {
     record,
   };
   registerLookRoutes(app, lookDeps);
+  registerLookLiveRoutes(app, { ...lookDeps, write: deps.write, readJson: deps.readJson ?? createWledJsonReader(),
+    ...(deps.lookSettleMs !== undefined ? { settleMs: deps.lookSettleMs } : {}) });
   registerPropSetupRoutes(app, {
     store: deps.store,
     palette: () => settings.read().palette,

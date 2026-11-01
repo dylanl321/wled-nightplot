@@ -492,27 +492,29 @@ async function useCase12(page, prop) {
 }
 
 async function useCase13(page, prop, section) {
-  await page.goto(`${webOrigin}/looks`, { waitUntil: "domcontentloaded" });
-  await hydrated(page.getByRole("button", { name: /Save|More looks/ }));
-  const more = page.getByRole("button", { name: "More looks" });
-  if (await more.count()) await more.click();
-  const row = `${prop.label} ${section.name}`;
-  const colour = page.getByLabel(`${row} colour`, { exact: true });
-  const included = page.getByLabel(`${prop.label} in this Look`, { exact: true });
-  if (!(await included.count())) {
-    // The first Look is open by default; open it if a reload closed it.
-    await page.locator("ul > li > button").first().click();
-  }
-  // A prop made after the Look starts left out of it (#127): tick it in.
-  if (!(await included.isChecked())) await included.check();
-  await waitForValue(colour, "#33cc99", "13 section colour default");
-  await colour.fill("#ff00aa");
-  await page.getByLabel(`${row} effect`).selectOption({ label: "Twinkle" });
-  await page.getByRole("button", { name: "Save library" }).click();
-  await page.getByText("Saved in Nightplot. Push to write the controllers.").waitFor();
+  // The Look editor, opened on this prop in the first Look.
+  const first = (await api("/api/looks")).looks[0];
+  await page.goto(`${webOrigin}/looks/${first.id}?prop=${encodeURIComponent(prop.id)}`, { waitUntil: "domcontentloaded" });
+  const inspector = page.locator(".insp");
+  const how = inspector.getByRole("group", { name: "How it lights" });
+  await hydrated(how);
+  // A prop made after the Look starts left out of it (#127): switch it on.
+  const off = how.getByRole("button", { name: "Off", exact: true });
+  if ((await off.getAttribute("aria-pressed")) === "true") await how.getByRole("button", { name: "Follow Look" }).click();
+  await inspector.getByRole("button", { name: new RegExp(`^${section.name}`) }).click();
+  await how.getByRole("button", { name: "Own style" }).click();
+  const hex = inspector.locator("input[aria-label$=' hex']").first();
+  await hex.fill("#ff00aa");
+  await hex.press("Enter");
+  await inspector.locator(".effrow").first().click();
+  await inspector.getByLabel("Search effects").fill("Twinkle");
+  await inspector.locator(".effrow", { hasText: /^Twinkle/ }).first().click();
+  await page.waitForTimeout(600);
+  await page.waitForFunction(() => !document.body.textContent.includes("Saving…"), null, { timeout: 10000 });
   const library = await api("/api/looks");
-  const override = library.looks.flatMap((look) => look.overrides).find((row) => row.propId === prop.id && row.sectionId === section.id);
-  expect("13 saved", override && override.style.color === "#ff00aa" && override.style.fx === 17, library.looks[0]?.overrides);
+  const look = library.looks.find((row) => row.id === first.id);
+  const override = look.overrides.find((row) => row.propId === prop.id && row.sectionId === section.id);
+  expect("13 saved", override && override.style.color === "#ff00aa" && override.style.fx === 17, look.overrides);
 }
 
 await ensureStack();

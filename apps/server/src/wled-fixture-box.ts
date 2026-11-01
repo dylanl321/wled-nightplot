@@ -250,7 +250,10 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
     if (Array.isArray(next.timers?.ins)) applyTimers(next.timers.ins);
   }
 
-  /** Same index jump as wled00/cfg.cpp: hour 255 in slots 0–7 writes sunset slot 8. */
+  /**
+   * Same index jump as wled00/cfg.cpp (0.15.x): the first hour-255 entry in
+   * slots 0–7 lands on slot 8 (sunrise); the next one is slot 9 (sunset).
+   */
   function applyTimers(ins: unknown[]) {
     let it = 0;
     for (const row of ins) {
@@ -274,6 +277,17 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       };
       it += 1;
     }
+  }
+
+  /**
+   * `cfg` as WLED 0.15.x serializes it: timers with macro, hour and minute
+   * all 0 are left out, and `en` is 1 / 0.
+   */
+  function reportedCfg() {
+    const ins = cfg.timers.ins
+      .filter((row) => !(row.macro === 0 && row.hour === 0 && row.min === 0))
+      .map((row) => ({ ...row, en: row.en ? 1 : 0 }));
+    return { ...cfg, timers: { ...cfg.timers, ins } };
   }
 
   function presetsText(): string {
@@ -428,7 +442,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
       return;
     }
     if (url === "/cfg.json") {
-      res.end(exportedCfg ?? JSON.stringify(cfg));
+      res.end(exportedCfg ?? JSON.stringify(reportedCfg()));
       return;
     }
     if (url === "/presets.json") {
@@ -557,7 +571,7 @@ export function createFixtureBox(options: FixtureBoxOptions = {}) {
         });
         return;
       }
-      res.end(JSON.stringify({ ...cfg, nightplot: kind }));
+      res.end(JSON.stringify({ ...reportedCfg(), nightplot: kind }));
       return;
     }
     if (url === "/json/state") {
