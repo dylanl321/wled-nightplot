@@ -162,7 +162,8 @@ async function useCaseUnits(page, viewport) {
   await hydrated(length);
   await waitForValue(length, "4'", "units start");
   expect("scale", (await page.getByTestId("grid-scale").innerText()) === "1 square = 1 ft", await page.getByTestId("grid-scale").innerText());
-  await waitForValue(page.getByLabel("Light spacing (cm)"), "10", "spacing");
+  // 10 cm is stored as metres and shown in inches while the prop is in feet.
+  await waitForValue(page.getByLabel("Light spacing (in)"), "3.94", "spacing");
   const foot = 0.3048;
   const from = await screenOf(frame, { x: 4 * foot, y: 0 });
   const to = await screenOf(frame, { x: 1.3, y: 0.04 });
@@ -172,10 +173,15 @@ async function useCaseUnits(page, viewport) {
   await page.screenshot({ path: `/opt/cursor/artifacts/editor-units-${viewport.name}.png`, fullPage: true });
   await page.getByRole("button", { name: "Metres" }).click();
   await waitForValue(page.getByLabel("A1 length (m)"), "1.30", "units metres");
+  await waitForValue(page.getByLabel("Light spacing (cm)"), "10", "spacing in metres");
   await page.getByRole("button", { name: "Feet" }).click();
   await waitForValue(page.getByLabel("A1 length (ft)"), "4' 3\"", "units back to feet");
+  await waitForValue(page.getByLabel("Light spacing (in)"), "3.94", "spacing back to inches");
+  // The drag saves itself. 4' 3" is 1.2954 m. The spacing stays 10 cm.
+  await page.waitForTimeout(700);
   const after = (await api("/api/props")).props.find((row) => row.id === prop.id);
-  expect("unsaved unit change leaves stored corners", after.layout.corners[1].x === fourFeet().corners[1].x, after.layout.corners);
+  expect("the snapped corner is saved", Math.abs(after.layout.corners[1].x - 4.25 * foot) < 0.02, after.layout.corners);
+  expect("spacing stays 10 cm", Math.abs(after.layout.pitchM - 0.1) < 1e-6, after.layout.pitchM);
 }
 
 async function useCaseGeometry(page, viewport) {
@@ -223,10 +229,12 @@ async function useCaseGeometry(page, viewport) {
   await page.getByText("Enter a length in metres, greater than zero.").waitFor();
   await waitForValue(page.getByLabel("A1 lights"), "20", "bad length keeps the count");
   // The backtrack shares the run. A second click on it selects the other one.
-  const mid = await screenOf(frame, { x: 1, y: 0 });
-  await drag(page, viewport, mid, mid, 1);
+  const firstAt = await screenOf(frame, { x: 1, y: 0 });
+  await drag(page, viewport, firstAt, firstAt, 1);
   const first = await page.locator("[aria-current='true']").innerText();
-  await drag(page, viewport, mid, mid, 1);
+  // The highlight scrolls into view, so the run is no longer at the first point on a phone.
+  const secondAt = await screenOf(frame, { x: 1, y: 0 });
+  await drag(page, viewport, secondAt, secondAt, 1);
   const second = await page.locator("[aria-current='true']").innerText();
   expect("cycle select", first !== second, { first, second });
   mkdirSync("/opt/cursor/artifacts", { recursive: true });

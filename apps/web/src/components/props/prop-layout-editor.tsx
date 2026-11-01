@@ -521,7 +521,7 @@ export function PropLayoutEditor({
   const gaps = runGaps(drawing);
 
   return (
-    <div className="flex h-dvh max-h-dvh w-full max-w-full flex-col bg-background max-lg:portrait:overflow-y-auto lg:flex-row lg:overflow-hidden max-lg:landscape:flex-row max-lg:landscape:overflow-hidden">
+    <div className="flex h-dvh max-h-dvh w-full max-w-full flex-col bg-background max-lg:portrait:overflow-y-auto max-lg:portrait:pb-4 lg:flex-row lg:overflow-hidden max-lg:landscape:flex-row max-lg:landscape:overflow-hidden">
       <div className="flex w-full min-w-0 flex-col bg-background max-lg:portrait:shrink-0 lg:min-h-0 lg:flex-1 lg:overflow-hidden max-lg:landscape:min-h-0 max-lg:landscape:flex-1 max-lg:landscape:overflow-hidden">
         <header className="flex h-14 shrink-0 items-center gap-1 bg-background px-1">
           <button type="button" className="min-h-11 shrink-0 px-3 text-[16px]" onClick={() => void leave()}>{leaving ? "Saving…" : backLabel}</button>
