@@ -15,7 +15,7 @@ describe("New prop wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByRole("heading", { name: "Which end is the controller end?" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "This end" }));
+    fireEvent.click(screen.getByRole("button", { name: "Left end" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByText("122 lights", { selector: "p" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Name sections" })).toBeTruthy();
@@ -86,6 +86,24 @@ describe("New prop wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: /Roofline/ }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByLabelText("Length (m)")).toHaveProperty("value", "12");
+    window.localStorage.clear();
+  });
+  it("makes a 2 m triangle with exactly 60 lights from a typed count", () => {
+    window.localStorage.setItem("nightplot.propUnit", "m");
+    render(<PropWizard products={[]} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "X" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: /Mini tree/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.change(screen.getByLabelText("Height (m)"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("Base width (m)"), { target: { value: "2" } });
+    fireEvent.click(screen.getByLabelText("Lights along the base too (a triangle)"));
+    fireEvent.change(screen.getByLabelText(/How many lights/), { target: { value: "60" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("heading", { name: "Name the sections" })).toBeTruthy();
+    const counts = screen.getAllByRole("button", { pressed: false }).concat(screen.getAllByRole("button", { pressed: true }))
+      .map((button) => button.textContent ?? "");
+    expect(counts.some((text) => text.includes("Base"))).toBe(true);
     window.localStorage.clear();
   });
 });

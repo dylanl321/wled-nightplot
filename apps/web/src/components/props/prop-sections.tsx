@@ -21,6 +21,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Circle, Group, Line, Text } from "react-konva";
 import { EditorStage, boundsOf as pointBounds, toScreen } from "@/components/canvas";
+import { ColourField } from "@/components/ui/colour-field";
 
 const COLOURS = ["#ffb000", "#3d8bfd", "#ff5a5a", "#3dd68c", "#c084fc", "#38bdf8", "#fb7185", "#fbbf24"];
 
@@ -137,16 +138,10 @@ export function PropSectionsStep({
               className="min-h-11 w-full rounded-md border border-input bg-[#07080a] px-3 text-base text-foreground outline-none focus:border-primary"
             />
           </label>
-          <label className="flex min-h-11 items-center justify-between gap-3 text-[15px]">
-            Colour
-            <input
-              aria-label="Section colour"
-              type="color"
-              value={active.color ?? "#ffb000"}
-              onChange={(event) => patchActive({ color: event.target.value })}
-              className="h-11 w-16 cursor-pointer rounded-md border border-border bg-transparent"
-            />
-          </label>
+          <div className="flex min-h-11 items-center justify-between gap-3 text-[15px]">
+            <span>Colour</span>
+            <ColourField label="Section colour" value={active.color ?? "#ffb000"} onChange={(color) => patchActive({ color })} />
+          </div>
           <p className="text-[17px] font-medium">{lightsHere === 1 ? "1 light" : `${lightsHere} lights`}</p>
         </div>
       ) : (
@@ -180,10 +175,11 @@ export function PropSectionsStep({
         onEdge={toggle}
       />
       <div className="flex flex-col gap-2 lg:col-start-2">
-        {edgeChoices(layout, active).map((edge) => {
+        {edgeChoices(layout, active).map((edge, index) => {
           const on = active?.edgeIds.includes(edge.id) ?? false;
           const raw = labels.get(edge.id) ?? wellHouseEdgeLabel(edge.id) ?? edge.id;
-          const name = shortEdgeName(raw);
+          // "Edge 2, Right side": the edge's own name, so it does not read as a section name.
+          const name = `Edge ${index + 1}, ${raw.charAt(0).toLowerCase()}${raw.slice(1)}`;
           return (
             <button
               key={edge.id}
@@ -240,7 +236,7 @@ export function PropSectionsStep({
               />
             </label>
           ) : null}
-          <p className="text-[13px] leading-5 text-muted-foreground">Type lights by hand when you want a range that stays put. 10-16 includes both ends.</p>
+          <p className="text-[13px] leading-5 text-muted-foreground">Type lights by hand when you want a range that stays put. 10-16 includes both ends. Light numbers start at 0: the light nearest the wire in is light 0, so a 40-light section is 0-39.</p>
           {problem ? <p className="text-[15px] text-destructive">{problem}</p> : null}
           {!problem ? reports.flatMap((row) => row.warnings).filter((warning, index, all) => all.indexOf(warning) === index).map((warning) => (
             <p key={warning} className="text-[15px] text-amber-200">{warning}</p>

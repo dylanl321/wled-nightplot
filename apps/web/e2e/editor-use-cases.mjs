@@ -362,7 +362,7 @@ async function useCase12(page, prop) {
   await page.getByRole("button", { name: "New section" }).click();
   await waitForValue(page.getByLabel("Section name"), `Section ${prop.sections.length + 1}`, "12 new section");
   await page.getByLabel("Section name").fill(name);
-  await page.getByLabel("Section colour").fill("#33cc99");
+  await page.getByLabel("Section colour", { exact: true }).fill("#33cc99");
   // Put run 2 on it with the run button beside the drawing.
   const add = page.getByRole("button", { name: /^Add · / }).last();
   await add.click();
@@ -376,7 +376,7 @@ async function useCase12(page, prop) {
   await hydrated(page.getByRole("button", { name }));
   await page.getByRole("button", { name }).click();
   await waitForValue(page.getByLabel("Section name"), name, "12 reopen name");
-  await waitForValue(page.getByLabel("Section colour"), "#33cc99", "12 reopen colour");
+  await waitForValue(page.getByLabel("Section colour", { exact: true }), "#33cc99", "12 reopen colour");
   saved = (await api("/api/props")).props.find((row) => row.id === prop.id);
   section = saved.sections.find((row) => row.name === name);
   return section;
@@ -388,7 +388,7 @@ async function useCase13(page, prop, section) {
   const more = page.getByRole("button", { name: "More looks" });
   if (await more.count()) await more.click();
   const row = `${prop.label} ${section.name}`;
-  const colour = page.getByLabel(`${row} colour`);
+  const colour = page.getByLabel(`${row} colour`, { exact: true });
   const included = page.getByLabel(`${prop.label} in this Look`, { exact: true });
   if (!(await included.count())) {
     // The first Look is open by default; open it if a reload closed it.
