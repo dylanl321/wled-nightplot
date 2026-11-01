@@ -5,7 +5,7 @@
  * so the string can be put up at the spacing the drawing assumes.
  */
 
-import type { LayoutCorner, LayoutEdge, LayoutUnits, PropLayout, StringLight } from "./layout.ts";
+import { cornerById, edgeLightCount, layoutStrings, type LayoutCorner, type LayoutEdge, type LayoutUnits, type PropLayout } from "./layout.ts";
 
 /** Most turns a spiral can have. 8 ft at 1 in apart is 96. */
 export const SPIRAL_MAX_TURNS = 200;
@@ -160,16 +160,42 @@ export type InstallGuide = {
   turns: GuideTurn[];
 };
 
+/** One drawn light, in string order. `stringLights` on a layout gives these, hand-placed lights included. */
+export type GuideStation = { edgeId: string; index: number; x: number; y: number };
+
+/** Lights spread evenly along each lit run's drawn line, in string order. A hidden run uses up numbers. */
+function evenStations(layout: PropLayout): GuideStation[] {
+  const marks: GuideStation[] = [];
+  for (const string of layoutStrings(layout)) {
+    let index = 0;
+    for (const edge of string.run) {
+      const count = edgeLightCount(layout, edge);
+      if (edge.kind === "hidden") index += count;
+      if (edge.kind !== "lit") continue;
+      const from = cornerById(layout, edge.from);
+      const to = cornerById(layout, edge.to);
+      if (!from || !to) continue;
+      for (let k = 0; k < count; k += 1) {
+        const t = (k + 0.5) / count;
+        marks.push({ edgeId: edge.id, index, x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t });
+        index += 1;
+      }
+    }
+  }
+  return marks;
+}
+
 /**
  * Where lights go, for putting the string up. Works on any drawing: counts
  * every N lights along each string, the first light at each height step
  * (a spiral rises evenly, so this is where to be at 1 ft, 2 ft…), and the
- * light that starts each run.
+ * light that starts each run. Pass `stringLights(layout)` as `lights` to
+ * use hand-placed lights; without it, lights are spread evenly.
  */
 export function installGuide(
   layout: PropLayout,
-  lights: readonly StringLight[],
   options: { everyLights?: number; everyHeightM?: number },
+  lights: readonly GuideStation[] = evenStations(layout),
 ): InstallGuide {
   const counts: GuideLight[] = [];
   const heights: GuideHeight[] = [];
@@ -177,8 +203,7 @@ export function installGuide(
   const edgeString = new Map<string, string>();
   const runName = new Map<string, string | null>();
   const firstRun = new Set<string>();
-  const strings = layout.strings && layout.strings.length > 0 ? layout.strings : [{ id: "s1", startId: layout.run[0]?.from ?? "", run: layout.run }];
-  for (const string of strings) {
+  for (const string of layoutStrings(layout)) {
     const lit = string.run.filter((edge) => edge.kind === "lit");
     if (lit[0]) firstRun.add(lit[0].id);
     for (const edge of string.run) {
@@ -186,7 +211,7 @@ export function installGuide(
       runName.set(edge.id, edge.name ?? null);
     }
   }
-  const byString = new Map<string, StringLight[]>();
+  const byString = new Map<string, GuideStation[]>();
   for (const light of lights) {
     const id = edgeString.get(light.edgeId) ?? "s1";
     const list = byString.get(id) ?? [];

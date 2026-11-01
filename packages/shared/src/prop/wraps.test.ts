@@ -47,7 +47,7 @@ describe("spiral", () => {
 
   it("tapers to a point on a cone tree, with more light low down", () => {
     const layout = layoutFromMeasurements({ units: "ft", pitchM: 0.1, shape: "spiral", params: { height: 6, around: Math.PI * 3, aroundTop: 0, gap: 0.5 } })!;
-    const guide = installGuide(layout, stringLights(layout), { everyHeightM: METRES_PER_FOOT });
+    const guide = installGuide(layout, { everyHeightM: METRES_PER_FOOT });
     expect(guide.heights.map((row) => Math.round(row.heightM / METRES_PER_FOOT))).toEqual([1, 2, 3, 4, 5]);
     const numbers = guide.heights.map((row) => row.number);
     // The first foot of a 3 ft wide tree takes more light than the last.
@@ -130,12 +130,17 @@ describe("zigzag", () => {
 
   it("marks every 20th light and where each pass starts", () => {
     const layout = layoutFromMeasurements({ units: "ft", pitchM: 0.1, shape: "zigzag", params: { width: 4, height: 3, passes: 8 } })!;
-    const guide = installGuide(layout, stringLights(layout), { everyLights: 20 });
+    const guide = installGuide(layout, { everyLights: 20 });
     expect(guide.counts.map((row) => row.number)).toEqual([20, 40, 60]);
     expect(guide.counts[0]!.edgeId).toBe("e3");
     expect(guide.turns.map((row) => [row.runName, row.number])).toEqual([
       ["Pass 2", 10], ["Pass 3", 19], ["Pass 4", 28], ["Pass 5", 37], ["Pass 6", 46], ["Pass 7", 55], ["Pass 8", 64],
     ]);
+    // The even spread matches the drawing's own lights.
+    const placed = installGuide(layout, { everyLights: 20 }, stringLights(layout));
+    const key = (rows: { number: number; edgeId: string; x: number; y: number }[]) => rows.map((row) => [row.number, row.edgeId, Math.round(row.x * 1e6), Math.round(row.y * 1e6)]);
+    expect(key(placed.counts)).toEqual(key(guide.counts));
+    expect(key(placed.turns)).toEqual(key(guide.turns));
   });
 
   it("saves as a prop and checks its measurements", () => {

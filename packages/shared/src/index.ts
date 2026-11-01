@@ -548,6 +548,7 @@ export {
   zigzagLayout,
   type GuideHeight,
   type GuideLight,
+  type GuideStation,
   type GuideTurn,
   type InstallGuide,
   type SpiralInput,
