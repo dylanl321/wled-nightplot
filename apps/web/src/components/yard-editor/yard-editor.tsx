@@ -306,6 +306,21 @@ export function YardEditor(init: YardEditorProps) {
     const props = inProp() ? [draftDrawable()].filter((p): p is DrawProp => Boolean(p)) : yardDrawables();
     const ghost = s.placing && s.ghost ? { prop: drawable(s.placing.id, s.placing.label, s.placing.layout, s.placing.sections ?? [], { x: 0, y: 0 }, () => lit()), x: s.ghost.x, y: s.ghost.y } : null;
     const section = inProp() && s.activeSection ? s.draft?.sections.find((x) => x.id === s.activeSection)?.edgeIds ?? [] : null;
+    const pointBar = inProp() ? placePointBar() : null;
+    const obstacles = pointBar ? [pointBar] : [];
+    if (inProp() && s.band) {
+      const bandView = view();
+      const ax = bandView.sx(s.band.ax), ay = bandView.sy(s.band.ay);
+      const bx = bandView.sx(s.band.bx), by = bandView.sy(s.band.by);
+      const pad = 18;
+      obstacles.push({
+        x: Math.min(ax, bx) - pad,
+        y: Math.min(ay, by) - pad,
+        w: Math.abs(bx - ax) + pad * 2,
+        h: Math.abs(by - ay) + pad * 2,
+      });
+    }
+    const sheetFracNow = !s.phone ? 0 : s.sheet === "full" ? 0.88 : s.sheet === "half" ? 0.58 : 0.34;
     drawScene(ctx, view(), {
       mode: inProp() ? "prop" : "yard",
       units: s.units,
@@ -320,9 +335,15 @@ export function YardEditor(init: YardEditorProps) {
       dots: inProp() ? lightDots() : null,
       badges: inProp() && s.draft?.shape === "draw",
       selectedPoint: inProp() ? s.selPoint : null,
+      obstacles,
+      labelBounds: inProp() ? {
+        top: s.phone ? 64 : 12,
+        bottom: size.current.H * (1 - sheetFracNow) - 8,
+        left: 8,
+        right: size.current.W - 8,
+      } : undefined,
     }, coloursRef.current, size.current.dpr);
     if (s.band && coloursRef.current) drawRubber(ctx, view(), s.band, coloursRef.current);
-    placePointBar();
     // The run panel says whether the dots are showing; zooming changes that without a React render.
     const dotsNow = inProp() && dotsShown();
     if (dotsNow !== s.dotsOn) {
@@ -333,14 +354,14 @@ export function YardEditor(init: YardEditorProps) {
   }, []);
 
   /** Delete point sits off the runs, the captions, and the other points. */
-  function placePointBar() {
+  function placePointBar(): { x: number; y: number; w: number; h: number } | null {
     const el = document.getElementById("ye-pointbar");
-    if (!el) return;
+    if (!el) return null;
     const shape = draftDrawable();
     const corner = shape?.corners.find((c) => c.id === s.selPoint);
     if (!s.selPoint || !s.phone || !shape || !corner) {
       el.hidden = true;
-      return;
+      return null;
     }
     const vw = view();
     const x = vw.sx(corner.x + shape.x);
@@ -413,9 +434,11 @@ export function YardEditor(init: YardEditorProps) {
       }
       if (!best || score > best.score) best = { left, top, score };
     }
+    const box = { x: best?.left ?? 8, y: best?.top ?? 56, w, h };
     el.hidden = false;
-    el.style.left = `${best?.left ?? 8}px`;
-    el.style.top = `${best?.top ?? 56}px`;
+    el.style.left = `${box.x}px`;
+    el.style.top = `${box.y}px`;
+    return box;
   }
 
   /** Whole prop on screen: dots wait for a bigger zoom so a fitted drawing stays readable. */
