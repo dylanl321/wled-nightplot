@@ -190,9 +190,9 @@ export function yardCamera(input: {
     1,
   ) / half * 1.35;
   if (input.view === "overhead") {
-    const dist = Math.max(11, fit * 1.05);
+    const dist = Math.max(18, fit * 1.8);
     return {
-      position: { x: round3(center.x), y: round3(dist), z: round3(center.z - dist * 0.2) },
+      position: { x: round3(center.x), y: round3(dist), z: round3(center.z + dist * 0.12) },
       target: { x: round3(center.x), y: 0, z: round3(center.z) },
     };
   }
@@ -200,8 +200,8 @@ export function yardCamera(input: {
   const lookY = input.view === "street" ? round3(Math.min(Math.max(center.y, 1.2), box.maxY)) : round3(center.y);
   const target = { x: round3(center.x), y: lookY, z: round3(center.z) };
   if (input.view === "street") {
-    // Just off the front, so the eave reads straight and a gable end still shows. Eye stays at 1.6 m.
-    const azimuth = (12 * Math.PI) / 180;
+    // Front-left, so the front eave and the near gable end are both in view. Eye stays at 1.6 m.
+    const azimuth = (40 * Math.PI) / 180;
     const half = (45 * Math.PI) / 180 / 2;
     let dist = Math.max(6, fit);
     let eye = { x: center.x, y: eyeY, z: box.minZ - dist };

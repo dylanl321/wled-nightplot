@@ -272,7 +272,7 @@ try {
       if (!viewport.touch && await canvas.count()) {
         await page.getByRole("button", { name: "Overhead" }).click();
         await page.getByRole("button", { name: "Overhead", pressed: true }).waitFor();
-        await page.waitForTimeout(400);
+        await page.waitForTimeout(700);
         const overheadPath = join(shots, `yard-3d-overhead-${viewport.name}.png`);
         await page.screenshot({ path: overheadPath, fullPage: false });
         written.push(overheadPath);

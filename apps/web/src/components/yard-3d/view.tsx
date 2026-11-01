@@ -4,9 +4,9 @@ import { defaultHouse, dragOnGround, houseTriangles, lookFrame, sceneLightPositi
 import { fetchJson } from "@/lib/api";
 import { CameraControls, Grid, PerformanceMonitor, type CameraControls as CameraControlsImpl } from "@react-three/drei";
 import { EffectComposer, SelectiveBloom } from "@react-three/postprocessing";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, Object3D, Plane, Raycaster, Vector2, Vector3, type InstancedMesh } from "three";
+import { AdditiveBlending, BufferAttribute, BufferGeometry, CanvasTexture, Color, Object3D, Plane, Raycaster, Vector2, Vector3, type InstancedMesh } from "three";
 
 function allowsGlow(): boolean {
   try {
@@ -154,8 +154,8 @@ export function Yard3dCanvas({
           }}
         >
           <color attach="background" args={["#07080a"]} />
-          <ambientLight intensity={0.16} />
-          <directionalLight position={[0, 9, -7]} intensity={1.7} />
+          <ambientLight intensity={0.4} />
+          <directionalLight position={[-4, 10, -6]} intensity={1.05} />
           <PerformanceMonitor
             onDecline={() => { setDpr(1); setGlow(false); }}
             onIncline={() => setDpr(1.25)}
@@ -328,6 +328,8 @@ function LightPoints({
   const halo = useRef<InstancedMesh>(null);
   const dummy = useMemo(() => new Object3D(), []);
   const color = useMemo(() => new Color(), []);
+  const { camera, size } = useThree();
+  const haloMap = useMemo(() => haloTexture(), []);
   const clock = useRef(0);
   const word = useRef<ColourWord>("section");
   const lookRef = useRef(look);
@@ -353,13 +355,20 @@ function LightPoints({
       feed: feedRef.current,
     });
     const glow = halo.current;
+    const fov = "fov" in camera ? camera.fov : 45;
+    const half = Math.tan((fov * Math.PI) / 180 / 2);
     lights.forEach((light, index) => {
       dummy.position.set(light.x, light.y, light.z);
+      dummy.quaternion.identity();
+      dummy.scale.setScalar(bulbScale(dummy.position, camera.position, half, size.height));
       dummy.updateMatrix();
       current.setMatrixAt(index, dummy.matrix);
       lampColor(color, painted.colors[index] ?? light.color);
       current.setColorAt(index, color);
       if (glow) {
+        dummy.quaternion.copy(camera.quaternion);
+        dummy.scale.multiplyScalar(2.6);
+        dummy.updateMatrix();
         glow.setMatrixAt(index, dummy.matrix);
         glow.setColorAt(index, color);
       }
@@ -404,7 +413,7 @@ function LightPoints({
         if (propId) onPick(propId);
       }}
     >
-      <sphereGeometry args={[0.022, 10, 8]} />
+      <sphereGeometry args={[0.0175, 10, 8]} />
       <meshStandardMaterial
         color="#ffffff"
         emissive="#ffffff"
@@ -414,8 +423,8 @@ function LightPoints({
       />
     </instancedMesh>
     <instancedMesh ref={halo} args={[undefined, undefined, lights.length]} raycast={skipRaycast}>
-      <sphereGeometry args={[0.046, 8, 6]} />
-      <meshBasicMaterial transparent opacity={0.22} blending={AdditiveBlending} depthWrite={false} toneMapped={false} />
+      <planeGeometry args={[0.09, 0.09]} />
+      <meshBasicMaterial map={haloMap} transparent depthWrite={false} blending={AdditiveBlending} toneMapped={false} />
     </instancedMesh>
     </group>
   );
@@ -423,6 +432,32 @@ function LightPoints({
 
 function skipRaycast() {
   return undefined;
+}
+
+const BULB_DIAMETER_M = 0.035;
+
+function bulbScale(at: { distanceTo: (other: { x: number; y: number; z: number }) => number }, cameraPosition: { x: number; y: number; z: number }, halfTan: number, viewHeight: number): number {
+  const distance = Math.max(0.4, at.distanceTo(cameraPosition));
+  const metersPerPixel = (2 * distance * halfTan) / Math.max(1, viewHeight);
+  const needed = (4 * metersPerPixel) / BULB_DIAMETER_M;
+  return Math.max(1, needed);
+}
+
+function haloTexture(): CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return new CanvasTexture(canvas);
+  const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gradient.addColorStop(0, "rgba(255,255,255,0.55)");
+  gradient.addColorStop(0.3, "rgba(255,255,255,0.18)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 64, 64);
+  const texture = new CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
 }
 
 function tintEmissive(shader: { fragmentShader: string }) {
@@ -436,10 +471,10 @@ function HouseShape({ house }: { house: YardHouse }) {
   const parts = useMemo(() => houseTriangles(house), [house]);
   return (
     <group>
-      <Solid positions={parts.walls} color="#4a5160" />
-      <Solid positions={parts.roof} color="#a08b78" />
-      {parts.ends.length > 0 ? <Solid positions={parts.ends} color="#6e6258" /> : null}
-      {parts.ridge.length > 0 ? <Solid positions={parts.ridge} color="#d2c3b4" /> : null}
+      <Solid positions={parts.walls} color="#6e5d4c" />
+      {parts.ends.length > 0 ? <Solid positions={parts.ends} color="#6e5d4c" /> : null}
+      <Solid positions={parts.roof} color="#6e5d4c" />
+      {parts.ridge.length > 0 ? <Solid positions={parts.ridge} color="#cbbba8" /> : null}
     </group>
   );
 }
@@ -453,7 +488,7 @@ function Solid({ positions, color }: { positions: Float32Array; color: string })
   }, [positions]);
   return (
     <mesh geometry={geometry}>
-      <meshStandardMaterial color={color} roughness={0.92} metalness={0} />
+      <meshStandardMaterial color={color} roughness={0.78} metalness={0} />
     </mesh>
   );
 }
@@ -545,7 +580,7 @@ function lampColor(into: Color, hex: string): Color {
   if (max < 0.04) return into;
   into.multiplyScalar(1 / max);
   const amber = into.r > 0.85 && into.g > 0.25 && into.g < 0.9 && into.b < 0.2;
-  if (amber) into.set("#ffe0c2");
+  if (amber) into.set("#FFC58A");
   return into;
 }
 

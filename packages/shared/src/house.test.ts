@@ -93,6 +93,11 @@ describe("house", () => {
     expect(backNormal.z).toBeGreaterThan(0);
     expect(faceNormal(mesh.ends, 0).x).toBeLessThan(-0.5);
     expect(faceNormal(mesh.ends, 1).x).toBeGreaterThan(0.5);
+    const leftOver = -3 - Math.min(...eave.map((point) => point.x));
+    const rightOver = Math.max(...eave.map((point) => point.x)) - 3;
+    expect(leftOver).toBeCloseTo(EAVE_OVERHANG_M, 2);
+    expect(rightOver).toBeCloseTo(leftOver, 2);
+    expect(faceNormal(mesh.walls, 0).z).toBeLessThan(-0.5);
   });
 
   it("maps a roofline's metres onto the front eave, end to end", () => {
@@ -131,6 +136,11 @@ describe("house", () => {
     expect(street.position.y).toBe(1.6);
     const frontZ = Math.min(...house.footprint.map((point) => point.z));
     expect(street.position.z).toBeLessThan(frontZ);
+    expect(street.position.x).toBeLessThan(0);
+    const overhead = yardCamera({ view: "overhead", lights, house });
+    const drop = overhead.position.y - overhead.target.y;
+    const run = Math.hypot(overhead.target.x - overhead.position.x, overhead.target.z - overhead.position.z);
+    expect(Math.atan2(drop, run) * 180 / Math.PI).toBeGreaterThanOrEqual(70);
     const half = (45 * Math.PI) / 180 / 2;
     const forward = unit(sub(street.target, street.position));
     for (const sample of houseSamples(house)) {
