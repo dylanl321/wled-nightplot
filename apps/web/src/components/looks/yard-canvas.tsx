@@ -317,7 +317,8 @@ function hitAt(cv: HTMLCanvasElement, clientX: number, clientY: number, view: Ya
   let bd = 22;
   for (const prop of drawn) {
     prop.lights.forEach((light, index) => {
-      const at = depth ? streetProject({ x: light.x, y: light.y, z: light.z }, view, eye.yaw, eye.zoom) : flatPoint(view, light.x, light.y);
+      // Zoom is already baked into the stored view, so the projector zoom stays 1.
+const at = depth ? streetProject({ x: light.x, y: light.y, z: light.z }, view, eye.yaw, 1) : flatPoint(view, light.x, light.y);
       const d = Math.hypot(at.x - px, at.y - py);
       if (d < bd) { bd = d; best = { propId: prop.id, index }; }
     });
