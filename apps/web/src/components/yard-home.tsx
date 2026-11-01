@@ -6,6 +6,7 @@ import {
   propShapeChanged,
   yardSetupSteps,
   type Light,
+  type Look,
   type Prop,
   type PropAttachment,
   type PropKind,
@@ -27,6 +28,7 @@ export function YardHome({
   yardClear,
   looksKnown,
   yardKnown,
+  looks = [],
 }: {
   props: Prop[];
   attachments: PropAttachment[];
@@ -35,6 +37,7 @@ export function YardHome({
   yardClear: boolean;
   looksKnown: boolean;
   yardKnown: boolean;
+  looks?: Look[];
 }) {
   const router = useRouter();
   const unattached = props.filter((prop) => !attachments.some((row) => row.propId === prop.id)).length;
@@ -159,7 +162,7 @@ export function YardHome({
       </div>
       {split ? (
         <div className="order-2 flex min-h-0 min-w-0 flex-col lg:order-none lg:col-start-2 lg:row-start-1 lg:h-full lg:overflow-y-auto lg:p-4">
-          <YardStage props={props} />
+          <YardStage props={props} looks={looks} attachments={attachments} lights={lights} />
         </div>
       ) : null}
     </div>

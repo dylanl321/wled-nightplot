@@ -1,4 +1,4 @@
-import type { Light, LightsPayload, Prop, PropAttachment, YardCheckResult } from "@nightplot/shared";
+import type { Light, LightsPayload, Look, Prop, PropAttachment, YardCheckResult } from "@nightplot/shared";
 import { AppShell } from "@/components/app-shell";
 import { ServerDown } from "@/components/server-down";
 import { YardHome } from "@/components/yard-home";
@@ -7,7 +7,7 @@ import { fetchJson } from "@/lib/api";
 export const dynamic = "force-dynamic";
 
 type PropsPayload = { props: Prop[]; attachments: PropAttachment[] };
-type LooksPayload = { looks: { id: string }[]; schedule: unknown | null };
+type LooksPayload = { looks: Look[]; schedule: unknown | null };
 
 export default async function YardPage() {
   const lightsResult = await Promise.allSettled([fetchJson<LightsPayload>("/api/lights")]);
@@ -45,6 +45,7 @@ export default async function YardPage() {
         yardClear={yardIsClear(yard)}
         looksKnown={looksResult.status === "fulfilled"}
         yardKnown={yardResult.status === "fulfilled"}
+        looks={looks?.looks ?? []}
       />
     </AppShell>
   );
