@@ -150,7 +150,7 @@ export type PropSection = {
   /** Edge ids on any string. Ranges move when those edges' light counts change. */
   edgeIds: string[];
   pinnedRanges: PropIndexRange[];
-  /** Preview colour stored on the prop. Looks do not read this yet. */
+  /** Colour stored on the prop. A Look sends it for this section unless an override names the section, the Prop, or its kind. */
   color?: string;
 };
 

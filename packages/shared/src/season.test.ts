@@ -60,6 +60,21 @@ describe("season file", () => {
     if (again.ok) expect(seasonDigest(again.document)).toBe(seasonDigest(parsed.document));
   });
 
+  it("keeps a Look's section overrides, including a section left out", () => {
+    const looks = defaultLooksDocument();
+    looks.looks[0]!.overrides = [
+      { propId: "prop-door", sectionId: "left", style: { ...looks.looks[0]!.style, color: "#ff00ff", fx: 13 } },
+      { propId: "prop-door", sectionId: "right", off: true, style: looks.looks[0]!.style },
+    ];
+    const parsed = parseSeasonDocument(JSON.parse(JSON.stringify(season({ looks }))));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.document.looks?.looks[0]?.overrides).toEqual([
+      expect.objectContaining({ propId: "prop-door", sectionId: "left", style: expect.objectContaining({ color: "#ff00ff", fx: 13 }) }),
+      expect.objectContaining({ propId: "prop-door", sectionId: "right", off: true }),
+    ]);
+  });
+
   it("migrates a Lights-store shape and does not invent Looks", () => {
     const parsed = parseSeasonDocument({
       version: 1,

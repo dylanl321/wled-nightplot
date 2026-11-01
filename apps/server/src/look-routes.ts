@@ -4,7 +4,9 @@ import {
   buildScheduleWrite,
   lookPushDigest,
   lookPushSummaryFor,
+  lookSectionNotes,
   lookTargets,
+  lookTargetsForLook,
   managedLookSlots,
   managedPresetSlotsMatch,
   mergeWledPresets,
@@ -282,6 +284,16 @@ export async function pushLooksToLight(
   if (targets.length === 0) {
     return row(light, "refused", "This Light has no LEDs to address. Find the strip length first. Nothing was sent.", safety.id);
   }
+  const most = Math.max(...document.looks.map((look) => lookTargetsForLook(look, geometry).length), targets.length);
+  if (typeof snap.maxSegments === "number" && most > snap.maxSegments) {
+    return row(
+      light,
+      "refused",
+      `A Look needs ${most} segments on this Light and this controller holds ${snap.maxSegments}. Merge sections or Segments first. Nothing was sent.`,
+      safety.id,
+    );
+  }
+  const sectionNotes = lookSectionNotes(geometry);
   const managed = buildManagedPresets({
     looks: document.looks,
     playlists: document.playlists,
@@ -309,7 +321,7 @@ export async function pushLooksToLight(
     return row(light, "mismatch", "Uploaded Looks, but presets.json reads back different. Not treating as a match.", safety.id);
   }
 
-  const notes: string[] = [`Reports the ${document.looks.length} Looks as the same preset numbers.`];
+  const notes: string[] = [`Reports the ${document.looks.length} Looks as the same preset numbers.`, ...sectionNotes];
 
   if (input.includeSchedule && document.schedule && input.runSlot !== null) {
     const planned = buildScheduleWrite(document.schedule, input.runSlot);
