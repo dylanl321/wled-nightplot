@@ -4,6 +4,7 @@ import type Konva from "konva";
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { Layer, Line, Stage } from "react-konva";
 import {
+  BACKGROUND_NAME,
   DEFAULT_LIMITS,
   fitCamera,
   gridLines,
@@ -19,9 +20,6 @@ import {
   type Size,
   type ZoomLimits,
 } from "./camera";
-
-/** Give a shape this name to make presses on it pan the stage like empty space. */
-export const BACKGROUND_NAME = "background";
 
 export type StageTap = { world: Point; screen: Point; altKey: boolean; shiftKey: boolean };
 
