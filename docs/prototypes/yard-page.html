@@ -1,0 +1,1075 @@
+<title>Nightplot Yard Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one screen. Top bar, left rail (palette + props), Konva-style yard canvas, right inspector. Phone: canvas + bottom sheet. Tokens follow Nightplot's globals.css. */
+:root {
+  --bg: #f6f4ef; --fg: #252931; --card: #ffffff; --rail: #efede7; --muted: #525963; --quiet: #7a7f87;
+  --border: #cbd0d4; --input: #adb5bc; --secondary: #e8e9eb;
+  --primary: #85552c; --primary-fg: #ffffff; --lit: #c08a4c; --pick: #1f8f80; --danger: #af3333; --ok: #2f7d4a;
+  --grid: rgba(37,41,49,.07); --grid-strong: rgba(37,41,49,.16); --canvas: #fbfaf7;
+  --serif: "Fraunces", Georgia, serif; --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0c0d10; --fg: #ece7dc; --card: #0f1115; --rail: #0a0b0e; --muted: #9a9488; --quiet: #7d7870;
+  --border: #1d2129; --input: #262c37; --secondary: #151820;
+  --primary: #d4a574; --primary-fg: #0c0d10; --lit: #d4a574; --pick: #7ee0d0; --danger: #e07070; --ok: #7ee0a0;
+  --grid: rgba(236,231,220,.05); --grid-strong: rgba(236,231,220,.12); --canvas: #090a0d; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0c0d10; --fg: #ece7dc; --card: #0f1115; --rail: #0a0b0e; --muted: #9a9488; --quiet: #7d7870;
+  --border: #1d2129; --input: #262c37; --secondary: #151820;
+  --primary: #d4a574; --primary-fg: #0c0d10; --lit: #d4a574; --pick: #7ee0d0; --danger: #e07070; --ok: #7ee0a0;
+  --grid: rgba(236,231,220,.05); --grid-strong: rgba(236,231,220,.12); --canvas: #090a0d; color-scheme: dark; }
+
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; overflow: hidden; }
+* { box-sizing: border-box; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--pick); outline-offset: 2px; }
+
+.app { height: 100%; display: grid; grid-template-rows: auto 1fr; }
+.top { display: flex; align-items: center; gap: 18px; min-height: 52px; border-bottom: 1px solid var(--border); background: var(--rail);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.brand { display: flex; align-items: center; gap: 8px; font-family: var(--serif); font-size: 17px; color: var(--primary); white-space: nowrap; }
+.brand i { width: 30px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--lit) 0 20%, transparent 20% 27%, var(--lit) 27% 47%, transparent 47% 54%, var(--lit) 54% 74%, transparent 74% 81%, var(--lit) 81%); }
+.nav { display: flex; gap: 2px; }
+.nav a { padding: 6px 11px; border-radius: 6px; color: var(--muted); text-decoration: none; font-size: 14px; }
+.nav a.on { background: var(--secondary); color: var(--fg); font-weight: 500; }
+.spacer { flex: 1; }
+.lens { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.lens select { min-height: 34px; border: 1px solid var(--input); background: var(--card); border-radius: 6px; padding: 0 8px; }
+.lens.on select { border-color: var(--pick); color: var(--pick); }
+.saved { font-size: 13px; color: var(--muted); white-space: nowrap; min-width: 92px; text-align: right; }
+.saved.busy { color: var(--primary); }
+.iconbtn { min-height: 34px; min-width: 34px; border: 1px solid var(--border); background: transparent; border-radius: 6px; padding: 0 9px; font-size: 13px; }
+.iconbtn:disabled { opacity: .35; cursor: default; }
+.trybtn { border-color: var(--primary); color: var(--primary); }
+
+.main { display: grid; grid-template-columns: 210px minmax(0,1fr) 340px; min-height: 0; }
+.rail { border-right: 1px solid var(--border); background: var(--rail); overflow-y: auto; padding: 14px 12px; display: flex; flex-direction: column; gap: 18px; }
+.rail h2, .insp h2 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--quiet); font-weight: 500; margin: 0 0 8px; }
+.palette { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.shape { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); font-size: 12px; }
+.shape svg { width: 34px; height: 24px; stroke: var(--lit); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.shape.on { border-color: var(--pick); color: var(--pick); }
+.plist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.plist button { width: 100%; display: flex; align-items: center; gap: 8px; text-align: left; min-height: 34px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; }
+.plist button.on { background: var(--secondary); }
+.plist .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--lit); flex: none; }
+.plist .n { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--quiet); }
+.plist .off .dot { background: var(--input); }
+
+.stagewrap { position: relative; min-width: 0; min-height: 0; background: var(--canvas); }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.modechip { position: absolute; left: 12px; top: 12px; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; background: var(--card); border: 1px solid var(--border); font-size: 12px; }
+.modechip b { font-weight: 600; }
+.modechip.path { border-color: var(--pick); }
+.hint { position: absolute; left: 12px; bottom: 12px; max-width: calc(100% - 200px); font-size: 12px; color: var(--muted); background: color-mix(in srgb, var(--canvas) 80%, transparent); padding: 4px 8px; border-radius: 6px; }
+.zoom { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 4px; }
+.zoom button { min-width: 36px; min-height: 36px; border: 1px solid var(--border); background: var(--card); border-radius: 6px; }
+.tools { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); display: flex; gap: 4px; padding: 4px; background: var(--card); border: 1px solid var(--pick); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+.tools button { min-height: 34px; padding: 0 10px; border: 1px solid transparent; background: transparent; border-radius: 6px; font-size: 13px; white-space: nowrap; }
+.tools button[aria-pressed="true"] { background: var(--pick); color: var(--bg); }
+.tools .done { background: var(--primary); color: var(--primary-fg); }
+.tools .sep { width: 1px; background: var(--border); margin: 4px 2px; }
+.coords { position: absolute; pointer-events: none; font-family: var(--mono); font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--pick); color: var(--bg); }
+
+.insp { border-left: 1px solid var(--border); background: var(--bg); overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.insp .title { display: flex; align-items: baseline; gap: 8px; }
+.insp .title h1 { font-family: var(--serif); font-weight: 500; font-size: 22px; margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.insp .sub { color: var(--muted); font-size: 13px; margin: 2px 0 0; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+label.f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); min-width: 0; }
+label.f input, label.f select { min-height: 36px; width: 100%; border: 1px solid var(--input); border-radius: 6px; background: var(--card); padding: 0 8px; font-size: 15px; color: var(--fg); }
+label.f input[type=checkbox] { width: 18px; min-height: 18px; height: 18px; flex: none; accent-color: var(--pick); }
+label.f input.num { font-family: var(--mono); font-size: 14px; }
+label.f input:focus, label.f select:focus { border-color: var(--primary); outline: none; }
+.note { font-size: 12px; color: var(--quiet); line-height: 1.45; margin: 0; }
+.seg { display: inline-flex; border: 1px solid var(--input); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 6px 10px; font-size: 13px; min-height: 32px; }
+.seg button[aria-pressed="true"] { background: var(--secondary); font-weight: 600; }
+.btnrow { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn { min-height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); font-size: 13px; }
+.btn.primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+.btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+.btn.link { border: 0; background: transparent; color: var(--primary); padding: 0 4px; }
+details.fold { border-top: 1px solid var(--border); padding-top: 10px; }
+details.fold > summary { list-style: none; display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 32px; font-weight: 500; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::before { content: "▸"; color: var(--quiet); transition: transform .15s; }
+details.fold[open] > summary::before { transform: rotate(90deg); }
+details.fold > summary .meta { margin-left: auto; font-size: 12px; color: var(--quiet); font-weight: 400; }
+.foldbody { display: flex; flex-direction: column; gap: 10px; padding: 8px 0 4px; }
+.secrow { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
+.secrow.on { border-color: var(--pick); }
+.secrow .sw { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+.secrow .nm { flex: 1; min-width: 0; text-align: left; border: 0; background: transparent; padding: 8px 0; }
+.secrow .rng { font-family: var(--mono); font-size: 11px; color: var(--quiet); }
+.colorf { display: flex; gap: 6px; align-items: center; }
+.colorf input[type=color] { width: 40px; height: 36px; padding: 0; border: 1px solid var(--input); border-radius: 6px; background: transparent; }
+.colorf input.hex { flex: 1; min-width: 0; min-height: 36px; border: 1px solid var(--input); border-radius: 6px; background: var(--card); padding: 0 8px; font-family: var(--mono); }
+.confirm { border: 1px solid var(--danger); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.stat { display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; border-bottom: 1px dashed var(--border); }
+.stat b { font-family: var(--mono); font-weight: 500; }
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.steps li { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.steps .m { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--border); color: var(--quiet); }
+.steps .m.done { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--border)); }
+.steps .m.next { color: var(--primary); border-color: var(--primary); }
+.readback { font-size: 12px; padding: 8px; border-radius: 6px; background: var(--secondary); line-height: 1.45; }
+.proto { font-size: 11px; color: var(--quiet); border: 1px dashed var(--border); border-radius: 6px; padding: 6px 8px; }
+
+.tasks { position: absolute; right: 16px; top: 60px; width: min(360px, calc(100vw - 32px)); max-height: calc(100% - 80px); overflow-y: auto; background: var(--card); border: 1px solid var(--primary); border-radius: 12px; padding: 14px; z-index: 30; box-shadow: 0 14px 40px rgba(0,0,0,.3); }
+.tasks h3 { margin: 0 0 4px; font-family: var(--serif); font-weight: 500; font-size: 18px; }
+.tasks ol { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.tasks li { display: grid; grid-template-columns: 22px 1fr; gap: 6px; font-size: 13px; }
+.tasks li small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; line-height: 1.4; }
+.tasks .tick { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--input); display: grid; place-items: center; font-size: 11px; }
+.tasks .tick.ok { background: var(--ok); border-color: var(--ok); color: var(--bg); }
+
+.phonebar { display: none; }
+.sheethandle { display: none; }
+
+@media (max-width: 860px) {
+  .nav, .lens .lbl, .saved, #redo { display: none; }
+  .top { overflow: hidden; }
+  .lens select { max-width: 132px; }
+  .trybtn { padding: 0 7px; }
+  .trybtn .wide { display: none; }
+  .top { gap: 8px; }
+  .main { grid-template-columns: 1fr; position: relative; }
+  .rail { position: absolute; inset: 0 auto 0 0; width: min(260px, 80vw); z-index: 20; transform: translateX(-102%); transition: transform .2s; box-shadow: 0 0 30px rgba(0,0,0,.3); }
+  .rail.open { transform: none; }
+  .insp { position: absolute; left: 0; right: 0; bottom: 0; z-index: 15; border-left: 0; border-top: 1px solid var(--border); border-radius: 14px 14px 0 0; box-shadow: 0 -10px 30px rgba(0,0,0,.25);
+    max-height: 32%; transition: max-height .2s; padding-top: 6px; padding-bottom: max(16px, env(safe-area-inset-bottom, 0px)); }
+  .insp.half { max-height: 58%; }
+  .insp.full { max-height: 88%; }
+  .sheethandle { display: block; align-self: center; width: 44px; height: 22px; border: 0; background: transparent; flex: none; }
+  .sheethandle::before { content: ""; display: block; width: 40px; height: 4px; border-radius: 2px; background: var(--input); margin: 0 auto; }
+  .phonebar { display: flex; position: absolute; left: 12px; top: 56px; z-index: 12; gap: 6px; }
+  .phonebar button { min-height: 40px; min-width: 40px; border: 1px solid var(--border); background: var(--card); border-radius: 8px; padding: 0 10px; }
+  .modechip { top: 104px; }
+  .hint { display: none; }
+  .zoom { bottom: auto; top: 56px; }
+  .tools { top: 104px; left: 12px; right: 12px; transform: none; overflow-x: auto; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+/* v2: the yard view sees and places; a scoped prop canvas builds and edits one prop. */
+.newbtn { width: 100%; min-height: 40px; border: 1px solid var(--primary); background: var(--primary); color: var(--primary-fg); border-radius: 8px; font-weight: 600; }
+.crumb { display: flex; align-items: center; gap: 8px; font-size: 14px; min-width: 0; }
+.crumb a { color: var(--muted); text-decoration: none; }
+.crumb a:hover { color: var(--fg); }
+.crumb b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dirty { font-size: 12px; color: var(--primary); white-space: nowrap; }
+.app.editing .top { background: color-mix(in srgb, var(--pick) 10%, var(--rail)); }
+.app.editing .stagewrap { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--pick) 55%, transparent); }
+.main.editor { grid-template-columns: minmax(0,1fr) 360px; }
+.main.editor .rail { display: none; }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.tiles .shape.on { border-color: var(--pick); color: var(--pick); background: color-mix(in srgb, var(--pick) 8%, var(--card)); }
+.empty { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.empty div { text-align: center; color: var(--muted); font-size: 14px; max-width: 280px; line-height: 1.5; }
+.empty strong { display: block; font-family: var(--serif); font-weight: 500; font-size: 22px; color: var(--fg); margin-bottom: 6px; }
+.sectionrows { display: flex; flex-direction: column; gap: 4px; }
+.discard { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; padding: 8px 10px; border: 1px solid var(--danger); border-radius: 8px; background: var(--card); }
+.runbox { border: 1px solid var(--pick); border-radius: 10px; padding: 10px; background: color-mix(in srgb, var(--pick) 6%, var(--card)); display: flex; flex-direction: column; gap: 4px; }
+.runbox h2 { color: var(--pick) !important; }
+.stepper { display: grid; grid-template-columns: 44px 1fr 44px; gap: 6px; }
+.stepper button { min-height: 44px; border: 1px solid var(--input); border-radius: 6px; background: var(--card); font-size: 20px; }
+.stepper input { min-height: 44px !important; text-align: center; font-size: 17px !important; }
+@media (max-width: 860px) {
+  .main.editor { grid-template-columns: 1fr; }
+  .app.editing .modechip, .app.editing .hint, .app.editing .zoom { display: none; }
+  .app.editing .tools { top: 8px; left: 8px; right: 8px; justify-content: space-between; }
+  .app.editing .tools button { padding: 0 8px; font-size: 13px; }
+  .insp { max-height: 34%; }
+  .crumb a, .crumb span, .app.editing #dirty, .app.editing #tryBtn, .app.editing #redo { display: none !important; }
+  .crumb b { max-width: 90px; }
+}
+/* v4: walkthrough fixes */
+.coords { white-space: nowrap; }
+.seg { align-self: flex-start; }
+.modechip:empty { display: none; }
+.btn:disabled { opacity: .45; cursor: default; }
+.hrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.hrow h2 { margin: 0 !important; }
+.newbtn.big { min-height: 48px; font-size: 15px; display: none; }
+@media (max-width: 860px) { .newbtn.big { display: block; } }
+.placebar { display: flex; gap: 6px; flex-wrap: wrap; }
+@media (max-width: 860px) {
+  .phonebar, .zoom { top: 8px; }
+  .modechip { top: 92px; left: 12px; right: 12px; justify-content: center; }
+  .insp.half { height: 58%; }
+  .insp.full { height: 88%; }
+  .empty { place-items: start center; padding-top: 22%; }
+  .keys { display: none; }
+}
+</style>
+
+<div class="app" id="app">
+  <header class="top">
+    <span class="brand"><i aria-hidden="true"></i>Nightplot</span>
+    <nav class="nav" id="nav" aria-label="Nightplot">
+      <a href="#" class="on" aria-current="page">Yard</a><a href="#" data-soon>Looks</a><a href="#" data-soon>Lights</a><a href="#" data-soon>Check</a><a href="#" data-soon>More</a>
+    </nav>
+    <div class="crumb" id="crumb" hidden></div>
+    <span class="spacer"></span>
+    <span class="dirty" id="dirty" hidden>Not saved yet</span>
+    <button class="iconbtn" id="undo" title="Undo (Ctrl/⌘+Z)" aria-label="Undo">↶</button>
+    <button class="iconbtn" id="redo" title="Redo (Shift+Ctrl/⌘+Z)" aria-label="Redo">↷</button>
+    <span class="saved" id="saved" role="status">Saved</span>
+    <button class="btn" id="cancelBtn" hidden>Cancel</button>
+    <button class="btn primary" id="saveBtn" hidden>Save</button>
+    <button class="btn primary" id="doneBtn" hidden>Done</button>
+    <button class="iconbtn trybtn" id="tryBtn" aria-expanded="false"><span class="wide">Test </span>Tasks</button>
+  </header>
+  <div class="main" id="main">
+    <aside class="rail" id="rail">
+      <button class="newbtn" data-act="new">+ New prop</button>
+      <section>
+        <h2>Props</h2>
+        <ul class="plist" id="plist"></ul>
+      </section>
+      <section>
+        <h2>Looks</h2>
+        <ul class="plist" id="llist"></ul>
+        <button class="btn" data-act="newlook" style="margin-top:6px;width:100%">+ New Look</button>
+      </section>
+      <p class="proto">Prototype. Everything stays in this page. Nothing is saved to Nightplot or sent to a controller.</p>
+    </aside>
+    <div class="stagewrap" id="stagewrap">
+      <canvas id="cv" aria-label="Drawing" tabindex="0"></canvas>
+      <div class="empty" id="empty" hidden><div><strong>A clean canvas</strong><span id="emptyText">Pick a starting shape in the panel, or choose Draw it and click where the wire comes in.</span></div></div>
+      <div class="phonebar" id="phonebar"><button id="railBtn" aria-label="Props and Looks">☰ Props &amp; Looks</button></div>
+      <div class="modechip" id="modechip"></div>
+      <div class="tools" id="tools" hidden></div>
+      <div class="coords" id="coords" hidden></div>
+      <p class="hint" id="hint"></p>
+      <div class="zoom"><button id="zout" aria-label="Zoom out">−</button><button id="zin" aria-label="Zoom in">+</button><button id="zfit">Fit</button></div>
+      <div class="tasks" id="tasks" hidden></div>
+    </div>
+    <aside class="insp" id="insp" aria-label="Details"></aside>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  // ---------- model ----------
+  const FT = 0.3048;
+  const SHAPES = [
+    { kind: "line", title: "Line", svg: '<path d="M3 16 L31 8"/>' },
+    { kind: "window", title: "Window", svg: '<rect x="6" y="3" width="22" height="18" rx="1"/>' },
+    { kind: "triangle", title: "Triangle", svg: '<path d="M5 21 L17 3 L29 21 Z"/>' },
+    { kind: "tree", title: "Mini tree", svg: '<path d="M7 21 L17 3 L27 21"/><path d="M17 21v-2"/>' },
+    { kind: "arch", title: "Arch", svg: '<path d="M4 21 C4 2, 30 2, 30 21"/>' },
+    { kind: "draw", title: "Draw it", svg: '<path d="M4 19 L12 9 L20 15 L30 5"/><circle cx="4" cy="19" r="1.5"/>' },
+  ];
+  const TITLES = Object.fromEntries(SHAPES.map((s) => [s.kind, s.title]));
+  const DEFAULTS = { line: { length: 4 }, window: { width: 1.5, height: 1.2 }, triangle: { width: 2, height: 2 }, tree: { width: 1, height: 1.5 }, arch: { width: 3, height: 2 }, draw: {} };
+  const PALETTE = ["#e05a4f", "#4fb36a", "#4f8de0", "#e0b84f", "#b36ae0", "#4fd0e0"];
+
+  function template(kind, p) {
+    const C = (pts) => pts.map(([x, y]) => ({ x, y }));
+    switch (kind) {
+      case "line": return { corners: C([[0, 0], [p.length, 0]]), runs: [[0, 1, "Run 1"]] };
+      case "window": return { corners: C([[0, 0], [p.width, 0], [p.width, p.height], [0, p.height]]), runs: [[0, 1, "Bottom"], [1, 2, "Right side"], [2, 3, "Top"], [3, 0, "Left side"]] };
+      case "triangle": return { corners: C([[0, 0], [p.width, 0], [p.width / 2, p.height]]), runs: [[0, 1, "Base"], [1, 2, "Right side"], [2, 0, "Left side"]] };
+      case "tree": return { corners: C([[0, 0], [p.width / 2, p.height], [p.width, 0]]), runs: [[0, 1, "Left side"], [1, 2, "Right side"]] };
+      case "arch": {
+        const n = 8, pts = [];
+        for (let i = 0; i <= n; i++) { const t = Math.PI - (Math.PI * i) / n; pts.push([p.width / 2 + Math.cos(t) * p.width / 2, Math.sin(t) * p.height]); }
+        return { corners: C(pts), runs: pts.slice(1).map((_, i) => [i, i + 1, `Arc ${i + 1}`]) };
+      }
+      default: return { corners: [], runs: [] };
+    }
+  }
+  let uid = 1;
+  const id = (p) => `${p}${uid++}`;
+  function makeProp(kind, name, x, y, params, opts = {}) {
+    const t = template(kind, params || {});
+    return { id: id("p"), name, kind, params: { ...(params || {}) }, drawn: kind === "draw", x, y,
+      corners: t.corners, runs: t.runs.map(([a, b, label]) => ({ id: id("r"), a, b, label, lights: null })),
+      pitch: opts.pitch ?? 0.1, count: opts.count ?? null, sections: opts.sections ?? [], ctrl: opts.ctrl ?? null };
+  }
+
+  const LIGHTS = [
+    { id: "l1", name: "Porch box", outputs: 2 },
+    { id: "l2", name: "Garage box", outputs: 1 },
+    { id: "l3", name: "Tree box", outputs: 2 },
+  ];
+
+  const state = { unit: "m", pitchDefault: 0.1, props: [], looks: [] };
+  (function seed() {
+    const roof = makeProp("line", "Roofline", 0, 4.2, { length: 10 }, { ctrl: { light: "l1", output: 1, after: "" } });
+    const win = makeProp("window", "Front window", 1.6, 1.2, { width: 1.5, height: 1.2 }, { ctrl: { light: "l1", output: 2, after: "" } });
+    win.sections = [{ id: id("s"), name: "Frame top", color: "#e0b84f", runs: [win.runs[2].id] }, { id: id("s"), name: "Frame rest", color: "#d4a574", runs: [win.runs[0].id, win.runs[1].id, win.runs[3].id] }];
+    const t1 = makeProp("tree", "Tree left", 11.2, 0, { width: 1, height: 1.5 });
+    const t2 = makeProp("tree", "Tree right", 12.8, 0, { width: 1, height: 1.5 });
+    const arch = makeProp("arch", "Driveway arch", 5.5, 0, { width: 3, height: 2 });
+    state.props.push(roof, win, t1, t2, arch);
+    const items = {};
+    for (const p of state.props) items[p.id] = { on: true, color: "#ffd9a8", fx: "Solid", sections: {} };
+    state.looks.push({ id: "k1", name: "Warm white", items });
+  })();
+
+  // ---------- derived ----------
+  const runLen = (p, r) => { const a = p.corners[r.a], b = p.corners[r.b]; return Math.hypot(b.x - a.x, b.y - a.y); };
+  function runCounts(p) {
+    const lens = p.runs.map((r) => runLen(p, r));
+    if (p.count == null) return p.runs.map((r, i) => r.lights ?? Math.max(0, Math.round(lens[i] / p.pitch)));
+    const fixed = p.runs.reduce((s, r) => s + (r.lights ?? 0), 0);
+    const free = p.runs.map((r, i) => (r.lights == null ? i : -1)).filter((i) => i >= 0);
+    const total = free.reduce((s, i) => s + lens[i], 0);
+    const left = Math.max(0, p.count - fixed);
+    const out = p.runs.map((r) => r.lights ?? 0);
+    if (!free.length || total === 0) return out;
+    const raw = free.map((i) => (lens[i] / total) * left);
+    const floor = raw.map(Math.floor);
+    let rem = left - floor.reduce((a, b) => a + b, 0);
+    const order = raw.map((v, k) => [v - floor[k], k]).sort((a, b) => b[0] - a[0]);
+    for (const [, k] of order) { if (rem <= 0) break; floor[k]++; rem--; }
+    free.forEach((i, k) => (out[i] = floor[k]));
+    return out;
+  }
+  const propCount = (p) => runCounts(p).reduce((a, b) => a + b, 0);
+  const totalLen = (p) => p.runs.reduce((s, r) => s + runLen(p, r), 0);
+  function bbox(p, ox = p.x, oy = p.y) {
+    if (!p.corners.length) return { minX: ox, minY: oy, maxX: ox + 1, maxY: oy + 1 };
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const c of p.corners) { minX = Math.min(minX, c.x); minY = Math.min(minY, c.y); maxX = Math.max(maxX, c.x); maxY = Math.max(maxY, c.y); }
+    return { minX: minX + ox, minY: minY + oy, maxX: maxX + ox, maxY: maxY + oy };
+  }
+  function sectionRanges(p, s) {
+    const counts = runCounts(p); let start = 0; const out = [];
+    p.runs.forEach((r, i) => { if (s.runs.includes(r.id) && counts[i] > 0) out.push([start + 1, start + counts[i]]); start += counts[i]; });
+    const merged = [];
+    for (const r of out) { const last = merged[merged.length - 1]; if (last && last[1] + 1 === r[0]) last[1] = r[1]; else merged.push([...r]); }
+    return merged;
+  }
+  const rangeText = (rs) => (rs.length ? rs.map(([a, b]) => (a === b ? `${a}` : `${a}–${b}`)).join(", ") : "no lights");
+  const sectionOf = (p, runId) => p.sections.find((s) => s.runs.includes(runId));
+  const shapeName = (p) => (!p.corners.length ? "No shape yet" : p.drawn ? "Drawn" : TITLES[p.kind]);
+
+  // ---------- units ----------
+  const toU = (m) => (state.unit === "ft" ? m / FT : m);
+  const fromU = (v) => (state.unit === "ft" ? v * FT : v);
+  const uLabel = () => (state.unit === "ft" ? "ft" : "m");
+  const fmt = (m, d = 2) => `${(+toU(m).toFixed(d))} ${uLabel()}`;
+  function fmtLen(m) {
+    if (state.unit === "m") return `${m.toFixed(2)} m`;
+    const inches = Math.round(m / 0.0254); return `${Math.floor(inches / 12)}' ${inches % 12}"`;
+  }
+
+  // ---------- ui state ----------
+  // view: "yard" is home (see, place, select, controller). Focused views open one level deep and return to it:
+  // "prop" is a scoped canvas for one prop's shape, lights and sections (Save / Cancel);
+  // "look" is the yard drawn in one Look's colours, where clicking props sets what the Look lights (autosaves, Done).
+  const ui = { view: "yard", lookId: null, sel: null, placing: null, ghost: null,
+    draft: null, draftIsNew: false, draftDirty: false, askDiscard: false, tool: "move", selRun: null, activeSection: null,
+    confirmDelete: false, folds: { controller: false, look: false }, cam: { x: 7, y: 2.2, ppm: 60 }, yardCam: null,
+    tasksOpen: false, sheet: "", blink: false, applied: null, focusName: false, tasksDone: {}, lensSection: null, railOpen: false };
+
+  // ---------- history & save ----------
+  const past = [], future = [], dpast = [], dfuture = [];
+  const yardSnap = () => JSON.stringify({ unit: state.unit, props: state.props, looks: state.looks });
+  const inProp = () => ui.view === "prop";
+  function commit(fn) {
+    if (inProp()) { dpast.push(JSON.stringify(ui.draft)); dfuture.length = 0; fn(); ui.draftDirty = true; render(); return; }
+    past.push(yardSnap()); if (past.length > 200) past.shift(); future.length = 0;
+    fn(); markSaving(); render();
+  }
+  function restoreYard(s) { const o = JSON.parse(s); state.unit = o.unit; state.props = o.props; state.looks = o.looks;
+    if (ui.sel && !state.props.find((p) => p.id === ui.sel)) ui.sel = null; markSaving(); render(); }
+  function undo() {
+    if (inProp()) { if (!dpast.length) return; dfuture.push(JSON.stringify(ui.draft)); ui.draft = JSON.parse(dpast.pop()); ui.draftDirty = true; render(); return; }
+    if (!past.length) return; future.push(yardSnap()); restoreYard(past.pop()); }
+  function redo() {
+    if (inProp()) { if (!dfuture.length) return; dpast.push(JSON.stringify(ui.draft)); ui.draft = JSON.parse(dfuture.pop()); render(); return; }
+    if (!future.length) return; past.push(yardSnap()); restoreYard(future.pop()); }
+  let saveT;
+  function markSaving() { const el = $("saved"); el.textContent = "Saving…"; el.classList.add("busy"); clearTimeout(saveT);
+    saveT = setTimeout(() => { el.textContent = "Saved"; el.classList.remove("busy"); }, 450); }
+
+  // ---------- dom helpers ----------
+  const $ = (i) => document.getElementById(i);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const yardSel = () => state.props.find((p) => p.id === ui.sel) || null;
+  const cur = () => (inProp() ? ui.draft : yardSel());
+  const look = () => (ui.view === "look" ? state.looks.find((k) => k.id === ui.lookId) || null : null);
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const phone = () => window.innerWidth <= 860;
+
+  // ---------- open / save / cancel the prop canvas ----------
+  function openLook(kid, isNew) { ui.sel = null; ui.view = "look"; ui.lookId = kid; ui.lensSection = null; ui.confirmDelete = false; ui.railOpen = false; ui.sheet = "half"; render();
+    if (isNew) setTimeout(() => { const n = $("f-lookname"); if (n) { n.focus(); n.select(); } }); }
+  function openProp(p, isNew) {
+    ui.yardCam = { ...ui.cam }; $("coords").hidden = true;
+    ui.draft = p ? JSON.parse(JSON.stringify(p)) : makeProp("draw", nextName(), 0, 0, {}, { pitch: state.pitchDefault });
+    if (!p) { ui.draft.drawn = false; ui.draft.kind = null; }
+    ui.draftPos = p ? { x: p.x, y: p.y } : null; ui.draft.x = 0; ui.draft.y = 0;
+    ui.draftIsNew = isNew; ui.draftDirty = isNew; ui.askDiscard = false; ui.showTiles = false;
+    dpast.length = 0; dfuture.length = 0;
+    ui.view = "prop"; ui.tool = "move"; ui.selRun = null; ui.activeSection = null; ui.railOpen = false; ui.sheet = isNew ? "half" : "";
+    render(); fitDraft(); if (isNew) ui.focusName = true; render();
+  }
+  function saveProp() {
+    const d = ui.draft; if (!d.name.trim()) d.name = nextName();
+    if (!d.runs.length) { flash("Give the prop a shape before saving."); return; }
+    const wasNew = ui.draftIsNew;
+    ui.view = "yard"; ui.cam = ui.yardCam || ui.cam;
+    if (wasNew) { ui.placing = d; ui.sel = null; ui.sheet = ""; const bb = bbox(d, 0, 0); render(); const v = visibleRect();
+      ui.ghost = { x: snapPos(wx((v.left + v.right) / 2) - (bb.minX + bb.maxX) / 2), y: snapPos(-bb.minY) }; }
+    else { d.x = ui.draftPos.x; d.y = ui.draftPos.y; past.push(yardSnap()); future.length = 0; const i = state.props.findIndex((p) => p.id === d.id); state.props[i] = d; ui.sel = d.id; markSaving(); }
+    ui.draft = null; render();
+  }
+  function cancelProp(force) {
+    if (ui.draftDirty && !force) { ui.askDiscard = true; render(); return; }
+    ui.view = "yard"; ui.cam = ui.yardCam || ui.cam; ui.draft = null; ui.askDiscard = false; render();
+  }
+  function placeAt(x, y) {
+    const d = ui.placing; d.x = x; d.y = y;
+    commit(() => { state.props.push(d); for (const k of state.looks) delete k.items[d.id]; });
+    ui.placing = null; ui.ghost = null; ui.sel = d.id; ui.sheet = "half"; $("coords").hidden = true; render(); fitIfOff(d);
+  }
+  function placeDefault() { let right = 0; for (const p of state.props) right = Math.max(right, bbox(p).maxX); const bb = bbox(ui.placing, 0, 0); placeAt(+(right + 1 - bb.minX).toFixed(2), 0); }
+  let flashT; function flash(t) { const h = $("hint"); h.textContent = t; h.style.color = "var(--danger)"; clearTimeout(flashT); flashT = setTimeout(() => { h.style.color = ""; renderChrome(); }, 2500); }
+
+  // ---------- canvas ----------
+  const cv = $("cv"), ctx = cv.getContext("2d"), wrap = $("stagewrap");
+  let W = 0, H = 0, DPR = 1;
+  function resize() { const r = wrap.getBoundingClientRect(); DPR = window.devicePixelRatio || 1; W = r.width; H = r.height;
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); draw(); }
+  new ResizeObserver(resize).observe(wrap);
+  const sx = (x) => (x - ui.cam.x) * ui.cam.ppm + W / 2;
+  const sy = (y) => H / 2 - (y - ui.cam.y) * ui.cam.ppm;
+  const wx = (px) => (px - W / 2) / ui.cam.ppm + ui.cam.x;
+  const wy = (py) => ui.cam.y - (py - H / 2) / ui.cam.ppm;
+  function gridStep() { const base = inProp() ? (state.unit === "ft" ? FT / 2 : 0.25) : (state.unit === "ft" ? FT : 1); let s = base; while (s * ui.cam.ppm < 18) s *= 2; return s; }
+
+  const labelBoxes = [];
+  function draw() {
+    if (!W) return;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.fillStyle = css("--canvas"); ctx.fillRect(0, 0, W, H);
+    const step = gridStep(), major = step * 4;
+    const x0 = wx(0), x1 = wx(W), y0 = wy(H), y1 = wy(0);
+    ctx.lineWidth = 1;
+    for (const [st, col] of [[step, css("--grid")], [major, css("--grid-strong")]]) {
+      ctx.strokeStyle = col; ctx.beginPath();
+      for (let x = Math.ceil(x0 / st) * st; x <= x1; x += st) { const p = Math.round(sx(x)) + 0.5; ctx.moveTo(p, 0); ctx.lineTo(p, H); }
+      for (let y = Math.ceil(y0 / st) * st; y <= y1; y += st) { const p = Math.round(sy(y)) + 0.5; ctx.moveTo(0, p); ctx.lineTo(W, p); }
+      ctx.stroke();
+    }
+    ctx.font = "11px 'IBM Plex Mono', monospace";
+    if (!inProp()) {
+      ctx.fillStyle = css("--canvas"); ctx.globalAlpha = 0.75; ctx.fillRect(0, sy(0), W, H); ctx.globalAlpha = 1;
+      ctx.strokeStyle = css("--grid-strong"); ctx.setLineDash([6, 5]); ctx.beginPath(); ctx.moveTo(0, sy(0) + 0.5); ctx.lineTo(W, sy(0) + 0.5); ctx.stroke(); ctx.setLineDash([]);
+      const ox = sx(0), oy = sy(0);
+      ctx.strokeStyle = css("--pick"); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(ox, oy, 7, 0, Math.PI * 2); ctx.moveTo(ox - 11, oy); ctx.lineTo(ox + 11, oy); ctx.moveTo(ox, oy - 11); ctx.lineTo(ox, oy + 11); ctx.stroke();
+      ctx.fillStyle = css("--pick"); ctx.fillText("0, 0", ox + 10, oy + 16);
+    }
+    ctx.fillStyle = css("--quiet");
+    for (let x = Math.ceil(x0 / major) * major; x <= x1; x += major) { if (Math.abs(x) < 1e-6 && !inProp()) continue; ctx.fillText(`${+toU(x).toFixed(1)} ${uLabel()}`, sx(x) + 3, Math.min(H - 60, Math.max(phone() ? 90 : 14, sy(0) + (inProp() ? 16 : 34)))); }
+    for (let y = Math.ceil(y0 / major) * major; y <= y1; y += major) { if (Math.abs(y) < 1e-6 || (y < 0 && !inProp())) continue; ctx.fillText(`${+toU(y).toFixed(1)} ${uLabel()}`, 4, sy(y) - 3); }
+
+    labelBoxes.length = 0;
+    if (inProp()) drawProp(ui.draft, 1, null, true);
+    else {
+      const L = look();
+      for (const p of [...state.props].sort((a, b) => (a.id === ui.sel) - (b.id === ui.sel))) drawProp(p, 1, L, false);
+      if (ui.placing && ui.ghost) { const g = ui.placing; const ox = g.x, oy = g.y; g.x = ui.ghost.x; g.y = ui.ghost.y; drawProp(g, 0.6, null, false, true); g.x = ox; g.y = oy; }
+    }
+    const sb = state.unit === "ft" ? FT * (ui.cam.ppm * FT < 12 ? 10 : ui.cam.ppm * FT < 30 ? 5 : 1) : (ui.cam.ppm < 25 ? 5 : ui.cam.ppm > 160 ? 0.5 : 1);
+    {
+      const bx = 14, by = phone() ? 66 : H - 52, len = sb * ui.cam.ppm;
+      ctx.strokeStyle = css("--fg"); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + len, by); ctx.moveTo(bx, by - 4); ctx.lineTo(bx, by + 4); ctx.moveTo(bx + len, by - 4); ctx.lineTo(bx + len, by + 4); ctx.stroke();
+      ctx.fillStyle = css("--fg"); ctx.fillText(`${+toU(sb).toFixed(2)} ${uLabel()} · one square = ${+toU(step).toFixed(2)} ${uLabel()}`, bx + len + 8, by + 4);
+    }
+  }
+
+  function colourFor(p, r, L) {
+    if (L) {
+      const it = L.items[p.id]; if (!it || !it.on) return null;
+      const s = sectionOf(p, r.id);
+      if (s) { const ss = it.sections[s.id]; if (ss && ss.on === false) return null; return (ss && ss.color) || it.color; }
+      return it.color;
+    }
+    const s = sectionOf(p, r.id); return s ? s.color : css("--lit");
+  }
+
+  function drawProp(p, alpha, L, scoped, ghost) {
+    ctx.save(); ctx.globalAlpha = alpha;
+    const counts = runCounts(p);
+    const selected = scoped || p.id === ui.sel;
+    p.runs.forEach((r, i) => {
+      const a = p.corners[r.a], b = p.corners[r.b];
+      const ax = sx(a.x + p.x), ay = sy(a.y + p.y), bx = sx(b.x + p.x), by = sy(b.y + p.y);
+      const col = ghost ? css("--pick") : colourFor(p, r, L);
+      const isSelRun = scoped && ui.selRun === r.id;
+      const inActive = scoped && ui.activeSection && p.sections.find((s) => s.id === ui.activeSection)?.runs.includes(r.id);
+      ctx.strokeStyle = col || css("--input"); ctx.globalAlpha = alpha * (col ? 0.35 : 0.5);
+      ctx.lineWidth = isSelRun ? 6 : scoped ? 4 : 3; if (isSelRun) { ctx.strokeStyle = css("--pick"); ctx.globalAlpha = alpha; }
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      if (inActive) { ctx.globalAlpha = alpha; ctx.strokeStyle = css("--pick"); ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke(); ctx.setLineDash([]); }
+      const n = counts[i]; ctx.globalAlpha = alpha;
+      const rpx = Math.max(1.2, Math.min(scoped ? 4 : 3, ui.cam.ppm * 0.025));
+      const segLen = Math.max(1, Math.hypot(bx - ax, by - ay));
+      const stride = n * rpx * 3 > segLen ? Math.ceil((n * rpx * 3) / segLen) : 1;
+      ctx.fillStyle = col || css("--input");
+      if (col && !ghost) { ctx.shadowColor = col; ctx.shadowBlur = 6; }
+      for (let k = 0; k < n; k += stride) { const t = (k + 0.5) / n; ctx.beginPath(); ctx.arc(ax + (bx - ax) * t, ay + (by - ay) * t, rpx, 0, Math.PI * 2); ctx.fill(); }
+      ctx.shadowBlur = 0;
+      if (scoped) {
+        const mx = (ax + bx) / 2, my = (ay + by) / 2;
+        const t = `${fmtLen(runLen(p, r))} · ${n}${r.lights != null ? "*" : ""}`;
+        const w = ctx.measureText(t).width + 8;
+        // offset the label to the outside of the run, then step it away from labels already placed
+        const nx = -(by - ay) / segLen, ny = (bx - ax) / segLen; let lx = mx - w / 2 + nx * 14, ly = my - 8 + ny * 14;
+        const hit = (q) => lx < q.x + q.w && lx + w > q.x && ly < q.y + 16 && ly + 16 > q.y;
+        for (let g = 0; g < 8 && labelBoxes.some(hit); g++) { lx += nx * 12; ly += ny * 12 + (g % 2 ? 10 : -10); }
+        lx = Math.max(4, Math.min(W - w - 4, lx)); ly = Math.max(phone() ? 84 : 16, Math.min(H - 8, ly));
+        labelBoxes.push({ x: lx, y: ly, w });
+        ctx.fillStyle = css("--card"); ctx.globalAlpha = 0.92; ctx.fillRect(lx, ly - 11, w, 16); ctx.globalAlpha = 1;
+        ctx.fillStyle = isSelRun ? css("--pick") : css("--fg"); ctx.fillText(t, lx + 4, ly + 1);
+      }
+    });
+    if (scoped) {
+      p.corners.forEach((c, i) => { const x = sx(c.x + p.x), y = sy(c.y + p.y);
+        ctx.fillStyle = css("--card"); ctx.strokeStyle = i === 0 ? css("--primary") : css("--pick"); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.rect(x - 5, y - 5, 10, 10); ctx.fill(); ctx.stroke(); });
+      if (p.corners.length) { const c0 = p.corners[0]; ctx.fillStyle = css("--primary"); ctx.font = "11px 'IBM Plex Sans', sans-serif"; { const t = "Wire in · light 1", tw = ctx.measureText(t).width, x = sx(c0.x + p.x), y = sy(c0.y + p.y); ctx.fillText(t, x - tw - 10 > 4 ? x - tw - 10 : x + 10, y + (x - tw - 10 > 4 ? 4 : 30)); } ctx.font = "11px 'IBM Plex Mono', monospace"; }
+      ctx.restore(); return;
+    }
+    const bb = bbox(p);
+    if (selected && !ghost) {
+      ctx.strokeStyle = css("--pick"); ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+      ctx.strokeRect(sx(bb.minX) - 8, sy(bb.maxY) - 8, sx(bb.maxX) - sx(bb.minX) + 16, sy(bb.minY) - sy(bb.maxY) + 16); ctx.setLineDash([]);
+    }
+    ctx.font = "12px 'IBM Plex Sans', sans-serif"; ctx.fillStyle = selected || ghost ? css("--pick") : css("--fg");
+    const label = `${p.name} · ${propCount(p)}`; const lw = ctx.measureText(label).width;
+    const lx = Math.max(4, Math.min(W - lw - 4, (sx(bb.minX) + sx(bb.maxX)) / 2 - lw / 2));
+    const clash = (y) => labelBoxes.some((q) => lx < q.x + q.w + 6 && lx + lw + 6 > q.x && Math.abs(y - q.y) < 14);
+    const tries = [sy(bb.maxY) - 14, sy(bb.minY) + 18, sy(bb.maxY) - 29];
+    let ly = tries.find((y) => !clash(y)); if (ly == null && (selected || ghost)) ly = tries[0];
+    if (ly != null) { labelBoxes.push({ x: lx, y: ly, w: lw }); ctx.fillText(label, lx, ly); }
+    ctx.font = "11px 'IBM Plex Mono', monospace";
+    ctx.restore();
+  }
+
+  // ---------- hit tests ----------
+  function distSeg(px, py, ax, ay, bx, by) { const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy; let t = l ? ((px - ax) * dx + (py - ay) * dy) / l : 0; t = Math.max(0, Math.min(1, t)); return [Math.hypot(px - (ax + dx * t), py - (ay + dy * t)), t]; }
+  function hitRun(p, px, py) { let best = null;
+    for (const r of p.runs) { const a = p.corners[r.a], b = p.corners[r.b]; const [d, t] = distSeg(px, py, sx(a.x + p.x), sy(a.y + p.y), sx(b.x + p.x), sy(b.y + p.y)); if (d < 10 && (!best || d < best.d)) best = { r, d, t }; }
+    return best; }
+  function hitCorner(p, px, py) { for (let i = p.corners.length - 1; i >= 0; i--) { const c = p.corners[i]; if (Math.abs(sx(c.x + p.x) - px) < 9 && Math.abs(sy(c.y + p.y) - py) < 9) return i; } return -1; }
+  function hitProp(px, py) { let best = null;
+    for (const p of state.props) { const bb = bbox(p); const pad = 10;
+      if (px >= sx(bb.minX) - pad && px <= sx(bb.maxX) + pad && py >= sy(bb.maxY) - pad - 18 && py <= sy(bb.minY) + pad) {
+        const area = (bb.maxX - bb.minX + 0.1) * (bb.maxY - bb.minY + 0.1); const run = hitRun(p, px, py);
+        const score = run ? -1 / (1 + run.d) : area; if (!best || score < best.score) best = { p, score }; } }
+    return best ? best.p : null; }
+  const snapV = (v) => { const s = state.unit === "ft" ? 0.0254 : 0.05; return Math.round(v / s) * s; };
+  const snapPos = (v) => { const s = state.unit === "ft" ? FT / 4 : 0.1; return Math.round(v / s) * s; };
+
+  // ---------- pointer ----------
+  let drag = null;
+  // Touch rule: a drag pans, a tap acts, two fingers pinch. Taps are decided on release, so panning never adds a point.
+  const pointers = new Map(); let pinch = null;
+  const TAP_SLOP = 8;
+  cv.addEventListener("pointerdown", (e) => {
+    cv.focus(); cv.setPointerCapture(e.pointerId);
+    const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+    pointers.set(e.pointerId, { px, py });
+    if (pointers.size === 2) {
+      if (drag && drag.kind === "corner" && drag.moved) render();
+      else if (drag && drag.kind === "corner") dpast.pop();
+      else if (drag && drag.kind === "prop" && drag.pushed) { const q = state.props.find((x) => x.id === drag.id); q.x = drag.ox; q.y = drag.oy; past.pop(); }
+      drag = null; const [a, b] = [...pointers.values()];
+      pinch = { d: Math.hypot(a.px - b.px, a.py - b.py), mx: (a.px + b.px) / 2, my: (a.py + b.py) / 2, cam: { ...ui.cam } }; $("coords").hidden = true; return;
+    }
+    if (pointers.size > 2) return;
+    const start = { px, py, moved: false };
+    if (inProp()) { propPointer(px, py, start); return; }
+    if (ui.placing && e.pointerType === "touch") { drag = { kind: "ghost", gx: ui.ghost.x, gy: ui.ghost.y, wx: wx(px), wy: wy(py), ...start }; return; }
+    if (ui.placing) { drag = { kind: "pan", cam: { ...ui.cam }, onTap: () => { const bb = bbox(ui.placing, 0, 0); placeAt(snapPos(wx(px)), snapPos(Math.max(-bb.minY, wy(py)))); }, ...start }; return; }
+    const hit = hitProp(px, py);
+    if (hit) {
+      if (look() && hit.id === ui.sel) { const hr = hitRun(hit, px, py); const s = hr && sectionOf(hit, hr.r.id); ui.lensSection = s ? s.id : null; render(); return; }
+      if (ui.sel !== hit.id) { ui.sel = hit.id; ui.confirmDelete = false; ui.applied = null; ui.lensSection = null; if (!ui.sheet) ui.sheet = "half"; render(); }
+      if (look()) return;
+      drag = { kind: "prop", id: hit.id, ox: hit.x, oy: hit.y, wx: wx(px), wy: wy(py), pushed: false, ...start }; return;
+    }
+    drag = { kind: "pan", cam: { ...ui.cam }, deselect: true, ...start };
+  });
+  function propPointer(px, py, start) {
+    const p = ui.draft;
+    if (!p.corners.length) { drag = { kind: "pan", cam: { ...ui.cam }, onTap: () => { ui.tool = "trace"; commit(() => { p.kind = "draw"; p.drawn = true; p.corners.push({ x: snapV(wx(px)), y: snapV(wy(py)) }); }); }, ...start }; return; }
+    const ci = hitCorner(p, px, py);
+    const hr = hitRun(p, px, py);
+    if (ci >= 0 && ui.tool === "move" && !ui.activeSection) { dpast.push(JSON.stringify(p)); dfuture.length = 0; drag = { kind: "corner", ci, ...start }; return; }
+    let onTap;
+    if (ui.activeSection && hr) onTap = () => toggleRunInSection(p, hr.r.id);
+    else if (hr && ui.tool === "split") onTap = () => commit(() => splitRun(p, hr.r, hr.t));
+    else if (ci >= 0 && ui.tool === "trace") onTap = () => commit(() => traceTo(p, null, ci));
+    else if (hr) onTap = () => { ui.selRun = hr.r.id; ui.activeSection = null; if (phone()) ui.sheet = ""; render(); $("insp").scrollTop = 0; };
+    else if (ui.tool === "trace") onTap = () => commit(() => traceTo(p, { x: snapV(wx(px)), y: snapV(wy(py)) }));
+    else onTap = () => { if (ui.selRun) { ui.selRun = null; render(); } };
+    drag = { kind: "pan", cam: { ...ui.cam }, onTap, ...start };
+  }
+  cv.addEventListener("pointermove", (e) => {
+    const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+    if (!inProp() && ui.placing && e.pointerType === "touch") {
+      if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { px, py });
+      if (pinch && pointers.size >= 2) { const [a, b] = [...pointers.values()]; const d = Math.hypot(a.px - b.px, a.py - b.py), mx = (a.px + b.px) / 2, my = (a.py + b.py) / 2;
+        ui.cam = { ...pinch.cam }; const wx0 = wx(pinch.mx), wy0 = wy(pinch.my); ui.cam.ppm = Math.max(6, Math.min(600, pinch.cam.ppm * d / Math.max(1, pinch.d)));
+        ui.cam.x = wx0 - (mx - W / 2) / ui.cam.ppm; ui.cam.y = wy0 + (my - H / 2) / ui.cam.ppm; draw(); return; }
+      if (!drag || drag.kind !== "ghost") return;
+      if (Math.hypot(px - drag.px, py - drag.py) > TAP_SLOP) drag.moved = true; if (!drag.moved) return;
+      const bb = bbox(ui.placing, 0, 0); ui.ghost = { x: snapPos(drag.gx + wx(px) - drag.wx), y: snapPos(Math.max(-bb.minY, drag.gy + wy(py) - drag.wy)) };
+      showCoords(px, py - 70, `X ${fmt(ui.ghost.x)}  Y ${fmt(ui.ghost.y)}`); draw(); return; }
+    if (!inProp() && ui.placing) { const bb = bbox(ui.placing, 0, 0); ui.ghost = { x: snapPos(wx(px)), y: snapPos(Math.max(-bb.minY, wy(py))) }; showCoords(px, py, `X ${fmt(ui.ghost.x)}  Y ${fmt(ui.ghost.y)}`); draw(); return; }
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { px, py });
+    if (pinch && pointers.size >= 2) { const [a, b] = [...pointers.values()]; const d = Math.hypot(a.px - b.px, a.py - b.py), mx = (a.px + b.px) / 2, my = (a.py + b.py) / 2;
+      ui.cam = { ...pinch.cam }; const wx0 = wx(pinch.mx), wy0 = wy(pinch.my); ui.cam.ppm = Math.max(6, Math.min(600, pinch.cam.ppm * d / Math.max(1, pinch.d)));
+      ui.cam.x = wx0 - (mx - W / 2) / ui.cam.ppm; ui.cam.y = wy0 + (my - H / 2) / ui.cam.ppm; draw(); return; }
+    if (!drag) { cv.style.cursor = cursorAt(px, py); return; }
+    if (Math.hypot(px - drag.px, py - drag.py) > (e.pointerType === "touch" ? TAP_SLOP : 3)) drag.moved = true;
+    if (!drag.moved) return;
+    if (drag.kind === "pan") { ui.cam.x = drag.cam.x - (px - drag.px) / ui.cam.ppm; ui.cam.y = drag.cam.y + (py - drag.py) / ui.cam.ppm; draw(); return; }
+    if (drag.kind === "prop") {
+      const p = state.props.find((q) => q.id === drag.id);
+      if (!drag.pushed) { past.push(yardSnap()); future.length = 0; drag.pushed = true; }
+      p.x = snapPos(drag.ox + wx(px) - drag.wx); p.y = snapPos(drag.oy + wy(py) - drag.wy);
+      showCoords(px, py, `X ${fmt(p.x)}  Y ${fmt(p.y)}`); draw(); syncXY(p); return;
+    }
+    if (drag.kind === "corner") {
+      const p = ui.draft; const c = p.corners[drag.ci]; c.x = snapV(wx(px)); c.y = snapV(wy(py)); p.drawn = true; ui.draftDirty = true;
+      showCoords(px, py, `${fmt(c.x)}, ${fmt(c.y)} from the wire-in`); draw(); return;
+    }
+  });
+  const endPointer = (e) => {
+    pointers.delete(e.pointerId);
+    if (pinch) { if (pointers.size < 2) pinch = null; drag = null; return; }
+    if (!ui.placing) $("coords").hidden = true;
+    if (!drag) return;
+    if (e.type === "pointercancel") { drag = null; return; }
+    if (drag.kind === "ghost") { if (!drag.moved) { const bb = bbox(ui.placing, 0, 0); const r = cv.getBoundingClientRect(); const px = e.clientX - r.left, py = e.clientY - r.top;
+        ui.ghost = { x: snapPos(wx(px) - (bb.minX + bb.maxX) / 2), y: snapPos(Math.max(-bb.minY, wy(py) - (bb.minY + bb.maxY) / 2)) }; draw(); }
+      setTimeout(() => ($("coords").hidden = true), 900); drag = null; return; }
+    if (drag.kind === "pan" && !drag.moved && drag.onTap) drag.onTap();
+    else if (drag.kind === "pan" && !drag.moved && drag.deselect) { ui.sel = null; ui.confirmDelete = false; render(); }
+    else if (drag.kind === "pan" && !drag.moved && drag.deselectRun) { ui.selRun = null; render(); }
+    else if (drag.kind === "prop" && drag.pushed) { markSaving(); render(); }
+    else if (drag.kind === "corner") { if (drag.moved) render(); else { dpast.pop(); if (ui.tool === "move") { /* tap on a corner: nothing */ } } }
+    drag = null;
+  };
+  cv.addEventListener("pointerup", endPointer); cv.addEventListener("pointercancel", endPointer);
+  cv.addEventListener("dblclick", (e) => { if (inProp() || look()) return; const r = cv.getBoundingClientRect(); const hit = hitProp(e.clientX - r.left, e.clientY - r.top); if (hit) openProp(hit, false); });
+  cv.addEventListener("wheel", (e) => { e.preventDefault(); const r = cv.getBoundingClientRect();
+    if (e.ctrlKey || e.metaKey) zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.01));
+    else { ui.cam.x += e.deltaX / ui.cam.ppm; ui.cam.y -= e.deltaY / ui.cam.ppm; draw(); } }, { passive: false });
+  function cursorAt(px, py) {
+    if (inProp()) { const p = ui.draft; if (!p.corners.length) return "crosshair"; if (ui.tool === "move" && hitCorner(p, px, py) >= 0) return "move"; if (hitRun(p, px, py)) return "pointer"; return ui.tool === "trace" ? "crosshair" : "grab"; }
+    const h = hitProp(px, py); return h ? (look() ? "pointer" : "move") : "grab"; }
+  function showCoords(px, py, t) { const c = $("coords"); c.hidden = false; c.textContent = t; c.style.left = `${px + 14}px`; c.style.top = `${py + 14}px`; }
+  function zoomAt(px, py, f) { const bx = wx(px), by = wy(py); ui.cam.ppm = Math.max(6, Math.min(600, ui.cam.ppm * f)); ui.cam.x = bx - (px - W / 2) / ui.cam.ppm; ui.cam.y = by + (py - H / 2) / ui.cam.ppm; draw(); }
+  // On a phone, fit into the part of the canvas the bottom sheet and the toolbar leave visible.
+  function visibleRect() { if (!phone()) return { top: 70, bottom: H - 70, left: 80, right: W - 80 };
+    const frac = ui.sheet === "full" ? 0.88 : ui.sheet === "half" ? 0.58 : Math.min(0.34, ($("insp").scrollHeight + 4) / Math.max(1, H));
+    return { top: 96, bottom: H * (1 - frac) - 34, left: 40, right: W - 40 }; }
+  function fitBox(b, maxPpm, groundDown) { const v = visibleRect(); const pw = v.right - v.left, ph = Math.max(80, v.bottom - v.top);
+    ui.cam.ppm = Math.max(6, Math.min(maxPpm, Math.min(pw / Math.max(0.5, b.maxX - b.minX), ph / Math.max(0.5, b.maxY - b.minY))));
+    const cxs = (v.left + v.right) / 2, cys = (v.top + v.bottom) / 2;
+    ui.cam.x = (b.minX + b.maxX) / 2 - (cxs - W / 2) / ui.cam.ppm; ui.cam.y = (b.minY + b.maxY) / 2 + (cys - H / 2) / ui.cam.ppm;
+    // the yard sits on the ground: when there is spare height, put the ground near the bottom instead of showing empty earth
+    if (groundDown) ui.cam.y = b.minY + (v.bottom - H / 2) / ui.cam.ppm;
+    draw(); }
+  function fitYard() { if (!state.props.length) return; let b = null;
+    for (const p of state.props) { const q = bbox(p); b = b ? { minX: Math.min(b.minX, q.minX), minY: Math.min(b.minY, q.minY, 0), maxX: Math.max(b.maxX, q.maxX), maxY: Math.max(b.maxY, q.maxY) } : { ...q, minY: Math.min(q.minY, 0) }; }
+    fitBox(b, 220, true); }
+  function fitDraft() { const p = ui.draft; if (!p.corners.length) { ui.cam = { x: 1.5, y: 1, ppm: phone() ? 70 : 110 }; draw(); return; } fitBox(bbox(p, 0, 0), 400); }
+
+  // ---------- edits ----------
+  function nextName(kind) { const base = kind ? (TITLES[kind] === "Draw it" ? "Drawing" : TITLES[kind]) : "New prop"; let n = 1; while (state.props.some((p) => p.name === `${base} ${n}`)) n++; return `${base} ${n}`; }
+  function splitRun(p, r, t) { const a = p.corners[r.a], b = p.corners[r.b];
+    p.corners.push({ x: snapV(a.x + (b.x - a.x) * t), y: snapV(a.y + (b.y - a.y) * t) }); const ni = p.corners.length - 1;
+    const i = p.runs.indexOf(r); const r2 = { id: id("r"), a: ni, b: r.b, label: `${r.label} b`, lights: null };
+    r.b = ni; r.lights = null; r.label = `${r.label} a`; p.runs.splice(i + 1, 0, r2);
+    for (const s of p.sections) if (s.runs.includes(r.id)) s.runs.push(r2.id);
+    p.drawn = true; ui.selRun = r2.id; }
+  function traceTo(p, pt, ci) { const end = p.runs.length ? p.runs[p.runs.length - 1].b : 0;
+    let to = ci; if (to == null) { p.corners.push(pt); to = p.corners.length - 1; } if (to === end) return;
+    const r = { id: id("r"), a: end, b: to, label: `Run ${p.runs.length + 1}`, lights: null }; p.runs.push(r); p.drawn = true; ui.selRun = r.id; }
+  // Typing a length moves the run's far end along the run. If that corner is shared with a later run, the later run follows it,
+  // so the shape stays connected (a window side gets longer and the top moves with it).
+  function templateParamFor(p, r) { if (p.drawn) return null; const i = p.runs.indexOf(r);
+    if (p.kind === "line") return "length"; if (p.kind === "window") return i % 2 === 0 ? "width" : "height"; if (p.kind === "triangle" && i === 0) return "width"; return null; }
+  function setRunLength(p, r, m) { const key = templateParamFor(p, r);
+    if (key) { commit(() => { p.params[key] = +m.toFixed(4); regenerate(p); }); return; }
+    commit(() => { const a = p.corners[r.a], b = p.corners[r.b]; const l = runLen(p, r) || 1;
+    b.x = +(a.x + ((b.x - a.x) * m) / l).toFixed(4); b.y = +(a.y + ((b.y - a.y) * m) / l).toFixed(4); r.lights = null; p.drawn = true; }); }
+  function deleteRun(p, rid) { const i = p.runs.findIndex((r) => r.id === rid); if (i < 0) return; p.runs.splice(i, 1);
+    for (const s of p.sections) s.runs = s.runs.filter((x) => x !== rid); p.drawn = true; ui.selRun = null; }
+  function deleteProp(pid) { state.props = state.props.filter((p) => p.id !== pid); for (const k of state.looks) delete k.items[pid]; ui.sel = null; ui.confirmDelete = false; }
+  function duplicate(p) { const q = JSON.parse(JSON.stringify(p)); q.id = id("p"); q.name = `${p.name} copy`; q.x += 0.5; q.ctrl = null;
+    const map = {}; q.runs.forEach((r) => { const n = id("r"); map[r.id] = n; r.id = n; }); q.sections.forEach((s) => { s.id = id("s"); s.runs = s.runs.map((x) => map[x]); });
+    state.props.push(q); ui.sel = q.id; }
+  function regenerate(p) { const t = template(p.kind, p.params); const old = p.runs;
+    p.corners = t.corners; p.runs = t.runs.map(([a, b, label], i) => ({ id: old[i] ? old[i].id : id("r"), a, b, label, lights: null }));
+    const ids = new Set(p.runs.map((r) => r.id)); for (const s of p.sections) s.runs = s.runs.filter((x) => ids.has(x)); p.drawn = false; }
+  function startFrom(p, kind) {
+    if (kind === "draw") { p.kind = "draw"; p.params = {}; p.corners = []; p.runs = []; p.sections = []; p.drawn = true; ui.tool = "trace"; return; }
+    const had = p.corners.length && p.kind && p.kind !== "draw" ? bbox(p, 0, 0) : null;
+    const params = { ...DEFAULTS[kind] };
+    if (had) { const w = +(had.maxX - had.minX).toFixed(2), h = +(had.maxY - had.minY).toFixed(2); if (kind === "line") params.length = Math.max(w, h, 0.5); else { if (w > 0.2) params.width = w; if (h > 0.2) params.height = h; } }
+    if (/^(New prop|Line|Window|Triangle|Mini tree|Arch|Drawing) \d+$/.test(p.name)) { const old = p.name; p.name = "\u0000"; const n = nextName(kind); p.name = n.split(" ")[0] === old.split(" ")[0] ? old : n; }
+    p.kind = kind; p.params = params; p.sections = []; p.runs = []; regenerate(p); ui.tool = "move";
+  }
+  function toggleRunInSection(p, rid) { commit(() => { const s = p.sections.find((x) => x.id === ui.activeSection); if (!s) return;
+    for (const o of p.sections) if (o !== s) o.runs = o.runs.filter((x) => x !== rid);
+    s.runs = s.runs.includes(rid) ? s.runs.filter((x) => x !== rid) : [...s.runs, rid]; s.runs.sort((a, b) => p.runs.findIndex((r) => r.id === a) - p.runs.findIndex((r) => r.id === b)); }); }
+  function lensToggle(p, px, py) { const L = look(); commit(() => {
+      const it = L.items[p.id] || (L.items[p.id] = { on: false, color: "#ffffff", fx: "Solid", sections: {} });
+      const hr = hitRun(p, px, py); const s = hr && sectionOf(p, hr.r.id);
+      if (s && it.on) { const ss = it.sections[s.id] || (it.sections[s.id] = { on: true, color: s.color || it.color }); ss.on = !(ss.on !== false); ui.lensSection = s.id; }
+      else { it.on = !it.on; if (it.on) for (const sec of p.sections) it.sections[sec.id] = it.sections[sec.id] || { on: true, color: sec.color }; }
+      ui.folds.look = true; }); }
+
+  // ---------- keyboard ----------
+  document.addEventListener("keydown", (e) => {
+    const typing = /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "");
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key.toLowerCase() === "z" && !typing) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+    if (mod && e.key.toLowerCase() === "s" && inProp()) { e.preventDefault(); saveProp(); return; }
+    if (typing) { if (e.key === "Escape") document.activeElement.blur(); if (e.key === "Enter" && e.target.matches("label.f input")) e.target.dispatchEvent(new Event("change", { bubbles: true })); return; }
+    if (inProp()) {
+      const p = ui.draft;
+      if (e.key === "Escape") { if (ui.activeSection) { ui.activeSection = null; render(); } else if (ui.selRun) { ui.selRun = null; render(); } else cancelProp(); }
+      else if ((e.key === "Delete" || e.key === "Backspace") && ui.selRun) { e.preventDefault(); commit(() => deleteRun(p, ui.selRun)); }
+      else if (e.key === "t") { ui.tool = "trace"; render(); } else if (e.key === "v") { ui.tool = "move"; render(); } else if (e.key === "a") { ui.tool = "split"; render(); }
+      else if (e.key === "f") fitDraft();
+      return;
+    }
+    const p = yardSel();
+    if (e.key === "Escape") { if (ui.placing) placeDefault(); else if (ui.view === "look" && !ui.sel) { ui.view = "yard"; ui.lookId = null; render(); } else { ui.sel = null; render(); } }
+    else if ((e.key === "Delete" || e.key === "Backspace") && p) { e.preventDefault(); ui.confirmDelete = true; ui.sheet = "half"; render(); }
+    else if (mod && e.key.toLowerCase() === "d" && p) { e.preventDefault(); commit(() => duplicate(p)); }
+    else if (e.key === "Enter" && p && !look()) openProp(p, false);
+    else if (e.key === "n") openProp(null, true);
+    else if (e.key === "f") fitYard();
+    else if (e.key.startsWith("Arrow") && p) { e.preventDefault(); const s = (state.unit === "ft" ? FT / 4 : 0.1) * (e.shiftKey ? 10 : 1);
+      commit(() => { if (e.key === "ArrowLeft") p.x -= s; if (e.key === "ArrowRight") p.x += s; if (e.key === "ArrowUp") p.y += s; if (e.key === "ArrowDown") p.y -= s; p.x = +p.x.toFixed(4); p.y = +p.y.toFixed(4); }); }
+  });
+
+  // ---------- render ----------
+  // A change event fires while focus is moving to the next field. Re-rendering then would replace the field being tapped,
+  // so renders from a change wait until focus has landed, and the new field keeps focus.
+  let deferDepth = 0, pendingRender = false;
+  function render() {
+    if (deferDepth) { pendingRender = true; return; }
+    $("app").classList.toggle("editing", ui.view !== "yard");
+    $("main").classList.toggle("editor", inProp());
+    renderList(); renderLooks(); renderInspector(); renderChrome(); renderTasks();
+    $("undo").disabled = inProp() ? !dpast.length : !past.length; $("redo").disabled = inProp() ? !dfuture.length : !future.length;
+    $("rail").classList.toggle("open", !!ui.railOpen);
+    const insp = $("insp"); insp.classList.toggle("half", ui.sheet === "half"); insp.classList.toggle("full", ui.sheet === "full");
+    draw();
+    if (ui.focusName) { ui.focusName = false; const n = $("f-name"); if (n) { n.focus(); n.select(); } }
+  }
+  function renderChrome() {
+    const ed = inProp();
+    const lv = ui.view === "look";
+    $("nav").hidden = ed || lv; $("crumb").hidden = !(ed || lv); $("saved").hidden = ed;
+    $("saveBtn").hidden = !ed; $("cancelBtn").hidden = !ed; $("doneBtn").hidden = !lv; $("dirty").hidden = !(ed && ui.draftDirty); $("phonebar").hidden = ed;
+    if (ed) $("crumb").innerHTML = `<a href="#" data-act="cancel">Yard</a><span aria-hidden="true">›</span><b>${esc(ui.draft.name || "New prop")}</b>`;
+    if (lv) $("crumb").innerHTML = `<a href="#" data-act="lookdone">Yard</a><span aria-hidden="true">›</span><b>Look: ${esc(look().name)}</b>`;
+    $("saveBtn").textContent = ui.draftIsNew && !phone() ? "Save and place" : "Save";
+    $("empty").hidden = !(ed && !ui.draft.corners.length);
+    $("emptyText").textContent = phone() ? "Pick a shape below. Or pick Draw it, then tap where the wire comes in." : "Pick a starting shape in the panel, or choose Draw it and click where the wire comes in.";
+    $("saveBtn").disabled = ed && !ui.draft.runs.length;
+    let chip, hint;
+    if (ed) { chip = `<b>${ui.draftIsNew ? "New prop" : "Editing"}</b> ${esc(ui.draft.name)}`;
+      hint = !ui.draft.corners.length ? "" : ui.activeSection ? "Click runs to put them in the highlighted section. Esc stops." : ui.tool === "trace" ? "Click empty space to add a run from the last corner. Click a corner to go back over it." : ui.tool === "split" ? "Click a run to add a point on it." : "Drag a corner to reshape. Click a run to set its length or lights. Drag empty space to pan."; }
+    else if (ui.placing) { chip = phone() ? `<b>Place</b> drag the outline, then Place here` : `<b>Place</b> ${esc(ui.placing.name)}`; hint = "Click where it goes in the yard. Esc puts it next to the others."; }
+    else if (look()) { chip = phone() ? "" : `<b>Look</b> ${esc(look().name)}`; hint = "Click a prop to set it in this Look. Click a section of the selected prop to colour it on its own."; }
+    else { chip = ""; hint = "Click a prop to select it. Drag to move it. Double-click to edit it on its own canvas. Scroll pans; Ctrl/⌘ + scroll zooms."; }
+    const mc = $("modechip"); mc.innerHTML = chip; mc.className = `modechip ${ed ? "path" : ""}`; $("hint").textContent = hint;
+    const t = $("tools"); if (!ed || !ui.draft.corners.length) { t.hidden = true; return; } t.hidden = false;
+    const b = (k, l, key) => `<button data-tool="${k}" aria-pressed="${ui.tool === k}" title="${key}">${l}</button>`;
+    t.innerHTML = `${b("move", "Select / move", "V")}${b("trace", "Trace", "T")}${b("split", "Add point", "A")}<span class="sep"></span><button data-act="fitdraft">Fit</button>`;
+  }
+  function renderList() { const L = look();
+    const rows = [...state.props].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    $("plist").innerHTML = rows.map((p) => { const off = L && !(L.items[p.id] && L.items[p.id].on);
+      return `<li class="${off ? "off" : ""}"><button data-pick="${p.id}" class="${p.id === ui.sel ? "on" : ""}"><span class="dot"></span>${esc(p.name)}<span class="n">${propCount(p)}</span></button></li>`; }).join("") || `<li class="note">No props yet.</li>`; }
+  function renderLooks() { $("llist").innerHTML = state.looks.map((k) => { const n = state.props.filter((p) => k.items[p.id] && k.items[p.id].on).length;
+    return `<li><button data-look="${k.id}"><span class="dot" style="background:var(--pick)"></span>${esc(k.name)}<span class="n">${n}/${state.props.length}</span></button></li>`; }).join(""); }
+
+  function num(idf, label, val, attrs = "") { return `<label class="f">${label}<input class="num" id="${idf}" inputmode="decimal" value="${val}" ${attrs}></label>`; }
+  const handle = `<button class="sheethandle" data-act="sheet" aria-label="Resize panel"></button>`;
+  function renderInspector() {
+    const el = $("insp");
+    const a = document.activeElement; const keep = a && el.contains(a) && a.id ? { id: a.id, s: a.selectionStart, e: a.selectionEnd } : null;
+    if (inProp()) el.innerHTML = handle + propPanel(ui.draft);
+    else if (ui.placing) el.innerHTML = handle + `<div><div class="title"><h1>Place ${esc(ui.placing.name)}</h1></div><p class="sub">${shapeName(ui.placing)} · ${propCount(ui.placing)} lights · saved</p></div><p class="note">${phone() ? "Drag the outline to where it hangs, or tap a spot. Pinch to zoom." : "Click the yard where it hangs. The outline follows the pointer."} You can move it or type X and Y any time later.</p><div class="placebar"><button class="btn primary" data-act="placehere">Place here</button><button class="btn" data-act="placedefault">Next to the others</button></div>`;
+    else { const p = yardSel(); const L = look(); el.innerHTML = handle + (L ? (p ? lookPropPanel(p, L) : lookSummary(L)) : p ? yardPropPanel(p) : yardSummary()); }
+    const key = `${ui.view}|${ui.sel}|${!!ui.placing}|${ui.lookId}|${ui.selRun}|${ui.activeSection}`; if (key !== renderInspector.key) { el.scrollTop = 0; renderInspector.key = key; }
+    if (keep) { const n = document.getElementById(keep.id); if (n) { n.focus(); try { if (keep.s != null) n.setSelectionRange(keep.s, keep.e); } catch (_) {} } }
+  }
+
+  // yard panel: name, where it is, and what it does in the yard. The shape itself is edited on the prop canvas.
+  function lookPropPanel(p, L) {
+    const it = L.items[p.id]; const on = !!(it && it.on);
+    const sid = ui.lensSection && p.sections.find((s) => s.id === ui.lensSection) ? ui.lensSection : null;
+    const target = sid ? (it.sections[sid] || { on: true, color: it.color }) : it;
+    const color = (target && target.color) || "#ffffff";
+    const row = "flex-direction:row;align-items:center;gap:8px;color:var(--fg);font-size:14px";
+    const chip = (sidv, label, dot, offTxt) => `<button class="btn" data-lsec="${sidv}" aria-pressed="${(sid || "") === sidv}" style="${(sid || "") === sidv ? "border-color:var(--pick);color:var(--pick)" : ""}"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${dot};border:1px solid var(--input);margin-right:6px"></span>${label}${offTxt}</button>`;
+    return `<div><div class="title"><h1>${esc(p.name)}</h1></div><p class="sub">In “${esc(L.name)}” · ${on ? "on" : "off"}</p></div>
+      <button class="btn ${on ? "" : "primary"}" data-act="looktoggle" style="min-height:44px">${on ? "Switch off in this Look" : "Switch on in this Look"}</button>
+      ${on ? `${p.sections.length ? `<div><h2>Colour for</h2><div class="btnrow">${chip("", "Whole prop", it.color, "")}${p.sections.map((s) => { const ss = it.sections[s.id]; const lit = !ss || ss.on !== false; return chip(s.id, esc(s.name), lit ? (ss && ss.color) || it.color : "transparent", lit ? "" : " (off)"); }).join("")}</div></div>` : ""}
+        <div class="grid2"><label class="f">Colour<span class="colorf"><input type="color" id="f-lcolor" value="${color}"><input class="hex" id="f-lhex" value="${color.toUpperCase()}" maxlength="7" aria-label="Look colour hex"></span></label>
+        <label class="f">Effect<select id="f-lfx">${["Solid", "Twinkle", "Chase", "Breathe", "Candle"].map((f) => `<option ${(it.fx || "Solid") === f ? "selected" : ""}>${f}</option>`).join("")}</select></label></div>
+        ${sid ? `<label class="f" style="${row}"><input type="checkbox" id="f-lsecon" ${target.on !== false ? "checked" : ""}> ${esc(p.sections.find((s) => s.id === sid).name)} lights up</label>` : ""}
+        ${p.sections.length && !sid ? `<p class="note">Pick a section to give it its own colour or switch it off. You can also tap the section on the drawing.</p>` : ""}` : ""}
+      <div class="btnrow"><button class="btn" data-act="unsel">Back to the whole Look</button></div>`;
+  }
+  function yardPropPanel(p) {
+    return `
+      <div><div class="title"><h1>${esc(p.name)}</h1></div><p class="sub">${shapeName(p)} · ${propCount(p)} lights · ${fmtLen(totalLen(p))}</p></div>
+      <label class="f">Name<input id="f-name" value="${esc(p.name)}" maxlength="64"></label>
+      <div class="grid2">${num("f-x", `X from origin (${uLabel()})`, +toU(p.x).toFixed(2))}${num("f-y", `Y above ground (${uLabel()})`, +toU(p.y).toFixed(2))}</div>
+      ${p.sections.length ? `<div><h2>Sections</h2><div class="sectionrows">${p.sections.map((s) => `<div class="secrow"><span class="sw" style="background:${s.color}"></span><span class="nm">${esc(s.name)}</span><span class="rng">${rangeText(sectionRanges(p, s))}</span></div>`).join("")}</div></div>` : ""}
+      <div class="btnrow"><button class="btn primary" data-act="edit">Edit shape</button><button class="btn" data-act="dup">Duplicate</button><button class="btn danger" data-act="askdel">Delete</button></div>
+      ${ui.confirmDelete ? `<div class="confirm" role="alertdialog"><strong>Delete ${esc(p.name)}?</strong><span class="note">It leaves the yard and every Look. Nothing is sent to a controller. Undo brings it back.</span><div class="btnrow"><button class="btn danger" data-act="del">Delete</button><button class="btn" data-act="nodel">Keep it</button></div></div>` : ""}
+      ${controllerFold(p)}`;
+  }
+
+  // prop canvas panel: everything about the prop's own shape, lights and sections
+  function propPanel(p) {
+    const counts = runCounts(p); const r = p.runs.find((x) => x.id === ui.selRun);
+    const tiles = SHAPES.map((s) => `<button class="shape ${p.kind === s.kind && (!p.drawn || s.kind === "draw") && p.corners.length ? "on" : ""}" data-start="${s.kind}"><svg viewBox="0 0 34 24">${s.svg}</svg>${s.title}</button>`).join("");
+    const params = !p.corners.length ? "" : p.drawn ? `<p class="note">${p.kind && p.kind !== "draw" ? `Edited by hand, so the ${TITLES[p.kind]} sizes no longer apply. <button class="btn link" data-start="${p.kind}">Reset to ${TITLES[p.kind]}</button>` : "Drawn by hand. Use Trace to add runs and drag corners to reshape."}</p>`
+      : `<div class="grid2">${Object.keys(p.params).map((k) => num(`f-param-${k}`, `${k[0].toUpperCase() + k.slice(1)} (${uLabel()})`, +toU(p.params[k]).toFixed(2), `data-param="${k}"`)).join("")}</div>`;
+    const s = p.sections.find((x) => x.id === ui.activeSection);
+    const unsectioned = p.runs.filter((x) => !sectionOf(p, x.id));
+    return `
+      ${ui.askDiscard ? `<div class="discard"><span>Leave without saving? Your changes to this prop are lost.</span><button class="btn danger" data-act="discard">Discard</button><button class="btn" data-act="keepediting">Keep editing</button></div>` : ""}
+      ${r ? runEditor(p, r, counts) : ""}
+      ${s ? sectionEditor(p, s) : ""}
+      ${!p.corners.length || ui.showTiles ? `<div><h2>${p.corners.length ? "Change shape" : "Start from"}</h2><div class="tiles">${tiles}</div>
+        ${p.corners.length ? `<p class="note" style="margin-top:6px">Picking another shape replaces this one and clears its sections. <button class="btn link" data-act="hidetiles">Keep ${esc(shapeName(p))}</button></p>` : ""}</div>`
+      : `<div><h2>Shape</h2><div class="secrow"><span class="nm">${esc(shapeName(p))} · ${fmtLen(totalLen(p))}</span><button class="btn link" data-act="showtiles">Change shape</button></div></div>`}
+      ${p.corners.length ? `<div><div class="hrow"><h2>Size</h2><span class="seg" role="group" aria-label="Unit"><button data-unit="ft" aria-pressed="${state.unit === "ft"}">Feet</button><button data-unit="m" aria-pressed="${state.unit === "m"}">Metres</button></span></div>${params}</div>` : ""}
+      ${p.runs.length ? `
+      <div><h2>Lights</h2><div class="grid2">${num("f-count", "How many lights", propCount(p))}${num("f-pitch", `Spacing (${state.unit === "ft" ? "in" : "cm"})`, state.unit === "ft" ? (pitchOf(p) / 0.0254).toFixed(2) : (pitchOf(p) * 100).toFixed(1))}</div>
+        <p class="note">${p.count != null ? `Fixed at ${p.count}, spread over the runs by length.` : "Counted from length and spacing."} Light 1 is at the wire-in.</p></div>
+      <label class="f">Name<input id="f-name" value="${esc(p.name)}" maxlength="64"></label>
+      <div><h2>Sections</h2><div class="sectionrows">
+        ${p.sections.map((x) => `<div class="secrow ${x.id === ui.activeSection ? "on" : ""}"><span class="sw" style="background:${x.color}"></span><button class="nm" data-sec="${x.id}">${esc(x.name)}</button><span class="rng">${rangeText(sectionRanges(p, x))}</span></div>`).join("")}</div>
+        <div class="btnrow" style="margin-top:8px"><button class="btn" data-act="addsec">New section</button></div>
+        ${unsectioned.length && p.sections.length ? `<p class="note" style="margin-top:6px">Not in any section: ${unsectioned.map((x) => esc(x.label)).join(", ")}.</p>` : ""}</div>
+      <div><h2>Runs, from the wire-in · ${phone() ? "tap" : "click"} one to change it</h2>
+        <div class="sectionrows">${p.runs.map((x, i) => `<div class="secrow"><span class="sw" style="background:${sectionOf(p, x.id)?.color || "var(--lit)"}"></span><button class="nm" data-run="${x.id}">${esc(x.label)}</button><span class="rng">${fmtLen(runLen(p, x))} · ${counts[i]}${x.lights != null ? "*" : ""}</span></div>`).join("")}</div></div>` : ""}
+      ${!p.runs.length ? `<label class="f">Name<input id="f-name" value="${esc(p.name)}" maxlength="64"></label>` : ""}
+      <div class="btnrow"><button class="btn primary" data-act="save" ${p.runs.length ? "" : "disabled"}>${ui.draftIsNew ? "Save and place" : "Save"}</button><button class="btn" data-act="cancel">Cancel</button></div>
+      <p class="note keys">Keys: V select, T trace, A add point, Delete removes the selected run, ⌘/Ctrl+S saves, Esc leaves.</p>`;
+  }
+  function runEditor(p, r, counts) {
+    const st = state.unit === "ft" ? "1 in" : "5 cm";
+    return `<div class="runbox"><h2>Selected run · ${esc(r.label)}</h2>
+      <label class="f">Length (${uLabel()})<span class="stepper"><button data-act="rlminus" aria-label="Shorter by ${st}">−</button><input class="num" id="f-rlen" inputmode="decimal" value="${+toU(runLen(p, r)).toFixed(2)}"><button data-act="rlplus" aria-label="Longer by ${st}">+</button></span></label>
+      <div class="grid2" style="margin-top:8px">${num("f-rlights", "Lights on this run", counts[p.runs.indexOf(r)])}<label class="f">&nbsp;<button class="btn danger" data-act="delrun">Delete run</button></label></div>
+      <p class="note">${r.lights != null ? `Lights set by hand. <button class="btn link" data-act="rlreset">Count from length</button>` : "Lights follow the length."} ${templateParamFor(p, r) ? `Changes the ${TITLES[p.kind]}'s ${templateParamFor(p, r)}, so the shape stays square.` : "The run's far end moves along the run."} ± steps ${st}.</p>
+      <div class="btnrow" style="margin-top:6px"><button class="btn" data-act="unselrun">Done with this run</button></div></div>`;
+  }
+  function sectionEditor(p, s) {
+    return `<div class="runbox"><h2>Section · tap runs to add or remove</h2><label class="f">Section name<input id="f-secname" value="${esc(s.name)}"></label>
+      <div class="colorf" style="margin-top:8px"><input type="color" id="f-seccolor" value="${s.color}" aria-label="Section colour"><input class="hex" id="f-sechex" value="${s.color.toUpperCase()}" aria-label="Section colour hex" maxlength="7"></div>
+      <p class="note">${!s.runs.length ? "Empty. Tap runs on the drawing to put them in this section." : `Lights ${rangeText(sectionRanges(p, s))}`}${sectionRanges(p, s).length ? ` (WLED counts from 0: ${sectionRanges(p, s).map(([a, b]) => `${a - 1}–${b - 1}`).join(", ")}).` : ""}</p>
+      <div class="btnrow" style="margin-top:6px"><button class="btn" data-act="secdone">Done with ${esc(s.name)}</button><button class="btn danger" data-act="delsec">Delete section</button></div></div>`;
+  }
+  const pitchOf = (p) => (p.count != null && totalLen(p) > 0 ? totalLen(p) / Math.max(1, p.count) : p.pitch);
+
+  function controllerFold(p) {
+    const c = p.ctrl; const light = c && LIGHTS.find((l) => l.id === c.light);
+    const others = state.props.filter((q) => q.id !== p.id && q.ctrl && c && q.ctrl.light === c.light && q.ctrl.output === c.output);
+    return `<details class="fold" data-fold="controller" ${ui.folds.controller ? "open" : ""}><summary>Controller<span class="meta">${c ? `${esc(light.name)} · output ${c.output}` : "Not attached"}</span></summary><div class="foldbody">
+      <div class="grid2"><label class="f">Controller<select id="f-light"><option value="">Not attached</option>${LIGHTS.map((l) => `<option value="${l.id}" ${c && c.light === l.id ? "selected" : ""}>${esc(l.name)}</option>`).join("")}</select></label>
+      <label class="f">Output<select id="f-output" ${c ? "" : "disabled"}>${c ? Array.from({ length: light.outputs }, (_, i) => `<option ${c.output === i + 1 ? "selected" : ""}>${i + 1}</option>`).join("") : "<option>—</option>"}</select></label></div>
+      ${c ? `<label class="f">Where on this output<select id="f-after"><option value="">From the first light</option>${others.map((q) => `<option value="${q.id}" ${c.after === q.id ? "selected" : ""}>After ${esc(q.name)}</option>`).join("")}</select></label>
+        <div class="readback"><strong>What gets written</strong><br>${p.sections.length ? p.sections.map((s) => `Segment “${esc(p.name)} ${esc(s.name)}”: lights ${rangeText(sectionRanges(p, s))}`).join("<br>") : `Segment “${esc(p.name)}”: lights 1–${propCount(p)}`}</div>
+        <div class="btnrow"><button class="btn" data-act="blink">${ui.blink ? "End blink" : "Blink"}</button><button class="btn primary" data-act="apply">Apply</button></div>
+        ${ui.applied === p.id ? `<div class="readback">Prototype: nothing was sent. In the app, Apply writes with a backup and reads it back, and a mismatch is not called done.</div>` : ""}` : `<p class="note">The prop works without a controller. Attach it when the box is up.</p>`}
+    </div></details>`;
+  }
+  function lookFold(p, L, it) {
+    const on = it && it.on; const sid = ui.lensSection && p.sections.find((s) => s.id === ui.lensSection) ? ui.lensSection : null;
+    const target = sid ? (it.sections[sid] || { on: true, color: it.color }) : it;
+    const color = (target && target.color) || "#ffffff";
+    const row = "flex-direction:row;align-items:center;gap:8px;color:var(--fg);font-size:14px";
+    return `<details class="fold" data-fold="look" ${ui.folds.look ? "open" : ""}><summary>In “${esc(L.name)}”<span class="meta">${on ? "on" : "off"}</span></summary><div class="foldbody">
+      <label class="f" style="${row}"><input type="checkbox" id="f-lookon" ${on ? "checked" : ""}> ${esc(p.name)} is in this Look</label>
+      ${on && p.sections.length ? `<div class="btnrow">${p.sections.map((s) => { const ss = it.sections[s.id]; const lit = !ss || ss.on !== false;
+        return `<button class="btn" data-lsec="${s.id}" style="${sid === s.id ? "border-color:var(--pick)" : ""}"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${lit ? (ss && ss.color) || it.color : "transparent"};border:1px solid var(--input);margin-right:6px"></span>${esc(s.name)}${lit ? "" : " (off)"}</button>`; }).join("")}<button class="btn" data-lsec="" style="${!sid ? "border-color:var(--pick)" : ""}">Whole prop</button></div>` : ""}
+      ${on ? `<div class="grid2"><label class="f">${sid ? esc(p.sections.find((s) => s.id === sid).name) : "Colour"}<span class="colorf"><input type="color" id="f-lcolor" value="${color}"><input class="hex" id="f-lhex" value="${color.toUpperCase()}" maxlength="7" aria-label="Look colour hex"></span></label>
+        <label class="f">Effect<select id="f-lfx">${["Solid", "Twinkle", "Chase", "Breathe", "Candle"].map((f) => `<option ${(it.fx || "Solid") === f ? "selected" : ""}>${f}</option>`).join("")}</select></label></div>
+        ${sid ? `<label class="f" style="${row}"><input type="checkbox" id="f-lsecon" ${target.on !== false ? "checked" : ""}> ${esc(p.sections.find((s) => s.id === sid).name)} lights up</label>` : ""}` : `<p class="note">Props added after a Look was made start off in it.</p>`}
+    </div></details>`;
+  }
+  function yardSummary() {
+    const total = state.props.reduce((s, p) => s + propCount(p), 0); const attached = state.props.filter((p) => p.ctrl).length;
+    const steps = [["Design your props", state.props.length ? "done" : "next"], ["Connect controllers", "done"], ["Attach props", attached === state.props.length ? "done" : "next"], ["Pick looks and schedule", state.looks.length ? "done" : "next"], ["Yard check", "next"]];
+    let seen = false; for (const s of steps) { if (s[1] === "next") { if (seen) s[1] = "not yet"; seen = true; } }
+    return `<button class="newbtn big" data-act="new">+ New prop</button>
+      <div><div class="title"><h1>Your yard</h1></div><p class="sub">${phone() ? "Tap a prop to select it. Drag it to move it. Edit shape opens it on its own canvas." : "Click a prop to select it and drag to move it. Double-click it, or Edit shape, to open it on its own canvas."}</p></div>
+      <div><div class="stat"><span>Props</span><b>${state.props.length}</b></div><div class="stat"><span>Lights</span><b>${total}</b></div><div class="stat"><span>Attached to a controller</span><b>${attached} of ${state.props.length}</b></div></div>
+      <div><h2>Setup</h2><ol class="steps">${steps.map(([t, m]) => `<li><span class="m ${m === "done" ? "done" : m === "next" ? "next" : ""}">${m === "done" ? "Done" : m === "next" ? "Next" : "Not yet"}</span>${t}</li>`).join("")}</ol></div>
+      <div><h2>Yard units</h2><div class="grid2"><label class="f">Lengths<span class="seg" role="group"><button data-unit="ft" aria-pressed="${state.unit === "ft"}">Feet</button><button data-unit="m" aria-pressed="${state.unit === "m"}">Metres</button></span></label>
+        ${num("f-ypitch", `New-prop spacing (${state.unit === "ft" ? "in" : "cm"})`, state.unit === "ft" ? (state.pitchDefault / 0.0254).toFixed(2) : (state.pitchDefault * 100).toFixed(1))}</div><p class="note" style="margin-top:6px">Switching converts every number. Nothing moves.</p></div>
+      <div class="keys"><h2>Keys</h2><p class="note">N new prop · Enter edit the selected prop · Delete · Esc · ⌘/Ctrl+Z undo · ⌘/Ctrl+D duplicate · arrows nudge (Shift ×10) · F fit</p></div>`;
+  }
+  function lookSummary(L) {
+    const on = state.props.filter((p) => L.items[p.id] && L.items[p.id].on);
+    return `<div><div class="title"><h1>${esc(L.name)}</h1></div><p class="sub">Look · ${on.length} of ${state.props.length} props on</p></div>
+      <label class="f">Look name<input id="f-lookname" value="${esc(L.name)}"></label>
+      <p class="note">${phone() ? "Tap" : "Click"} a prop to switch it on, pick its colour, or turn its sections off. Changes save as you go.</p>
+      ${on.length < state.props.length ? `<div class="btnrow"><button class="btn" data-act="lookallon">Switch every prop on</button></div>` : ""}
+      <p class="proto">The playlist, the nightly schedule and Push to Lights stay on the Looks page.</p>
+      <div class="btnrow"><button class="btn primary" data-act="lookdone">Done</button><button class="btn danger" data-act="dellook">Delete Look</button></div>`;
+  }
+
+  // ---------- tasks ----------
+  const TASKS = [
+    ["Triangle X, 2 m × 2 m, 60 lights", "+ New prop → Triangle (it starts at 2 × 2 m) → How many lights 60 → Name X → Save → drag the outline → Place here."],
+    ["Make it an 80-light square", "Select X → Edit shape → Change shape → Window → Width 2, Height 2 → How many lights 80 → Save."],
+    ["Rename it Box, 3 m right of the origin", "Select X → Name Box → X 3, Y 0. Or drag it and watch the readout."],
+    ["Sections Top 1–40, Bottom 41–80", "Select Box → Edit shape → New section → name Top → tap the Bottom and Right side runs → Done → New section → Bottom → tap the other two → Save."],
+    ["Look “Half and half”: Top red, Bottom green", "Props & Looks → + New Look → name it → select Box → Switch on → Top → #FF0000 → Bottom → #00FF00 → Done."],
+    ["Turn Bottom off in that Look", "Props & Looks → Half and half → select Box → Bottom → untick Bottom lights up → Done."],
+    ["Line 4 m, 120 lights, then 100", "+ New prop → Line → Length 4 → How many lights 120 → Save → Place here → Edit shape → How many lights 100 → Save."],
+    ["Delete Line", "Select Line → Delete → confirm. Undo brings it back."],
+  ];
+
+  function renderTasks() { const t = $("tasks"); t.hidden = !ui.tasksOpen; $("tryBtn").setAttribute("aria-expanded", String(ui.tasksOpen)); if (!ui.tasksOpen) return;
+    t.innerHTML = `<h3>Your eight test tasks</h3><p class="note">Same script as the 2026-11-01 test. Try each one before reading its route. Tick it when done.</p><ol>${TASKS.map(([a, b], i) => `<li><button class="tick ${ui.tasksDone[i] ? "ok" : ""}" data-task="${i}" aria-label="Mark task ${i + 1} done">${ui.tasksDone[i] ? "✓" : i + 1}</button><div>${a}<small>${b}</small></div></li>`).join("")}</ol>`; }
+
+  // ---------- events ----------
+  document.addEventListener("click", (e) => {
+    const t = e.target.closest("button, a"); if (!t) return;
+    if (t.matches("[data-soon]")) { e.preventDefault(); return; }
+    if (t.tagName === "A") e.preventDefault();
+    if (t.dataset.look) { openLook(t.dataset.look, false); return; }
+    if (t.dataset.pick) { ui.sel = t.dataset.pick; ui.confirmDelete = false; ui.railOpen = false; ui.lensSection = null; ui.sheet = ui.sheet || "half"; render(); fitIfOff(yardSel()); return; }
+    if (t.dataset.start) { const k = t.dataset.start; ui.showTiles = false; if (phone()) ui.sheet = ""; commit(() => startFrom(ui.draft, k)); fitDraft(); return; }
+    if (t.dataset.tool) { ui.tool = t.dataset.tool; render(); return; }
+    if (t.dataset.unit) { if (inProp()) { state.unit = t.dataset.unit; render(); } else commit(() => (state.unit = t.dataset.unit)); return; }
+    if (t.dataset.sec) { ui.activeSection = ui.activeSection === t.dataset.sec ? null : t.dataset.sec; ui.tool = "move"; ui.selRun = null; render(); return; }
+    if (t.dataset.run) { ui.selRun = t.dataset.run; ui.activeSection = null; if (phone()) ui.sheet = ""; render(); $("insp").scrollTop = 0; return; }
+    if (t.dataset.task) { ui.tasksDone[t.dataset.task] = !ui.tasksDone[t.dataset.task]; render(); return; }
+    if ("lsec" in t.dataset) { ui.lensSection = t.dataset.lsec || null; render(); return; }
+    const p = cur(); const a = t.dataset.act;
+    switch (a) {
+      case "new": openProp(null, true); break;
+      case "edit": openProp(p, false); break;
+      case "save": saveProp(); break;
+      case "cancel": cancelProp(); break;
+      case "discard": cancelProp(true); break;
+      case "keepediting": ui.askDiscard = false; render(); break;
+      case "placedefault": placeDefault(); break;
+      case "looktoggle": { const L = look(); commit(() => { const it = L.items[p.id] || (L.items[p.id] = { on: false, color: "#ffffff", fx: "Solid", sections: {} }); it.on = !it.on; if (it.on) for (const sec of p.sections) it.sections[sec.id] = it.sections[sec.id] || { on: true, color: sec.color }; }); break; }
+      case "lookallon": { const L = look(); commit(() => { for (const q of state.props) { const it = L.items[q.id] || (L.items[q.id] = { on: false, color: "#ffd9a8", fx: "Solid", sections: {} }); it.on = true; } }); break; }
+      case "placehere": placeAt(ui.ghost.x, ui.ghost.y); break;
+      case "fitdraft": fitDraft(); break;
+      case "dup": commit(() => duplicate(p)); break;
+      case "askdel": ui.confirmDelete = true; render(); break;
+      case "nodel": ui.confirmDelete = false; render(); break;
+      case "del": commit(() => deleteProp(p.id)); break;
+      case "addsec": commit(() => { const s = { id: id("s"), name: `Section ${p.sections.length + 1}`, color: PALETTE[p.sections.length % PALETTE.length], runs: [] }; p.sections.push(s); ui.activeSection = s.id; ui.selRun = null; ui.tool = "move"; }); setTimeout(() => { const n = $("f-secname"); if (n) { n.focus(); n.select(); } }); break;
+      case "secdone": ui.activeSection = null; render(); break;
+      case "delsec": commit(() => { p.sections = p.sections.filter((s) => s.id !== ui.activeSection); ui.activeSection = null; }); break;
+      case "delrun": commit(() => deleteRun(p, ui.selRun)); break;
+      case "unsel": ui.sel = null; render(); break;
+      case "unselrun": ui.selRun = null; render(); break;
+      case "rlminus": case "rlplus": { const st = state.unit === "ft" ? 0.0254 : 0.05; const r = p.runs.find((x) => x.id === ui.selRun); setRunLength(p, r, Math.max(st, runLen(p, r) + (a === "rlplus" ? st : -st))); break; }
+      case "showtiles": ui.showTiles = true; render(); break;
+      case "hidetiles": ui.showTiles = false; render(); break;
+      case "rlreset": commit(() => { p.runs.find((r) => r.id === ui.selRun).lights = null; }); break;
+      case "blink": ui.blink = !ui.blink; render(); break;
+      case "apply": ui.applied = p.id; ui.blink = false; render(); break;
+      case "lookdone": ui.view = "yard"; ui.lookId = null; ui.lensSection = null; render(); break;
+      case "newlook": { let k; commit(() => { k = { id: id("k"), name: `Look ${state.looks.length + 1}`, items: {} }; state.looks.push(k); }); openLook(k.id, true); break; }
+      case "dellook": commit(() => { state.looks = state.looks.filter((k) => k.id !== ui.lookId); ui.view = "yard"; ui.lookId = null; }); break;
+      case "sheet": ui.sheet = ui.sheet === "" ? "half" : ui.sheet === "half" ? "full" : ""; render(); if (inProp() && ui.sheet !== "full") fitDraft(); break;
+    }
+    if (t.id === "undo") undo(); if (t.id === "redo") redo();
+    if (t.id === "doneBtn") { ui.view = "yard"; ui.lookId = null; ui.lensSection = null; render(); }
+    if (t.id === "saveBtn") saveProp(); if (t.id === "cancelBtn") cancelProp();
+    if (t.id === "zin") zoomAt(W / 2, H / 2, 1.25); if (t.id === "zout") zoomAt(W / 2, H / 2, 0.8); if (t.id === "zfit") inProp() ? fitDraft() : fitYard();
+    if (t.id === "tryBtn") { ui.tasksOpen = !ui.tasksOpen; render(); }
+    if (t.id === "railBtn") { ui.railOpen = !ui.railOpen; render(); }
+  });
+  document.addEventListener("toggle", (e) => { const d = e.target; if (d.dataset && d.dataset.fold) ui.folds[d.dataset.fold] = d.open; }, true);
+  // keep the selected prop in the part of the canvas the panel leaves visible
+  function fitIfOff(p) { if (!p) return; const bb = bbox(p); const v = visibleRect();
+    if (sx(bb.maxX) < v.left - 30 || sx(bb.minX) > v.right + 30 || sy(bb.minY) < v.top || sy(bb.maxY) > v.bottom + 20) {
+      ui.cam.x = (bb.minX + bb.maxX) / 2 - ((v.left + v.right) / 2 - W / 2) / ui.cam.ppm; ui.cam.y = (bb.minY + bb.maxY) / 2 + ((v.top + v.bottom) / 2 - H / 2) / ui.cam.ppm; draw(); } }
+
+  const parse = (v) => { const n = parseFloat(String(v).replace(",", ".")); return Number.isFinite(n) ? n : null; };
+  const hexOk = (v) => /^#[0-9a-f]{6}$/i.test(v);
+  function syncXY(p) { const x = $("f-x"), y = $("f-y"); if (x && document.activeElement !== x) x.value = +toU(p.x).toFixed(2); if (y && document.activeElement !== y) y.value = +toU(p.y).toFixed(2); }
+
+  let liveT;
+  document.addEventListener("input", (e) => {
+    const t = e.target; const p = cur(); const L = look();
+    if (t.id === "f-name" || t.id === "f-secname" || t.id === "f-lookname") {
+      const v = t.value.trim(); if (!v) return;
+      if (inProp()) { if (t.id === "f-name") p.name = v; else p.sections.find((s) => s.id === ui.activeSection).name = v; ui.draftDirty = true; renderChrome(); draw(); clearTimeout(liveT); liveT = setTimeout(() => renderInspector(), 400); return; }
+      clearTimeout(liveT);
+      liveT = setTimeout(() => commit(() => { if (t.id === "f-name") p.name = v; else L.name = v; }), 300);
+    }
+    if (t.id === "f-seccolor" || t.id === "f-lcolor") { const hex = t.id === "f-seccolor" ? $("f-sechex") : $("f-lhex"); if (hex) hex.value = t.value.toUpperCase(); }
+  });
+  document.addEventListener("change", (e) => { deferDepth++; try { onChange(e); } finally { deferDepth--; if (pendingRender) { pendingRender = false; setTimeout(render, 0); } } });
+  // tapping a number selects it, so typing replaces the value instead of adding to it
+  // (the browser puts the caret where the finger lifted, after focus, so select again on that first click)
+  document.addEventListener("focusin", (e) => { const t = e.target; if (!(t.matches && t.matches("input.num, input.hex"))) return; t.dataset.fresh = "1"; setTimeout(() => { try { t.select(); } catch (_) {} }, 0); });
+  const AUTO_NAME = /^(New prop|Line|Window|Triangle|Mini tree|Arch|Drawing|Section|Look) \d+$/;
+  document.addEventListener("focusin", (e) => { const t = e.target; if (/^f-(name|secname|lookname)$/.test(t.id) && AUTO_NAME.test(t.value)) { t.dataset.fresh = "1"; setTimeout(() => t.select(), 0); } });
+  document.addEventListener("click", (e) => { const t = e.target; if (t.matches && t.matches("input.num, input.hex, #f-name, #f-secname, #f-lookname") && t.dataset.fresh) { delete t.dataset.fresh; t.select(); } });
+  document.addEventListener("keydown", (e) => { const t = e.target; if (t.dataset && t.dataset.fresh) delete t.dataset.fresh; }, true);
+  function onChange(e) {
+    const t = e.target; const p = cur(); const L = look();
+    const v = parse(t.value);
+    if (t.id === "f-x" && v != null) { commit(() => (p.x = fromU(v))); fitIfOff(p); }
+    if (t.id === "f-y" && v != null) { commit(() => (p.y = fromU(v))); fitIfOff(p); }
+    if (t.dataset.param && v != null && v > 0) { commit(() => { p.params[t.dataset.param] = fromU(v); regenerate(p); }); fitDraft(); }
+    if (t.id === "f-count" && v != null && v >= 0) commit(() => { p.count = Math.round(v); p.runs.forEach((r) => (r.lights = null)); });
+    if (t.id === "f-pitch" && v != null && v > 0) commit(() => { p.pitch = state.unit === "ft" ? v * 0.0254 : v / 100; p.count = null; });
+    if (t.id === "f-ypitch" && v != null && v > 0) commit(() => (state.pitchDefault = state.unit === "ft" ? v * 0.0254 : v / 100));
+    if (t.id === "f-rlen" && v != null && v > 0) setRunLength(p, p.runs.find((x) => x.id === ui.selRun), fromU(v));
+    if (t.id === "f-rlights" && v != null && v >= 0) commit(() => { const counts = runCounts(p); if (p.count != null) { p.runs.forEach((r, i) => (r.lights = r.lights ?? counts[i])); p.count = null; } p.runs.find((x) => x.id === ui.selRun).lights = Math.round(v); });
+    if (t.id === "f-seccolor" || (t.id === "f-sechex" && hexOk(t.value))) commit(() => (p.sections.find((s) => s.id === ui.activeSection).color = t.value.toLowerCase()));
+    if (t.id === "f-light") commit(() => { p.ctrl = t.value ? { light: t.value, output: 1, after: "" } : null; ui.applied = null; });
+    if (t.id === "f-output") commit(() => { p.ctrl.output = +t.value; p.ctrl.after = ""; ui.applied = null; });
+    if (t.id === "f-after") commit(() => (p.ctrl.after = t.value));
+    if (L && p) {
+      const it = L.items[p.id] || (L.items[p.id] = { on: false, color: "#ffffff", fx: "Solid", sections: {} });
+      const sid = ui.lensSection && p.sections.find((s) => s.id === ui.lensSection) ? ui.lensSection : null;
+      if (t.id === "f-lookon") commit(() => { it.on = t.checked; if (it.on) for (const s of p.sections) it.sections[s.id] = it.sections[s.id] || { on: true, color: s.color }; });
+      if (t.id === "f-lcolor" || (t.id === "f-lhex" && hexOk(t.value))) commit(() => { const c = t.value.toLowerCase(); if (sid) (it.sections[sid] = it.sections[sid] || { on: true }).color = c; else it.color = c; });
+      if (t.id === "f-lfx") commit(() => (it.fx = t.value));
+      if (t.id === "f-lsecon" && sid) commit(() => ((it.sections[sid] = it.sections[sid] || { on: true, color: it.color }).on = t.checked));
+    }
+  }
+
+  render(); requestAnimationFrame(() => { resize(); fitYard(); });
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+  new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+})();
+</script>

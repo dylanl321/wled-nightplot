@@ -1,18 +1,22 @@
 /**
- * The editor use cases from docs/editor-plan.md, driven in the real app at
- * 1440×900 with a mouse and 390×844 with a finger:
+ * Dylan's eight yard tasks from docs/yard-editor-plan.md, driven on the one
+ * yard page at 1440×900 with a mouse and 390×844 with a finger:
  *
- *   1. pan and zoom the yard, then Fit;
- *   7. drag a corner, Undo puts it back, Redo puts the move back;
- *  10. set a run to 3 m and read round(3 ÷ spacing) on the run list;
- *  12. add a section, name it, colour it, save, reopen;
- *  13. save a Look that uses that section.
+ *   1. New prop → Triangle (2 × 2 m) → 60 lights → name it → Save → place it;
+ *   2. edit it → Change shape → Window → 2 × 2 m → 80 lights → Save;
+ *   3. rename it Box and put it 3 m right of the origin;
+ *   4. sections Top (lights 1–40) and Bottom (41–80);
+ *   5. open a Look from the yard: it lands on the Look editor at /looks/<id>
+ *      (colouring Top and Bottom there is walked by test:looks);
+ *   6. zoom in on Box's bottom, tap the run to add a light, Space evenly
+ *      again keeps all 81, Save;
+ *   7. a 4 m Line with 120 lights, then 100;
+ *   8. delete the Line, reload, it stays gone; Undo is checked before that.
  *
- * Each step uses the visible control (Playwright refuses a control that is
- * covered or off screen) and checks the document, not a screenshot. Nothing
- * here is sent to a controller. Reuses a stack on :43180, or starts one.
+ * Each step uses the visible control and checks what the API stored, not a
+ * screenshot. Nothing here is sent to a controller. Reuses a stack on :43180,
+ * or starts one.
  */
-import { mkdirSync } from "node:fs";
 import { apiOrigin, ensureStack, launch, stopChildren, webOrigin } from "./stack.mjs";
 
 const viewports = [
@@ -32,490 +36,207 @@ async function api(path, init) {
   return body;
 }
 
-/** An L of two lit runs at 10 cm spacing: 2 m along the ground, then 1 m up. */
-function lShape() {
-  const run = [
-    { id: "e1", from: "c1", to: "c2", kind: "lit" },
-    { id: "e2", from: "c2", to: "c3", kind: "lit" },
-  ];
-  return {
-    source: "template",
-    units: "m",
-    pitchM: 0.1,
-    startOffsetM: 0,
-    corners: [{ id: "c1", x: 0, y: 0 }, { id: "c2", x: 2, y: 0 }, { id: "c3", x: 2, y: 1 }],
-    run,
-    strings: [{ id: "s1", startId: "c1", run }],
-  };
-}
-
-async function newProp(label) {
-  const body = await api("/api/props", {
-    method: "POST",
-    body: JSON.stringify({ label, kind: "roofline", unit: "m", pitchMm: 100, layout: lShape() }),
-  });
-  return body.prop;
-}
-
-/** The stage frame's camera, from the data attributes the stage keeps current. */
-async function camera(frame) {
-  return frame.evaluate((node) => ({ ppm: Number(node.dataset.ppm), ox: Number(node.dataset.ox), oy: Number(node.dataset.oy) }));
-}
-
-async function screenOf(frame, world) {
-  const box = await frame.boundingBox();
-  const cam = await camera(frame);
-  return { x: box.x + cam.ox + world.x * cam.ppm, y: box.y + cam.oy - world.y * cam.ppm };
-}
-
-/** A tap with no movement, so it is a click and not a pan. */
-async function tapAt(page, viewport, at) {
-  if (!viewport.touch) {
-    await page.mouse.click(at.x, at.y);
-    return;
-  }
-  const cdp = await page.context().newCDPSession(page);
-  const point = [{ x: at.x, y: at.y, id: 1, radiusX: 4, radiusY: 4, force: 1 }];
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: point });
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  await cdp.detach();
-}
-
-/** One pointer from `from` to `to`: a mouse, or a finger through Chromium's touch input. */
-async function drag(page, viewport, from, to, steps = 12) {
-  if (!viewport.touch) {
-    await page.mouse.move(from.x, from.y);
-    await page.mouse.down();
-    for (let step = 1; step <= steps; step += 1) {
-      await page.mouse.move(from.x + ((to.x - from.x) * step) / steps, from.y + ((to.y - from.y) * step) / steps);
-    }
-    await page.mouse.up();
-    return;
-  }
-  const cdp = await page.context().newCDPSession(page);
-  const point = (x, y) => [{ x, y, id: 1, radiusX: 4, radiusY: 4, force: 1 }];
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: point(from.x, from.y) });
-  for (let step = 1; step <= steps; step += 1) {
-    await cdp.send("Input.dispatchTouchEvent", {
-      type: "touchMove",
-      touchPoints: point(from.x + ((to.x - from.x) * step) / steps, from.y + ((to.y - from.y) * step) / steps),
-    });
-  }
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  await cdp.detach();
-}
-
-/** Two fingers moving apart about `centre`. */
-async function pinchOut(page, centre, from = 30, to = 110, steps = 10) {
-  const cdp = await page.context().newCDPSession(page);
-  const points = (gap) => [
-    { x: centre.x - gap, y: centre.y, id: 1, radiusX: 4, radiusY: 4, force: 1 },
-    { x: centre.x + gap, y: centre.y, id: 2, radiusX: 4, radiusY: 4, force: 1 },
-  ];
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: points(from) });
-  for (let step = 1; step <= steps; step += 1) {
-    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: points(from + ((to - from) * step) / steps) });
-  }
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  await cdp.detach();
-}
-
-/**
- * Wait until React owns this node. A control typed into before hydration
- * keeps the typed value but never tells React, so the edit is lost.
- */
-async function hydrated(locator) {
-  await locator.first().waitFor({ timeout: 20000 });
-  await locator.first().page().waitForFunction(
-    (node) => Object.keys(node).some((key) => key.startsWith("__reactProps")),
-    await locator.first().elementHandle(),
-    { timeout: 20000 },
-  );
-}
-
 function expect(label, ok, detail) {
   if (!ok) throw new Error(`${label}: ${typeof detail === "string" ? detail : JSON.stringify(detail)}`);
 }
 
-async function waitForValue(locator, value, label) {
-  try {
-    await locator.page().waitForFunction(([node, want]) => node.value === want, [await locator.elementHandle(), value], { timeout: 5000 });
-  } catch {
-    throw new Error(`${label}: wanted ${value}, read ${await locator.inputValue().catch(() => "nothing")}`);
+async function propNamed(label) {
+  const { props } = await api("/api/props");
+  return props.find((row) => row.label === label) ?? null;
+}
+
+/** Count the lights a stored layout carries, from the API's own counting. */
+function lightsOf(prop) {
+  return prop?.design?.ledCount ?? null;
+}
+
+async function waitUntil(label, check, ms = 6000) {
+  const deadline = Date.now() + ms;
+  let last;
+  while (Date.now() < deadline) {
+    last = await check();
+    if (last === true) return;
+    await new Promise((resolve) => setTimeout(resolve, 150));
   }
+  throw new Error(`${label}: ${JSON.stringify(last)}`);
 }
 
-/** A 4 ft run. Stored corners stay in metres. */
-function fourFeet() {
-  const foot = 0.3048;
-  const run = [{ id: "e1", from: "c1", to: "c2", kind: "lit" }];
-  return {
-    source: "trace",
-    units: "ft",
-    pitchM: 0.1,
-    startOffsetM: 0,
-    corners: [{ id: "c1", x: 0, y: 0 }, { id: "c2", x: 4 * foot, y: 0 }],
-    run,
-    strings: [{ id: "s1", startId: "c1", run }],
-  };
+/** Wait until React owns the page; a control typed into before hydration loses the edit. */
+async function hydrated(page) {
+  await page.locator("[data-testid=yard-editor]").waitFor({ timeout: 20000 });
+  await page.waitForFunction(() => {
+    const node = document.querySelector("[data-testid=yard-editor] canvas");
+    return Boolean(node && Object.keys(node).some((key) => key.startsWith("__reactProps")));
+  }, null, { timeout: 20000 });
+  await page.waitForTimeout(200);
 }
 
-async function useCaseUnits(page, viewport) {
-  const created = await api("/api/props", {
-    method: "POST",
-    body: JSON.stringify({ label: `Wall ${viewport.name} ${run}`, kind: "roofline", unit: "ft", pitchMm: 100, layout: fourFeet() }),
-  });
-  const prop = created.prop;
-  const stored = (await api("/api/props")).props.find((row) => row.id === prop.id);
-  expect("saved prop loads", stored && stored.layout.corners[1].x === fourFeet().corners[1].x && stored.layout.units === "ft", stored?.layout);
-  await page.goto(`${webOrigin}/props/${prop.id}/edit`, { waitUntil: "domcontentloaded" });
-  const frame = page.getByTestId("layout-canvas");
-  await frame.locator("canvas").first().waitFor({ timeout: 20000 });
-  const length = page.getByLabel("A1 length (ft)");
-  await hydrated(length);
-  await waitForValue(length, "4'", "units start");
-  expect("scale", (await page.getByTestId("grid-scale").innerText()) === "1 square = 1 ft", await page.getByTestId("grid-scale").innerText());
-  // 10 cm stays centimetres on a feet prop. The field shows 10, and the stored pitch stays 0.1 m.
-  await waitForValue(page.getByLabel("Light spacing (cm)"), "10", "spacing");
-  const foot = 0.3048;
-  const from = await screenOf(frame, { x: 4 * foot, y: 0 });
-  const to = await screenOf(frame, { x: 1.3, y: 0.04 });
-  await drag(page, viewport, from, to, 16);
-  await waitForValue(length, "4' 3\"", "units snap");
-  mkdirSync("/opt/cursor/artifacts", { recursive: true });
-  await page.screenshot({ path: `/opt/cursor/artifacts/editor-units-${viewport.name}.png`, fullPage: true });
-  await page.getByRole("button", { name: "Metres" }).click();
-  await waitForValue(page.getByLabel("A1 length (m)"), "1.30", "units metres");
-  await waitForValue(page.getByLabel("Light spacing (cm)"), "10", "spacing in metres");
-  await page.getByRole("button", { name: "Feet" }).click();
-  await waitForValue(page.getByLabel("A1 length (ft)"), "4' 3\"", "units back to feet");
-  await waitForValue(page.getByLabel("Light spacing (cm)"), "10", "spacing stays centimetres");
-  // The drag saves itself. 4' 3" is 1.2954 m. The spacing stays 10 cm.
-  await page.waitForTimeout(700);
-  const after = (await api("/api/props")).props.find((row) => row.id === prop.id);
-  expect("the snapped corner is saved", Math.abs(after.layout.corners[1].x - 4.25 * foot) < 0.02, after.layout.corners);
-  expect("spacing stays 10 cm", Math.abs(after.layout.pitchM - 0.1) < 1e-6, after.layout.pitchM);
+async function type(page, selector, value) {
+  const field = page.locator(selector);
+  await field.click();
+  await field.fill(value);
+  await field.press("Enter");
 }
 
-/** A 2 m run at 10 cm: 20 lights, evenly spaced until one is dragged. */
-function twoMetres() {
-  const run = [{ id: "e1", from: "c1", to: "c2", kind: "lit" }];
-  return {
-    source: "trace",
-    units: "m",
-    pitchM: 0.1,
-    startOffsetM: 0,
-    corners: [{ id: "c1", x: 0, y: 0 }, { id: "c2", x: 2, y: 0 }],
-    run,
-    strings: [{ id: "s1", startId: "c1", run }],
-  };
+/** Pick a prop from the list: the rail on desktop, the drawer on a phone. */
+async function pick(page, viewport, label) {
+  if (viewport.touch) await page.getByRole("button", { name: "Props and Looks" }).click();
+  await page.locator(".ye .plist button", { hasText: label }).first().click();
 }
 
-async function zoomClose(frame) {
-  for (let step = 0; step < 12; step += 1) {
-    const cam = await camera(frame);
-    if (cam.ppm >= 800) return cam;
-    await frame.getByRole("button", { name: "Zoom in" }).click();
-  }
-  return camera(frame);
-}
-
-async function waitProp(page, id, ready) {
-  let last = null;
-  for (let step = 0; step < 25; step += 1) {
-    last = (await api("/api/props")).props.find((row) => row.id === id);
-    if (last && ready(last)) return last;
-    await page.waitForTimeout(200);
-  }
-  throw new Error(`prop did not update: ${JSON.stringify(last?.layout?.run?.[0] ?? last)}`);
-}
-
-async function useCaseLights(page, viewport) {
-  const created = await api("/api/props", {
-    method: "POST",
-    body: JSON.stringify({ label: `Lights ${viewport.name} ${run}`, kind: "roofline", unit: "m", pitchMm: 100, layout: twoMetres() }),
-  });
-  const prop = created.prop;
-  await page.goto(`${webOrigin}/props/${prop.id}/edit`, { waitUntil: "domcontentloaded" });
-  const frame = page.getByTestId("layout-canvas");
-  await frame.locator("canvas").first().waitFor({ timeout: 20000 });
-  await hydrated(page.getByLabel("A1 length (m)"));
-  await page.getByRole("button", { name: "A1", exact: true }).click();
-  const cam = await zoomClose(frame);
-  expect("zoomed in", cam.ppm >= 800, cam);
-  // The 11th even light sits at 1.05 m. Drag it to 1.40 m.
-  const from = await screenOf(frame, { x: 1.05, y: 0 });
-  const to = await screenOf(frame, { x: 1.4, y: 0 });
-  await drag(page, viewport, from, to, 16);
-  let stored = await waitProp(page, prop.id, (row) => row.layout?.run?.[0]?.manualLights === true);
-  const dragged = stored.layout.run[0].lights ?? [];
-  expect("drag stores 20 lights", dragged.length === 20, dragged.length);
-  expect("dragged light is near 1.4 m", dragged.some((light) => Math.abs(light.alongM - 1.4) < 0.08), dragged.map((light) => light.alongM));
-  expect("pitch stays 10 cm", Math.abs(stored.layout.pitchM - 0.1) < 1e-9, stored.layout.pitchM);
-  await page.getByRole("button", { name: "Undo" }).first().click();
-  stored = await waitProp(page, prop.id, (row) => row.layout?.run?.[0]?.manualLights == null && row.layout?.run?.[0]?.lights == null);
-  expect("undo clears the lock", stored.layout.run[0].lockedLights == null, stored.layout.run[0]);
-  await page.getByRole("button", { name: "Redo" }).first().click();
-  stored = await waitProp(page, prop.id, (row) => row.layout?.run?.[0]?.manualLights === true);
-  // 1.20 m is between the lights at 1.15 m and 1.25 m, and still on screen after the zoom.
-  const addAt = await screenOf(frame, { x: 1.2, y: 0 });
-  await drag(page, viewport, addAt, addAt, 1);
-  await page.getByText("Added a light.").waitFor({ timeout: 8000 });
-  stored = await waitProp(page, prop.id, (row) => (row.layout?.run?.[0]?.lights?.length ?? 0) === 21);
-  expect("added light", stored.layout.run[0].lockedLights === 21, stored.layout.run[0].lockedLights);
-  await page.getByRole("button", { name: "Remove light" }).click();
-  await page.getByText("Removed a light.").waitFor({ timeout: 8000 });
-  stored = await waitProp(page, prop.id, (row) => (row.layout?.run?.[0]?.lights?.length ?? 0) === 20);
-  const kept = stored.layout.run[0].lights.find((light) => Math.abs(light.alongM - 0.05) < 0.02);
-  expect("the first light stayed put", Boolean(kept), stored.layout.run[0].lights.map((light) => light.alongM));
-  const length = page.getByLabel("A1 length (m)");
-  await length.fill("1.2");
-  await length.press("Enter");
-  stored = await waitProp(page, prop.id, (row) => Math.abs((row.layout?.corners?.[1]?.x ?? 0) - 1.2) < 0.02);
-  const shortened = stored.layout.run[0];
-  expect("length change keeps the lock", shortened.manualLights === true && shortened.lights.length === 20, shortened);
-  expect("lights clamp to the shorter run", shortened.lights.every((light) => light.alongM <= 1.21), shortened.lights.map((light) => light.alongM));
-  expect("a light that was inside stays", shortened.lights.some((light) => Math.abs(light.alongM - 0.05) < 0.02), shortened.lights);
-  expect("spacing was not rewritten", Math.abs(stored.layout.pitchM - 0.1) < 1e-9, stored.layout.pitchM);
-  mkdirSync("/opt/cursor/artifacts/screenshots", { recursive: true });
-  await page.screenshot({ path: `/opt/cursor/artifacts/screenshots/per-light-${viewport.name}.png`, fullPage: true });
-  await page.getByRole("button", { name: "Space evenly again" }).click();
-  await page.getByText("Spaced the lights evenly.").waitFor({ timeout: 8000 });
-  stored = await waitProp(page, prop.id, (row) => row.layout?.run?.[0]?.manualLights == null && row.layout?.run?.[0]?.lights == null);
-  // Spacing evenly keeps every light that was there and only moves them.
-  await waitForValue(page.getByLabel("A1 lights"), "20", "spaced evenly");
-  expect("the count is kept", stored.layout.run[0].lockedLights === 20, stored.layout.run[0]);
-}
-
-async function useCaseGeometry(page, viewport) {
-  const created = await api("/api/props", {
-    method: "POST",
-    body: JSON.stringify({
-      label: `Wall split ${viewport.name} ${run}`,
-      kind: "roofline",
-      unit: "m",
-      pitchMm: 100,
-      layout: {
-        source: "trace",
-        units: "m",
-        pitchM: 0.1,
-        startOffsetM: 0,
-        corners: [{ id: "c1", x: 0, y: 0 }, { id: "c2", x: 2, y: 0 }, { id: "c3", x: 2.01, y: 0 }],
-        run: [
-          { id: "e1", from: "c1", to: "c2", kind: "lit" },
-          { id: "e2", from: "c2", to: "c1", kind: "lit" },
-          { id: "e3", from: "c2", to: "c3", kind: "lit" },
-        ],
-        strings: [{
-          id: "s1",
-          startId: "c1",
-          run: [
-            { id: "e1", from: "c1", to: "c2", kind: "lit" },
-            { id: "e2", from: "c2", to: "c1", kind: "lit" },
-            { id: "e3", from: "c2", to: "c3", kind: "lit" },
-          ],
-        }],
-      },
-    }),
-  });
-  const prop = created.prop;
-  const stored = (await api("/api/props")).props.find((row) => row.id === prop.id);
-  expect("geometry prop loads", stored && stored.layout.corners.length === 3, stored?.layout);
-  await page.goto(`${webOrigin}/props/${prop.id}/edit`, { waitUntil: "domcontentloaded" });
-  const frame = page.getByTestId("layout-canvas");
-  await frame.locator("canvas").first().waitFor({ timeout: 20000 });
-  await hydrated(page.getByLabel("A1 length (m)"));
-  expect("short run", (await page.getByText(/shorter than the light spacing/).count()) === 1, "banner missing");
-  const length = page.getByLabel("A1 length (m)");
-  await length.fill("nope");
-  await length.press("Enter");
-  await page.getByText("Enter a length in metres, greater than zero.").waitFor();
-  await waitForValue(page.getByLabel("A1 lights"), "20", "bad length keeps the count");
-  // The backtrack shares the run. A second click on it selects the other one.
-  const firstAt = await screenOf(frame, { x: 1, y: 0 });
-  await drag(page, viewport, firstAt, firstAt, 1);
-  const first = await page.locator("[aria-current='true']").innerText();
-  // The highlight scrolls into view, so the run is no longer at the first point on a phone.
-  const secondAt = await screenOf(frame, { x: 1, y: 0 });
-  await drag(page, viewport, secondAt, secondAt, 1);
-  const second = await page.locator("[aria-current='true']").innerText();
-  expect("cycle select", first !== second, { first, second });
-  mkdirSync("/opt/cursor/artifacts", { recursive: true });
-  await page.screenshot({ path: `/opt/cursor/artifacts/editor-geometry-${viewport.name}.png`, fullPage: true });
-  await page.getByRole("button", { name: "A1", exact: true }).click();
-  await page.getByRole("button", { name: "Add point" }).click();
-  await page.waitForFunction(() => document.body.textContent?.includes("4 runs"));
-  await page.getByRole("button", { name: "Join" }).click();
-  await page.waitForFunction(() => document.body.textContent?.includes("Joined corners that sat on each other."));
-}
-
-async function useCaseReadability(page, viewport) {
-  const runA = [{ id: "e1", from: "c1", to: "c2", kind: "lit" }];
-  const runB = [{ id: "e2", from: "c3", to: "c4", kind: "lit" }];
-  const created = await api("/api/props", {
-    method: "POST",
-    body: JSON.stringify({
-      label: `Wall strings ${viewport.name} ${run}`,
-      kind: "custom",
-      unit: "m",
-      pitchMm: 100,
-      layout: {
-        source: "trace",
-        units: "m",
-        pitchM: 0.1,
-        startOffsetM: 0,
-        corners: [
-          { id: "c1", x: 0, y: 0 }, { id: "c2", x: 2, y: 0 },
-          { id: "c3", x: 0, y: 0.8 }, { id: "c4", x: 1, y: 0.8 },
-        ],
-        run: runA,
-        strings: [
-          { id: "s1", startId: "c1", run: runA },
-          { id: "s2", startId: "c3", run: runB },
-        ],
-      },
-    }),
-  });
-  await page.goto(`${webOrigin}/props/${created.prop.id}/edit`, { waitUntil: "domcontentloaded" });
-  const frame = page.getByTestId("layout-canvas");
-  await frame.locator("canvas").first().waitFor({ timeout: 20000 });
-  await hydrated(page.getByRole("heading", { name: /String A: Wire in, 1 run · 20 lights/ }));
-  await page.getByRole("heading", { name: /String B: Wire in, 1 run · 10 lights/ }).waitFor();
-  if (viewport.touch && viewport.height > viewport.width) {
-    const box = await frame.boundingBox();
-    expect("stage height", box && box.height >= viewport.height * 0.4, box);
-  }
-  mkdirSync("/opt/cursor/artifacts", { recursive: true });
-  await page.screenshot({ path: `/opt/cursor/artifacts/editor-readability-${viewport.name}.png`, fullPage: true });
-}
-
-async function useCase1(page, viewport) {
+async function openYard(page) {
   await page.goto(`${webOrigin}/`, { waitUntil: "domcontentloaded" });
-  const frame = page.getByTestId("yard-stage");
-  await frame.locator("canvas").first().waitFor({ timeout: 20000 });
-  await frame.evaluate((node) => node.scrollIntoView({ block: "center" }));
-  const fitted = await camera(frame);
-  const box = await frame.boundingBox();
-  // Pan: drag empty space at the top left. The zoom buttons are top right,
-  // and the dev server's own badge sits at the bottom left of the window.
-  const from = { x: box.x + 24, y: box.y + 24 };
-  await drag(page, viewport, from, { x: from.x + 80, y: from.y + 40 });
-  const panned = await camera(frame);
-  expect("1 pan", Math.abs(panned.ox - fitted.ox - 80) < 4 && Math.abs(panned.oy - fitted.oy - 40) < 4, { fitted, panned });
-  // A mouse wheel zooms, as in xLights. A small trackpad scroll pans.
-  // Two fingers pinch on a phone.
-  const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-  if (viewport.touch) await pinchOut(page, centre);
-  else {
-    await page.mouse.move(centre.x, centre.y);
-    await page.mouse.wheel(-30, -8);
-    await page.waitForTimeout(150);
-    const scrolled = await camera(frame);
-    expect("1 trackpad scroll pans", Math.abs(scrolled.ppm - panned.ppm) < 0.01 && (Math.abs(scrolled.ox - panned.ox) > 5 || Math.abs(scrolled.oy - panned.oy) > 5), { panned, scrolled });
-    await page.mouse.wheel(0, -240);
+  await hydrated(page);
+}
+
+async function task1(page, viewport, name) {
+  await openYard(page);
+  await page.locator(viewport.touch ? ".ye .insp .newbtn" : ".ye .rail .newbtn").click();
+  await page.getByText("A clean canvas").waitFor();
+  await page.locator("[data-start=triangle]").click();
+  await page.locator("#ye-size-base").waitFor();
+  expect("1 starts at 2 m", (await page.locator("#ye-size-base").inputValue()) === "2", await page.locator("#ye-size-base").inputValue());
+  await type(page, "#ye-count", "60");
+  await type(page, "#ye-name", name);
+  await page.locator(".ye .top .btn.primary").click();
+  await page.getByRole("heading", { name: `Place ${name}` }).waitFor();
+  await page.getByRole("button", { name: "Place here" }).click();
+  await page.getByRole("button", { name: "Edit shape" }).waitFor();
+  const prop = await propNamed(name);
+  expect("1 saved", prop && prop.kind === "tree" && lightsOf(prop) === 60 && prop.yard, prop);
+  return prop;
+}
+
+async function task2(page, viewport, name) {
+  await page.getByRole("button", { name: "Edit shape" }).click();
+  await page.getByRole("button", { name: "Change shape" }).click();
+  await page.locator("[data-start=window]").click();
+  await type(page, "#ye-size-width", "2");
+  await type(page, "#ye-size-height", "2");
+  await type(page, "#ye-count", "80");
+  await page.locator(".ye .top .btn.primary").click();
+  await page.getByRole("button", { name: "Edit shape" }).waitFor();
+  const prop = await propNamed(name);
+  expect("2 square", prop && prop.kind === "window" && lightsOf(prop) === 80, prop);
+}
+
+async function task3(page, viewport, name, box) {
+  await type(page, "#ye-name", box);
+  await type(page, "#ye-x", "3");
+  await type(page, "#ye-y", "0");
+  await waitUntil("3 stored", async () => {
+    const prop = await propNamed(box);
+    return prop?.yard?.x === 3 && prop.yard.y === 0 ? true : prop?.yard ?? `no prop ${box}`;
+  });
+}
+
+async function task4(page, viewport, box) {
+  await page.getByRole("button", { name: "Edit shape" }).click();
+  for (const [section, runs] of [["Top", [2, 3]], ["Bottom", [0, 1]]]) {
+    await page.getByRole("button", { name: "New section" }).click();
+    await type(page, "#ye-secname", section);
+    // With a section open, each run row adds that run to it.
+    const rows = page.locator(".ye [data-run]");
+    for (const index of runs) await rows.nth(index).click();
+    await page.getByRole("button", { name: `Done with ${section}` }).click();
   }
+  await page.locator(".ye .top .btn.primary").click();
+  await page.getByRole("button", { name: "Edit shape" }).waitFor();
+  const prop = await propNamed(box);
+  const names = (prop?.sections ?? []).map((row) => `${row.name}:${row.edgeIds.length}`);
+  expect("4 sections", names.join(",") === "Top:2,Bottom:2", names);
+  return prop;
+}
+
+async function task5(page, viewport, prop, look) {
+  if (viewport.touch) await page.getByRole("button", { name: "Props and Looks" }).click();
+  await page.locator(".ye .plist a", { hasText: look.name }).first().click();
+  await page.waitForURL(new RegExp(`/looks/${look.id}`));
+  await page.getByRole("heading", { name: look.name, exact: true }).waitFor({ timeout: 20000 });
+  await openYard(page);
+  await pick(page, viewport, prop.label);
+  await page.getByRole("button", { name: "Edit shape" }).waitFor();
+}
+
+/** Two fingers spread apart around a point, the way a phone zooms in. */
+async function pinchOut(page, at) {
+  const cdp = await page.context().newCDPSession(page);
+  const points = (gap) => [
+    { x: at.x - gap, y: at.y, id: 0 },
+    { x: at.x + gap, y: at.y, id: 1 },
+  ];
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: points(30) });
+  for (let gap = 35; gap <= 60; gap += 5) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: points(gap) });
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await cdp.detach();
   await page.waitForTimeout(150);
-  const zoomed = await camera(frame);
-  expect("1 zoom", zoomed.ppm > panned.ppm * 1.2, { panned, zoomed });
-  await frame.getByRole("button", { name: "Zoom out" }).click();
-  expect("1 zoom out", (await camera(frame)).ppm < zoomed.ppm, await camera(frame));
-  await frame.getByRole("button", { name: "Fit" }).click();
-  const back = await camera(frame);
-  expect("1 fit", Math.abs(back.ppm - fitted.ppm) < 0.01 && Math.abs(back.ox - fitted.ox) < 1 && Math.abs(back.oy - fitted.oy) < 1, { fitted, back });
 }
 
-async function useCase7and10(page, viewport, prop) {
-  await page.goto(`${webOrigin}/props/${prop.id}/edit`, { waitUntil: "domcontentloaded" });
-  const frame = page.getByTestId("layout-canvas");
-  await frame.locator("canvas").first().waitFor({ timeout: 20000 });
-  if (viewport.touch && viewport.height > viewport.width) {
-    const box = await frame.boundingBox();
-    expect("stage height", box && box.height >= viewport.height * 0.4, box);
-  }
-  const run2 = page.getByLabel("A2 length (m)");
-  await hydrated(run2);
-  await waitForValue(run2, "1.00", "7 start");
-  // Drag the end corner from (2, 1) to (2, 2). Snap lands it on the grid.
-  const from = await screenOf(frame, { x: 2, y: 1 });
-  const to = await screenOf(frame, { x: 2, y: 2 });
-  await drag(page, viewport, from, to, 16);
-  await waitForValue(run2, "2.00", "7 drag");
-  await page.getByRole("button", { name: "Undo" }).first().click();
-  await waitForValue(run2, "1.00", "7 undo");
-  await page.getByRole("button", { name: "Redo" }).first().click();
-  await waitForValue(run2, "2.00", "7 redo");
-
-  // 10: 3 m on run 1 at 10 cm is 30 lights; run 2 keeps its length.
-  const run1 = page.getByLabel("A1 length (m)");
-  await run1.fill("3");
-  await run1.press("Enter");
-  await waitForValue(page.getByLabel("A1 lights"), "30", "10 count");
-  await waitForValue(run2, "2.00", "10 later run");
-  // Keep the edits for the sections step: the path's Done opens it.
-  await page.getByRole("button", { name: "Name sections" }).click();
-  await page.getByRole("heading", { name: "Name the sections" }).waitFor();
-  await page.getByRole("button", { name: "Save" }).click();
-  await page.waitForURL(`${webOrigin}/`, { timeout: 10000 }).catch(() => {});
-  const saved = (await api("/api/props")).props.find((row) => row.id === prop.id);
-  const c2 = saved.layout.corners.find((corner) => corner.id === "c2");
-  const c3 = saved.layout.corners.find((corner) => corner.id === "c3");
-  expect("10 saved", Math.abs(c2.x - 3) < 1e-6 && Math.abs(c3.y - 2) < 1e-6, saved.layout.corners);
+async function task6(page, viewport, prop) {
+  await page.getByRole("button", { name: "Edit shape" }).click();
+  await page.locator(".ye [data-run]").first().click();
+  // Centre the camera on the picked run, close enough that each light is a numbered dot.
+  const runId = await page.evaluate(() => {
+    const s = window.__yard;
+    const layout = s.draft.layout;
+    const edge = layout.strings?.flatMap((row) => row.run).find((row) => row.id === s.selRun) ?? layout.run.find((row) => row.id === s.selRun);
+    const a = layout.corners.find((c) => c.id === edge.from);
+    const b = layout.corners.find((c) => c.id === edge.to);
+    s.cam = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, ppm: 400 };
+    return edge.id;
+  });
+  const box = await page.locator(".ye .stagewrap canvas").boundingBox();
+  const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  if (viewport.touch) await pinchOut(page, at);
+  else await page.getByRole("button", { name: "Zoom in" }).click();
+  if (viewport.touch) await page.touchscreen.tap(at.x, at.y);
+  else await page.mouse.click(at.x, at.y);
+  await waitUntil("6 light added", async () => page.evaluate((id) => {
+    const s = window.__yard;
+    const edge = (s.draft.layout.strings?.flatMap((row) => row.run) ?? s.draft.layout.run).find((row) => row.id === id);
+    return edge?.manualLights === true && edge.lights?.length === 21 ? true : { manualLights: edge?.manualLights, n: edge?.lights?.length, sel: s.selRun };
+  }, runId));
+  await page.getByRole("button", { name: "Space evenly again" }).click();
+  await page.locator(".ye .top .btn.primary").click();
+  await page.getByRole("button", { name: "Edit shape" }).waitFor();
+  const stored = await propNamed(prop.label);
+  expect("6 Space evenly keeps the added light", lightsOf(stored) === 81, lightsOf(stored));
+  const edge = (stored.layout.strings?.flatMap((row) => row.run) ?? stored.layout.run).find((row) => row.id === runId);
+  expect("6 run spaced evenly with 21", edge && !edge.manualLights && edge.lockedLights === 21, edge);
 }
 
-async function useCase12(page, prop) {
-  const name = `Ridge ${run}`;
-  await page.goto(`${webOrigin}/props/${prop.id}/edit?step=sections`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "Name the sections" }).waitFor();
-  // The drawing only mounts on the client, so once it is up the page is live.
-  await page.getByTestId("section-figure").locator("canvas").first().waitFor({ timeout: 20000 });
-  await hydrated(page.getByRole("button", { name: "New section" }));
-  await page.getByRole("button", { name: "New section" }).click();
-  await waitForValue(page.getByLabel("Section name"), `Section ${prop.sections.length + 1}`, "12 new section");
-  await page.getByLabel("Section name").fill(name);
-  await page.getByLabel("Section colour", { exact: true }).fill("#33cc99");
-  // Put run 2 on it with the run button beside the drawing.
-  const add = page.getByRole("button", { name: /^Add · / }).last();
-  await add.click();
-  await page.getByRole("button", { name: "Save" }).click();
-  await page.waitForTimeout(500);
-  let saved = (await api("/api/props")).props.find((row) => row.id === prop.id);
-  let section = saved.sections.find((row) => row.name === name);
-  expect("12 saved", section && section.color === "#33cc99" && section.edgeIds.length === 1, saved.sections);
-  // Reopen: still there, still coloured.
-  await page.goto(`${webOrigin}/props/${prop.id}/edit?step=sections`, { waitUntil: "domcontentloaded" });
-  await hydrated(page.getByRole("button", { name }));
-  await page.getByRole("button", { name }).click();
-  await waitForValue(page.getByLabel("Section name"), name, "12 reopen name");
-  await waitForValue(page.getByLabel("Section colour", { exact: true }), "#33cc99", "12 reopen colour");
-  saved = (await api("/api/props")).props.find((row) => row.id === prop.id);
-  section = saved.sections.find((row) => row.name === name);
-  return section;
+async function task7(page, viewport, line) {
+  // A prop is still selected, so on a phone New prop is in the drawer.
+  if (viewport.touch) await page.getByRole("button", { name: "Props and Looks" }).click();
+  await page.locator(".ye .rail .newbtn").click();
+  await page.locator("[data-start=line]").click();
+  await type(page, "#ye-size-length", "4");
+  await type(page, "#ye-count", "120");
+  await type(page, "#ye-name", line);
+  await page.locator(".ye .top .btn.primary").click();
+  await page.getByRole("button", { name: "Next to the others" }).click();
+  await page.getByRole("button", { name: "Edit shape" }).click();
+  await type(page, "#ye-count", "100");
+  await page.locator(".ye .top .btn.primary").click();
+  await page.getByRole("button", { name: "Edit shape" }).waitFor();
+  const prop = await propNamed(line);
+  expect("7 line", prop && prop.kind === "roofline" && lightsOf(prop) === 100, prop);
 }
 
-async function useCase13(page, prop, section) {
-  // The Look editor, opened on this prop in the first Look.
-  const first = (await api("/api/looks")).looks[0];
-  await page.goto(`${webOrigin}/looks/${first.id}?prop=${encodeURIComponent(prop.id)}`, { waitUntil: "domcontentloaded" });
-  const inspector = page.locator(".insp");
-  const how = inspector.getByRole("group", { name: "How it lights" });
-  await hydrated(how);
-  // A prop made after the Look starts left out of it (#127): switch it on.
-  const off = how.getByRole("button", { name: "Off", exact: true });
-  if ((await off.getAttribute("aria-pressed")) === "true") await how.getByRole("button", { name: "Follow Look" }).click();
-  await inspector.getByRole("button", { name: new RegExp(`^${section.name}`) }).click();
-  await how.getByRole("button", { name: "Own style" }).click();
-  const hex = inspector.locator("input[aria-label$=' hex']").first();
-  await hex.fill("#ff00aa");
-  await hex.press("Enter");
-  await inspector.locator(".effrow").first().click();
-  await inspector.getByLabel("Search effects").fill("Twinkle");
-  await inspector.locator(".effrow", { hasText: /^Twinkle/ }).first().click();
-  await page.waitForTimeout(600);
-  await page.waitForFunction(() => !document.body.textContent.includes("Saving…"), null, { timeout: 10000 });
-  const library = await api("/api/looks");
-  const look = library.looks.find((row) => row.id === first.id);
-  const override = look.overrides.find((row) => row.propId === prop.id && row.sectionId === section.id);
-  expect("13 saved", override && override.style.color === "#ff00aa" && override.style.fx === 17, look.overrides);
+async function task8(page, viewport, line) {
+  await page.getByRole("button", { name: "Delete" }).click();
+  await page.locator(".ye .confirm .btn.danger").click();
+  await waitUntil("8 deleted", async () => ((await propNamed(line)) ? "still there" : true));
+  await page.getByRole("button", { name: "Undo" }).click();
+  await waitUntil("8 undo brings it back", async () => ((await propNamed(line))?.yard ? true : "not back"));
+  await pick(page, viewport, line);
+  await page.getByRole("button", { name: "Delete" }).click();
+  await page.locator(".ye .confirm .btn.danger").click();
+  await waitUntil("8 deleted again", async () => ((await propNamed(line)) ? "still there" : true));
+  await openYard(page);
+  expect("8 gone after reload", (await page.locator(".ye .plist button", { hasText: line }).count()) === 0, "listed");
 }
 
 await ensureStack();
@@ -532,18 +253,20 @@ try {
     const page = await context.newPage();
     const errors = [];
     page.on("pageerror", (error) => errors.push(String(error)));
-    const prop = await newProp(`Porch L ${viewport.name} ${run}`);
-    await newProp(`Shed ${viewport.name} ${run}`);
-    let section = null;
+    const tag = `${viewport.touch ? "phone" : "desk"} ${run}`;
+    const name = `X ${tag}`;
+    const box = `Box ${tag}`;
+    const line = `Line ${tag}`;
+    let sectioned = null;
     for (const [label, step] of [
-      ["1 see the yard", () => useCase1(page, viewport)],
-      ["units and snap", () => useCaseUnits(page, viewport)],
-      ["place a light", () => useCaseLights(page, viewport)],
-      ["split, join, and typed length", () => useCaseGeometry(page, viewport)],
-      ["string headings and phone stage", () => useCaseReadability(page, viewport)],
-      ["7 move a corner, 10 set a length", () => useCase7and10(page, viewport, prop)],
-      ["12 return to sections", async () => { section = await useCase12(page, prop); }],
-      ["13 a Look uses the section", () => (section ? useCase13(page, prop, section) : Promise.reject(new Error("no section from 12")))],
+      ["1 triangle, 60 lights, placed", () => task1(page, viewport, name)],
+      ["2 change it to an 80-light square", () => task2(page, viewport, name)],
+      ["3 rename Box, 3 m right", () => task3(page, viewport, name, box)],
+      ["4 Top and Bottom sections", async () => { sectioned = await task4(page, viewport, box); }],
+      ["5 open a Look from the yard", () => (sectioned ? task5(page, viewport, sectioned, original.looks[0]) : Promise.reject(new Error("no sections from 4")))],
+      ["6 add a light, Space evenly keeps it", () => (sectioned ? task6(page, viewport, sectioned) : Promise.reject(new Error("no sections from 4")))],
+      ["7 4 m line, 120 then 100", () => task7(page, viewport, line)],
+      ["8 delete, undo, delete, reload", () => task8(page, viewport, line)],
     ]) {
       try {
         await step();
@@ -551,6 +274,7 @@ try {
       } catch (error) {
         failed += 1;
         console.error(`FAIL ${viewport.name} ${label}\n${error instanceof Error ? error.message : String(error)}`);
+        await page.screenshot({ path: `/tmp/editor-fail-${viewport.name}-${label.split(" ")[0]}.png` }).catch(() => {});
       }
     }
     if (errors.length) {
@@ -570,7 +294,7 @@ try {
 }
 
 if (failed > 0) {
-  console.error(`${failed} editor use case check(s) failed`);
+  console.error(`${failed} yard task check(s) failed`);
   process.exit(1);
 }
-console.log("editor use cases pass at 1440×900 and 390×844");
+console.log("the eight yard tasks pass at 1440×900 and 390×844");

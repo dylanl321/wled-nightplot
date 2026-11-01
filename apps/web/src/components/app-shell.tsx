@@ -25,7 +25,8 @@ export function AppShell({
   sessions = [],
   immersive = false,
 }: AppShellProps) {
-  const lightsActive = nav === "lights" || nav === "light" || nav === "discover";
+  const lightsActive = nav === "lights" || nav === "light";
+  const moreActive = nav === "discover" || nav === "catalog" || nav === "backups" || nav === "sync" || nav === "settings";
 
   return (
     <DiscoveryProvider>
@@ -43,25 +44,27 @@ export function AppShell({
       >
         <Brand markClassName="h-2.5 w-9 lg:h-3 lg:w-11" />
         <nav className="hidden items-center gap-1 lg:flex" aria-label="Nightplot">
-          <NavLink href="/lights" active={lightsActive}>
-            Lights
-          </NavLink>
-          <NavLink href="/led-products" active={nav === "catalog"}>
-            LED products
-          </NavLink>
-          <NavLink href="/backups" active={nav === "backups"}>
-            Backups
-          </NavLink>
-          <NavLink href="/looks" active={nav === "looks"}>
-            Looks
-          </NavLink>
-          <NavLink href="/yard" active={nav === "yard"}>
-            Yard check
-          </NavLink>
-          <NavLink href="/sync" active={nav === "sync"}>
-            Sync
-          </NavLink>
-          <NavLink href="/settings" active={nav === "settings"}>Settings</NavLink>
+          <NavLink href="/" active={nav === "home"}>Yard</NavLink>
+          <NavLink href="/looks" active={nav === "looks"}>Looks</NavLink>
+          <NavLink href="/lights" active={lightsActive}>Lights</NavLink>
+          <NavLink href="/yard" active={nav === "yard"}>Check</NavLink>
+          <details className="relative">
+            <summary
+              className={cn(
+                "cursor-pointer list-none rounded-md px-3 py-1.5 text-[14px] [&::-webkit-details-marker]:hidden",
+                moreActive ? "bg-secondary font-medium" : "text-muted-foreground hover:bg-secondary/60",
+              )}
+            >
+              More
+            </summary>
+            <div className="absolute left-0 top-full z-40 mt-1 flex min-w-44 flex-col rounded-lg border border-border bg-background p-1 shadow-lg">
+              <MoreLink href="/discover" active={nav === "discover"}>Find Lights</MoreLink>
+              <MoreLink href="/led-products" active={nav === "catalog"}>LED products</MoreLink>
+              <MoreLink href="/backups" active={nav === "backups"}>Backups</MoreLink>
+              <MoreLink href="/sync" active={nav === "sync"}>Sync</MoreLink>
+              <MoreLink href="/settings" active={nav === "settings"}>Settings</MoreLink>
+            </div>
+          </details>
         </nav>
         <div className="ml-auto"><ShortcutOverlay /></div>
         <div className="hidden lg:block">
@@ -103,6 +106,18 @@ function NavLink({
         "rounded-md px-3 py-1.5 text-[14px]",
         active ? "bg-secondary font-medium" : "text-muted-foreground hover:bg-secondary/60",
       )}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function MoreLink({ href, active, children }: { href: string; active: boolean; children: ReactNode }) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={cn("rounded-md px-3 py-2 text-[14px]", active ? "bg-secondary font-medium" : "hover:bg-secondary/60")}
     >
       {children}
     </Link>
