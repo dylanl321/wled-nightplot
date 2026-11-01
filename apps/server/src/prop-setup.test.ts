@@ -6,6 +6,7 @@ import type { Prop } from "@nightplot/shared";
 import { createApp } from "./app.ts";
 import { FileBackupStore } from "./store/backup-store.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
+import { FileLooksStore } from "./store/looks-store.ts";
 import { FileSettingsStore } from "./store/settings-store.ts";
 
 const base = {
@@ -112,9 +113,10 @@ describe("prop-first setup", () => {
 });
 
 describe("prop yard point", () => {
-  function appWith(store: FileLightsStore, dir: string) {
+  function appWith(store: FileLightsStore, dir: string, looks?: FileLooksStore) {
     return createApp({
       store,
+      ...(looks ? { looks } : {}),
       settings: new FileSettingsStore(join(dir, "settings.json")),
       backups: new FileBackupStore(join(dir, "backups")),
       probe: async () => ({ kind: "found", snapshot: base }),
@@ -175,5 +177,69 @@ describe("prop yard point", () => {
       body: JSON.stringify({ yard: { x: 0, y: 0 } }),
     });
     expect(missing.status).toBe(404);
+  });
+  it("renames a prop, keeps its place in the list, deletes it, and drops it from Looks", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-rename-"));
+    const store = new FileLightsStore(join(dir, "lights.json"));
+    const looks = new FileLooksStore(join(dir, "looks.json"));
+    const app = appWith(store, dir, looks);
+    const make = async (label: string) => {
+      const res = await app.request("/api/props", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ label, kind: "roofline", unit: "m", pitchMm: 100, measurements: { shape: "roofline", length: 2 } }),
+      });
+      return (await res.json() as { prop: Prop }).prop;
+    };
+    const first = await make("X");
+    const second = await make("Line");
+
+    const renamed = await app.request(`/api/props/${first.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: "  Box  " }),
+    });
+    expect(renamed.status).toBe(200);
+    expect((await renamed.json() as { prop: Prop }).prop.label).toBe("Box");
+    expect(store.loadProps().map((row) => row.label)).toEqual(["Box", "Line"]);
+
+    const blank = await app.request(`/api/props/${first.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: "   " }),
+    });
+    expect(blank.status).toBe(400);
+
+    // A path save keeps the list order too.
+    await app.request(`/api/props/${first.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ layout: store.loadProps()[0]!.layout }),
+    });
+    expect(store.loadProps().map((row) => row.label)).toEqual(["Box", "Line"]);
+
+    looks.save({
+      version: 1,
+      looks: [{
+        id: "look-1",
+        name: "Half and half",
+        slot: 1,
+        style: { fx: 0, pal: 0, sx: 128, ix: 128, bri: 180, color: "#ff0000" },
+        overrides: [{ propId: second.id, style: { fx: 0, pal: 0, sx: 128, ix: 128, bri: 180, color: "#00ff00" } }],
+      }],
+      playlists: [],
+      schedule: null,
+    });
+    const deleted = await app.request(`/api/props/${second.id}`, { method: "DELETE" });
+    expect(deleted.status).toBe(200);
+    const body = await deleted.json() as { message: string };
+    expect(body.message).toContain("Deleted Line");
+    expect(body.message).toContain("1 Look");
+    expect(body.message).toContain("Nothing was sent");
+    expect(store.loadProps().map((row) => row.id)).toEqual([first.id]);
+    expect(looks.read().looks[0]!.overrides).toEqual([]);
+
+    const again = await app.request(`/api/props/${second.id}`, { method: "DELETE" });
+    expect(again.status).toBe(404);
   });
 });
