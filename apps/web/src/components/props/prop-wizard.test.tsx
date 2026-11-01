@@ -30,7 +30,7 @@ describe("New prop wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByRole("button", { name: "Trace", pressed: true })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Name sections" })).toBeTruthy();
-    expect(screen.getByText(/where the wire comes in/i)).toBeTruthy();
+    expect(screen.getByText(/Trace adds runs from the wire-in/)).toBeTruthy();
   });
 
   it("opens a window after choosing a start corner and a direction", () => {
