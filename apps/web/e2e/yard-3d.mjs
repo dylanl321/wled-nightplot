@@ -101,17 +101,25 @@ async function fits(page) {
 
 await ensureStack();
 mkdirSync(shots, { recursive: true });
-const label = `Wall ${Date.now().toString(36)}`;
+const label = "Front eave";
 const created = await api("/api/props", {
   method: "POST",
   body: JSON.stringify({ label, kind: "roofline", unit: "m", pitchMm: 100, layout: line() }),
 });
 const id = created.prop.id;
-const decoy = await api("/api/props", {
-  method: "POST",
-  body: JSON.stringify({ label: `Other ${label}`, kind: "custom", unit: "m", pitchMm: 100, layout: line(), yard: { x: 20, y: 0 } }),
-});
-const decoyId = decoy.prop.id;
+let decoyId = "";
+async function ensureDecoy() {
+  if (decoyId) {
+    const listed = await api("/api/props");
+    if (listed.props.some((prop) => prop.id === decoyId)) return;
+  }
+  const decoy = await api("/api/props", {
+    method: "POST",
+    body: JSON.stringify({ label: "Side path", kind: "custom", unit: "m", pitchMm: 100, layout: line(), yard: { x: 20, y: 0 } }),
+  });
+  decoyId = decoy.prop.id;
+}
+await ensureDecoy();
 let lookSnapshot;
 
 try {
@@ -159,6 +167,7 @@ try {
   const written = [];
   try {
     for (const viewport of viewports) {
+      await ensureDecoy();
       await api(`/api/props/${id}`, { method: "PATCH", body: JSON.stringify({ layout: windowShape() }) });
       await api(`/api/props/${id}/yard`, {
         method: "PATCH",
@@ -223,15 +232,13 @@ try {
         await page.getByRole("button", { name: "Overhead", pressed: true }).waitFor();
         const box = await canvas.boundingBox();
         if (box) await page.mouse.dblclick(box.x + box.width * 0.82, box.y + 70);
-        // A 4 m roofline, centred on the front eave. The other prop stands beside the house.
-        await api(`/api/props/${id}`, { method: "PATCH", body: JSON.stringify({ layout: line(4) }) });
+        // The drawing is the full 6 m front wall, one metre per metre, on the outer lip.
+        await api(`/api/props/${decoyId}`, { method: "DELETE" }).catch(() => {});
+        decoyId = "";
+        await api(`/api/props/${id}`, { method: "PATCH", body: JSON.stringify({ layout: line(6) }) });
         await api(`/api/props/${id}/yard`, {
           method: "PATCH",
-          body: JSON.stringify({ yard: { x: -1.95, y: 2.5, depth: -0.08, facing: 0, mount: "upright", heightM: 0 } }),
-        });
-        await api(`/api/props/${decoyId}/yard`, {
-          method: "PATCH",
-          body: JSON.stringify({ yard: { x: 4.6, y: 0, heightM: 1.4 } }),
+          body: JSON.stringify({ yard: { x: -3, y: 2.5, depth: -0.28, facing: 0, mount: "upright", heightM: 0 } }),
         });
         await api("/api/yard-scene", {
           method: "PUT",
@@ -259,13 +266,21 @@ try {
       }
       await page.getByRole("region", { name: "Yard drawing" }).evaluate((node) => node.scrollIntoView({ block: "start" }));
       await fits(page);
-      const path = join(shots, `yard-3d-look-${viewport.name}.png`);
-      await page.screenshot({ path, fullPage: false });
-      written.push(path);
+      const streetPath = join(shots, `yard-3d-street-${viewport.name}.png`);
+      await page.screenshot({ path: streetPath, fullPage: false });
+      written.push(streetPath);
+      if (!viewport.touch && await canvas.count()) {
+        await page.getByRole("button", { name: "Overhead" }).click();
+        await page.getByRole("button", { name: "Overhead", pressed: true }).waitFor();
+        await page.waitForTimeout(400);
+        const overheadPath = join(shots, `yard-3d-overhead-${viewport.name}.png`);
+        await page.screenshot({ path: overheadPath, fullPage: false });
+        written.push(overheadPath);
+      }
       await page.getByRole("button", { name: "2D" }).click();
       await page.getByTestId("yard-stage").waitFor();
       await context.close();
-      console.log(`ok ${viewport.name} ${path}`);
+      console.log(`ok ${viewport.name} ${written.at(-1)}`);
     }
   } finally {
     await browser.close();
@@ -277,6 +292,6 @@ try {
   }
   await api("/api/yard-scene", { method: "PUT", body: JSON.stringify({ house: null }) }).catch(() => {});
   await api(`/api/props/${id}`, { method: "DELETE" }).catch(() => {});
-  await api(`/api/props/${decoyId}`, { method: "DELETE" }).catch(() => {});
+  if (decoyId) await api(`/api/props/${decoyId}`, { method: "DELETE" }).catch(() => {});
   stopChildren();
 }

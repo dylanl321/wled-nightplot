@@ -6,7 +6,7 @@ import { CameraControls, Grid, PerformanceMonitor, type CameraControls as Camera
 import { EffectComposer, SelectiveBloom } from "@react-three/postprocessing";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AdditiveBlending, Color, DoubleSide, Object3D, Plane, Raycaster, Vector2, Vector3, type InstancedMesh } from "three";
+import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, Object3D, Plane, Raycaster, Vector2, Vector3, type InstancedMesh } from "three";
 
 function allowsGlow(): boolean {
   try {
@@ -154,6 +154,8 @@ export function Yard3dCanvas({
           }}
         >
           <color attach="background" args={["#07080a"]} />
+          <ambientLight intensity={0.16} />
+          <directionalLight position={[0, 9, -7]} intensity={1.7} />
           <PerformanceMonitor
             onDecline={() => { setDpr(1); setGlow(false); }}
             onIncline={() => setDpr(1.25)}
@@ -197,10 +199,6 @@ export function Yard3dCanvas({
             fadeStrength={1}
             infiniteGrid
           />
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
-            <ringGeometry args={[0.15, 0.22, 40]} />
-            <meshBasicMaterial color="#7ee0d0" />
-          </mesh>
           {house ? <HouseShape house={house} /> : null}
           {glow && lights.length > 0 ? (
             <EffectComposer>
@@ -359,7 +357,7 @@ function LightPoints({
       dummy.position.set(light.x, light.y, light.z);
       dummy.updateMatrix();
       current.setMatrixAt(index, dummy.matrix);
-      punchInto(color, painted.colors[index] ?? light.color);
+      lampColor(color, painted.colors[index] ?? light.color);
       current.setColorAt(index, color);
       if (glow) {
         glow.setMatrixAt(index, dummy.matrix);
@@ -406,7 +404,7 @@ function LightPoints({
         if (propId) onPick(propId);
       }}
     >
-      <sphereGeometry args={[0.08, 12, 10]} />
+      <sphereGeometry args={[0.022, 10, 8]} />
       <meshStandardMaterial
         color="#ffffff"
         emissive="#ffffff"
@@ -416,8 +414,8 @@ function LightPoints({
       />
     </instancedMesh>
     <instancedMesh ref={halo} args={[undefined, undefined, lights.length]} raycast={skipRaycast}>
-      <sphereGeometry args={[0.2, 10, 8]} />
-      <meshBasicMaterial transparent opacity={0.55} blending={AdditiveBlending} depthWrite={false} toneMapped={false} />
+      <sphereGeometry args={[0.046, 8, 6]} />
+      <meshBasicMaterial transparent opacity={0.22} blending={AdditiveBlending} depthWrite={false} toneMapped={false} />
     </instancedMesh>
     </group>
   );
@@ -438,19 +436,25 @@ function HouseShape({ house }: { house: YardHouse }) {
   const parts = useMemo(() => houseTriangles(house), [house]);
   return (
     <group>
-      <mesh>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" args={[parts.walls, 3]} />
-        </bufferGeometry>
-        <meshBasicMaterial color="#2a2e38" side={DoubleSide} />
-      </mesh>
-      <mesh>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" args={[parts.roof, 3]} />
-        </bufferGeometry>
-        <meshBasicMaterial color="#6a5d52" side={DoubleSide} />
-      </mesh>
+      <Solid positions={parts.walls} color="#4a5160" />
+      <Solid positions={parts.roof} color="#a08b78" />
+      {parts.ends.length > 0 ? <Solid positions={parts.ends} color="#6e6258" /> : null}
+      {parts.ridge.length > 0 ? <Solid positions={parts.ridge} color="#d2c3b4" /> : null}
     </group>
+  );
+}
+
+function Solid({ positions, color }: { positions: Float32Array; color: string }) {
+  const geometry = useMemo(() => {
+    const geom = new BufferGeometry();
+    geom.setAttribute("position", new BufferAttribute(positions, 3));
+    geom.computeVertexNormals();
+    return geom;
+  }, [positions]);
+  return (
+    <mesh geometry={geometry}>
+      <meshStandardMaterial color={color} roughness={0.92} metalness={0} />
+    </mesh>
   );
 }
 
@@ -531,11 +535,17 @@ function coloredLights(props: readonly Prop[], house: YardHouse | null): Colored
   return sceneLightPositions(props, house).map((light) => ({ ...light, color: colourOf(byId.get(light.propId), light.edgeId) }));
 }
 
-/** Full hue, so a dim Look colour still reads on a software renderer. Black stays off. */
-function punchInto(into: Color, hex: string): Color {
+/**
+ * A bright lamp colour. Black stays off. Warm white stays a pale 2700 K,
+ * not a saturated yellow.
+ */
+function lampColor(into: Color, hex: string): Color {
   into.set(hex);
   const max = Math.max(into.r, into.g, into.b);
-  if (max >= 0.04) into.multiplyScalar(1 / max);
+  if (max < 0.04) return into;
+  into.multiplyScalar(1 / max);
+  const amber = into.r > 0.85 && into.g > 0.25 && into.g < 0.9 && into.b < 0.2;
+  if (amber) into.set("#ffe0c2");
   return into;
 }
 

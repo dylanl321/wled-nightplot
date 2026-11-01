@@ -3,7 +3,7 @@
  * Absent means there is no house. An older yard has none.
  */
 import type { PropLayout } from "./prop/layout.ts";
-import { layoutLightPoints, yardLightPositions, yardPointForStore, type YardLight } from "./prop/space.ts";
+import { yardLightPositions, yardPointForStore, type YardLight } from "./prop/space.ts";
 import type { Prop, PropYardPoint } from "./prop/types.ts";
 
 export type YardPoint2 = { x: number; z: number };
@@ -53,6 +53,9 @@ export function defaultHouse(at: YardPoint2): YardHouse {
   };
 }
 
+/** How far the roof sticks out past the walls, in metres. */
+export const EAVE_OVERHANG_M = 0.4;
+
 export type EaveEdge = { from: YardPoint2; to: YardPoint2; y: number };
 
 export function houseEaves(house: YardHouse): EaveEdge[] {
@@ -74,30 +77,31 @@ export function frontEave(house: YardHouse): EaveEdge {
 }
 
 /**
- * Where a roofline stands: centred on the front eave, upright, at eave height.
- * A saved point on the ground, or laid flat, is not used. The lights follow the edge.
+ * Where a roofline stands: on the outer lip of the front eave, upright, at eave height.
+ * One metre of the drawing is one metre along that edge. A saved point on the ground is not used.
  */
 export function rooflinePoint(layout: PropLayout | undefined, house: YardHouse): PropYardPoint {
   const edge = frontEave(house);
   const dx = edge.to.x - edge.from.x;
   const dz = edge.to.z - edge.from.z;
   const facing = Math.atan2(dz, dx) * 180 / Math.PI;
-  const lights = layout ? layoutLightPoints(layout) : [];
-  const localMid = lights.length === 0 ? 0 : lights.reduce((sum, light) => sum + light.x, 0) / lights.length;
   const rad = (facing * Math.PI) / 180;
-  const midX = (edge.from.x + edge.to.x) / 2;
-  const midZ = (edge.from.z + edge.to.z) / 2;
   const cx = house.footprint.reduce((sum, point) => sum + point.x, 0) / house.footprint.length;
   const cz = house.footprint.reduce((sum, point) => sum + point.z, 0) / house.footprint.length;
-  const ox = midX - cx;
-  const oz = midZ - cz;
-  const out = Math.hypot(ox, oz) || 1;
-  // Just outside the wall, so the bulbs are not buried in it.
-  const clear = 0.08;
+  const normal = outwardNormal(edge.from, edge.to, cx, cz);
+  const lip = EAVE_OVERHANG_M + 0.06;
+  const lipFrom = { x: edge.from.x + normal.x * lip, z: edge.from.z + normal.z * lip };
+  const lipTo = { x: edge.to.x + normal.x * lip, z: edge.to.z + normal.z * lip };
+  const corners = layout?.corners ?? [];
+  const minLocal = corners.length === 0 ? 0 : Math.min(...corners.map((corner) => corner.x));
+  const maxLocal = corners.length === 0 ? 0 : Math.max(...corners.map((corner) => corner.x));
+  const midLocal = (minLocal + maxLocal) / 2;
+  const midX = (lipFrom.x + lipTo.x) / 2;
+  const midZ = (lipFrom.z + lipTo.z) / 2;
   return yardPointForStore({
-    x: midX - localMid * Math.cos(rad) + (ox / out) * clear,
+    x: midX - midLocal * Math.cos(rad),
     y: house.eaveM,
-    depth: midZ - localMid * Math.sin(rad) + (oz / out) * clear,
+    depth: midZ - midLocal * Math.sin(rad),
     facing,
     mount: "upright",
   });
@@ -124,7 +128,7 @@ export function snapRoofline(_point: PropYardPoint, house: YardHouse, layout?: P
   return rooflinePoint(layout, house);
 }
 
-export type HouseTriangles = { walls: Float32Array; roof: Float32Array };
+export type HouseTriangles = { walls: Float32Array; roof: Float32Array; ends: Float32Array; ridge: Float32Array };
 
 /** Walls up to the eave, then a gable. The roof is not a flat cap on the walls. */
 export function houseTriangles(house: YardHouse): HouseTriangles {
@@ -139,41 +143,127 @@ export function houseTriangles(house: YardHouse): HouseTriangles {
     );
   }
   const roof: number[] = [];
+  const ends: number[] = [];
+  const ridge: number[] = [];
   const peak = eave + house.ridgeM;
   const footprint = house.footprint;
+  const cx = footprint.reduce((sum, point) => sum + point.x, 0) / footprint.length;
+  const cz = footprint.reduce((sum, point) => sum + point.z, 0) / footprint.length;
   if (footprint.length === 4) {
     const front = frontEave(house);
     const index = houseEaves(house).findIndex((edge) =>
       edge.from.x === front.from.x && edge.from.z === front.from.z &&
       edge.to.x === front.to.x && edge.to.z === front.to.z);
-    if (index < 0) {
-      const cx = footprint.reduce((sum, point) => sum + point.x, 0) / footprint.length;
-      const cz = footprint.reduce((sum, point) => sum + point.z, 0) / footprint.length;
-      const top: Vec3 = [cx, peak, cz];
-      for (const edge of houseEaves(house)) {
-        tri(roof, [edge.from.x, eave, edge.from.z], [edge.to.x, eave, edge.to.z], top);
-      }
-      return { walls: new Float32Array(walls), roof: new Float32Array(roof) };
-    }
-    const a = footprint[index]!;
-    const b = footprint[(index + 1) % 4]!;
-    const c = footprint[(index + 2) % 4]!;
-    const d = footprint[(index + 3) % 4]!;
-    const left: Vec3 = [(a.x + d.x) / 2, peak, (a.z + d.z) / 2];
-    const right: Vec3 = [(b.x + c.x) / 2, peak, (b.z + c.z) / 2];
-    quad(roof, [a.x, eave, a.z], [b.x, eave, b.z], right, left);
-    quad(roof, [d.x, eave, d.z], [c.x, eave, c.z], right, left);
-    tri(roof, [a.x, eave, a.z], [d.x, eave, d.z], left);
-    tri(roof, [b.x, eave, b.z], [c.x, eave, c.z], right);
-  } else {
-    const cx = footprint.reduce((sum, point) => sum + point.x, 0) / footprint.length;
-    const cz = footprint.reduce((sum, point) => sum + point.z, 0) / footprint.length;
-    const top: Vec3 = [cx, peak, cz];
-    for (const edge of houseEaves(house)) {
-      tri(roof, [edge.from.x, eave, edge.from.z], [edge.to.x, eave, edge.to.z], top);
+    if (index >= 0) {
+      const a = footprint[index]!;
+      const b = footprint[(index + 1) % 4]!;
+      const c = footprint[(index + 2) % 4]!;
+      const d = footprint[(index + 3) % 4]!;
+      gableRoof(roof, ends, ridge, a, b, c, d, eave, peak, cx, cz);
+      return packed(walls, roof, ends, ridge);
     }
   }
-  return { walls: new Float32Array(walls), roof: new Float32Array(roof) };
+  const top: Vec3 = [cx, peak, cz];
+  for (const edge of houseEaves(house)) {
+    tri(roof, [edge.from.x, eave, edge.from.z], [edge.to.x, eave, edge.to.z], top);
+  }
+  return packed(walls, roof, ends, ridge);
+}
+
+function packed(walls: number[], roof: number[], ends: number[], ridge: number[]): HouseTriangles {
+  return {
+    walls: new Float32Array(walls),
+    roof: new Float32Array(roof),
+    ends: new Float32Array(ends),
+    ridge: new Float32Array(ridge),
+  };
+}
+
+/**
+ * Two equal slopes and a triangular gable at each end.
+ * The ridge runs along the longer axis and sits on the centre line.
+ * The roof overhangs the walls by the same amount on every side.
+ */
+function gableRoof(
+  roof: number[],
+  ends: number[],
+  ridge: number[],
+  a: YardPoint2,
+  b: YardPoint2,
+  c: YardPoint2,
+  d: YardPoint2,
+  eave: number,
+  peak: number,
+  cx: number,
+  cz: number,
+) {
+  const nFront = outwardNormal(a, b, cx, cz);
+  const nRight = outwardNormal(b, c, cx, cz);
+  const nBack = outwardNormal(c, d, cx, cz);
+  const nLeft = outwardNormal(d, a, cx, cz);
+  const expand = (point: YardPoint2, left: { x: number; z: number }, right: { x: number; z: number }): Vec3 => [
+    point.x + (left.x + right.x) * EAVE_OVERHANG_M,
+    eave,
+    point.z + (left.z + right.z) * EAVE_OVERHANG_M,
+  ];
+  const a2 = expand(a, nFront, nLeft);
+  const b2 = expand(b, nFront, nRight);
+  const c2 = expand(c, nBack, nRight);
+  const d2 = expand(d, nBack, nLeft);
+  const frontLen = Math.hypot(b.x - a.x, b.z - a.z);
+  const sideLen = Math.hypot(d.x - a.x, d.z - a.z);
+  if (frontLen >= sideLen) {
+    const midL = { x: (a.x + d.x) / 2, z: (a.z + d.z) / 2 };
+    const midR = { x: (b.x + c.x) / 2, z: (b.z + c.z) / 2 };
+    const along = unit2(midR.x - midL.x, midR.z - midL.z);
+    const ridgeL: Vec3 = [midL.x - along.x * EAVE_OVERHANG_M, peak, midL.z - along.z * EAVE_OVERHANG_M];
+    const ridgeR: Vec3 = [midR.x + along.x * EAVE_OVERHANG_M, peak, midR.z + along.z * EAVE_OVERHANG_M];
+    quad(roof, b2, a2, ridgeL, ridgeR);
+    quad(roof, d2, c2, ridgeR, ridgeL);
+    tri(ends, [a.x, eave, a.z], [d.x, eave, d.z], [midL.x, peak, midL.z]);
+    tri(ends, [c.x, eave, c.z], [b.x, eave, b.z], [midR.x, peak, midR.z]);
+    ridgeBoard(ridge, ridgeL, ridgeR, along);
+    return;
+  }
+  const midF = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 };
+  const midB = { x: (d.x + c.x) / 2, z: (d.z + c.z) / 2 };
+  const along = unit2(midB.x - midF.x, midB.z - midF.z);
+  const ridgeF: Vec3 = [midF.x - along.x * EAVE_OVERHANG_M, peak, midF.z - along.z * EAVE_OVERHANG_M];
+  const ridgeB: Vec3 = [midB.x + along.x * EAVE_OVERHANG_M, peak, midB.z + along.z * EAVE_OVERHANG_M];
+  quad(roof, a2, d2, ridgeB, ridgeF);
+  quad(roof, b2, c2, ridgeB, ridgeF);
+  tri(ends, [a.x, eave, a.z], [b.x, eave, b.z], [midF.x, peak, midF.z]);
+  tri(ends, [c.x, eave, c.z], [d.x, eave, d.z], [midB.x, peak, midB.z]);
+  ridgeBoard(ridge, ridgeF, ridgeB, along);
+}
+
+/** A narrow board on the ridge, so the centre line reads from the street and from above. */
+function ridgeBoard(out: number[], from: Vec3, to: Vec3, along: { x: number; z: number }) {
+  const perp = { x: -along.z, z: along.x };
+  const half = 0.07;
+  const y = Math.max(from[1], to[1]) + 0.03;
+  quad(out,
+    [from[0] - perp.x * half, y, from[2] - perp.z * half],
+    [to[0] - perp.x * half, y, to[2] - perp.z * half],
+    [to[0] + perp.x * half, y, to[2] + perp.z * half],
+    [from[0] + perp.x * half, y, from[2] + perp.z * half],
+  );
+}
+
+function outwardNormal(from: YardPoint2, to: YardPoint2, cx: number, cz: number): { x: number; z: number } {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const side = unit2(dz, -dx);
+  const mx = (from.x + to.x) / 2;
+  const mz = (from.z + to.z) / 2;
+  const outward = (mx + side.x - cx) * (mx - cx) + (mz + side.z - cz) * (mz - cz);
+  const inward = (mx - cx) * (mx - cx) + (mz - cz) * (mz - cz);
+  return outward < inward ? { x: -side.x, z: -side.z } : side;
+}
+
+function unit2(x: number, z: number): { x: number; z: number } {
+  const length = Math.hypot(x, z) || 1;
+  return { x: x / length, z: z / length };
 }
 
 type Vec3 = [number, number, number];

@@ -7,7 +7,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
-- Roofline on the eave (GitHub #159): a roofline follows the front edge of the roof at eave height, including when its saved point is flat on the ground. An upright prop stands at its height. The house is a gable, about the size of the props, in a dark colour so the lights read. The lights stay bright and coloured with the glow off, and the glow stays on when the graphics can do it. Street, Overhead, and This prop frame the house and the props. Street stays at eye height, looking at the front. Nothing is sent to a controller. Not Hardware Done.
+- Roofline on the eave (GitHub #159): a roofline follows the front edge of the roof at eave height, one metre of the drawing to one metre of eave, even when its saved point is flat on the ground. An upright prop stands at its height. The house is a symmetric gable: the ridge runs along the long axis, the two slopes match, the ends are triangles, and the roof overhangs the walls. It is dark enough that the lights read. Each light is its own bulb with a soft halo. Warm white stays a pale amber-white. Street, Overhead, and This prop frame the house and the props. Street stays at eye height, looking at the front. Nothing is sent to a controller. Not Hardware Done.
 
 - Glow in the 3D yard (GitHub #159): the lights bloom, and only the lights. On a slow phone the glow turns off and the picture gets simpler. The view pauses while the tab is hidden. Nothing is sent to a controller. Not Hardware Done.
 

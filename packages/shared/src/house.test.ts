@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultHouse, frontEave, houseTriangles, isYardHouse, sceneLightPositions, snapRoofline, type YardHouse } from "./house.ts";
+import { defaultHouse, EAVE_OVERHANG_M, frontEave, houseTriangles, isYardHouse, sceneLightPositions, snapRoofline, type YardHouse } from "./house.ts";
 import type { PropLayout } from "./prop/layout.ts";
 import { yardCamera } from "./prop/space.ts";
 
@@ -40,7 +40,7 @@ describe("house", () => {
     const frontZ = (front.from.z + front.to.z) / 2;
     for (const light of lights) {
       expect(light.y).toBeCloseTo(house.eaveM, 2);
-      expect(Math.abs(light.z - frontZ)).toBeLessThan(0.2);
+      expect(light.z).toBeCloseTo(frontZ - EAVE_OVERHANG_M - 0.06, 2);
     }
     const minX = Math.min(front.from.x, front.to.x);
     const maxX = Math.max(front.from.x, front.to.x);
@@ -65,13 +65,58 @@ describe("house", () => {
     expect(grounded[0]?.y).toBe(0);
   });
 
-  it("builds a gable above the walls", () => {
+  it("builds a centred gable along the long axis, with an even overhang", () => {
     const house = defaultHouse({ x: 0, z: 0 });
     const mesh = houseTriangles(house);
     expect(Math.max(...ys(mesh.roof))).toBeCloseTo(house.eaveM + house.ridgeM, 3);
     expect(Math.min(...ys(mesh.roof))).toBeCloseTo(house.eaveM, 3);
     expect(Math.max(...ys(mesh.walls))).toBeCloseTo(house.eaveM, 3);
     expect(Math.min(...ys(mesh.walls))).toBeCloseTo(0, 3);
+    const roof = verts(mesh.roof);
+    const peak = house.eaveM + house.ridgeM;
+    const ridge = roof.filter((point) => Math.abs(point.y - peak) < 1e-3);
+    expect(ridge.length).toBeGreaterThan(0);
+    for (const point of ridge) expect(point.z).toBeCloseTo(2, 3);
+    expect(Math.min(...ridge.map((point) => point.x))).toBeCloseTo(-3 - EAVE_OVERHANG_M, 2);
+    expect(Math.max(...ridge.map((point) => point.x))).toBeCloseTo(3 + EAVE_OVERHANG_M, 2);
+    const eave = roof.filter((point) => Math.abs(point.y - house.eaveM) < 1e-3);
+    const front = Math.min(...eave.map((point) => point.z));
+    const back = Math.max(...eave.map((point) => point.z));
+    expect((front + back) / 2).toBeCloseTo(2, 2);
+    expect(front).toBeCloseTo(0 - EAVE_OVERHANG_M, 2);
+    expect(back).toBeCloseTo(4 + EAVE_OVERHANG_M, 2);
+    const frontNormal = faceNormal(mesh.roof, 0);
+    const backNormal = faceNormal(mesh.roof, 2);
+    expect(frontNormal.y).toBeGreaterThan(0.4);
+    expect(frontNormal.z).toBeLessThan(0);
+    expect(backNormal.y).toBeGreaterThan(0.4);
+    expect(backNormal.z).toBeGreaterThan(0);
+    expect(faceNormal(mesh.ends, 0).x).toBeLessThan(-0.5);
+    expect(faceNormal(mesh.ends, 1).x).toBeGreaterThan(0.5);
+  });
+
+  it("maps a roofline's metres onto the front eave, end to end", () => {
+    const house = defaultHouse({ x: 0, z: 0 });
+    const full: PropLayout = {
+      ...line,
+      corners: [{ id: "a", x: 0, y: 0 }, { id: "b", x: 6, y: 0 }],
+    };
+    const lights = sceneLightPositions([{
+      id: "roof",
+      kind: "roofline",
+      layout: full,
+      yard: { x: 0, y: 0, mount: "flat" },
+    }], house);
+    const xs = lights.map((light) => light.x);
+    const span = Math.max(...xs) - Math.min(...xs);
+    expect(span).toBeGreaterThan(5.8);
+    expect(span).toBeLessThan(6);
+    expect(Math.min(...xs)).toBeCloseTo(-3, 2);
+    expect(Math.max(...xs)).toBeGreaterThan(2.85);
+    expect(Math.max(...xs)).toBeLessThan(3);
+    expect(new Set(lights.map((light) => light.z.toFixed(3))).size).toBe(1);
+    expect(lights[0]?.z).toBeCloseTo(-EAVE_OVERHANG_M - 0.06, 2);
+    expect(lights.every((light) => light.y === house.eaveM)).toBe(true);
   });
 
   it("frames the house from eye height so the roof stays in view", () => {
@@ -94,6 +139,29 @@ describe("house", () => {
     }
   });
 });
+
+function verts(data: Float32Array): { x: number; y: number; z: number }[] {
+  const out: { x: number; y: number; z: number }[] = [];
+  for (let index = 0; index < data.length; index += 3) {
+    out.push({ x: data[index]!, y: data[index + 1]!, z: data[index + 2]! });
+  }
+  return out;
+}
+
+function faceNormal(data: Float32Array, triangle: number): { x: number; y: number; z: number } {
+  const index = triangle * 9;
+  const ax = data[index + 3]! - data[index]!;
+  const ay = data[index + 4]! - data[index + 1]!;
+  const az = data[index + 5]! - data[index + 2]!;
+  const bx = data[index + 6]! - data[index]!;
+  const by = data[index + 7]! - data[index + 1]!;
+  const bz = data[index + 8]! - data[index + 2]!;
+  const x = ay * bz - az * by;
+  const y = az * bx - ax * bz;
+  const z = ax * by - ay * bx;
+  const length = Math.hypot(x, y, z) || 1;
+  return { x: x / length, y: y / length, z: z / length };
+}
 
 function ys(data: Float32Array): number[] {
   const out: number[] = [];

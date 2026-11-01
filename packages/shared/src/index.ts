@@ -908,6 +908,7 @@ export {
 } from "./look-preview.ts";
 export {
   defaultHouse,
+  EAVE_OVERHANG_M,
   frontEave,
   houseEaves,
   houseTriangles,
