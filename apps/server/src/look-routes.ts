@@ -7,6 +7,8 @@ import {
   lookSectionNotes,
   lookTargets,
   lookTargetsForLook,
+  mergeFollowingSections,
+  migrateSectionColours,
   managedLookSlots,
   managedPresetSlotsMatch,
   mergeWledPresets,
@@ -121,9 +123,20 @@ function yardFrom(store: FileLightsStore): {
   };
 }
 
+/**
+ * The Looks library, with section colours copied into the Looks once. Older
+ * Looks fell back to a colour stored on the section; that is now each Look's
+ * own section style, so the lights look the same after the change.
+ */
+export function readLooks(deps: Pick<LookRouteDeps, "looks" | "store">): LooksDocument {
+  const document = deps.looks.read();
+  if (document.sectionColoursMigrated) return document;
+  return deps.looks.save(migrateSectionColours(document, deps.store.loadProps()));
+}
+
 export function registerLookRoutes(app: Hono, deps: LookRouteDeps) {
   app.get("/api/looks", (c) => {
-    const document = deps.looks.read();
+    const document = readLooks(deps);
     return c.json({
       ...document,
       yard: yardFrom(deps.store),
@@ -151,7 +164,11 @@ export function registerLookRoutes(app: Hono, deps: LookRouteDeps) {
     }
     // A Look saved without a prop list gets the props that exist now.
     const pinned = pinLookProps(looks, deps.store.loadProps().map((prop) => prop.id)).looks;
-    const saved = deps.looks.save({ version: 1, looks: pinned, playlists, schedule });
+    // A client that read the library got it migrated; one that did not is migrated here.
+    const migrated = readLooks(deps).sectionColoursMigrated || body?.sectionColoursMigrated === true
+      ? { version: 1 as const, looks: pinned, playlists, schedule, sectionColoursMigrated: true as const }
+      : migrateSectionColours({ version: 1, looks: pinned, playlists, schedule }, deps.store.loadProps());
+    const saved = deps.looks.save(migrated);
     return c.json({ ...saved, yard: yardFrom(deps.store), caption: LOOK_CAPTION });
   });
 
@@ -161,7 +178,7 @@ export function registerLookRoutes(app: Hono, deps: LookRouteDeps) {
     if (!lightIds?.length) {
       return c.json({ error: "targets-required", message: "Choose at least one Light. Nothing was sent." }, 400);
     }
-    const document = deps.looks.read();
+    const document = readLooks(deps);
     const libraryError = validateLooksLibrary(document.looks, document.playlists);
     if (libraryError) return c.json({ error: "invalid-looks", message: libraryError }, 400);
     const includeSchedule = body?.includeSchedule === true;
@@ -244,7 +261,8 @@ export async function pushLooksToLight(
     reason?: BackupReason;
   },
 ): Promise<SyncRow> {
-  const { light, snap, document } = input;
+  const { light, snap } = input;
+  const document = migrateSectionColours(input.document, deps.store.propsFor(light.id));
   let safety: BackupDocument;
   try {
     safety = await deps.captureDevice(input.reason ?? "pre-sync", light, snap);
@@ -287,7 +305,10 @@ export async function pushLooksToLight(
   if (targets.length === 0) {
     return row(light, "refused", "This Light has no LEDs to address. Find the strip length first. Nothing was sent.", safety.id);
   }
-  const most = Math.max(...document.looks.map((look) => lookTargetsForLook(look, geometry).length), targets.length);
+  const most = Math.max(
+    ...document.looks.map((look) => mergeFollowingSections(look, lookTargetsForLook(look, geometry)).length),
+    0,
+  );
   if (typeof snap.maxSegments === "number" && most > snap.maxSegments) {
     return row(
       light,

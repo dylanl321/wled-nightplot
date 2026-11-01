@@ -32,11 +32,13 @@ describe("Look preview", () => {
     expect(dark.every((light) => light.color === "#000000")).toBe(true);
   });
 
-  it("uses a section colour, and a breathe frame changes with time", () => {
+  it("uses a section's own style, and a breathe frame changes with time", () => {
     const sectioned = prop({
       sections: [{ id: "top", name: "Top", edgeIds: ["e1"], pinnedRanges: [], color: "#00ff00" }],
     });
-    const frame = lookFrame({ look: look(), props: [sectioned], t: 0 });
+    const base = look();
+    const withSection = { ...base, overrides: [...base.overrides, { propId: sectioned.id, sectionId: "top", style: { ...base.style, color: "#00ff00" } }] };
+    const frame = lookFrame({ look: withSection, props: [sectioned], t: 0 });
     expect(frame[0]?.color).toBe("#00ff00");
     const breathe = { ledCount: 1, on: true, brightness: 255, fx: 2, pal: 0, speed: 128, intensity: 128, color: "#ff0000" };
     const dim = approximateWledColours({ ...breathe, elapsedMs: 0 });
