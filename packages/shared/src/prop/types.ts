@@ -120,7 +120,21 @@ export type Prop = {
    * Pinned ranges are typed by hand and stay put when the path changes.
    */
   sections?: PropSection[];
+  /**
+   * Where the prop sits on the yard drawing, in metres: the drawing's own
+   * origin lands here. Absent means a default slot, so props never pile up.
+   */
+  yard?: PropYardPoint;
 };
+
+export type PropYardPoint = { x: number; y: number };
+
+export function isPropYardPoint(value: unknown): value is PropYardPoint {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Partial<PropYardPoint>;
+  return typeof row.x === "number" && Number.isFinite(row.x) && Math.abs(row.x) <= 10000 &&
+    typeof row.y === "number" && Number.isFinite(row.y) && Math.abs(row.y) <= 10000;
+}
 
 /** Inclusive start, exclusive stop, in path-index order (the first light of the path is 0). */
 export type PropIndexRange = {
@@ -298,6 +312,7 @@ export function isProp(value: unknown): value is Prop {
   if (designed && !isPropDesign(row.design)) return false;
   if (row.layout !== undefined && !isPropLayout(row.layout)) return false;
   if (row.sections !== undefined && !isPropSectionList(row.sections)) return false;
+  if (row.yard !== undefined && !isPropYardPoint(row.yard)) return false;
   if (row.kind === "wireframe" || row.wireframe !== undefined) return isWireframeSpec(row.wireframe);
   return true;
 }

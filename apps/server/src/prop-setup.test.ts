@@ -110,3 +110,70 @@ describe("prop-first setup", () => {
     expect(store.loadProps().find((prop) => prop.id === roofProp.id)?.lightId).toBeUndefined();
   });
 });
+
+describe("prop yard point", () => {
+  function appWith(store: FileLightsStore, dir: string) {
+    return createApp({
+      store,
+      settings: new FileSettingsStore(join(dir, "settings.json")),
+      backups: new FileBackupStore(join(dir, "backups")),
+      probe: async () => ({ kind: "found", snapshot: base }),
+      collect: async () => [],
+      write: vi.fn(async () => true),
+      readLive: async () => null,
+      readCfg: async () => null,
+      writeCfg: async () => true,
+      readNativeFiles: async () => ({ cfgJson: "{}", presetsJson: "{}" }),
+      readLedmap: async () => null,
+      writeLedmap: async () => {},
+      now: () => new Date("2026-11-01T02:00:00.000Z"),
+    });
+  }
+
+  it("saves where a prop sits, reads it back, keeps it through a path save, and refuses a bad point", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-yard-"));
+    const store = new FileLightsStore(join(dir, "lights.json"));
+    const app = appWith(store, dir);
+    const created = await app.request("/api/props", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: "Front roof", kind: "roofline", unit: "ft", pitchMm: 100, measurements: { shape: "roofline", length: 10 } }),
+    });
+    const prop = (await created.json() as { prop: Prop }).prop;
+    expect(prop.yard).toBeUndefined();
+
+    const moved = await app.request(`/api/props/${prop.id}/yard`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ yard: { x: 3.25, y: -1.5 } }),
+    });
+    expect(moved.status).toBe(200);
+    const body = await moved.json() as { prop: Prop; message: string };
+    expect(body.prop.yard).toEqual({ x: 3.25, y: -1.5 });
+    expect(body.message).toContain("Nothing was sent");
+    expect(store.loadProps().find((row) => row.id === prop.id)?.yard).toEqual({ x: 3.25, y: -1.5 });
+
+    const pathSave = await app.request(`/api/props/${prop.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ layout: store.loadProps().find((row) => row.id === prop.id)!.layout }),
+    });
+    expect(pathSave.status).toBe(200);
+    expect(store.loadProps().find((row) => row.id === prop.id)?.yard).toEqual({ x: 3.25, y: -1.5 });
+
+    const bad = await app.request(`/api/props/${prop.id}/yard`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ yard: { x: "far", y: 0 } }),
+    });
+    expect(bad.status).toBe(400);
+    expect(store.loadProps().find((row) => row.id === prop.id)?.yard).toEqual({ x: 3.25, y: -1.5 });
+
+    const missing = await app.request("/api/props/nope/yard", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ yard: { x: 0, y: 0 } }),
+    });
+    expect(missing.status).toBe(404);
+  });
+});
