@@ -1,12 +1,12 @@
 "use client";
 
-import { defaultHouse, dragOnGround, lookFrame, snapRoofline, toggleYardMount, turnYardPoint, yardCamera, yardLightPositions, yardLiveColour, yardPlacements, type Look, type Prop, type PropAttachment, type PropYardPoint, type YardHouse, type YardLight, type YardLiveFeed, type YardView } from "@nightplot/shared";
+import { defaultHouse, dragOnGround, houseTriangles, lookFrame, sceneLightPositions, snapRoofline, toggleYardMount, turnYardPoint, yardCamera, yardLiveColour, yardPlacements, type Look, type Prop, type PropAttachment, type PropYardPoint, type YardHouse, type YardLight, type YardLiveFeed, type YardView } from "@nightplot/shared";
 import { fetchJson } from "@/lib/api";
 import { CameraControls, Grid, PerformanceMonitor, type CameraControls as CameraControlsImpl } from "@react-three/drei";
 import { EffectComposer, SelectiveBloom } from "@react-three/postprocessing";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Color, DoubleSide, ExtrudeGeometry, Object3D, Plane, Raycaster, Shape, Vector2, Vector3, type InstancedMesh } from "three";
+import { AdditiveBlending, BufferAttribute, BufferGeometry, CanvasTexture, Color, Object3D, Plane, Raycaster, Vector2, Vector3, type InstancedMesh } from "three";
 
 function allowsGlow(): boolean {
   try {
@@ -56,8 +56,8 @@ export function Yard3dCanvas({
   const [house, setHouse] = useState<YardHouse | null>(null);
   const [draft, setDraft] = useState<{ id: string; at: PropYardPoint } | null>(null);
   const shown = useMemo(() => props.map((prop) => draft && prop.id === draft.id ? { ...prop, yard: draft.at } : prop), [props, draft]);
-  const lights = useMemo(() => coloredLights(shown), [shown]);
-  const framed = useMemo(() => coloredLights(props), [props]);
+  const lights = useMemo(() => coloredLights(shown, house), [shown, house]);
+  const framed = useMemo(() => coloredLights(props, house), [props, house]);
   const pickedPoint = yardPlacements(shown).find((row) => row.propId === picked)?.at;
   const controlsRef = useRef<CameraControlsImpl>(null);
   const lightMesh = useRef<InstancedMesh>(null);
@@ -72,7 +72,7 @@ export function Yard3dCanvas({
     if (controlsRef.current) controlsRef.current.enabled = true;
     if (!drag) return;
     const prop = props.find((row) => row.id === drag.propId);
-    const at = prop?.kind === "roofline" && house ? snapRoofline(drag.at, house) ?? drag.at : drag.at;
+    const at = prop?.kind === "roofline" && house ? snapRoofline(drag.at, house, prop.layout) : drag.at;
     setDraft({ id: drag.propId, at });
     const kept = await onPlace(drag.propId, at);
     if (!kept) setDraft(null);
@@ -154,11 +154,13 @@ export function Yard3dCanvas({
           }}
         >
           <color attach="background" args={["#07080a"]} />
+          <ambientLight intensity={0.4} />
+          <directionalLight position={[-4, 10, -6]} intensity={1.05} />
           <PerformanceMonitor
             onDecline={() => { setDpr(1); setGlow(false); }}
             onIncline={() => setDpr(1.25)}
           />
-          <Frame view={view} lights={framed} propId={picked} controlsRef={controlsRef} />
+          <Frame view={view} lights={framed} propId={picked} house={house} controlsRef={controlsRef} />
           <mesh
             rotation={[-Math.PI / 2, 0, 0]}
             position={[0, 0, 0]}
@@ -197,10 +199,6 @@ export function Yard3dCanvas({
             fadeStrength={1}
             infiniteGrid
           />
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
-            <ringGeometry args={[0.15, 0.22, 40]} />
-            <meshBasicMaterial color="#7ee0d0" />
-          </mesh>
           {house ? <HouseShape house={house} /> : null}
           {glow && lights.length > 0 ? (
             <EffectComposer>
@@ -276,8 +274,8 @@ export function Yard3dCanvas({
   );
 }
 
-function Frame({ view, lights, propId, controlsRef }: { view: YardView; lights: YardLight[]; propId: string | null; controlsRef: { current: CameraControlsImpl | null } }) {
-  const pose = useMemo(() => yardCamera({ view, lights, propId }), [view, lights, propId]);
+function Frame({ view, lights, propId, house, controlsRef }: { view: YardView; lights: YardLight[]; propId: string | null; house: YardHouse | null; controlsRef: { current: CameraControlsImpl | null } }) {
+  const pose = useMemo(() => yardCamera({ view, lights, propId, house }), [view, lights, propId, house]);
   useEffect(() => {
     const current = controlsRef.current;
     if (!current) return;
@@ -327,8 +325,11 @@ function LightPoints({
   meshRef: { current: InstancedMesh | null };
 }) {
   const mesh = useRef<InstancedMesh>(null);
+  const halo = useRef<InstancedMesh>(null);
   const dummy = useMemo(() => new Object3D(), []);
   const color = useMemo(() => new Color(), []);
+  const { camera, size } = useThree();
+  const haloMap = useMemo(() => haloTexture(), []);
   const clock = useRef(0);
   const word = useRef<ColourWord>("section");
   const lookRef = useRef(look);
@@ -353,14 +354,31 @@ function LightPoints({
       outputs,
       feed: feedRef.current,
     });
+    const glow = halo.current;
+    const fov = "fov" in camera ? camera.fov : 45;
+    const half = Math.tan((fov * Math.PI) / 180 / 2);
     lights.forEach((light, index) => {
       dummy.position.set(light.x, light.y, light.z);
+      dummy.quaternion.identity();
+      dummy.scale.setScalar(bulbScale(dummy.position, camera.position, half, size.height));
       dummy.updateMatrix();
       current.setMatrixAt(index, dummy.matrix);
-      current.setColorAt(index, color.set(painted.colors[index] ?? light.color));
+      lampColor(color, painted.colors[index] ?? light.color);
+      current.setColorAt(index, color);
+      if (glow) {
+        dummy.quaternion.copy(camera.quaternion);
+        dummy.scale.multiplyScalar(2.6);
+        dummy.updateMatrix();
+        glow.setMatrixAt(index, dummy.matrix);
+        glow.setColorAt(index, color);
+      }
     });
     current.instanceMatrix.needsUpdate = true;
     if (current.instanceColor) current.instanceColor.needsUpdate = true;
+    if (glow) {
+      glow.instanceMatrix.needsUpdate = true;
+      if (glow.instanceColor) glow.instanceColor.needsUpdate = true;
+    }
     if (painted.word !== word.current) {
       word.current = painted.word;
       onWord(painted.word);
@@ -372,6 +390,7 @@ function LightPoints({
   });
   if (lights.length === 0) return null;
   return (
+    <group>
     <instancedMesh
       ref={mesh}
       args={[undefined, undefined, lights.length]}
@@ -394,58 +413,84 @@ function LightPoints({
         if (propId) onPick(propId);
       }}
     >
-      <sphereGeometry args={[0.04, 10, 8]} />
-      <meshBasicMaterial toneMapped={false} />
+      <sphereGeometry args={[0.0175, 10, 8]} />
+      <meshStandardMaterial
+        color="#ffffff"
+        emissive="#ffffff"
+        emissiveIntensity={1}
+        toneMapped={false}
+        onBeforeCompile={tintEmissive}
+      />
     </instancedMesh>
-  );
-}
-
-function HouseShape({ house }: { house: YardHouse }) {
-  const walls = useMemo(() => {
-    const shape = new Shape();
-    house.footprint.forEach((point, index) => {
-      if (index === 0) shape.moveTo(point.x, -point.z);
-      else shape.lineTo(point.x, -point.z);
-    });
-    shape.closePath();
-    return new ExtrudeGeometry(shape, { depth: house.eaveM, bevelEnabled: false });
-  }, [house]);
-  const roof = useMemo(() => roofPositions(house), [house]);
-  return (
-    <group>
-      <mesh geometry={walls} rotation={[-Math.PI / 2, 0, 0]}>
-        <meshBasicMaterial color="#3a4150" />
-        <lineSegments>
-          <edgesGeometry args={[walls]} />
-          <lineBasicMaterial color="#d4a574" />
-        </lineSegments>
-      </mesh>
-      {roof ? (
-        <mesh>
-          <bufferGeometry>
-            <bufferAttribute attach="attributes-position" args={[roof, 3]} />
-          </bufferGeometry>
-          <meshBasicMaterial color="#8a6a4a" side={DoubleSide} />
-        </mesh>
-      ) : null}
+    <instancedMesh ref={halo} args={[undefined, undefined, lights.length]} raycast={skipRaycast}>
+      <planeGeometry args={[0.09, 0.09]} />
+      <meshBasicMaterial map={haloMap} transparent depthWrite={false} blending={AdditiveBlending} toneMapped={false} />
+    </instancedMesh>
     </group>
   );
 }
 
-function roofPositions(house: YardHouse): Float32Array | null {
-  if (house.footprint.length !== 4) return null;
-  const [a, b, c, d] = house.footprint;
-  if (!a || !b || !c || !d) return null;
-  const y = house.eaveM;
-  const ridge = y + house.ridgeM;
-  const left = { x: (a.x + d.x) / 2, y: ridge, z: (a.z + d.z) / 2 };
-  const right = { x: (b.x + c.x) / 2, y: ridge, z: (b.z + c.z) / 2 };
-  return new Float32Array([
-    a.x, y, a.z, b.x, y, b.z, right.x, right.y, right.z,
-    a.x, y, a.z, right.x, right.y, right.z, left.x, left.y, left.z,
-    d.x, y, d.z, left.x, left.y, left.z, right.x, right.y, right.z,
-    d.x, y, d.z, right.x, right.y, right.z, c.x, y, c.z,
-  ]);
+function skipRaycast() {
+  return undefined;
+}
+
+const BULB_DIAMETER_M = 0.035;
+
+function bulbScale(at: { distanceTo: (other: { x: number; y: number; z: number }) => number }, cameraPosition: { x: number; y: number; z: number }, halfTan: number, viewHeight: number): number {
+  const distance = Math.max(0.4, at.distanceTo(cameraPosition));
+  const metersPerPixel = (2 * distance * halfTan) / Math.max(1, viewHeight);
+  const needed = (4 * metersPerPixel) / BULB_DIAMETER_M;
+  return Math.max(1, needed);
+}
+
+function haloTexture(): CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return new CanvasTexture(canvas);
+  const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gradient.addColorStop(0, "rgba(255,255,255,0.55)");
+  gradient.addColorStop(0.3, "rgba(255,255,255,0.18)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 64, 64);
+  const texture = new CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function tintEmissive(shader: { fragmentShader: string }) {
+  shader.fragmentShader = shader.fragmentShader.replace(
+    "#include <emissivemap_fragment>",
+    "#include <emissivemap_fragment>\n#if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )\ntotalEmissiveRadiance *= vColor.rgb;\n#endif",
+  );
+}
+
+function HouseShape({ house }: { house: YardHouse }) {
+  const parts = useMemo(() => houseTriangles(house), [house]);
+  return (
+    <group>
+      <Solid positions={parts.walls} color="#6e5d4c" />
+      {parts.ends.length > 0 ? <Solid positions={parts.ends} color="#6e5d4c" /> : null}
+      <Solid positions={parts.roof} color="#6e5d4c" />
+      {parts.ridge.length > 0 ? <Solid positions={parts.ridge} color="#cbbba8" /> : null}
+    </group>
+  );
+}
+
+function Solid({ positions, color }: { positions: Float32Array; color: string }) {
+  const geometry = useMemo(() => {
+    const geom = new BufferGeometry();
+    geom.setAttribute("position", new BufferAttribute(positions, 3));
+    geom.computeVertexNormals();
+    return geom;
+  }, [positions]);
+  return (
+    <mesh geometry={geometry}>
+      <meshStandardMaterial color={color} roughness={0.78} metalness={0} />
+    </mesh>
+  );
 }
 
 function Ready({ onReady }: { onReady: () => void }) {
@@ -520,9 +565,23 @@ function frameColours(input: {
 
 type ColoredLight = YardLight & { color: string };
 
-function coloredLights(props: readonly Prop[]): ColoredLight[] {
+function coloredLights(props: readonly Prop[], house: YardHouse | null): ColoredLight[] {
   const byId = new Map(props.map((prop) => [prop.id, prop]));
-  return yardLightPositions(props).map((light) => ({ ...light, color: colourOf(byId.get(light.propId), light.edgeId) }));
+  return sceneLightPositions(props, house).map((light) => ({ ...light, color: colourOf(byId.get(light.propId), light.edgeId) }));
+}
+
+/**
+ * A bright lamp colour. Black stays off. Warm white stays a pale 2700 K,
+ * not a saturated yellow.
+ */
+function lampColor(into: Color, hex: string): Color {
+  into.set(hex);
+  const max = Math.max(into.r, into.g, into.b);
+  if (max < 0.04) return into;
+  into.multiplyScalar(1 / max);
+  const amber = into.r > 0.85 && into.g > 0.25 && into.g < 0.9 && into.b < 0.2;
+  if (amber) into.set("#FFC58A");
+  return into;
 }
 
 function colourOf(prop: Prop | undefined, edgeId: string): string {
