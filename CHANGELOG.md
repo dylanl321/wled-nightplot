@@ -7,9 +7,11 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- Roofline on the eave (GitHub #159): a roofline follows the front edge of the roof at eave height, including when its saved point is flat on the ground. An upright prop stands at its height. The house is a gable, about the size of the props, in a dark colour so the lights read. The lights stay bright and coloured with the glow off, and the glow stays on when the graphics can do it. Street, Overhead, and This prop frame the house and the props. Street stays at eye height, looking at the front. Nothing is sent to a controller. Not Hardware Done.
+
 - Glow in the 3D yard (GitHub #159): the lights bloom, and only the lights. On a slow phone the glow turns off and the picture gets simpler. The view pauses while the tab is hidden. Nothing is sent to a controller. Not Hardware Done.
 
-- A house in the 3D yard (GitHub #159): double-click the ground to put down a simple house, walls up to the eave and a roof. Let a roofline go near the eave and it sits on that edge. No house is kept until you do that, so an older yard is unchanged. Nothing is sent to a controller. Not Hardware Done.
+- A house in the 3D yard (GitHub #159): double-click the ground to put down a gable house, walls up to the eave and a roof. A roofline sits on the front eave. No house is kept until you do that, so an older yard is unchanged. Nothing is sent to a controller. Not Hardware Done.
 
 - Move a prop in the 3D yard (GitHub #159): drag it along the ground, Turn it, or Lay flat / Stand up. The place is saved and read back, the same as a move on the drawing. Nothing is sent to a controller. Not Hardware Done.
 

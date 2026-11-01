@@ -39,14 +39,14 @@ function windowShape() {
   };
 }
 
-function line() {
+function line(length = 1) {
   const run = [{ id: "e1", from: "c1", to: "c2", kind: "lit" }];
   return {
     source: "template",
     units: "m",
     pitchM: 0.1,
     startOffsetM: 0,
-    corners: [{ id: "c1", x: 0, y: 0 }, { id: "c2", x: 1, y: 0 }],
+    corners: [{ id: "c1", x: 0, y: 0 }, { id: "c2", x: length, y: 0 }],
     run,
     strings: [{ id: "s1", startId: "c1", run }],
   };
@@ -109,7 +109,7 @@ const created = await api("/api/props", {
 const id = created.prop.id;
 const decoy = await api("/api/props", {
   method: "POST",
-  body: JSON.stringify({ label: `Other ${label}`, kind: "roofline", unit: "m", pitchMm: 100, layout: line(), yard: { x: 20, y: 0 } }),
+  body: JSON.stringify({ label: `Other ${label}`, kind: "custom", unit: "m", pitchMm: 100, layout: line(), yard: { x: 20, y: 0 } }),
 });
 const decoyId = decoy.prop.id;
 let lookSnapshot;
@@ -159,9 +159,14 @@ try {
   const written = [];
   try {
     for (const viewport of viewports) {
+      await api(`/api/props/${id}`, { method: "PATCH", body: JSON.stringify({ layout: windowShape() }) });
       await api(`/api/props/${id}/yard`, {
         method: "PATCH",
         body: JSON.stringify({ yard: { x: 0, y: 0.8, depth: 0, facing: 0, mount: "upright", heightM: 0 } }),
+      });
+      await api(`/api/props/${decoyId}/yard`, {
+        method: "PATCH",
+        body: JSON.stringify({ yard: { x: 20, y: 0 } }),
       });
       const context = await browser.newContext({
         viewport: { width: viewport.width, height: viewport.height },
@@ -218,13 +223,23 @@ try {
         await page.getByRole("button", { name: "Overhead", pressed: true }).waitFor();
         const box = await canvas.boundingBox();
         if (box) await page.mouse.dblclick(box.x + box.width * 0.82, box.y + 70);
+        // A 4 m roofline, centred on the front eave. The other prop stands beside the house.
+        await api(`/api/props/${id}`, { method: "PATCH", body: JSON.stringify({ layout: line(4) }) });
+        await api(`/api/props/${id}/yard`, {
+          method: "PATCH",
+          body: JSON.stringify({ yard: { x: -1.95, y: 2.5, depth: -0.08, facing: 0, mount: "upright", heightM: 0 } }),
+        });
+        await api(`/api/props/${decoyId}/yard`, {
+          method: "PATCH",
+          body: JSON.stringify({ yard: { x: 4.6, y: 0, heightM: 1.4 } }),
+        });
         await api("/api/yard-scene", {
           method: "PUT",
           body: JSON.stringify({
             house: {
-              footprint: [{ x: -3, z: 2 }, { x: 3, z: 2 }, { x: 3, z: 7 }, { x: -3, z: 7 }],
+              footprint: [{ x: -3, z: 0 }, { x: 3, z: 0 }, { x: 3, z: 4 }, { x: -3, z: 4 }],
               eaveM: 2.5,
-              ridgeM: 1.2,
+              ridgeM: 2.4,
             },
           }),
         });
@@ -244,7 +259,7 @@ try {
       }
       await page.getByRole("region", { name: "Yard drawing" }).evaluate((node) => node.scrollIntoView({ block: "start" }));
       await fits(page);
-      const path = join(shots, `yard-3d-${viewport.name}.png`);
+      const path = join(shots, `yard-3d-look-${viewport.name}.png`);
       await page.screenshot({ path, fullPage: false });
       written.push(path);
       await page.getByRole("button", { name: "2D" }).click();

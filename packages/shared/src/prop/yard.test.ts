@@ -95,6 +95,7 @@ describe("yard lights", () => {
   it("turns an upright prop about the vertical, and lays a flat one on the ground", () => {
     expect(placeYardLight({ x: 1, y: 0.5 }, yardPose({ x: 4, y: 2, facing: 90 }))).toEqual({ x: 4, y: 2.5, z: 1 });
     expect(placeYardLight({ x: 1, y: 2 }, yardPose({ x: 2, y: 9, depth: 3, mount: "flat", heightM: 0.2 }))).toEqual({ x: 3, y: 0.2, z: 5 });
+    expect(placeYardLight({ x: 0, y: 0.25 }, yardPose({ x: 2, y: 0.4, heightM: 1.8 }))).toEqual({ x: 2, y: 2.05, z: 0 });
   });
 
   it("a hidden run takes indexes and is not drawn", () => {

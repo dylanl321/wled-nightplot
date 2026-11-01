@@ -113,7 +113,8 @@ export function placeYardLight(local: { x: number; y: number }, pose: YardPose):
     case "upright":
       return {
         x: round3(pose.x + local.x * cos),
-        y: round3(pose.y + pose.heightM + local.y),
+        // heightM is how high the prop stands. An older point has no heightM, so y is that height.
+        y: round3((pose.heightM > 0 ? pose.heightM : pose.y) + local.y),
         z: round3(pose.depth + local.x * sin),
       };
     default: {
@@ -154,28 +155,99 @@ export function yardCamera(input: {
   view: YardView;
   lights: readonly { propId?: string; x: number; y: number; z: number }[];
   propId?: string | null;
+  /** Included so Street fits the house as well as the lights. */
+  house?: { footprint: readonly { x: number; z: number }[]; eaveM: number; ridgeM: number } | null;
 }): YardCamera {
   const focusId = input.view === "prop" ? (input.propId ?? input.lights[0]?.propId ?? null) : null;
   const lights = focusId ? input.lights.filter((light) => light.propId === focusId) : input.lights;
   const box = lightBox(lights.length > 0 ? lights : input.lights);
+  if (input.view !== "prop" && input.house && input.house.footprint.length > 0) {
+    const peak = input.house.eaveM + input.house.ridgeM;
+    for (const corner of input.house.footprint) {
+      box.minX = Math.min(box.minX, corner.x);
+      box.maxX = Math.max(box.maxX, corner.x);
+      box.minZ = Math.min(box.minZ, corner.z);
+      box.maxZ = Math.max(box.maxZ, corner.z);
+      box.minY = Math.min(box.minY, 0);
+      box.maxY = Math.max(box.maxY, peak);
+    }
+  }
   const center = {
     x: (box.minX + box.maxX) / 2,
     y: (box.minY + box.maxY) / 2,
     z: (box.minZ + box.maxZ) / 2,
   };
-  const span = Math.max(box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ, 1);
+  box.minX -= 0.45;
+  box.maxX += 0.45;
+  box.minY -= 0.25;
+  box.maxY += 0.45;
+  box.minZ -= 0.45;
+  box.maxZ += 0.45;
+  const half = Math.tan((45 * Math.PI) / 180 / 2);
+  const fit = Math.max(
+    (box.maxX - box.minX) / 2,
+    Math.max(box.maxY - 1.6, 1.6 - Math.min(box.minY, 1.6), 1),
+    1,
+  ) / half * 1.65;
   if (input.view === "overhead") {
+    const dist = Math.max(6, fit);
     return {
-      position: { x: round3(center.x), y: round3(Math.max(6, span * 1.8)), z: round3(center.z + span * 0.15) },
+      position: { x: round3(center.x), y: round3(dist), z: round3(center.z + dist * 0.08) },
       target: { x: round3(center.x), y: 0, z: round3(center.z) },
     };
   }
-  const back = input.view === "prop" ? Math.max(1.6, span * 1.5) : Math.max(4, span * 1.3);
   const eyeY = input.view === "prop" ? Math.max(1.6, center.y) : 1.6;
+  const lookY = input.view === "street" ? round3(Math.min(Math.max(center.y, 1.2), box.maxY)) : round3(center.y);
+  const target = { x: round3(center.x), y: lookY, z: round3(center.z) };
+  if (input.view === "street") {
+    // From the front corner, so the gable end shows. Eye stays at 1.6 m.
+    const azimuth = (52 * Math.PI) / 180;
+    const half = (45 * Math.PI) / 180 / 2;
+    let dist = Math.max(6, fit);
+    let eye = { x: center.x, y: eyeY, z: box.minZ - dist };
+    for (let step = 0; step < 12; step += 1) {
+      eye = {
+        x: center.x - Math.sin(azimuth) * dist,
+        y: eyeY,
+        z: center.z - Math.cos(azimuth) * dist,
+      };
+      if (eye.z < box.minZ && worstCorner(eye, target, box) < half * 0.9) break;
+      dist *= 1.16;
+    }
+    return {
+      position: { x: round3(eye.x), y: round3(eye.y), z: round3(eye.z) },
+      target,
+    };
+  }
+  const back = input.view === "prop" ? Math.max(1.6, fit * 0.65) : Math.max(4, fit);
   return {
     position: { x: round3(center.x), y: round3(eyeY), z: round3(box.minZ - back) },
-    target: { x: round3(center.x), y: round3(Math.min(center.y, 1.2)), z: round3(center.z) },
+    target,
   };
+}
+
+function worstCorner(
+  eye: { x: number; y: number; z: number },
+  target: { x: number; y: number; z: number },
+  box: { minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number },
+): number {
+  const forward = unit3(target.x - eye.x, target.y - eye.y, target.z - eye.z);
+  let worst = 0;
+  for (const x of [box.minX, box.maxX]) {
+    for (const y of [box.minY, box.maxY]) {
+      for (const z of [box.minZ, box.maxZ]) {
+        const to = unit3(x - eye.x, y - eye.y, z - eye.z);
+        const angle = Math.acos(Math.min(1, forward.x * to.x + forward.y * to.y + forward.z * to.z));
+        if (angle > worst) worst = angle;
+      }
+    }
+  }
+  return worst;
+}
+
+function unit3(x: number, y: number, z: number): { x: number; y: number; z: number } {
+  const length = Math.hypot(x, y, z) || 1;
+  return { x: x / length, y: y / length, z: z / length };
 }
 
 function lightBox(lights: readonly { x: number; y: number; z: number }[]): {
