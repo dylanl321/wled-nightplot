@@ -199,6 +199,39 @@ function lightBox(lights: readonly { x: number; y: number; z: number }[]): {
   return { minX, maxX, minY, maxY, minZ, maxZ };
 }
 
+const DRAG_STEP_M = 0.1;
+
+/** Move a prop on the ground. x is along the house, depth is out from the wall. */
+export function dragOnGround(input: {
+  point: PropYardPoint;
+  from: { x: number; z: number };
+  to: { x: number; z: number };
+}): PropYardPoint {
+  const x = snapStep(input.point.x + (input.to.x - input.from.x));
+  const depth = snapStep((input.point.depth ?? 0) + (input.to.z - input.from.z));
+  return yardPointForStore({ ...input.point, x, depth }, input.point);
+}
+
+/** Turn about the vertical, 45 degrees at a time. */
+export function turnYardPoint(point: PropYardPoint, degrees = 45): PropYardPoint {
+  const facing = snapStep((((point.facing ?? 0) + degrees) % 360 + 360) % 360);
+  return yardPointForStore({ ...inputFacing(point, facing) }, point);
+}
+
+/** Stand the drawing up, or lay it on the ground. */
+export function toggleYardMount(point: PropYardPoint): PropYardPoint {
+  const mount = point.mount === "flat" ? "upright" : "flat";
+  return yardPointForStore({ ...point, mount }, point);
+}
+
+function inputFacing(point: PropYardPoint, facing: number): PropYardPoint {
+  return { ...point, facing };
+}
+
+function snapStep(value: number): number {
+  return Math.round(value / DRAG_STEP_M) * DRAG_STEP_M;
+}
+
 function round3(value: number): number {
   return Math.round(value * 1000) / 1000 + 0;
 }

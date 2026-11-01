@@ -7,6 +7,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- Move a prop in the 3D yard (GitHub #159): drag it along the ground, Turn it, or Lay flat / Stand up. The place is saved and read back, the same as a move on the drawing. Nothing is sent to a controller. Not Hardware Done.
+
 - Look colours in the 3D yard (GitHub #159): pick a Look and press Play. The dots follow a preview of Solid, Breathe, Rainbow, Chase, Running, Twinkle, and Rain. It says Preview. When a prop is attached and the controller answers, those dots use the colours it just reported, and a missing read stays the preview. Nothing is written. Not Hardware Done.
 
 - 3D yard (GitHub #159): Your yard has a 2D / 3D switch. 3D opens on Street, from the road at eye height (1.6 m), and also has Overhead and This prop. Drag looks around, the wheel or a pinch zooms, and a right-drag or a second finger pans. The lights are the prop drawing. A browser with no WebGL keeps the drawing and says so. Nothing is sent to a controller. Not Hardware Done.
