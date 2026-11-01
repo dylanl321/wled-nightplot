@@ -132,6 +132,48 @@ describe("prop yard point", () => {
     });
   }
 
+  it("brings a deleted prop back with its id, drawing, sections and spot", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-restore-"));
+    const store = new FileLightsStore(join(dir, "lights.json"));
+    const app = appWith(store, dir);
+    const created = await app.request("/api/props", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: "Box", kind: "window", unit: "m", pitchMm: 100, measurements: { shape: "window", width: 2, height: 2 } }),
+    });
+    const prop = (await created.json() as { prop: Prop }).prop;
+    await app.request(`/api/props/${prop.id}/yard`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ yard: { x: 3, y: 0 } }) });
+    const before = store.loadProps().find((row) => row.id === prop.id)!;
+    await app.request(`/api/props/${prop.id}`, { method: "DELETE" });
+    expect(store.loadProps().some((row) => row.id === prop.id)).toBe(false);
+
+    const restored = await app.request(`/api/props/${prop.id}/restore`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prop: before }),
+    });
+    expect(restored.status).toBe(200);
+    const body = await restored.json() as { prop: Prop; message: string };
+    expect(body.message).toContain("not attached");
+    const back = store.loadProps().find((row) => row.id === prop.id)!;
+    expect(back.layout).toEqual(before.layout);
+    expect(back.sections).toEqual(before.sections);
+    expect(back.yard).toEqual({ x: 3, y: 0 });
+
+    const twice = await app.request(`/api/props/${prop.id}/restore`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prop: before }),
+    });
+    expect(twice.status).toBe(409);
+    const wrong = await app.request("/api/props/other/restore", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prop: before }),
+    });
+    expect(wrong.status).toBe(400);
+  });
+
   it("saves where a prop sits, reads it back, keeps it through a path save, and refuses a bad point", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nightplot-yard-"));
     const store = new FileLightsStore(join(dir, "lights.json"));

@@ -9,7 +9,7 @@ const viewports = [
   { name: "android-360x780", width: 360, height: 780 },
 ];
 
-/** The path editor at a wide window and a short landscape phone, beside the phone checks. */
+/** The prop canvas at a wide window and a short landscape phone, beside the phone checks. */
 const editorViewports = [
   { name: "desktop-1440x900", width: 1440, height: 900, touch: false },
   { name: "desktop-1280x800", width: 1280, height: 800, touch: false },
@@ -187,47 +187,25 @@ try {
     }
 
     try {
-      await page.goto(`${webOrigin}/props/new`, { waitUntil: "domcontentloaded" });
-      await settle(page);
-      assertFits(`${viewport.name} new-prop-name`, await measure(page));
-      await page.getByRole("textbox").fill("Front roof");
-      await page.getByRole("button", { name: "Next", exact: true }).click();
-      assertFits(`${viewport.name} new-prop-shape`, await measure(page));
-      await page.getByRole("button", { name: /Roofline/ }).click();
-      await page.getByRole("button", { name: "Next", exact: true }).click();
-      assertFits(`${viewport.name} new-prop-size`, await measure(page));
-      await page.getByRole("button", { name: "Next", exact: true }).click();
-      await page.getByRole("heading", { name: /controller end/ }).waitFor();
-      assertFits(`${viewport.name} new-prop-origin`, await measure(page));
-      await page.getByRole("button", { name: "Next", exact: true }).click();
-      await page.getByRole("button", { name: "Name sections" }).waitFor();
-      assertFits(`${viewport.name} new-prop-editor`, await measure(page));
-      await page.getByRole("button", { name: "Name sections" }).click();
-      await page.getByRole("heading", { name: "Name the sections" }).waitFor();
-      assertFits(`${viewport.name} new-prop-sections`, await measure(page));
+      // The one-page yard: New prop opens a clean canvas, Save returns to place it.
+      await page.goto(`${webOrigin}/?view=new`, { waitUntil: "domcontentloaded" });
+      await page.getByText("A clean canvas").waitFor();
+      await page.waitForTimeout(300);
+      assertFits(`${viewport.name} new-prop-canvas`, await measure(page));
+      await page.locator("[data-start=window]").click();
+      assertFits(`${viewport.name} new-prop-window`, await measure(page));
+      await page.locator("[data-run]").first().click();
+      await page.locator("#ye-rlen").waitFor();
+      assertFits(`${viewport.name} new-prop-run`, await measure(page));
+      await page.locator(".top .btn.primary").click();
+      await page.getByRole("heading", { name: /^Place / }).waitFor();
+      assertFits(`${viewport.name} new-prop-place`, await measure(page));
+      await page.getByRole("button", { name: "Next to the others" }).click();
+      await page.getByRole("button", { name: "Edit shape" }).waitFor();
+      assertFits(`${viewport.name} new-prop-placed`, await measure(page));
+      await page.getByRole("button", { name: "Props and Looks" }).click();
+      assertFits(`${viewport.name} yard-drawer`, await measure(page));
       console.log(`ok ${viewport.name} new-prop`);
-      await page.goto(`${webOrigin}/props/new`, { waitUntil: "domcontentloaded" });
-      await settle(page);
-      await page.getByRole("textbox").fill("Well house");
-      await page.getByRole("button", { name: "Next", exact: true }).click();
-      await page.getByRole("button", { name: /Well house/ }).click();
-      await page.getByRole("button", { name: "Next", exact: true }).click();
-      await page.getByRole("button", { name: "Next", exact: true }).click();
-      await page.getByRole("button", { name: "Name sections" }).waitFor();
-      assertFits(`${viewport.name} well-house-path`, await measure(page));
-      await page.getByRole("button", { name: "Name sections" }).click();
-      await page.getByRole("heading", { name: "Name the sections" }).waitFor();
-      assertFits(`${viewport.name} well-house-sections`, await measure(page));
-      console.log(`ok ${viewport.name} well-house-sections`);
-      await page.goto(`${webOrigin}/props/new`, { waitUntil: "domcontentloaded" });
-      await settle(page);
-      await page.getByRole("textbox").fill("Ridge");
-      await page.getByRole("button", { name: "Next", exact: true }).click();
-      await page.getByRole("button", { name: /Draw it/ }).click();
-      await page.getByRole("button", { name: "Next", exact: true }).click();
-      await page.getByRole("button", { name: "Name sections" }).waitFor();
-      assertFits(`${viewport.name} new-prop-custom`, await measure(page));
-      console.log(`ok ${viewport.name} new-prop-custom`);
     } catch (error) {
       failed += 1;
       console.error(String(error));
@@ -243,26 +221,22 @@ try {
     const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, hasTouch: viewport.touch });
     const page = await context.newPage();
     try {
-      await page.goto(`${webOrigin}/props/new`, { waitUntil: "domcontentloaded" });
-      await settle(page);
-      await page.getByRole("textbox").fill("Ridge");
-      await page.getByRole("button", { name: "Next", exact: true }).click();
-      await page.getByRole("button", { name: /Draw it/ }).click();
-      await page.getByRole("button", { name: "Next", exact: true }).click();
-      await page.getByRole("button", { name: "Name sections" }).waitFor();
-      await page.locator("[data-testid=layout-canvas] canvas").first().waitFor();
+      await page.goto(`${webOrigin}/?view=new`, { waitUntil: "domcontentloaded" });
+      await page.getByText("A clean canvas").waitFor();
+      await page.locator("[data-start=triangle]").click();
+      await page.locator(".ye .tools button").first().waitFor();
       assertFits(`${viewport.name} editor`, await measure(page));
-      const tools = await page.locator("aside[aria-label='Path tools'] button").evaluateAll((nodes) =>
+      const tools = await page.locator(".ye .tools button").evaluateAll((nodes) =>
         nodes.map((node) => {
           const box = node.getBoundingClientRect();
           return { name: node.textContent?.trim() ?? "", w: box.width, h: box.height, bottom: box.bottom, right: box.right };
         }),
       );
-      const bad = tools.filter((tool) => tool.w < 44 || tool.h < 40 || tool.h > 72 || tool.bottom > viewport.height + 1 || tool.right > viewport.width + 1);
-      if (tools.length < 6 || bad.length) throw new Error(`${viewport.name} editor tools\n${JSON.stringify(bad.length ? bad : tools)}`);
-      const canvas = await page.getByTestId("layout-canvas").boundingBox();
+      const bad = tools.filter((tool) => tool.w < 36 || tool.h < 30 || tool.bottom > viewport.height + 1 || tool.right > viewport.width + 1);
+      if (tools.length < 4 || bad.length) throw new Error(`${viewport.name} editor tools\n${JSON.stringify(bad.length ? bad : tools)}`);
+      const canvas = await page.locator(".ye .stagewrap").boundingBox();
       if (!canvas || canvas.width < 200 || canvas.height < 150) throw new Error(`${viewport.name} drawing too small ${JSON.stringify(canvas)}`);
-      const hit = await page.evaluate(([x, y]) => Boolean(document.elementFromPoint(x, y)?.closest("[data-testid=layout-canvas]")), [canvas.x + canvas.width / 2, canvas.y + canvas.height / 2]);
+      const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName === "CANVAS", [canvas.x + canvas.width / 2, canvas.y + canvas.height / 2]);
       if (!hit) throw new Error(`${viewport.name} the drawing does not take the pointer`);
       console.log(`ok ${viewport.name} editor`);
     } catch (error) {

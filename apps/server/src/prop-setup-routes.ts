@@ -142,9 +142,13 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     if (row?.sections !== undefined && !sections) {
       return c.json({ error: "invalid-sections", message: "Those sections could not be read. Nothing was saved." }, 400);
     }
+    // The yard editor can change a prop's shape (a triangle becomes a window).
+    const kind = row?.kind === undefined ? existing.kind : parsePropKind(row.kind);
+    if (!kind) return c.json({ error: "invalid", message: "That shape is not one Nightplot knows. Nothing was saved." }, 400);
     const base = label && label !== existing.label ? renameProp(deps.store, existing, label) : existing;
     const prop: Prop = {
       ...base,
+      kind,
       design,
       layout: row.layout,
       ...(sections ? { sections } : {}),
@@ -172,6 +176,45 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
       ? "Nothing was sent. The controller keeps these lights until the next Apply."
       : "Nothing was sent to a controller.");
     return c.json({ deleted: id, message: parts.join(" ") });
+  });
+
+  // Undo a delete on the yard: the prop comes back with its id, drawing,
+  // sections and yard point. Its controller attachment does not, because
+  // the Segments it had were removed; the reply says so.
+  app.post("/api/props/:id/restore", async (c) => {
+    const id = c.req.param("id");
+    if (deps.store.loadProps().some((row) => row.id === id)) {
+      return c.json({ error: "exists", message: "That prop is already in the yard. Nothing changed." }, 409);
+    }
+    const row = await c.req.json().catch(() => null) as { prop?: Partial<Prop> } | null;
+    const given = row?.prop;
+    const label = typeof given?.label === "string" ? given.label.trim().slice(0, 64) : "";
+    const kind = parsePropKind(given?.kind);
+    if (!given || given.id !== id || !label || !kind || !isPropDesign(given.design)) {
+      return c.json({ error: "invalid", message: "Send the prop as it was. Nothing was restored." }, 400);
+    }
+    if (given.layout !== undefined && !isPropLayout(given.layout)) {
+      return c.json({ error: "invalid", message: "That drawing could not be read. Nothing was restored." }, 400);
+    }
+    const sections = given.sections === undefined ? undefined : parsePropSections(given.sections);
+    if (given.sections !== undefined && !sections) {
+      return c.json({ error: "invalid-sections", message: "Those sections could not be read. Nothing was restored." }, 400);
+    }
+    const prop: Prop = {
+      id,
+      label,
+      kind,
+      elementIds: [],
+      design: given.design,
+      ...(given.layout ? { layout: given.layout } : {}),
+      ...(sections ? { sections } : {}),
+      ...(isPropYardPoint(given.yard) ? { yard: given.yard } : {}),
+      ...(given.wireframe ? { wireframe: given.wireframe } : {}),
+    };
+    deps.store.saveDesignedProp(prop);
+    const saved = deps.store.loadProps().find((item) => item.id === id);
+    if (!saved) return c.json({ error: "readback-mismatch", message: "The yard did not keep it. Nothing was restored." }, 500);
+    return c.json({ prop: saved, message: `Brought ${label} back. It is not attached to a controller. Nothing was sent.` });
   });
 
   // Where the prop sits on the yard drawing. Only the point changes; the

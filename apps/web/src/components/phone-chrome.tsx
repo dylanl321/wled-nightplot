@@ -12,6 +12,7 @@ const MORE: { href: string; label: string; nav: ShellNav }[] = [
   { href: "/discover", label: "Find Lights", nav: "discover" },
   { href: "/led-products", label: "LED products", nav: "catalog" },
   { href: "/backups", label: "Backups", nav: "backups" },
+  { href: "/sync", label: "Sync", nav: "sync" },
   { href: "/settings", label: "Settings", nav: "settings" },
 ];
 
@@ -25,7 +26,7 @@ export function PhoneChrome({
   sessions: LiveHint[];
 }) {
   const [more, setMore] = useState(false);
-  const moreActive = nav === "discover" || nav === "catalog" || nav === "backups" || nav === "settings";
+  const moreActive = nav === "discover" || nav === "catalog" || nav === "backups" || nav === "sync" || nav === "settings";
 
   useEffect(() => {
     if (!more) return;
@@ -54,10 +55,10 @@ export function PhoneChrome({
         <AllOffControl size="thumb" lights={lights} sessions={sessions} />
       </div>
       <nav aria-label="Nightplot" className="grid grid-cols-5 border-t border-border">
-        <PhoneLink href="/lights" active={nav === "lights" || nav === "light"}>Lights</PhoneLink>
+        <PhoneLink href="/" active={nav === "home"}>Yard</PhoneLink>
         <PhoneLink href="/looks" active={nav === "looks"}>Looks</PhoneLink>
-        <PhoneLink href="/yard" active={nav === "yard"}>Yard</PhoneLink>
-        <PhoneLink href="/sync" active={nav === "sync"}>Sync</PhoneLink>
+        <PhoneLink href="/lights" active={nav === "lights" || nav === "light"}>Lights</PhoneLink>
+        <PhoneLink href="/yard" active={nav === "yard"}>Check</PhoneLink>
         <button
           type="button"
           className={cn(

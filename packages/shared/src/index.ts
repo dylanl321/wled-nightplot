@@ -511,6 +511,7 @@ export {
   type LayoutCorner,
   type LengthEdit,
   type PropLayout,
+  type LayoutUnits,
   type SnapGuide,
 } from "./prop/layout.ts";
 export {
