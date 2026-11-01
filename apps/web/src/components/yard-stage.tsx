@@ -37,9 +37,10 @@ export function YardStage({ props }: { props: Prop[] }) {
 
   async function save(propId: string, at: PropYardPoint, quiet = false) {
     const before = saved[propId] ?? props.find((prop) => prop.id === propId)?.yard;
-    setSaved((rows) => ({ ...rows, [propId]: at }));
+    const next = { ...(before ?? {}), ...at, x: at.x, y: at.y };
+    setSaved((rows) => ({ ...rows, [propId]: next }));
     if (!quiet) setNote(null);
-    const res = await patchJson<{ prop: Prop; message?: string }>(`/api/props/${propId}/yard`, { yard: at });
+    const res = await patchJson<{ prop: Prop; message?: string }>(`/api/props/${propId}/yard`, { yard: next });
     if (!res.ok || !res.data.prop.yard) {
       setSaved((rows) => {
         const next = { ...rows };

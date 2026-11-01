@@ -177,6 +177,34 @@ describe("prop yard point", () => {
       body: JSON.stringify({ yard: { x: 0, y: 0 } }),
     });
     expect(missing.status).toBe(404);
+
+    const placed = await app.request(`/api/props/${prop.id}/yard`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ yard: { x: 3.25, y: -1.5, depth: 4, facing: 90, mount: "flat", heightM: 0.4 } }),
+    });
+    expect(placed.status).toBe(200);
+    expect(store.loadProps().find((row) => row.id === prop.id)?.yard).toEqual({
+      x: 3.25, y: -1.5, depth: 4, facing: 90, mount: "flat", heightM: 0.4,
+    });
+
+    const nudged = await app.request(`/api/props/${prop.id}/yard`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ yard: { x: 4, y: -1.5 } }),
+    });
+    expect(nudged.status).toBe(200);
+    expect(store.loadProps().find((row) => row.id === prop.id)?.yard).toEqual({
+      x: 4, y: -1.5, depth: 4, facing: 90, mount: "flat", heightM: 0.4,
+    });
+
+    const sideways = await app.request(`/api/props/${prop.id}/yard`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ yard: { x: 4, y: -1.5, mount: "sideways" } }),
+    });
+    expect(sideways.status).toBe(400);
+    expect(store.loadProps().find((row) => row.id === prop.id)?.yard?.depth).toBe(4);
   });
   it("renames a prop, keeps its place in the list, deletes it, and drops it from Looks", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nightplot-rename-"));

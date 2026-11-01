@@ -384,7 +384,9 @@ export {
   WIREFRAME_GROUPS,
   isHiddenReason,
   isProp,
+  isPropMount,
   isPropYardPoint,
+  PROP_MOUNTS,
   isPropIndexRange,
   isPropKind,
   isPropSection,
@@ -394,6 +396,7 @@ export {
   isPropAttachment,
   isPropDesign,
   type Prop,
+  type PropMount,
   type PropYardPoint,
   type PropAttachment,
   type PropDesign,
@@ -879,3 +882,13 @@ export {
   type YardBox,
   type YardPlacement,
 } from "./prop/yard.ts";
+export {
+  layoutLightPoints,
+  placeYardLight,
+  yardLightPositions,
+  yardPointForStore,
+  yardPose,
+  type LayoutLightPoint,
+  type YardLight,
+  type YardPose,
+} from "./prop/space.ts";
