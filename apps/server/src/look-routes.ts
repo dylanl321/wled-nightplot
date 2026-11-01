@@ -1,13 +1,16 @@
 import {
   LOOK_CAPTION,
   buildManagedPresets,
-  buildScheduleWrite,
+  planSchedule,
+  scheduleWriteFor,
   lookPushDigest,
   lookPushSummaryFor,
   lookSectionNotes,
   lookTargets,
   lookTargetsForLook,
   mergeFollowingSections,
+  lookItemDigests,
+  lookItemNames,
   migrateSectionColours,
   managedLookSlots,
   managedPresetSlotsMatch,
@@ -190,6 +193,8 @@ export function registerLookRoutes(app: Hono, deps: LookRouteDeps) {
       }
       const scheduleError = validateSchedule(document.schedule, document.looks, document.playlists);
       if (scheduleError) return c.json({ error: "invalid-schedule", message: `${scheduleError} Nothing was sent.` }, 400);
+      const plan = planSchedule(document.schedule, document, "slots");
+      if (plan.error) return c.json({ error: "invalid-schedule", message: `${plan.error} Nothing was sent.` }, 400);
       runSlot = runPresetSlot(document.schedule, document.looks, document.playlists);
       if (runSlot === null) {
         return c.json({ error: "invalid-schedule", message: "The Schedule does not name a Look or playlist in the library. Nothing was sent." }, 400);
@@ -349,7 +354,10 @@ export async function pushLooksToLight(
   const notes: string[] = [`Reports the ${document.looks.length} Looks as the same preset numbers.`, ...sectionNotes];
 
   if (input.includeSchedule && document.schedule && input.runSlot !== null) {
-    const planned = buildScheduleWrite(document.schedule, input.runSlot, wledTimerDialect(snap.firmware));
+    // Every Schedule, rows or not, goes through the planner, with this Light's sunrise / sunset layout.
+    const plan = planSchedule(document.schedule, document, wledTimerDialect(snap.firmware));
+    if (plan.error) return row(light, "refused", `Looks matched. ${plan.error} The Schedule was not sent.`, safety.id);
+    const planned = scheduleWriteFor(document.schedule, plan.timers);
     if (!(await deps.writeCfg(targetOf(light), planned.body))) {
       return row(light, "failed", "Looks matched. WLED did not accept the Schedule (NTP / timers).", safety.id);
     }
@@ -397,6 +405,13 @@ export async function pushLooksToLight(
     udp: input.udp && udpRole ? { group: input.udp.group, role: udpRole } : null,
   });
   const pushedAt = new Date().toISOString();
+  // What this Light now holds: every Look and playlist; the Schedule only when it went too.
+  const items = lookItemDigests(document);
+  const previous = light.lastLookPush?.items?.schedule;
+  if (!input.includeSchedule) {
+    if (previous === undefined) delete items.schedule;
+    else items.schedule = previous;
+  }
   deps.store.replace({
     ...light,
     lastLookPush: {
@@ -404,6 +419,8 @@ export async function pushLooksToLight(
       includeSchedule: input.includeSchedule,
       ...(input.udp && udpRole ? { udp: { group: input.udp.group, role: udpRole } } : {}),
       digest,
+      items,
+      names: { ...light.lastLookPush?.names, ...lookItemNames(document) },
     },
     ...(ledmap.digest ? { lastLedmap: { digest: ledmap.digest, at: pushedAt } } : {}),
   });

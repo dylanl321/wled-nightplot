@@ -38,7 +38,10 @@ import {
   pixelPreviewWrite,
   openPixelPreview,
   restorePixelPreview,
+  lookPreviewWrite,
+  restoreLookPreview,
   type ReadLiveFn,
+  type WledSegWrite,
   type WriteStateFn,
   type WledStateWrite,
 } from "../wled/live.ts";
@@ -52,6 +55,10 @@ export type LiveEngine = {
   list(): LiveSession[];
   startPreview: (args: StartArgs) => Promise<LiveActionResult>;
   startBlink: (args: StartArgs) => Promise<LiveActionResult>;
+  /** Show a whole Look for Preview, effects and all. Temporary; End restores the Light. */
+  startLook: (args: LookPreviewArgs) => Promise<LiveActionResult>;
+  /** True while this Light shows a Look Preview. */
+  isLookPreview: (lightId: string) => boolean;
   end: (lightId: string, kind: LiveEndKind) => Promise<LiveActionResult>;
   recoverFrozen: (light: Light, probe: ProbeFn) => Promise<FrozenRecoveryResult>;
   seen: (lightId: string, seenByYou: Exclude<SeenByYou, null>) => LiveSession | null;
@@ -80,6 +87,18 @@ export type StartArgs = {
    */
   reread?: boolean;
 };
+
+export type LookPreviewArgs = {
+  light: Light;
+  live: WledSnapshot | null;
+  label: string;
+  bri: number;
+  transition?: number;
+  seg: WledSegWrite[];
+  revision?: number;
+};
+
+export const LOOK_PREVIEW_CAPTION = "Preview on the lights. Temporary: End Preview puts back what was on. Not saved, not sent.";
 
 export type LiveActionResult =
   | {
@@ -117,6 +136,7 @@ export function createLiveEngine(deps: {
   const lastWrites = new Map<string, WledStateWrite>();
   const nativeRestores = new Map<string, WledNativeRestore>();
   const pixelSessions = new Set<string>();
+  const lookSessions = new Set<string>();
   const revisions = new Map<string, number>();
   const blocked = new Map<string, number>();
   const flights = new Map<string, Promise<unknown>>();
@@ -164,7 +184,8 @@ export function createLiveEngine(deps: {
           }
         : resolveLiveTarget(args.elements, args.light.ledCount, args.elementId);
     const existing = sessions.get(args.light.id);
-    const openPreview = existing?.kind === "preview" ? existing : null;
+    // A Look Preview is not a locate Preview: updating it here would mix the two.
+    const openPreview = existing?.kind === "preview" && !lookSessions.has(args.light.id) ? existing : null;
     const updating = kind === "preview" && openPreview != null;
     const color =
       kind === "blink"
@@ -336,6 +357,56 @@ export function createLiveEngine(deps: {
     };
   }
 
+  async function startLook(args: LookPreviewArgs): Promise<LiveActionResult> {
+    const id = args.light.id;
+    if (blocked.has(id) || (args.revision !== undefined && args.revision !== (revisions.get(id) ?? 0))) {
+      return { ok: false, status: 422, error: "cancelled", message: "Preview was cancelled by All Off. Nothing was sent." };
+    }
+    const existing = sessions.get(id);
+    const updating = existing?.kind === "preview" && lookSessions.has(id);
+    if (existing && !updating) {
+      return { ok: false, status: 422, error: "busy", message: existing.kind === "blink"
+        ? "Blink is running on this Light. Let it finish, then try again. Nothing was sent."
+        : "Another Preview is on this Light. End it first. Nothing was sent." };
+    }
+    if (!updating && (args.light.reachability !== "online" || !args.live)) {
+      return { ok: false, status: 422, error: "offline", message: "This Light hasn’t answered. Nothing was sent." };
+    }
+    const restore = updating ? nativeRestores.get(id) : args.live?.nativeRestore;
+    if (!restore) {
+      const why = args.live?.nativeRestoreUnavailable === "playlist"
+        ? "is running a playlist, which Nightplot cannot put back afterwards. Stop the playlist, then try again."
+        : args.live?.nativeRestoreUnavailable === "frozen"
+          ? "is holding frozen LEDs, which Nightplot cannot put back afterwards."
+          : "did not report everything Nightplot needs to put it back afterwards. Refresh it and try again.";
+      return { ok: false, status: 422, error: "restore-unavailable", sent: false, message: `This Light ${why} Nothing was sent.` };
+    }
+    const last = lastWrites.get(id);
+    const body = lookPreviewWrite({ bri: clampByte(args.bri), seg: args.seg, transition: args.transition }, restore, updating ? last : undefined);
+    const wrote = !(last && updating && writeBodiesEqual(last, body));
+    // Keep the original before sending: a lost reply is not proof nothing changed.
+    nativeRestores.set(id, restore);
+    lookSessions.add(id);
+    const session: LiveSession = updating
+      ? { ...existing!, target: { ...existing!.target, label: args.label } }
+      : {
+          id: randomUUID(), kind: "preview", lightId: id,
+          target: { elementId: null, label: args.label, start: 0, stop: args.light.ledCount },
+          color: "#000000", brightness: clampByte(args.bri), startedAt: new Date().toISOString(),
+          restore: restoreFrom(args.live!), source: "controller", seenByYou: null,
+        };
+    sessions.set(id, session);
+    if (wrote) {
+      const sent = await deps.write({ hostname: args.light.hostname, port: args.light.port }, body);
+      if (!sent) {
+        return { ok: false, status: 422, error: "write-failed",
+          message: "The Light did not confirm the Preview. End Preview still puts back what was on." };
+      }
+      lastWrites.set(id, body);
+    }
+    return { ok: true, session, live: null, reported: null, caption: LOOK_PREVIEW_CAPTION, updated: updating, wrote };
+  }
+
   async function end(lightId: string, kind: LiveEndKind): Promise<LiveActionResult> {
     const session = sessions.get(lightId);
     if (!session) {
@@ -351,11 +422,13 @@ export function createLiveEngine(deps: {
     if (shouldRestoreOnEnd(kind) && !blocked.has(lightId)) {
       restored = await deps.write(
         dest,
-        pixelSessions.has(lightId)
+        lookSessions.has(lightId)
+          ? restoreLookPreview(nativeRestores.get(lightId)!, lastWrites.get(lightId))
+          : pixelSessions.has(lightId)
           ? restorePixelPreview(nativeRestores.get(lightId)!, light.ledCount)
           : restoreWriteLeavingOverlay(session.restore, lastWrites.get(lightId)),
       );
-      if (!restored && pixelSessions.has(lightId)) return {
+      if (!restored && (pixelSessions.has(lightId) || lookSessions.has(lightId))) return {
         ok: false, status: 422, error: "restore-failed",
         message: "The previous look was not restored. The Preview snapshot is kept for another End Preview attempt.",
       };
@@ -365,6 +438,7 @@ export function createLiveEngine(deps: {
     lastWrites.delete(lightId);
     nativeRestores.delete(lightId);
     pixelSessions.delete(lightId);
+    lookSessions.delete(lightId);
     return {
       ok: true,
       session: null,
@@ -431,6 +505,8 @@ export function createLiveEngine(deps: {
     list: () => [...sessions.values()],
     startPreview: (args) => serial(args.light.id, () => start("preview", args)),
     startBlink: (args) => serial(args.light.id, () => start("blink", args)),
+    startLook: (args) => serial(args.light.id, () => startLook(args)),
+    isLookPreview: (id) => lookSessions.has(id),
     end: (id, kind) => serial(id, () => end(id, kind)),
     recoverFrozen,
     seen(lightId, seenByYou) {

@@ -19,6 +19,7 @@
  */
 
 import { LOOK_OFF_SLOT } from "./look.ts";
+import { isScheduleRow, type ScheduleRow } from "./schedule-rows.ts";
 
 export const WLED_TIMER_COUNT = 10;
 export const WLED_CLOCK_TIMER_MAX = 7;
@@ -77,6 +78,11 @@ export type NightlySchedule = {
   ntp: ScheduleNtp;
   /** WLED `dow` bitmask. 127 is every day. */
   weekdays: number;
+  /**
+   * The Schedule as rows, highest first. When present, these are what is
+   * sent; the single fields above follow the last all-year row.
+   */
+  rows?: ScheduleRow[];
 };
 
 export type WledNtp = {
@@ -100,45 +106,41 @@ export type WledTimer = {
   endDay?: number;
 };
 
+/** One WLED `TimeChangeRule`: week (1–4, 0 = last), Sunday, month 1–12, local hour, UTC offset in minutes. */
+export type WledTimeChangeRule = { week: number; month: number; hour: number; offset: number };
+
 /**
- * WLED `if.ntp.tz` labels. Indices match the Time & Macros dropdown on
- * 0.14 / 0.15 (GMT-offset list). DST is WLED's, not Nightplot's.
+ * WLED `if.ntp.tz`. The index is WLED's `TZ_TABLE` order in `wled00/ntp.cpp`
+ * (0.15.x and 16.0.x; 24 is 16.0.x only). Each zone carries WLED's own
+ * daylight and standard rules, so Nightplot can work out the same local
+ * sunset the Light does.
  */
-export const WLED_TIMEZONES: readonly { tz: number; label: string }[] = [
-  { tz: 0, label: "UTC−12" },
-  { tz: 1, label: "UTC−11" },
-  { tz: 2, label: "UTC−10 Hawaii" },
-  { tz: 3, label: "UTC−09 Alaska" },
-  { tz: 4, label: "UTC−08 Pacific" },
-  { tz: 5, label: "UTC−07 Mountain" },
-  { tz: 6, label: "UTC−07 Arizona" },
-  { tz: 7, label: "UTC−06 Central" },
-  { tz: 8, label: "UTC−05 Eastern" },
-  { tz: 9, label: "UTC−04 Atlantic" },
-  { tz: 10, label: "UTC−03:30 Newfoundland" },
-  { tz: 11, label: "UTC−03" },
-  { tz: 12, label: "UTC−02" },
-  { tz: 13, label: "UTC−01" },
-  { tz: 14, label: "UTC" },
-  { tz: 15, label: "UTC+01 Central Europe" },
-  { tz: 16, label: "UTC+02" },
-  { tz: 17, label: "UTC+03" },
-  { tz: 18, label: "UTC+03:30" },
-  { tz: 19, label: "UTC+04" },
-  { tz: 20, label: "UTC+04:30" },
-  { tz: 21, label: "UTC+05" },
-  { tz: 22, label: "UTC+05:30 India" },
-  { tz: 23, label: "UTC+05:45" },
-  { tz: 24, label: "UTC+06" },
-  { tz: 25, label: "UTC+06:30" },
-  { tz: 26, label: "UTC+07" },
-  { tz: 27, label: "UTC+08" },
-  { tz: 28, label: "UTC+09" },
-  { tz: 29, label: "UTC+09:30" },
-  { tz: 30, label: "UTC+10" },
-  { tz: 31, label: "UTC+11" },
-  { tz: 32, label: "UTC+12" },
-  { tz: 33, label: "UTC+13" },
+export const WLED_TIMEZONES: readonly { tz: number; label: string; daylight: WledTimeChangeRule; standard: WledTimeChangeRule }[] = [
+  { tz: 0, label: "UTC", daylight: { week: 0, month: 3, hour: 1, offset: 0 }, standard: { week: 0, month: 3, hour: 1, offset: 0 } },
+  { tz: 1, label: "UK (GMT / BST)", daylight: { week: 0, month: 3, hour: 1, offset: 60 }, standard: { week: 0, month: 10, hour: 2, offset: 0 } },
+  { tz: 2, label: "Central Europe (CET / CEST)", daylight: { week: 0, month: 3, hour: 2, offset: 120 }, standard: { week: 0, month: 10, hour: 3, offset: 60 } },
+  { tz: 3, label: "Eastern Europe (EET / EEST)", daylight: { week: 0, month: 3, hour: 3, offset: 180 }, standard: { week: 0, month: 10, hour: 4, offset: 120 } },
+  { tz: 4, label: "US Eastern", daylight: { week: 2, month: 3, hour: 2, offset: -240 }, standard: { week: 1, month: 11, hour: 2, offset: -300 } },
+  { tz: 5, label: "US Central", daylight: { week: 2, month: 3, hour: 2, offset: -300 }, standard: { week: 1, month: 11, hour: 2, offset: -360 } },
+  { tz: 6, label: "US Mountain", daylight: { week: 2, month: 3, hour: 2, offset: -360 }, standard: { week: 1, month: 11, hour: 2, offset: -420 } },
+  { tz: 7, label: "US Arizona", daylight: { week: 1, month: 11, hour: 2, offset: -420 }, standard: { week: 1, month: 11, hour: 2, offset: -420 } },
+  { tz: 8, label: "US Pacific", daylight: { week: 2, month: 3, hour: 2, offset: -420 }, standard: { week: 1, month: 11, hour: 2, offset: -480 } },
+  { tz: 9, label: "China (UTC+8)", daylight: { week: 0, month: 3, hour: 1, offset: 480 }, standard: { week: 0, month: 3, hour: 1, offset: 480 } },
+  { tz: 10, label: "Japan (UTC+9)", daylight: { week: 0, month: 3, hour: 1, offset: 540 }, standard: { week: 0, month: 3, hour: 1, offset: 540 } },
+  { tz: 11, label: "Australia Eastern", daylight: { week: 1, month: 10, hour: 2, offset: 660 }, standard: { week: 1, month: 4, hour: 3, offset: 600 } },
+  { tz: 12, label: "New Zealand", daylight: { week: 0, month: 9, hour: 2, offset: 780 }, standard: { week: 1, month: 4, hour: 3, offset: 720 } },
+  { tz: 13, label: "North Korea (UTC+8:30)", daylight: { week: 0, month: 3, hour: 1, offset: 510 }, standard: { week: 0, month: 3, hour: 1, offset: 510 } },
+  { tz: 14, label: "India (UTC+5:30)", daylight: { week: 0, month: 3, hour: 1, offset: 330 }, standard: { week: 0, month: 3, hour: 1, offset: 330 } },
+  { tz: 15, label: "Canada Saskatchewan", daylight: { week: 1, month: 11, hour: 2, offset: -360 }, standard: { week: 1, month: 11, hour: 2, offset: -360 } },
+  { tz: 16, label: "Australia Northern", daylight: { week: 1, month: 4, hour: 3, offset: 570 }, standard: { week: 1, month: 4, hour: 3, offset: 570 } },
+  { tz: 17, label: "Australia Southern", daylight: { week: 1, month: 10, hour: 2, offset: 630 }, standard: { week: 1, month: 4, hour: 3, offset: 570 } },
+  { tz: 18, label: "Hawaii", daylight: { week: 0, month: 3, hour: 1, offset: -600 }, standard: { week: 0, month: 3, hour: 1, offset: -600 } },
+  { tz: 19, label: "Novosibirsk (UTC+7)", daylight: { week: 0, month: 3, hour: 1, offset: 420 }, standard: { week: 0, month: 3, hour: 1, offset: 420 } },
+  { tz: 20, label: "Alaska (Anchorage)", daylight: { week: 2, month: 3, hour: 2, offset: -480 }, standard: { week: 1, month: 11, hour: 2, offset: -540 } },
+  { tz: 21, label: "Mexico Central", daylight: { week: 1, month: 4, hour: 2, offset: -360 }, standard: { week: 1, month: 4, hour: 2, offset: -360 } },
+  { tz: 22, label: "Pakistan (UTC+5)", daylight: { week: 0, month: 3, hour: 1, offset: 300 }, standard: { week: 0, month: 3, hour: 1, offset: 300 } },
+  { tz: 23, label: "Brazil (Brasília)", daylight: { week: 0, month: 3, hour: 1, offset: -180 }, standard: { week: 0, month: 3, hour: 1, offset: -180 } },
+  { tz: 24, label: "Australia Western (16.0 and later)", daylight: { week: 0, month: 3, hour: 1, offset: 480 }, standard: { week: 0, month: 3, hour: 1, offset: 480 } },
 ];
 
 export function wledTimezoneLabel(tz: number): string {
@@ -162,6 +164,7 @@ export function isNightlySchedule(value: unknown): value is NightlySchedule {
   if (typeof row.weekdays !== "number" || !Number.isInteger(row.weekdays) || row.weekdays < 1 || row.weekdays > 127) {
     return false;
   }
+  if (row.rows !== undefined && (!Array.isArray(row.rows) || !row.rows.every(isScheduleRow))) return false;
   return true;
 }
 
@@ -182,6 +185,14 @@ export function validateSchedule(
       schedule.on.offsetMinutes > WLED_SUNSET_OFFSET_MAX
     ) {
       return `Sunset offset is ${WLED_SUNSET_OFFSET_MIN} to ${WLED_SUNSET_OFFSET_MAX} minutes.`;
+    }
+  }
+  for (const row of schedule.rows ?? []) {
+    if (row.run.kind === "look" && !looks.some((look) => look.id === (row.run as { lookId: string }).lookId)) {
+      return "A Schedule row names a Look that is not in the library.";
+    }
+    if (row.run.kind === "playlist" && !playlists.some((list) => list.id === (row.run as { playlistId: string }).playlistId)) {
+      return "A Schedule row names a playlist that is not in the library.";
     }
   }
   const run = schedule.run;
@@ -295,7 +306,15 @@ export function buildScheduleWrite(
   expectedNtp: WledNtp;
   expectedTimers: WledTimer[];
 } {
-  const timers = buildScheduleTimers(schedule, runSlot, dialect);
+  return scheduleWriteFor(schedule, buildScheduleTimers(schedule, runSlot, dialect));
+}
+
+/** The `/json/cfg` body for NTP, location and these timers, and what to read back. */
+export function scheduleWriteFor(schedule: NightlySchedule, timers: WledTimer[]): {
+  body: Record<string, unknown>;
+  expectedNtp: WledNtp;
+  expectedTimers: WledTimer[];
+} {
   const expectedNtp: WledNtp = {
     enabled: true,
     host: schedule.ntp.host.trim() || WLED_NTP_HOST_DEFAULT,

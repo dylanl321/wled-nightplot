@@ -34,6 +34,8 @@ export type WledSnapshot = {
   frozenSegments?: { id: number; start: number; stop: number }[];
   /** WLED `state.ps` when a preset (1–250) is active. Absent when none or unread. */
   preset?: number;
+  /** WLED `state.pl` when a playlist (1–250) is running. Absent when none or unread. */
+  playlist?: number;
 };
 
 /** Unknown when `segments` is null. Distinct from a known empty `[]`. */
@@ -92,6 +94,7 @@ export function parseWledPayload(body: unknown): WledSnapshot | null {
     ...(nativeRestoreUnavailable ? { nativeRestoreUnavailable } : {}),
     ...(frozenSegments?.length ? { frozenSegments } : {}),
     ...(Number.isInteger(state?.ps) && Number(state!.ps) >= 1 && Number(state!.ps) <= 250 ? { preset: Number(state!.ps) } : {}),
+    ...(Number.isInteger(state?.pl) && Number(state!.pl) >= 1 && Number(state!.pl) <= 250 ? { playlist: Number(state!.pl) } : {}),
   };
 }
 
