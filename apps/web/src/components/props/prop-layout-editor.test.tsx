@@ -1,5 +1,5 @@
 import type { PropLayout } from "@nightplot/shared";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PropLayoutEditor } from "./prop-layout-editor";
 
@@ -296,5 +296,69 @@ describe("run list", () => {
     fireEvent.click(screen.getByRole("button", { name: "Name sections" }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(done).toHaveBeenCalledTimes(1);
+  });
+
+  it("Escape clears a selection or a tool and does not leave the editor", async () => {
+    const done = vi.fn();
+    render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="edit" doneLabel="Name sections" onDone={done} onBack={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "A1" }));
+    expect(screen.getByRole("button", { name: "A1" }).closest("li")?.getAttribute("aria-current")).toBe("true");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(done).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "A1" }).closest("li")?.getAttribute("aria-current")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add point" }));
+    expect(screen.getByText(/Add point is on/)).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(done).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Add point is on/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Name sections" })).toBeTruthy();
+  });
+
+  it("a click on empty canvas deselects, and a pan keeps the selection", async () => {
+    render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "A1" }));
+    const stage = await screen.findByTestId("layout-canvas");
+    const current = () => screen.getByRole("button", { name: "A1" }).closest("li")?.getAttribute("aria-current");
+    expect(current()).toBe("true");
+    act(() => {
+      stage.dispatchEvent(new TestPointerEvent("pointerdown", { pointerId: 1, clientX: 30, clientY: 30, button: 0 }));
+      stage.dispatchEvent(new TestPointerEvent("pointermove", { pointerId: 1, clientX: 90, clientY: 70, button: 0 }));
+      stage.dispatchEvent(new TestPointerEvent("pointerup", { pointerId: 1, clientX: 90, clientY: 70, button: 0 }));
+    });
+    expect(current()).toBe("true");
+    const empty = await stagePoint({ x: 3, y: 2 });
+    tap(empty.node, empty.x, empty.y);
+    expect(current()).toBeNull();
+  });
+
+  it("Delete point merges the two runs at the selected corner", async () => {
+    const run = [{ id: "e1", from: "c1", to: "c2", kind: "lit" as const, name: "near", lockedLights: 12 }];
+    const layout = { ...oneRun(), run, strings: [{ id: "s1", startId: "c1", run }] };
+    const done = vi.fn();
+    render(<PropLayoutEditor name="Ridge" initial={layout} mode="edit" onDone={done} onBack={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Delete point" })).toHaveProperty("disabled", true);
+    fireEvent.click(await screen.findByRole("button", { name: /A1/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Add point" }));
+    expect(screen.getByText(/String A: Wire in, 2 runs/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Delete point" })).toHaveProperty("disabled", false);
+    fireEvent.click(screen.getByRole("button", { name: "Delete point" }));
+    expect(screen.getByText(/The two runs are now one/)).toBeTruthy();
+    expect(screen.getByText(/String A: Wire in, 1 run/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    const saved = done.mock.calls[0]![0];
+    expect(saved.run).toHaveLength(1);
+    expect(saved.run[0]).toMatchObject({ id: "e1", name: "near", lockedLights: 12, from: "c1", to: "c2" });
+  });
+
+  it("saves a change and says Saved", async () => {
+    const autosave = vi.fn(async (_layout: PropLayout) => true);
+    render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="edit" onDone={vi.fn()} onBack={vi.fn()} onAutosave={autosave} />);
+    const field = await screen.findByLabelText("A1 lights");
+    fireEvent.change(field, { target: { value: "14" } });
+    fireEvent.submit(field.closest("form")!);
+    await waitFor(() => expect(screen.getByRole("status")).toHaveProperty("textContent", "Saved"));
+    expect(autosave).toHaveBeenCalled();
+    const saved = autosave.mock.calls.at(-1)?.[0];
+    expect(saved?.run[0]?.lockedLights).toBe(14);
   });
 });

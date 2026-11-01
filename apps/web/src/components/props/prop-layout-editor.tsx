@@ -6,6 +6,7 @@ import {
   clearEdgeLights,
   continueToPoint,
   countLayout,
+  deletePoint,
   deleteRun,
   edgeLengthM,
   ensureStrings,
@@ -66,6 +67,7 @@ export function PropLayoutEditor({
   backLabel = "Back",
   onDone,
   onBack,
+  onAutosave,
 }: {
   name: string;
   initial: PropLayout;
@@ -74,6 +76,8 @@ export function PropLayoutEditor({
   backLabel?: string;
   onDone: (layout: PropLayout) => void;
   onBack: (layout: PropLayout) => void | Promise<void>;
+  /** Write the drawing. Absent on a new prop, which is kept on this device until it is created. */
+  onAutosave?: (layout: PropLayout) => Promise<boolean>;
 }) {
   const [layout, setLayout] = useState(initial);
   const [mode, setMode] = useState<EditorMode>(initialMode);
@@ -89,6 +93,7 @@ export function PropLayoutEditor({
   const [note, setNote] = useState<string | null>(null);
   const [review, setReview] = useState<string[] | null>(null);
   const [leaving, setLeaving] = useState(false);
+  const [saveNote, setSaveNote] = useState<string | null>(null);
   const [activeString, setActiveString] = useState(layoutStrings(initial)[0]?.id ?? "s1");
   const [dark, setDark] = useState(false);
   const [placing, setPlacing] = useState(false);
@@ -102,6 +107,13 @@ export function PropLayoutEditor({
   const stage = useRef<EditorStageHandle>(null);
   const layoutRef = useRef(layout);
   const keyRef = useRef<(event: KeyboardEvent) => void>(() => {});
+  const onAutosaveRef = useRef(onAutosave);
+  onAutosaveRef.current = onAutosave;
+  const saveGen = useRef(0);
+  const openedJson = useRef(JSON.stringify(ensureStrings(initial)));
+  const saveNoteRef = useRef(saveNote);
+  saveNoteRef.current = saveNote;
+  const runPress = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     const previous = document.title;
@@ -117,6 +129,64 @@ export function PropLayoutEditor({
       /* a private browser may refuse the draft */
     }
   }, [layout]);
+
+  async function persistNow(): Promise<boolean> {
+    const next = ensureStrings(layoutRef.current);
+    const json = JSON.stringify(next);
+    const save = onAutosaveRef.current;
+    if (!save) {
+      let stored = true;
+      try {
+        localStorage.setItem("nightplot-prop-layout-draft", json);
+      } catch {
+        stored = false;
+      }
+      if (json === openedJson.current) {
+        setSaveNote(null);
+        return true;
+      }
+      setSaveNote(stored ? "Saved on this device" : "Not saved");
+      if (stored) openedJson.current = json;
+      return stored;
+    }
+    const mine = saveGen.current + 1;
+    saveGen.current = mine;
+    setSaveNote("Saving…");
+    let ok = false;
+    try {
+      ok = await save(next);
+    } catch {
+      ok = false;
+    }
+    if (mine !== saveGen.current) return ok;
+    if (ok) openedJson.current = json;
+    setSaveNote(ok ? "Saved" : "Not saved");
+    return ok;
+  }
+
+  useEffect(() => {
+    if (JSON.stringify(ensureStrings(layout)) === openedJson.current) return;
+    const timer = window.setTimeout(() => { void persistNow(); }, 400);
+    return () => window.clearTimeout(timer);
+  }, [layout]);
+
+  useEffect(() => {
+    const onLeave = (event: BeforeUnloadEvent) => {
+      const pending = JSON.stringify(ensureStrings(layoutRef.current)) !== openedJson.current;
+      const note = saveNoteRef.current;
+      if (pending || note === "Saving…" || note === "Not saved") {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    const onHide = () => { void persistNow(); };
+    window.addEventListener("beforeunload", onLeave);
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      window.removeEventListener("beforeunload", onLeave);
+      window.removeEventListener("pagehide", onHide);
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => keyRef.current(event);
@@ -138,9 +208,29 @@ export function PropLayoutEditor({
     } else if (event.key === "f" || event.key === "F") {
       event.preventDefault();
       stage.current?.fit();
-    } else if (event.key === "Enter" || event.key === "Escape") {
+    } else if (event.key === "Escape") {
       event.preventDefault();
-      onDone(layoutRef.current);
+      if (review) {
+        setReview(null);
+        return;
+      }
+      if (splitting || placing || dark) {
+        setSplitting(false);
+        setPlacing(false);
+        setDark(false);
+        setGhost(null);
+        return;
+      }
+      if (picked || selected) {
+        setPicked(null);
+        setSelected(null);
+      }
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      void askDone();
+    } else if ((event.key === "Delete" || event.key === "Backspace") && !picked && selected && deletePoint(layoutRef.current, selected) !== layoutRef.current) {
+      event.preventDefault();
+      removePoint(selected);
     } else if ((event.key === "Delete" || event.key === "Backspace") && picked) {
       event.preventDefault();
       removeRun(picked);
@@ -218,20 +308,31 @@ export function PropLayoutEditor({
   async function leave() {
     setLeaving(true);
     try {
+      const ok = await persistNow();
+      if (!ok) return;
       await onBack(ensureStrings(layoutRef.current));
     } finally {
       setLeaving(false);
     }
   }
 
-  function askDone() {
+  function finishDone() {
     const next = ensureStrings(layoutRef.current);
     const notes = layoutReview(next);
-    if (notes.length === 0) {
-      onDone(next);
+    if (notes.length === 0) onDone(next);
+    else setReview(notes);
+  }
+
+  function askDone() {
+    if (!onAutosaveRef.current) {
+      void persistNow();
+      finishDone();
       return;
     }
-    setReview(notes);
+    void (async () => {
+      const ok = await persistNow();
+      if (ok) finishDone();
+    })();
   }
 
   function applyLights(edgeId: string, lights: number | null) {
@@ -244,6 +345,16 @@ export function PropLayoutEditor({
     setPicked(null);
     setSelected(null);
     commit(next, "Deleted the run.");
+  }
+
+  function removePoint(cornerId: string) {
+    const next = deletePoint(layoutRef.current, cornerId);
+    if (next === layoutRef.current) {
+      setNote("That corner is a wire-in, or other runs use it, so it stays.");
+      return;
+    }
+    setSelected(null);
+    commit(next, "The two runs are now one.");
   }
 
   /** Where a new point or a dragged corner lands, after snap. */
@@ -396,6 +507,7 @@ export function PropLayoutEditor({
         <header className="flex h-14 shrink-0 items-center gap-1 bg-background px-1">
           <button type="button" className="min-h-11 shrink-0 px-3 text-[16px]" onClick={() => void leave()}>{leaving ? "Saving…" : backLabel}</button>
           <h1 className="min-w-0 flex-1 truncate text-[17px] font-medium">{name}</h1>
+          {saveNote ? <p role="status" className="shrink-0 px-2 text-[13px] text-muted-foreground">{saveNote}</p> : null}
         </header>
         <p className={`shrink-0 bg-background px-4 text-[15px] ${short ? "text-amber-200" : "text-foreground"}`}>{totalText}</p>
         <p className="shrink-0 bg-background px-4 pb-2 text-[14px] leading-5 text-muted-foreground">{editorHint(mode, dark, placing, splitting)}</p>
@@ -412,13 +524,15 @@ export function PropLayoutEditor({
             label="Prop drawing"
             testId="layout-canvas"
             onBackgroundTap={(tap) => {
+              // A click on empty canvas clears the selection. A pan never
+              // reaches here, so dragging keeps whatever is selected.
               setPicked(null);
+              setSelected(null);
               if (splittingRef.current) {
                 setNote("Tap a run to add a point on it.");
                 return;
               }
               if (mode === "trace") addPoint(tap.world, tap.altKey, tap.shiftKey);
-              else setSelected(null);
             }}
             onHover={(hover) => {
               if (!hover || mode !== "trace") return setGhost(null);
@@ -490,6 +604,14 @@ export function PropLayoutEditor({
                     }
                     setPicked(edge.id);
                   };
+                  const pressRun = (event: Konva.KonvaEventObject<PointerEvent>) => {
+                    runPress.current = { x: event.evt.clientX, y: event.evt.clientY };
+                  };
+                  const clickRun = (event: Konva.KonvaEventObject<MouseEvent>) => {
+                    const start = runPress.current;
+                    if (start && Math.hypot(event.evt.clientX - start.x, event.evt.clientY - start.y) > 6) return;
+                    pick(event);
+                  };
                   return (
                     <Group key={edge.id}>
                       {selectedRun ? (
@@ -501,11 +623,12 @@ export function PropLayoutEditor({
                         strokeWidth={edge.kind === "wire" ? 2 : selectedRun ? 6 : 3}
                         dash={edge.kind === "wire" ? [6, 4] : undefined}
                         hitStrokeWidth={28}
-                        onClick={pick}
+                        onPointerDown={pressRun}
+                        onClick={clickRun}
                         onTap={pick}
                       />
                       <Chevron a={a} b={b} colour={edge.kind === "wire" ? WIRE : colour} />
-                      <Group x={spot.badge.x} y={spot.badge.y} onClick={pick} onTap={pick}>
+                      <Group x={spot.badge.x} y={spot.badge.y} onPointerDown={pressRun} onClick={clickRun} onTap={pick}>
                         <Circle radius={14} fill={selectedRun ? colour : "#12141a"} stroke={selectedRun ? "#f4efe6" : zero ? WARN : colour} strokeWidth={selectedRun ? 3 : 1.5} />
                         <Text text={runBadge(stringIndex, order)} fontSize={11} fill={selectedRun ? "#0c0d10" : zero ? WARN : INK} width={28} offsetX={14} offsetY={5} align="center" listening={false} />
                         {edge.lockedLengthM ? <LockMark /> : null}
@@ -609,6 +732,7 @@ export function PropLayoutEditor({
       </div>
       <div className="flex gap-2 bg-background px-2 pb-2">
         <DockButton onClick={() => splitPickedOrArm()} pressed={splitting}>Add point</DockButton>
+        <DockButton onClick={() => selected && removePoint(selected)} disabled={!selected || deletePoint(layout, selected) === layout}>Delete point</DockButton>
         <DockButton onClick={joinNearby}>Join</DockButton>
       </div>
       <div className="flex gap-2 bg-background px-2 pb-2">
@@ -629,7 +753,20 @@ export function PropLayoutEditor({
           </ul>
           <div className="mt-3 flex gap-2">
             <Button type="button" variant="outline" className="min-h-11 flex-1" onClick={() => setReview(null)}>Stay</Button>
-            <Button type="button" className="min-h-11 flex-1" onClick={() => { setReview(null); onDone(ensureStrings(layoutRef.current)); }}>Continue</Button>
+            <Button type="button" className="min-h-11 flex-1" onClick={() => {
+              if (!onAutosaveRef.current) {
+                void persistNow();
+                setReview(null);
+                onDone(ensureStrings(layoutRef.current));
+                return;
+              }
+              void (async () => {
+                const ok = await persistNow();
+                if (!ok) return;
+                setReview(null);
+                onDone(ensureStrings(layoutRef.current));
+              })();
+            }}>Continue</Button>
           </div>
         </div>
       ) : null}

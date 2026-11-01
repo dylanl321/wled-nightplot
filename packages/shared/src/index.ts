@@ -460,6 +460,8 @@ export {
   continueToPoint,
   countLayout,
   clearEdgeLights,
+  assignStableRunIds,
+  deletePoint,
   deleteRun,
   edgeLightCount,
   setEdgeLights,
