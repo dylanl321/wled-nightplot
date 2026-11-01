@@ -22,6 +22,54 @@ const initial: LooksPayload = {
   caption: LOOK_CAPTION,
 };
 
+const arch = {
+  id: "prop-arch",
+  lightId: "porch",
+  lightName: "Porch",
+  label: "Arch",
+  kind: "arch" as const,
+  elementIds: ["el-a"],
+  layout: {
+    source: "trace" as const,
+    units: "m" as const,
+    pitchM: 0.1,
+    startOffsetM: 0,
+    corners: [{ id: "c1", x: 0, y: 0 }, { id: "c2", x: 1, y: 0 }, { id: "c3", x: 1, y: 1 }],
+    run: [{ id: "e1", from: "c1", to: "c2", kind: "lit" as const }, { id: "e2", from: "c2", to: "c3", kind: "lit" as const }],
+  },
+  sections: [
+    { id: "left", name: "Left", edgeIds: ["e1"], pinnedRanges: [], color: "#ff0000" },
+    { id: "right", name: "Right", edgeIds: ["e2"], pinnedRanges: [], color: "#0000ff" },
+  ],
+};
+
+describe("Looks with sections", () => {
+  it("lists each section with its own colour, and saves a colour, an effect, and a section left out", async () => {
+    const puts: { looks: { id: string; overrides: Record<string, unknown>[] }[] }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as (typeof puts)[number];
+      puts.push(body);
+      return new Response(JSON.stringify({ ...initial, ...body }));
+    }));
+    render(<LooksPanel lights={lights} initial={{ ...initial, yard: { ...initial.yard, props: [...initial.yard.props, arch] } }} />);
+    expect(screen.getByLabelText("Arch Left colour")).toHaveProperty("value", "#ff0000");
+    expect(screen.getByLabelText("Arch Right colour")).toHaveProperty("value", "#0000ff");
+    fireEvent.change(screen.getByLabelText("Arch Left colour"), { target: { value: "#ff00ff" } });
+    fireEvent.change(screen.getByLabelText("Arch Left effect"), { target: { value: "13" } });
+    fireEvent.click(screen.getByLabelText("Arch Right in this Look"));
+    expect(screen.getByLabelText("Arch Right colour")).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByRole("button", { name: "Save library" }));
+    await waitFor(() => expect(puts).toHaveLength(1));
+    const overrides = puts[0]!.looks.find((row) => row.id === DEFAULT_LOOKS[0]!.id)!.overrides;
+    expect(overrides).toEqual([
+      expect.objectContaining({ propId: "prop-arch", sectionId: "left", style: expect.objectContaining({ color: "#ff00ff", fx: 13 }) }),
+      expect.objectContaining({ propId: "prop-arch", sectionId: "right", off: true }),
+    ]);
+    fireEvent.click(screen.getByLabelText("Arch Right in this Look"));
+    expect(screen.getByLabelText("Arch Right colour")).toHaveProperty("value", "#0000ff");
+  });
+});
+
 describe("Looks", () => {
   it("saves an edited Look and shows Prop overrides when Props exist", async () => {
     const puts: Record<string, unknown>[] = [];

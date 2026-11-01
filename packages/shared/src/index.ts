@@ -706,6 +706,9 @@ export {
   lookPushSummaryFor,
   lookTargets,
   lookTargetsForLook,
+  lookSectionNotes,
+  propSectionPlan,
+  resolveLookTarget,
   managedLookSlots,
   managedPresetSlotsMatch,
   mergeWledPresets,
@@ -724,6 +727,7 @@ export {
   type LookPlaylist,
   type LookStyle,
   type LookTarget,
+  type PropSectionPlan,
   type LooksDocument,
 } from "./look.ts";
 export {

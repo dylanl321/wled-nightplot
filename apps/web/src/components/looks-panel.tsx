@@ -10,6 +10,7 @@ import {
   defaultScheduleDraft,
   nextLookSlot,
   propKindLabel,
+  resolveLookTarget,
   type LightView,
   type Look,
   type LookOverride,
@@ -19,6 +20,7 @@ import {
   type NightlySchedule,
   type Prop,
   type PropKind,
+  type PropSection,
   type SharedPostRule,
   type SyncResult,
 } from "@nightplot/shared";
@@ -207,6 +209,7 @@ export function LooksPanel({ lights, initial, firstRun = false }: { lights: Ligh
                   onStyle={(patch) => updateStyle(row.id, patch)}
                   onAddOverride={(override) => addOverride(row.id, override)}
                   onRemoveOverride={(index) => updateLook(row.id, { overrides: row.overrides.filter((_, item) => item !== index) })}
+                  onOverrides={(overrides) => updateLook(row.id, { overrides })}
                   onRemove={() => { setLooks((current) => current.filter((item) => item.id !== row.id)); setOpenId(null); }}
                 />
               ) : null}
@@ -318,6 +321,7 @@ function LookEditor({
   onStyle,
   onAddOverride,
   onRemoveOverride,
+  onOverrides,
   onRemove,
 }: {
   look: Look;
@@ -327,6 +331,7 @@ function LookEditor({
   onStyle: (patch: Partial<LookStyle>) => void;
   onAddOverride: (override: LookOverride) => void;
   onRemoveOverride: (index: number) => void;
+  onOverrides: (overrides: LookOverride[]) => void;
   onRemove: () => void;
 }) {
   const [kind, setKind] = useState<PropKind>("window");
@@ -351,12 +356,13 @@ function LookEditor({
         </label>
       </div>
       <StyleFields label={look.name} style={look.style} onChange={onStyle} />
+      <SectionRows look={look} props={yard.props} onOverrides={onOverrides} />
       <div className="flex flex-col gap-2">
         <p className="text-[13px] font-medium">Overrides</p>
-        <p className="text-[12px] text-quiet">Whole-yard default applies unless a wireframe group, Prop, Prop kind, or Segment overrides it. A face group wins, then Prop id, then kind, then Segment.</p>
-        {look.overrides.length === 0 ? <p className="text-[13px] text-quiet">No overrides. Every Prop and Segment gets the default.</p> : (
+        <p className="text-[12px] text-quiet">Whole-yard default applies unless a section, wireframe group, Prop, Prop kind, or Segment overrides it. A section wins, then a face group, then Prop id, then kind, then Segment. A section with none of those keeps its own colour.</p>
+        {look.overrides.every((override) => override.sectionId) ? <p className="text-[13px] text-quiet">No other overrides. Every Prop and Segment gets the default.</p> : (
           <ul className="flex flex-col gap-1 text-[13px]">
-            {look.overrides.map((override, index) => (
+            {look.overrides.map((override, index) => override.sectionId ? null : (
               <li key={`${override.wireframeGroup ?? override.propId ?? override.propKind ?? override.elementId}-${index}`} className="flex items-center justify-between gap-2">
                 <span>{overrideLabel(override, yard)}</span>
                 <Button variant="ghost" onClick={() => onRemoveOverride(index)}>Remove</Button>
@@ -411,6 +417,85 @@ function LookEditor({
       <Button variant="outline" onClick={onRemove}>Remove Look</Button>
     </div>
   );
+}
+
+type SectionedProp = Prop & { lightName: string; sections: PropSection[] };
+
+/**
+ * One row per section of each Prop: in the Look or not, colour, effect. The
+ * row shows what the preset will send. A section nobody touched keeps its own
+ * colour; changing a field stores a section override on this Look.
+ */
+function SectionRows({
+  look,
+  props,
+  onOverrides,
+}: {
+  look: Look;
+  props: LooksPayload["yard"]["props"];
+  onOverrides: (overrides: LookOverride[]) => void;
+}) {
+  const sectioned = props.filter((prop): prop is SectionedProp => Boolean(prop.layout && prop.sections?.length && !prop.wireframe));
+  if (sectioned.length === 0) return null;
+
+  function set(prop: SectionedProp, section: PropSection, change: { included?: boolean; color?: string; fx?: number }) {
+    const rest = look.overrides.filter((row) => !(row.propId === prop.id && row.sectionId === section.id));
+    if (change.included === true) return onOverrides(rest);
+    const current = shown(look, prop, section);
+    const next: LookOverride = {
+      propId: prop.id,
+      sectionId: section.id,
+      style: { ...current.style, ...(change.color ? { color: change.color } : {}), ...(change.fx !== undefined ? { fx: change.fx } : {}) },
+      ...(change.included === false || (current.off && change.included === undefined) ? { off: true as const } : {}),
+    };
+    onOverrides([...rest, next]);
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-[13px] font-medium">Sections</p>
+      <p className="text-[12px] text-quiet">Each section is its own WLED segment in this Look. A section left out is off while this Look runs.</p>
+      {sectioned.map((prop) => (
+        <fieldset key={prop.id} className="flex flex-col gap-1">
+          <legend className="text-[13px] text-muted-foreground">{prop.lightName} · {prop.label}</legend>
+          <ul className="flex flex-col">
+            {prop.sections.map((section) => {
+              const { style, off } = shown(look, prop, section);
+              const name = `${prop.label} ${section.name}`;
+              const touched = look.overrides.some((row) => row.propId === prop.id && row.sectionId === section.id);
+              return (
+                <li key={section.id} className="flex flex-col gap-2 border-t border-border py-2 sm:grid sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,12rem)] sm:items-center sm:gap-3">
+                  <label className="flex min-h-11 items-center gap-3 text-[14px]">
+                    <input type="checkbox" className="size-5" aria-label={`${name} in this Look`} checked={!off}
+                      onChange={(event) => set(prop, section, { included: event.target.checked })} />
+                    <span className="min-w-0 truncate">{section.name}</span>
+                    {!touched && section.color ? <span className="text-[12px] text-quiet">section colour</span> : null}
+                  </label>
+                  <input type="color" aria-label={`${name} colour`} disabled={off}
+                    className="h-11 w-16 rounded-md border border-border bg-background disabled:opacity-50"
+                    value={style.color} onChange={(event) => set(prop, section, { color: event.target.value })} />
+                  <select aria-label={`${name} effect`} disabled={off} className={`${selectClass} min-h-11 disabled:opacity-50`}
+                    value={style.fx} onChange={(event) => set(prop, section, { fx: Number(event.target.value) })}>
+                    {LOOK_EFFECTS.map((effect) => <option key={effect.fx} value={effect.fx}>{effect.label}</option>)}
+                  </select>
+                </li>
+              );
+            })}
+          </ul>
+        </fieldset>
+      ))}
+    </div>
+  );
+}
+
+function shown(look: Look, prop: Prop, section: PropSection) {
+  return resolveLookTarget(look, {
+    start: 0,
+    stop: 0,
+    prop,
+    sectionId: section.id,
+    ...(section.color ? { sectionColor: section.color } : {}),
+  });
 }
 
 function StyleFields({ label, style, onChange }: { label: string; style: LookStyle; onChange: (patch: Partial<LookStyle>) => void }) {
@@ -551,6 +636,11 @@ function groupChoices(sides: number): string[] {
 }
 
 function overrideLabel(override: LookOverride, yard: LooksPayload["yard"]): string {
+  if (override.sectionId) {
+    const prop = yard.props.find((row) => row.id === override.propId);
+    const section = prop?.sections?.find((row) => row.id === override.sectionId);
+    return `${prop ? `${prop.lightName} · ${prop.label}` : "Prop"} · ${section?.name ?? override.sectionId}${override.off ? " · off" : ""}`;
+  }
   if (override.wireframeGroup) {
     const prop = override.propId ? yard.props.find((row) => row.id === override.propId) : null;
     const where = prop ? `${prop.lightName} · ${prop.label}` : "wireframe";

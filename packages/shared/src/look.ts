@@ -1,7 +1,8 @@
 /**
  * Looks library: named colour/effect styles pushed as the same WLED preset
  * slot numbers on every selected controller. A Look has a whole-yard default
- * and optional overrides for a Prop, a Prop kind, or a Segment.
+ * and optional overrides for a section of a Prop, a Prop, a Prop kind, or a
+ * Segment. A Prop with sections is sent as one WLED segment per section range.
  *
  * Geometry comes from each Light’s own Props / Segments. The slot number is
  * what stays the same across the yard. A matched presets.json reread is not
@@ -11,6 +12,8 @@
 import { hexToRgb, parseHexColor } from "./live.ts";
 import type { Element } from "./lights.ts";
 import { isPropKind, isSharedPostRule, type Prop, type PropKind, type SharedPostRule } from "./prop/types.ts";
+import { layoutStrings } from "./prop/layout.ts";
+import { sectionIndexRanges } from "./prop/sections.ts";
 import { compileWireframe, wireframeGroupForElement } from "./prop/wireframe.ts";
 import type { NightlySchedule } from "./schedule.ts";
 import { isPresetId, WLED_PRESET_MAX, WLED_PRESET_MIN } from "./sync.ts";
@@ -54,6 +57,10 @@ export type LookOverride = {
   wireframeGroup?: string;
   /** How shared posts take colour for this Look. */
   sharedPostRule?: SharedPostRule;
+  /** A section of `propId`. Section ids are only unique inside one Prop. */
+  sectionId?: string;
+  /** This target is dark in this Look (the section is not in the Look). */
+  off?: true;
 };
 
 export type Look = {
@@ -151,6 +158,8 @@ export function isLookOverride(value: unknown): value is LookOverride {
   if (row.elementId !== undefined && (typeof row.elementId !== "string" || !row.elementId)) return false;
   if (row.wireframeGroup !== undefined && (typeof row.wireframeGroup !== "string" || !row.wireframeGroup)) return false;
   if (row.sharedPostRule !== undefined && !isSharedPostRule(row.sharedPostRule)) return false;
+  if (row.sectionId !== undefined && (typeof row.sectionId !== "string" || !row.sectionId || !row.propId)) return false;
+  if (row.off !== undefined && row.off !== true) return false;
   return Boolean(row.propId || row.propKind || row.elementId || row.wireframeGroup);
 }
 
@@ -221,6 +230,8 @@ export function normalizeLook(row: Look): Look {
       ...(entry.elementId ? { elementId: entry.elementId } : {}),
       ...(entry.wireframeGroup ? { wireframeGroup: entry.wireframeGroup } : {}),
       ...(entry.sharedPostRule ? { sharedPostRule: entry.sharedPostRule } : {}),
+      ...(entry.sectionId ? { sectionId: entry.sectionId } : {}),
+      ...(entry.off ? { off: true as const } : {}),
     })),
   };
 }
@@ -290,7 +301,84 @@ export type LookTarget = {
   elementId?: string;
   prop: Prop | null;
   wireframeGroup?: string;
+  /** A section of `prop`; the range is that section's lights on the Light. */
+  sectionId?: string;
+  /** The colour stored on that section. Used when no override names it. */
+  sectionColor?: string;
 };
+
+export type PropSectionPlan = {
+  targets: LookTarget[];
+  /** Plain reasons the preset differs from what the sections ask for. */
+  notes: string[];
+};
+
+/**
+ * Where a sectioned Prop's sections land on its Light. Attach wrote one
+ * Segment per section range starting at the Prop's first light, so the Prop's
+ * origin is its first Segment minus its first range. Lights of the Prop that
+ * no section names stay a plain Prop target. A wireframe Prop keeps its own
+ * groups and is not planned here.
+ */
+export function propSectionPlan(prop: Prop, own: readonly Element[]): PropSectionPlan | null {
+  if (!prop.layout || !prop.sections?.length || prop.wireframe || own.length === 0) return null;
+  const firstId = layoutStrings(prop.layout)[0]?.id ?? "s1";
+  const reports = sectionIndexRanges(prop.layout, prop.sections);
+  const notes: string[] = [];
+  const pieces: { start: number; stop: number; report: (typeof reports)[number] }[] = [];
+  for (const report of reports) {
+    if (report.errors.length > 0) {
+      notes.push(`${prop.label} · ${report.name}: ${report.errors.join(" ")} It was not sent as its own segment.`);
+      continue;
+    }
+    const onFirst = report.ranges.filter((range) => range.stop > range.start && (range.stringId ?? firstId) === firstId);
+    if (onFirst.length < report.ranges.filter((range) => range.stop > range.start).length) {
+      notes.push(`${prop.label} · ${report.name} has lights on another string. Only the first string is on this Light's segments, so those lights were not sent.`);
+    }
+    if (onFirst.length > 1) {
+      notes.push(`${prop.label} · ${report.name} is ${onFirst.length} separate ranges, so it is sent as ${onFirst.length} segments and an effect restarts in each. One effect across them needs a ledmap, which Nightplot does not write for sections yet.`);
+    }
+    for (const range of onFirst) pieces.push({ start: range.start, stop: range.stop, report });
+    for (const warning of report.warnings) {
+      const line = `${prop.label}: ${warning} WLED draws the later segment on top.`;
+      if (!notes.includes(line)) notes.push(line);
+    }
+  }
+  if (pieces.length === 0) return null;
+  const spanStart = Math.min(...own.map((row) => row.start));
+  const spanStop = Math.max(...own.map((row) => row.stop));
+  const origin = spanStart - Math.min(...pieces.map((piece) => piece.start));
+  const targets: LookTarget[] = [];
+  let clipped = false;
+  for (const piece of pieces.sort((a, b) => a.start - b.start)) {
+    const start = Math.max(spanStart, origin + piece.start);
+    const stop = Math.min(spanStop, origin + piece.stop);
+    if (start !== origin + piece.start || stop !== origin + piece.stop) clipped = true;
+    if (stop <= start) continue;
+    targets.push({
+      start,
+      stop,
+      prop,
+      sectionId: piece.report.sectionId,
+      ...(piece.report.color ? { sectionColor: piece.report.color } : {}),
+    });
+  }
+  // Lights of this Prop's Segments that no section covers keep a plain target.
+  for (const row of own) {
+    let cursor = row.start;
+    const covering = targets.filter((target) => target.stop > row.start && target.start < row.stop).sort((a, b) => a.start - b.start);
+    for (const target of covering) {
+      if (target.start > cursor) targets.push({ start: cursor, stop: target.start, prop, elementId: row.id });
+      cursor = Math.max(cursor, target.stop);
+    }
+    if (cursor < row.stop) targets.push({ start: cursor, stop: row.stop, prop, elementId: row.id });
+  }
+  const sameAsAttach = own.length === pieces.length && own.every((row) => targets.some((target) => target.sectionId && target.start === row.start && target.stop === row.stop));
+  if (clipped || !sameAsAttach) {
+    notes.push(`${prop.label}: the sections no longer match the Segments written at Attach. The Look follows the sections inside the Prop's lights; attach the Prop again so the controller's Segments agree.`);
+  }
+  return { targets: targets.sort((a, b) => a.start - b.start), notes };
+}
 
 /** Segments this Light will receive for a Look. Props own Segments; leftovers use the default. */
 export function lookTargets(input: {
@@ -303,24 +391,65 @@ export function lookTargets(input: {
     const ledCount = Number.isInteger(input.ledCount) && input.ledCount > 0 ? input.ledCount : 0;
     return ledCount > 0 ? [{ start: 0, stop: ledCount, prop: null }] : [];
   }
-  return elements.map((element) => {
+  const out: LookTarget[] = [];
+  const planned = new Set<string>();
+  for (const element of elements) {
     const prop = input.props.find((row) => row.elementIds.includes(element.id)) ?? null;
-    const group = prop?.wireframe ? wireframeGroupForElement(prop.id, element.id) : undefined;
-    return {
-      start: element.start,
-      stop: element.stop,
-      elementId: element.id,
-      prop,
-      ...(group ? { wireframeGroup: group } : {}),
-    };
-  });
+    if (prop && planned.has(prop.id)) continue;
+    if (prop) {
+      const plan = propSectionPlan(prop, elements.filter((row) => prop.elementIds.includes(row.id)));
+      if (plan) {
+        planned.add(prop.id);
+        out.push(...plan.targets);
+        continue;
+      }
+    }
+    out.push(plainTarget(element, prop));
+  }
+  return out;
+}
+
+/** Why a Look's preset on this Light is not exactly the sections, in words. Empty when it is. */
+export function lookSectionNotes(input: {
+  ledCount: number;
+  elements: readonly Element[];
+  props: readonly Prop[];
+}): string[] {
+  const elements = input.elements.filter((row) => Number.isInteger(row.start) && Number.isInteger(row.stop) && row.stop > row.start);
+  return input.props.flatMap((prop) => propSectionPlan(prop, elements.filter((row) => prop.elementIds.includes(row.id)))?.notes ?? []);
+}
+
+function plainTarget(element: Element, prop: Prop | null): LookTarget {
+  const group = prop?.wireframe ? wireframeGroupForElement(prop.id, element.id) : undefined;
+  return {
+    start: element.start,
+    stop: element.stop,
+    elementId: element.id,
+    prop,
+    ...(group ? { wireframeGroup: group } : {}),
+  };
 }
 
 /**
- * A wireframe group override wins, then propId, then propKind, then elementId,
- * then the whole-yard default.
+ * A section override wins, then a wireframe group, then propId, then propKind,
+ * then elementId. A section with none of those uses the Look's style in the
+ * colour stored on the section. Otherwise the whole-yard default.
  */
 export function resolveLookStyle(look: Look, target: LookTarget): LookStyle {
+  return resolveLookTarget(look, target).style;
+}
+
+/** The style for a target and whether this Look turns it off. */
+export function resolveLookTarget(look: Look, target: LookTarget): { style: LookStyle; off: boolean } {
+  if (target.sectionId && target.prop) {
+    const bySection = look.overrides.find((row) => row.sectionId === target.sectionId && row.propId === target.prop!.id);
+    if (bySection) return { style: bySection.style, off: bySection.off === true };
+  }
+  const style = resolveWithoutSection(look, target);
+  return { style, off: false };
+}
+
+function resolveWithoutSection(look: Look, target: LookTarget): LookStyle {
   if (target.wireframeGroup && target.prop) {
     const byGroup = look.overrides.find((row) =>
       row.wireframeGroup === target.wireframeGroup && (!row.propId || row.propId === target.prop!.id),
@@ -328,7 +457,7 @@ export function resolveLookStyle(look: Look, target: LookTarget): LookStyle {
     if (byGroup) return byGroup.style;
   }
   const byPropId = target.prop
-    ? look.overrides.find((row) => row.propId && row.propId === target.prop!.id && !row.wireframeGroup)
+    ? look.overrides.find((row) => row.propId && row.propId === target.prop!.id && !row.wireframeGroup && !row.sectionId)
     : undefined;
   if (byPropId) return byPropId.style;
   const byKind = target.prop
@@ -339,6 +468,7 @@ export function resolveLookStyle(look: Look, target: LookTarget): LookStyle {
     ? look.overrides.find((row) => row.elementId && row.elementId === target.elementId)
     : undefined;
   if (byElement) return byElement.style;
+  if (target.sectionColor) return { ...look.style, color: target.sectionColor };
   return look.style;
 }
 
@@ -386,12 +516,12 @@ export function buildLookPreset(look: Look, targets: readonly LookTarget[], rgbw
     bri: look.style.bri,
     mainseg: 0,
     seg: targets.map((target, index) => {
-      const style = resolveLookStyle(look, target);
+      const { style, off } = resolveLookTarget(look, target);
       return {
         id: index,
         start: target.start,
         stop: target.stop,
-        on: true,
+        on: !off,
         col: styleColours(style, rgbw),
         fx: style.fx,
         sx: style.sx,

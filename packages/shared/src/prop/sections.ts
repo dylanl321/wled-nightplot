@@ -4,8 +4,9 @@
  * change. Pinned ranges are typed by hand and stay put.
  *
  * Indexes are the path order from `countLayout` (ceil along the run).
- * A later compiler can turn `sectionIndexRanges` into a ledmap. This module
- * does not write WLED segments.
+ * Looks send each range as a WLED segment (`propSectionPlan` in look.ts). A
+ * section that is more than one range is several segments; one effect across
+ * them would need a ledmap, which is not written for sections.
  */
 
 import { rangesOverlap } from "../range.ts";
@@ -152,10 +153,7 @@ export function sectionIndexRanges(layout: PropLayout, sections: readonly PropSe
   return reports.map((report) => ({ ...report, warnings: unique(report.warnings) }));
 }
 
-/**
- * Preview colours stored on the prop. Looks still resolve by Segment and
- * wireframe group; a later compiler should turn this plan into overrides.
- */
+/** Colours stored on the prop, by section. Looks use them as each section's default colour. */
 export function sectionColourPlan(layout: PropLayout, sections: readonly PropSection[]): SectionColourPlan[] {
   return sectionIndexRanges(layout, sections).map((report) => ({
     sectionId: report.sectionId,
