@@ -168,6 +168,21 @@ describe("EditorStage", () => {
     expect(ref.current!.camera().ppm).toBeCloseTo(100);
   });
 
+  it("a right-click is forwarded with its button and does not pan", () => {
+    const seen = vi.fn();
+    render(<EditorStage bounds={bounds} limits={limits} label="Drawing" onStagePointer={seen} blockContextMenu />);
+    const stage = screen.getByTestId("editor-stage");
+    const before = cameraOf(stage);
+    pointer("down", stage, 1, 120, 200, { button: 2 });
+    pointer("up", stage, 1, 120, 200, { button: 2 });
+    expect(cameraOf(stage)).toEqual(before);
+    const up = seen.mock.calls.map((call) => call[0] as { phase: string; button: number; pointerType: string }).find((event) => event.phase === "up");
+    expect(up).toMatchObject({ phase: "up", button: 2, pointerType: "mouse" });
+    const menu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    stage.dispatchEvent(menu);
+    expect(menu.defaultPrevented).toBe(true);
+  });
+
   it("presses on the zoom controls do not pan or tap", () => {
     const tap = vi.fn();
     render(<EditorStage bounds={bounds} limits={limits} label="Drawing" onBackgroundTap={tap} />);

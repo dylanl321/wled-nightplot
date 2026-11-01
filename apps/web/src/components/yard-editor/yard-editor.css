@@ -182,6 +182,24 @@
 .ye .crumb a, .ye .crumb span, .ye.editing .dirty, .ye.editing #tryBtn, .ye.editing #ye-redo { display: none !important; }
 .ye .crumb b { max-width: 90px; }
 }
+.ye .tracehud { position: absolute; z-index: 5; left: 12px; top: 56px; max-width: 11.5rem; pointer-events: none; padding: 4px 8px; border-radius: 6px; background: color-mix(in srgb, var(--y-canvas) 90%, transparent); color: var(--y-fg); font-size: 12px; line-height: 1.35; white-space: pre-line; }
+.ye .tracetip { position: absolute; z-index: 6; left: 12px; bottom: 16px; display: flex; align-items: center; gap: 8px; max-width: calc(100% - 24px); padding: 6px 8px; border-radius: 8px; border: 1px solid var(--y-border); background: var(--y-card); font-size: 13px; }
+.ye .tracetip button { min-height: 36px; padding: 0 10px; border: 0; background: transparent; color: var(--y-primary); }
+.ye .pointbar { position: absolute; z-index: 8; left: -999px; top: 0; }
+.ye .pointbar .btn { min-height: 44px; min-width: 44px; padding: 0 14px; font-size: 15px; box-shadow: 0 8px 18px rgba(0,0,0,.28); }
+.ye .pointsheet .btn { min-height: 44px; }
+.ye .drawundo { display: none; }
+@media (max-width: 860px) {
+.ye.editing .tracehud { top: 108px; left: 12px; right: auto; max-width: 10rem; text-align: left; }
+.ye.editing .tracetip { bottom: calc(34% + 36px); max-width: calc(100% - 108px); }
+.ye.editing .tracetip button { min-height: 44px; min-width: 44px; }
+.ye.editing .drawundo { display: inline-flex; align-items: center; justify-content: center; position: absolute; z-index: 7; right: 16px; bottom: calc(34% + 36px); min-height: 44px; min-width: 44px; padding: 0 14px; border: 1px solid var(--y-border); border-radius: 8px; background: var(--y-card); color: var(--y-primary); font-size: 15px; }
+.ye.editing[data-sheet="half"] .tracetip,
+.ye.editing[data-sheet="half"] .drawundo { bottom: calc(58% + 28px); }
+.ye.editing[data-sheet="full"] .drawundo { bottom: 12px; }
+.ye.editing .top .iconbtn { min-width: 44px; min-height: 44px; flex: none; }
+.ye.editing .top .btn:not(.primary) { display: none; }
+}
 .ye .coords { white-space: nowrap; }
 .ye .seg { align-self: flex-start; }
 .ye .modechip:empty { display: none; }

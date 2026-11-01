@@ -410,6 +410,34 @@ export function litEdges(layout: PropLayout): LayoutEdge[] {
   return layoutStrings(layout).flatMap((string) => string.run).filter((edge) => edge.kind === "lit");
 }
 
+export type RunRow = { edge: LayoutEdge; name: string; lengthM: number; lights: number; typed: boolean; placed: boolean; wire: boolean };
+
+/** Draw it: every run, including a dark one, named A1, A2 in wiring order. */
+export function drawRows(draft: Draft): RunRow[] {
+  const layout = draft.layout;
+  if (!layout) return [];
+  const counted = new Map(countLayout(layout).edges.map((row) => [row.id, row]));
+  const rows: RunRow[] = [];
+  layoutStrings(layout).forEach((string, stringIndex) => {
+    const letter = stringIndex >= 0 && stringIndex < 26 ? String.fromCharCode(65 + stringIndex) : String(stringIndex + 1);
+    string.run.forEach((edge, index) => {
+      if (edge.kind === "hidden") return;
+      const badge = `${letter}${index + 1}`;
+      const wire = edge.kind === "wire";
+      rows.push({
+        edge,
+        name: wire ? `${badge} · dark` : badge,
+        lengthM: counted.get(edge.id)?.lengthM ?? edgeLengthM(layout, edge),
+        lights: wire ? 0 : counted.get(edge.id)?.lights ?? 0,
+        typed: !wire && edge.lockedLights != null && draft.count == null,
+        placed: !wire && edge.manualLights === true,
+        wire,
+      });
+    });
+  });
+  return rows;
+}
+
 /** One row per lit run, in wiring order, with its name, length and lights. */
 export function runRows(draft: Draft): { edge: LayoutEdge; name: string; lengthM: number; lights: number; typed: boolean; placed: boolean }[] {
   const layout = draft.layout;

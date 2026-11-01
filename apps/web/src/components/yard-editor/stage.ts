@@ -19,6 +19,8 @@ export type DrawEdge = {
   color: string | null;
   wire?: boolean;
   typed?: boolean;
+  /** Run badge, such as A2, on a drawn prop. */
+  badge?: string;
   /** Real length when it is not the drawn line (half a turn of a spiral). */
   lengthM?: number;
 };
@@ -61,7 +63,120 @@ export type Scene = {
   guide?: DrawGuide | null;
   /** Prop canvas only, zoomed in: every light as a numbered dot, in the prop's frame. */
   dots?: LightDot[] | null;
+  /** Draw-it canvas: badges (A1) beside the length caption. */
+  badges?: boolean;
+  /** A point picked on a phone, drawn with a ring. */
+  selectedPoint?: string | null;
+  /** Screen boxes labels must stay off, such as Delete point. */
+  obstacles?: ScreenBox[];
+  /** Where run labels may sit. The phone tool row is above `top`. */
+  labelBounds?: { top: number; bottom: number; left: number; right: number };
 };
+
+export type ScreenBox = { x: number; y: number; w: number; h: number };
+
+export function boxesOverlap(a: ScreenBox, b: ScreenBox, pad = 0): boolean {
+  return a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y;
+}
+
+/** Drawn corners stay small. A finger still gets a 44 px square. */
+export const POINT_TOUCH_PX = 44;
+
+/** Half the hit size. Touch uses the 44 px target; a mouse stays tight. */
+export function pointHitSlop(touch: boolean): number {
+  return touch ? POINT_TOUCH_PX / 2 : 9;
+}
+
+/** The rubber band while tracing. Dots are in world metres. */
+export type RubberBand = {
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+  wire: boolean;
+  lengthText: string;
+  countText: string;
+  dots: { x: number; y: number }[];
+  /** Wire-in, so the label and the first dot stay off it. */
+  wireIn: { x: number; y: number } | null;
+};
+
+const BADGE_R = 11;
+
+/**
+ * Caption and badge sit on opposite sides of the run's midpoint.
+ * The badge stays beside that run: if the first side covers another badge,
+ * a caption, Wire in, or Delete point, it takes the other side or a short step.
+ */
+export function placeBesideRun(
+  mx: number,
+  my: number,
+  nx: number,
+  ny: number,
+  captionW: number,
+  obstacles: readonly ScreenBox[],
+  bounds?: { top: number; bottom: number; left: number; right: number },
+): { caption: ScreenBox; badge: { x: number; y: number; r: number } } {
+  const len = Math.hypot(nx, ny) || 1;
+  const px = nx / len;
+  const py = ny / len;
+  const tx = py;
+  const ty = -px;
+  const capH = 16;
+  const r = BADGE_R;
+  type Spot = { caption: ScreenBox; badge: { x: number; y: number; r: number }; hits: number; outside: number; dist: number };
+  const spots: Spot[] = [];
+  const consider = (badgeSide: number, capSide: number, bout: number, along: number, cout: number, calong: number, opposite: boolean) => {
+    const bcx = mx + px * badgeSide * bout + tx * along;
+    const bcy = my + py * badgeSide * bout + ty * along;
+    const badgeBox: ScreenBox = { x: bcx - r, y: bcy - r, w: r * 2, h: r * 2 };
+    const ccx = mx + px * capSide * cout + tx * calong;
+    const ccy = my + py * capSide * cout + ty * calong;
+    const caption: ScreenBox = { x: ccx - captionW / 2, y: ccy - capH / 2, w: captionW, h: capH };
+    if (boxesOverlap(badgeBox, caption, 2)) return;
+    const hits = obstacles.reduce((n, box) => n + (boxesOverlap(badgeBox, box, 4) || boxesOverlap(caption, box, 4) ? 1 : 0), 0);
+    let outside = 0;
+    if (bounds) {
+      for (const box of [badgeBox, caption]) {
+        if (box.x < bounds.left) outside += bounds.left - box.x;
+        if (box.y < bounds.top) outside += bounds.top - box.y;
+        if (box.x + box.w > bounds.right) outside += box.x + box.w - bounds.right;
+        if (box.y + box.h > bounds.bottom) outside += box.y + box.h - bounds.bottom;
+      }
+    }
+    const dist = Math.hypot(bcx - mx, bcy - my) + Math.abs(along) * 0.15 + Math.abs(calong) * 0.1 + (opposite ? 0 : 8);
+    spots.push({ caption, badge: { x: bcx, y: bcy, r }, hits, outside, dist });
+  };
+  for (const badgeSide of [1, -1]) {
+    for (const bout of [r + 10, r + 26, r + 42]) {
+      for (const along of [0, 20, -20, 40, -40]) {
+        for (const cout of [capH / 2 + 12, capH / 2 + 28, capH / 2 + 46]) {
+          for (const calong of [0, 18, -18, 36]) consider(badgeSide, -badgeSide, bout, along, cout, calong, true);
+        }
+        // The other side is blocked (Delete point, another run): both marks share the open side.
+        for (const calong of [0, 22, -22]) consider(badgeSide, badgeSide, bout, along, bout + r + capH / 2 + 8, calong, false);
+      }
+    }
+  }
+  spots.sort((a, b) => a.hits - b.hits || a.outside - b.outside || a.dist - b.dist);
+  const best = spots[0];
+  if (best) return { caption: best.caption, badge: best.badge };
+  return {
+    caption: { x: mx - captionW / 2 + px * 20, y: my - capH / 2 + py * 20, w: captionW, h: capH },
+    badge: { x: mx - px * 22, y: my - py * 22, r },
+  };
+}
+
+/** Caption on one side of the run, badge on the other, so they do not stack. */
+export function splitRunLabel(
+  mx: number,
+  my: number,
+  nx: number,
+  ny: number,
+  captionW: number,
+): { caption: ScreenBox; badge: { x: number; y: number; r: number } } {
+  return placeBesideRun(mx, my, nx, ny, captionW, []);
+}
 
 export type LightDot = { edgeId: string; id: string | null; station: number; x: number; y: number; label: string; selected: boolean };
 
@@ -154,13 +269,19 @@ export function drawScene(ctx: CanvasRenderingContext2D, view: View, scene: Scen
   }
   ctx.fillStyle = c.quiet;
   const u = uLabel(scene.units);
+  // The phone tool row covers the top of the canvas. Leave those numbers off.
+  const toolbarBottom = scene.phone && inProp ? 64 : 0;
   for (let x = Math.ceil(x0 / major) * major; x <= x1; x += major) {
     if (Math.abs(x) < 1e-6 && !inProp) continue;
-    ctx.fillText(`${+toU(x, scene.units).toFixed(1)} ${u}`, sx(x) + 3, Math.min(H - 60, Math.max(scene.phone ? 90 : 14, sy(0) + (inProp ? 16 : 34))));
+    const ly = Math.min(H - 60, Math.max(scene.phone ? 90 : 14, sy(0) + (inProp ? 16 : 34)));
+    if (ly < toolbarBottom) continue;
+    ctx.fillText(`${+toU(x, scene.units).toFixed(1)} ${u}`, sx(x) + 3, ly);
   }
   for (let y = Math.ceil(y0 / major) * major; y <= y1; y += major) {
     if (Math.abs(y) < 1e-6 || (y < 0 && !inProp)) continue;
-    ctx.fillText(`${+toU(y, scene.units).toFixed(1)} ${u}`, 4, sy(y) - 3);
+    const ly = sy(y) - 3;
+    if (ly < toolbarBottom) continue;
+    ctx.fillText(`${+toU(y, scene.units).toFixed(1)} ${u}`, 4, ly);
   }
 
   const labels: LabelBox[] = [];
@@ -185,25 +306,56 @@ export function drawScene(ctx: CanvasRenderingContext2D, view: View, scene: Scen
 }
 
 function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Colours, p: DrawProp, alpha: number, scoped: boolean, ghost: boolean, labels: LabelBox[]) {
-  const { sx, sy, W, H } = view;
+  const { sx, sy, W } = view;
   const ppm = view.cam.ppm;
   ctx.save();
   ctx.globalAlpha = alpha;
   const selected = scoped || p.id === scene.selectedId;
   // A spiral has dozens of half-turn runs: label only the picked one, and draw corners as dots.
   const crowded = p.edges.length > 16;
+  const blocked: ScreenBox[] = [...(scene.obstacles ?? [])];
+  if (scoped && p.start) {
+    ctx.font = "11px var(--font-plex-sans), 'IBM Plex Sans', sans-serif";
+    const wire = "Wire in · light 1";
+    const tw = ctx.measureText(wire).width;
+    const x = sx(p.start.x + p.x), y = sy(p.start.y + p.y);
+    const left = x - tw - 10 > 4;
+    const baseline = y + (left ? 4 : 30);
+    blocked.push({ x: left ? x - tw - 10 : x + 10, y: baseline - 11, w: tw, h: 14 });
+  }
+  if (scoped) {
+    for (const corner of p.corners) {
+      const x = sx(corner.x + p.x), y = sy(corner.y + p.y);
+      const rad = scene.selectedPoint === corner.id ? 30 : 14;
+      blocked.push({ x: x - rad, y: y - rad, w: rad * 2, h: rad * 2 });
+    }
+  }
   for (const e of p.edges) {
     const ax = sx(e.ax + p.x), ay = sy(e.ay + p.y), bx = sx(e.bx + p.x), by = sy(e.by + p.y);
     const col = ghost ? c.pick : e.color;
     const isSel = scoped && scene.selectedRun === e.id;
     const inSection = scoped && scene.sectionRuns?.includes(e.id);
-    ctx.strokeStyle = col || c.input;
-    ctx.globalAlpha = alpha * (col ? 0.35 : 0.5);
-    ctx.lineWidth = isSel ? 6 : scoped ? 4 : 3;
-    if (e.wire) { ctx.setLineDash([3, 4]); ctx.lineWidth = 1.5; }
-    if (isSel) { ctx.strokeStyle = c.pick; ctx.globalAlpha = alpha; }
-    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-    ctx.setLineDash([]);
+    const darkWire = Boolean(e.wire && !col);
+    if (darkWire) {
+      ctx.strokeStyle = c.quiet;
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([8, 6]);
+      ctx.lineCap = "butt";
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.lineWidth = 2.25;
+      ctx.lineCap = "round";
+      drawDirectionArrow(ctx, ax, ay, bx, by);
+    } else {
+      ctx.strokeStyle = col || c.input;
+      ctx.globalAlpha = alpha * (col ? 0.35 : 0.5);
+      ctx.lineWidth = isSel ? 6 : scoped ? 4 : 3;
+      if (e.wire) { ctx.setLineDash([3, 4]); ctx.lineWidth = 1.5; }
+      if (isSel) { ctx.strokeStyle = c.pick; ctx.globalAlpha = alpha; }
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.setLineDash([]);
+    }
     if (inSection) {
       ctx.globalAlpha = alpha; ctx.strokeStyle = c.pick; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke(); ctx.setLineDash([]);
@@ -222,26 +374,41 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
       }
       ctx.shadowBlur = 0;
     }
-    if (scoped && !e.wire && (!crowded || isSel)) {
+    if (scoped && (!crowded || isSel || e.wire)) {
       const mx = (ax + bx) / 2, my = (ay + by) / 2;
-      const t = `${scene.fmtLen(e.lengthM ?? Math.hypot(e.bx - e.ax, e.by - e.ay))} · ${n}${e.typed ? "*" : ""}`;
+      const t = `${scene.fmtLen(e.lengthM ?? Math.hypot(e.bx - e.ax, e.by - e.ay))} · ${e.wire ? 0 : n}${e.typed ? "*" : ""}`;
+      ctx.font = "11px var(--font-plex-mono), 'IBM Plex Mono', monospace";
       const w = ctx.measureText(t).width + 8;
-      // Off the outside of the run, then away from labels already placed.
       const nx = -(by - ay) / segLen, ny = (bx - ax) / segLen;
-      let lx = mx - w / 2 + nx * 14, ly = my - 8 + ny * 14;
-      const hit = (q: LabelBox) => lx < q.x + q.w && lx + w > q.x && ly < q.y + 16 && ly + 16 > q.y;
-      for (let g = 0; g < 8 && labels.some(hit); g++) { lx += nx * 12; ly += ny * 12 + (g % 2 ? 10 : -10); }
-      lx = Math.max(4, Math.min(W - w - 4, lx));
-      ly = Math.max(scene.phone ? 84 : 16, Math.min(H - 8, ly));
-      labels.push({ x: lx, y: ly, w });
-      ctx.fillStyle = c.card; ctx.globalAlpha = 0.92; ctx.fillRect(lx, ly - 11, w, 16); ctx.globalAlpha = 1;
-      ctx.fillStyle = isSel ? c.pick : c.fg; ctx.fillText(t, lx + 4, ly + 1);
+      const spots = placeBesideRun(mx, my, nx, ny, w, blocked, scene.labelBounds);
+      const cap = spots.caption;
+      blocked.push(cap);
+      labels.push(cap);
+      ctx.fillStyle = c.card; ctx.globalAlpha = 0.92; ctx.fillRect(cap.x, cap.y, cap.w, cap.h); ctx.globalAlpha = 1;
+      ctx.fillStyle = isSel ? c.pick : c.fg; ctx.fillText(t, cap.x + 4, cap.y + 12);
+      if (e.badge && (e.wire || scene.badges)) {
+        const mark = spots.badge;
+        const badgeBox = { x: mark.x - mark.r, y: mark.y - mark.r, w: mark.r * 2, h: mark.r * 2 };
+        blocked.push(badgeBox);
+        labels.push(badgeBox);
+        ctx.beginPath(); ctx.arc(mark.x, mark.y, mark.r, 0, Math.PI * 2);
+        ctx.fillStyle = c.card; ctx.fill();
+        ctx.strokeStyle = darkWire ? c.quiet : c.lit; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = c.fg;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(e.badge, mark.x, mark.y + 0.5);
+        ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
+      }
     }
   }
   if (scoped) {
     for (const corner of p.corners) {
       const x = sx(corner.x + p.x), y = sy(corner.y + p.y);
       const isStart = p.start && Math.abs(p.start.x - corner.x) < 1e-9 && Math.abs(p.start.y - corner.y) < 1e-9;
+      if (scene.selectedPoint === corner.id) {
+        ctx.beginPath(); ctx.arc(x, y, POINT_TOUCH_PX / 2, 0, Math.PI * 2);
+        ctx.strokeStyle = c.pick; ctx.lineWidth = 3; ctx.stroke();
+      }
       ctx.fillStyle = c.card; ctx.strokeStyle = isStart ? c.primary : c.pick; ctx.lineWidth = 2;
       const r = crowded && !isStart ? 2.5 : 5;
       ctx.beginPath(); ctx.rect(x - r, y - r, r * 2, r * 2); ctx.fill(); ctx.stroke();
@@ -335,6 +502,55 @@ function drawDots(ctx: CanvasRenderingContext2D, view: View, c: Colours, dots: r
   ctx.restore();
 }
 
+/**
+ * The run the pointer would add. Dots start clear of the tail and the wire-in,
+ * so the first one does not sit on either label.
+ */
+export function drawRubber(ctx: CanvasRenderingContext2D, view: View, band: RubberBand, c: Colours) {
+  const { sx, sy, W, H } = view;
+  const ax = sx(band.ax), ay = sy(band.ay), bx = sx(band.bx), by = sy(band.by);
+  const colour = band.wire ? c.quiet : c.lit;
+  ctx.save();
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 6]);
+  ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = colour;
+  const wire = band.wireIn ? { x: sx(band.wireIn.x), y: sy(band.wireIn.y) } : null;
+  for (const dot of band.dots) {
+    const x = sx(dot.x), y = sy(dot.y);
+    if (Math.hypot(x - ax, y - ay) < 36) continue;
+    if (wire && Math.hypot(x - wire.x, y - wire.y) < 48) continue;
+    ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.beginPath(); ctx.arc(bx, by, 5, 0, Math.PI * 2); ctx.stroke();
+  const seg = Math.max(1, Math.hypot(bx - ax, by - ay));
+  if (seg >= 150) {
+    const nx = -(by - ay) / seg, ny = (bx - ax) / seg;
+    const text = band.lengthText;
+    const count = band.countText;
+    ctx.font = "12px var(--font-plex-mono), 'IBM Plex Mono', monospace";
+    const w = Math.max(ctx.measureText(text).width, ctx.measureText(count).width) + 16;
+    let lx = (ax + bx) / 2 + nx * 64 - w / 2;
+    let ly = (ay + by) / 2 + ny * 64 - 16;
+    const near = (px: number, py: number) => Math.hypot(lx + w / 2 - px, ly + 16 - py) < 48;
+    if (near(ax, ay) || (wire && near(wire.x, wire.y))) {
+      lx = (ax + bx) / 2 - nx * 64 - w / 2;
+      ly = (ay + by) / 2 - ny * 64 - 16;
+    }
+    lx = Math.max(8, Math.min(W - w - 8, lx));
+    ly = Math.max(60, Math.min(H - 40, ly));
+    ctx.fillStyle = c.card; ctx.globalAlpha = 0.94;
+    ctx.beginPath(); ctx.roundRect(lx, ly, w, 32, 6); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = colour;
+    ctx.fillText(text, lx + 8, ly + 14);
+    ctx.fillText(count, lx + 8, ly + 28);
+  }
+  ctx.restore();
+}
+
 // ---------- hit tests ----------
 
 /** The light dot under the pointer, nearest first. */
@@ -357,19 +573,42 @@ function distSeg(px: number, py: number, ax: number, ay: number, bx: number, by:
 export function hitRun(view: View, p: DrawProp, px: number, py: number, slop = 10): { id: string; d: number; t: number } | null {
   let best: { id: string; d: number; t: number } | null = null;
   for (const e of p.edges) {
-    if (e.wire) continue;
     const [d, t] = distSeg(px, py, view.sx(e.ax + p.x), view.sy(e.ay + p.y), view.sx(e.bx + p.x), view.sy(e.by + p.y));
     if (d < slop && (!best || d < best.d)) best = { id: e.id, d, t };
   }
   return best;
 }
 
+/** Arrow toward the far end of a dark run, sitting on the line clear of the corner. */
+function drawDirectionArrow(ctx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number) {
+  const seg = Math.hypot(bx - ax, by - ay) || 1;
+  if (seg < 36) return;
+  const ux = (bx - ax) / seg;
+  const uy = (by - ay) / seg;
+  const tipD = Math.max(18, Math.min(seg * 0.72, seg - 16));
+  const tipX = ax + ux * tipD;
+  const tipY = ay + uy * tipD;
+  const back = 11;
+  const wing = 6;
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(tipX - ux * back - uy * wing, tipY - uy * back + ux * wing);
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(tipX - ux * back + uy * wing, tipY - uy * back - ux * wing);
+  ctx.stroke();
+}
+
 export function hitCorner(view: View, p: DrawProp, px: number, py: number, slop = 9): string | null {
-  for (let i = p.corners.length - 1; i >= 0; i--) {
-    const c = p.corners[i]!;
-    if (Math.abs(view.sx(c.x + p.x) - px) < slop && Math.abs(view.sy(c.y + p.y) - py) < slop) return c.id;
+  let best: { id: string; d: number } | null = null;
+  for (const c of p.corners) {
+    const dx = view.sx(c.x + p.x) - px;
+    const dy = view.sy(c.y + p.y) - py;
+    if (Math.abs(dx) <= slop && Math.abs(dy) <= slop) {
+      const d = Math.hypot(dx, dy);
+      if (!best || d < best.d) best = { id: c.id, d };
+    }
   }
-  return null;
+  return best?.id ?? null;
 }
 
 export function hitProp(view: View, props: DrawProp[], px: number, py: number): DrawProp | null {

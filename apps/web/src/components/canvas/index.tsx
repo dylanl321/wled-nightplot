@@ -8,5 +8,5 @@ import dynamic from "next/dynamic";
  */
 export const EditorStage = dynamic(() => import("./editor-stage").then((module) => module.EditorStage), { ssr: false });
 
-export type { EditorStageHandle, EditorStageProps, StageTap } from "./editor-stage";
+export type { EditorStageHandle, EditorStageProps, StagePointer, StageTap } from "./editor-stage";
 export * from "./camera";
