@@ -176,8 +176,17 @@ details.fold > summary .meta { margin-left: auto; font-size: 12px; color: var(--
 .empty strong { display: block; font-family: var(--serif); font-weight: 500; font-size: 22px; color: var(--fg); margin-bottom: 6px; }
 .sectionrows { display: flex; flex-direction: column; gap: 4px; }
 .discard { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; padding: 8px 10px; border: 1px solid var(--danger); border-radius: 8px; background: var(--card); }
+.runbox { border: 1px solid var(--pick); border-radius: 10px; padding: 10px; background: color-mix(in srgb, var(--pick) 6%, var(--card)); display: flex; flex-direction: column; gap: 4px; }
+.runbox h2 { color: var(--pick) !important; }
+.stepper { display: grid; grid-template-columns: 44px 1fr 44px; gap: 6px; }
+.stepper button { min-height: 44px; border: 1px solid var(--input); border-radius: 6px; background: var(--card); font-size: 20px; }
+.stepper input { min-height: 44px !important; text-align: center; font-size: 17px !important; }
 @media (max-width: 860px) {
   .main.editor { grid-template-columns: 1fr; }
+  .app.editing .modechip, .app.editing .hint, .app.editing .zoom { display: none; }
+  .app.editing .tools { top: 8px; left: 8px; right: 8px; justify-content: space-between; }
+  .app.editing .tools button { padding: 0 8px; font-size: 13px; }
+  .insp { max-height: 34%; }
   .crumb a, .crumb span, .app.editing #dirty, .app.editing #tryBtn, .app.editing #redo { display: none !important; }
   .crumb b { max-width: 90px; }
 }
@@ -385,9 +394,9 @@ details.fold > summary .meta { margin-left: auto; font-size: 12px; color: var(--
     ui.draft = p ? JSON.parse(JSON.stringify(p)) : makeProp("draw", nextName(), 0, 0, {}, { pitch: state.pitchDefault });
     if (!p) { ui.draft.drawn = false; ui.draft.kind = null; }
     ui.draftPos = p ? { x: p.x, y: p.y } : null; ui.draft.x = 0; ui.draft.y = 0;
-    ui.draftIsNew = isNew; ui.draftDirty = isNew; ui.askDiscard = false;
+    ui.draftIsNew = isNew; ui.draftDirty = isNew; ui.askDiscard = false; ui.showTiles = false;
     dpast.length = 0; dfuture.length = 0;
-    ui.view = "prop"; ui.tool = "move"; ui.selRun = null; ui.activeSection = null; ui.railOpen = false; ui.sheet = "half";
+    ui.view = "prop"; ui.tool = "move"; ui.selRun = null; ui.activeSection = null; ui.railOpen = false; ui.sheet = isNew ? "half" : "";
     render(); fitDraft(); if (isNew) ui.focusName = true; render();
   }
   function saveProp() {
@@ -395,7 +404,7 @@ details.fold > summary .meta { margin-left: auto; font-size: 12px; color: var(--
     if (!d.runs.length) { flash("Give the prop a shape before saving."); return; }
     const wasNew = ui.draftIsNew;
     ui.view = "yard"; ui.cam = ui.yardCam || ui.cam;
-    if (wasNew) { ui.placing = d; ui.sel = null; ui.ghost = null; }
+    if (wasNew) { ui.placing = d; ui.sel = null; const bb = bbox(d, 0, 0); ui.ghost = { x: snapPos(ui.cam.x - (bb.maxX - bb.minX) / 2), y: snapPos(Math.max(-bb.minY, ui.cam.y - (bb.maxY - bb.minY) / 2)) }; }
     else { d.x = ui.draftPos.x; d.y = ui.draftPos.y; past.push(yardSnap()); future.length = 0; const i = state.props.findIndex((p) => p.id === d.id); state.props[i] = d; ui.sel = d.id; markSaving(); }
     ui.draft = null; render();
   }
@@ -445,7 +454,7 @@ details.fold > summary .meta { margin-left: auto; font-size: 12px; color: var(--
       ctx.fillStyle = css("--pick"); ctx.fillText("0, 0", ox + 10, oy + 16);
     }
     ctx.fillStyle = css("--quiet");
-    for (let x = Math.ceil(x0 / major) * major; x <= x1; x += major) { if (Math.abs(x) < 1e-6 && !inProp()) continue; ctx.fillText(`${+toU(x).toFixed(1)}`, sx(x) + 3, Math.min(H - 60, Math.max(14, sy(0) + 16))); }
+    for (let x = Math.ceil(x0 / major) * major; x <= x1; x += major) { if (Math.abs(x) < 1e-6 && !inProp()) continue; ctx.fillText(`${+toU(x).toFixed(1)}`, sx(x) + 3, Math.min(H - 60, Math.max(phone() ? 90 : 14, sy(0) + 16))); }
     for (let y = Math.ceil(y0 / major) * major; y <= y1; y += major) { if (Math.abs(y) < 1e-6) continue; ctx.fillText(`${+toU(y).toFixed(1)}`, 4, sy(y) - 3); }
 
     labelBoxes.length = 0;
@@ -456,8 +465,8 @@ details.fold > summary .meta { margin-left: auto; font-size: 12px; color: var(--
       if (ui.placing && ui.ghost) { const g = ui.placing; const ox = g.x, oy = g.y; g.x = ui.ghost.x; g.y = ui.ghost.y; drawProp(g, 0.6, null, false, true); g.x = ox; g.y = oy; }
     }
     const sb = state.unit === "ft" ? FT * (ui.cam.ppm * FT < 12 ? 10 : ui.cam.ppm * FT < 30 ? 5 : 1) : (ui.cam.ppm < 25 ? 5 : ui.cam.ppm > 160 ? 0.5 : 1);
-    if (!phone()) {
-      const bx = 14, by = H - 52, len = sb * ui.cam.ppm;
+    {
+      const bx = 14, by = phone() ? 66 : H - 52, len = sb * ui.cam.ppm;
       ctx.strokeStyle = css("--fg"); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + len, by); ctx.moveTo(bx, by - 4); ctx.lineTo(bx, by + 4); ctx.moveTo(bx + len, by - 4); ctx.lineTo(bx + len, by + 4); ctx.stroke();
       ctx.fillStyle = css("--fg"); ctx.fillText(`${+toU(sb).toFixed(2)} ${uLabel()} · one square = ${+toU(step).toFixed(2)} ${uLabel()}`, bx + len + 8, by + 4);
     }
@@ -498,8 +507,15 @@ details.fold > summary .meta { margin-left: auto; font-size: 12px; color: var(--
       if (scoped) {
         const mx = (ax + bx) / 2, my = (ay + by) / 2;
         const t = `${fmtLen(runLen(p, r))} · ${n}${r.lights != null ? "*" : ""}`;
-        const w = ctx.measureText(t).width + 8; ctx.fillStyle = css("--card"); ctx.globalAlpha = 0.92; ctx.fillRect(mx - w / 2, my - 19, w, 15); ctx.globalAlpha = 1;
-        ctx.fillStyle = isSelRun ? css("--pick") : css("--fg"); ctx.fillText(t, mx - w / 2 + 4, my - 8);
+        const w = ctx.measureText(t).width + 8;
+        // offset the label to the outside of the run, then step it away from labels already placed
+        const nx = -(by - ay) / segLen, ny = (bx - ax) / segLen; let lx = mx - w / 2 + nx * 14, ly = my - 8 + ny * 14;
+        const hit = (q) => lx < q.x + q.w && lx + w > q.x && ly < q.y + 16 && ly + 16 > q.y;
+        for (let g = 0; g < 8 && labelBoxes.some(hit); g++) { lx += nx * 12; ly += ny * 12 + (g % 2 ? 10 : -10); }
+        lx = Math.max(4, Math.min(W - w - 4, lx)); ly = Math.max(phone() ? 84 : 16, Math.min(H - 8, ly));
+        labelBoxes.push({ x: lx, y: ly, w });
+        ctx.fillStyle = css("--card"); ctx.globalAlpha = 0.92; ctx.fillRect(lx, ly - 11, w, 16); ctx.globalAlpha = 1;
+        ctx.fillStyle = isSelRun ? css("--pick") : css("--fg"); ctx.fillText(t, lx + 4, ly + 1);
       }
     });
     if (scoped) {
@@ -540,12 +556,24 @@ details.fold > summary .meta { margin-left: auto; font-size: 12px; color: var(--
 
   // ---------- pointer ----------
   let drag = null;
+  // Touch rule: a drag pans, a tap acts, two fingers pinch. Taps are decided on release, so panning never adds a point.
+  const pointers = new Map(); let pinch = null;
+  const TAP_SLOP = 8;
   cv.addEventListener("pointerdown", (e) => {
     cv.focus(); cv.setPointerCapture(e.pointerId);
     const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+    pointers.set(e.pointerId, { px, py });
+    if (pointers.size === 2) {
+      if (drag && drag.kind === "corner" && drag.moved) render();
+      else if (drag && drag.kind === "corner") dpast.pop();
+      else if (drag && drag.kind === "prop" && drag.pushed) { const q = state.props.find((x) => x.id === drag.id); q.x = drag.ox; q.y = drag.oy; past.pop(); }
+      drag = null; const [a, b] = [...pointers.values()];
+      pinch = { d: Math.hypot(a.px - b.px, a.py - b.py), mx: (a.px + b.px) / 2, my: (a.py + b.py) / 2, cam: { ...ui.cam } }; $("coords").hidden = true; return;
+    }
+    if (pointers.size > 2) return;
     const start = { px, py, moved: false };
     if (inProp()) { propPointer(px, py, start); return; }
-    if (ui.placing) { const bb = bbox(ui.placing, 0, 0); placeAt(snapPos(wx(px)), snapPos(Math.max(-bb.minY, wy(py)))); return; }
+    if (ui.placing) { drag = { kind: "pan", cam: { ...ui.cam }, onTap: () => { const bb = bbox(ui.placing, 0, 0); placeAt(snapPos(wx(px)), snapPos(Math.max(-bb.minY, wy(py)))); }, ...start }; return; }
     const hit = hitProp(px, py);
     if (hit) {
       if (look() && hit.id === ui.sel) { lensToggle(hit, px, py); return; }
@@ -557,22 +585,28 @@ details.fold > summary .meta { margin-left: auto; font-size: 12px; color: var(--
   });
   function propPointer(px, py, start) {
     const p = ui.draft;
-    if (!p.corners.length) { if (ui.tool !== "trace") { ui.tool = "trace"; } commit(() => { p.kind = "draw"; p.drawn = true; p.corners.push({ x: 0, y: 0 }); }); return; }
+    if (!p.corners.length) { drag = { kind: "pan", cam: { ...ui.cam }, onTap: () => { ui.tool = "trace"; commit(() => { p.kind = "draw"; p.drawn = true; p.corners.push({ x: snapV(wx(px)), y: snapV(wy(py)) }); }); }, ...start }; return; }
     const ci = hitCorner(p, px, py);
     const hr = hitRun(p, px, py);
-    if (ui.activeSection && hr && ui.tool === "move") { toggleRunInSection(p, hr.r.id); return; }
-    if (ci >= 0 && ui.tool === "move") { dpast.push(JSON.stringify(p)); dfuture.length = 0; drag = { kind: "corner", ci, ...start }; return; }
-    if (hr && ui.tool === "split") { commit(() => splitRun(p, hr.r, hr.t)); return; }
-    if (ci >= 0 && ui.tool === "trace") { commit(() => traceTo(p, null, ci)); return; }
-    if (hr) { ui.selRun = hr.r.id; ui.sheet = ui.sheet || "half"; render(); return; }
-    if (ui.tool === "trace") { commit(() => traceTo(p, { x: snapV(wx(px)), y: snapV(wy(py)) })); return; }
-    drag = { kind: "pan", cam: { ...ui.cam }, deselectRun: true, ...start };
+    if (ci >= 0 && ui.tool === "move" && !ui.activeSection) { dpast.push(JSON.stringify(p)); dfuture.length = 0; drag = { kind: "corner", ci, ...start }; return; }
+    let onTap;
+    if (ui.activeSection && hr) onTap = () => toggleRunInSection(p, hr.r.id);
+    else if (hr && ui.tool === "split") onTap = () => commit(() => splitRun(p, hr.r, hr.t));
+    else if (ci >= 0 && ui.tool === "trace") onTap = () => commit(() => traceTo(p, null, ci));
+    else if (hr) onTap = () => { ui.selRun = hr.r.id; ui.activeSection = null; if (phone()) ui.sheet = ""; render(); $("insp").scrollTop = 0; };
+    else if (ui.tool === "trace") onTap = () => commit(() => traceTo(p, { x: snapV(wx(px)), y: snapV(wy(py)) }));
+    else onTap = () => { if (ui.selRun) { ui.selRun = null; render(); } };
+    drag = { kind: "pan", cam: { ...ui.cam }, onTap, ...start };
   }
   cv.addEventListener("pointermove", (e) => {
     const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
     if (!inProp() && ui.placing) { const bb = bbox(ui.placing, 0, 0); ui.ghost = { x: snapPos(wx(px)), y: snapPos(Math.max(-bb.minY, wy(py))) }; showCoords(px, py, `X ${fmt(ui.ghost.x)}  Y ${fmt(ui.ghost.y)}`); draw(); return; }
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { px, py });
+    if (pinch && pointers.size >= 2) { const [a, b] = [...pointers.values()]; const d = Math.hypot(a.px - b.px, a.py - b.py), mx = (a.px + b.px) / 2, my = (a.py + b.py) / 2;
+      ui.cam = { ...pinch.cam }; const wx0 = wx(pinch.mx), wy0 = wy(pinch.my); ui.cam.ppm = Math.max(6, Math.min(600, pinch.cam.ppm * d / Math.max(1, pinch.d)));
+      ui.cam.x = wx0 - (mx - W / 2) / ui.cam.ppm; ui.cam.y = wy0 + (my - H / 2) / ui.cam.ppm; draw(); return; }
     if (!drag) { cv.style.cursor = cursorAt(px, py); return; }
-    if (Math.hypot(px - drag.px, py - drag.py) > 3) drag.moved = true;
+    if (Math.hypot(px - drag.px, py - drag.py) > (e.pointerType === "touch" ? TAP_SLOP : 3)) drag.moved = true;
     if (!drag.moved) return;
     if (drag.kind === "pan") { ui.cam.x = drag.cam.x - (px - drag.px) / ui.cam.ppm; ui.cam.y = drag.cam.y + (py - drag.py) / ui.cam.ppm; draw(); return; }
     if (drag.kind === "prop") {
@@ -586,15 +620,20 @@ details.fold > summary .meta { margin-left: auto; font-size: 12px; color: var(--
       showCoords(px, py, `${fmt(c.x)}, ${fmt(c.y)} from the wire-in`); draw(); return;
     }
   });
-  cv.addEventListener("pointerup", () => {
+  const endPointer = (e) => {
+    pointers.delete(e.pointerId);
+    if (pinch) { if (pointers.size < 2) pinch = null; drag = null; return; }
     if (!ui.placing) $("coords").hidden = true;
     if (!drag) return;
-    if (drag.kind === "pan" && !drag.moved && drag.deselect) { ui.sel = null; ui.confirmDelete = false; render(); }
+    if (e.type === "pointercancel") { drag = null; return; }
+    if (drag.kind === "pan" && !drag.moved && drag.onTap) drag.onTap();
+    else if (drag.kind === "pan" && !drag.moved && drag.deselect) { ui.sel = null; ui.confirmDelete = false; render(); }
     else if (drag.kind === "pan" && !drag.moved && drag.deselectRun) { ui.selRun = null; render(); }
     else if (drag.kind === "prop" && drag.pushed) { markSaving(); render(); }
-    else if (drag.kind === "corner") { if (drag.moved) render(); else dpast.pop(); }
+    else if (drag.kind === "corner") { if (drag.moved) render(); else { dpast.pop(); if (ui.tool === "move") { /* tap on a corner: nothing */ } } }
     drag = null;
-  });
+  };
+  cv.addEventListener("pointerup", endPointer); cv.addEventListener("pointercancel", endPointer);
   cv.addEventListener("dblclick", (e) => { if (inProp() || look()) return; const r = cv.getBoundingClientRect(); const hit = hitProp(e.clientX - r.left, e.clientY - r.top); if (hit) openProp(hit, false); });
   cv.addEventListener("wheel", (e) => { e.preventDefault(); const r = cv.getBoundingClientRect();
     if (e.ctrlKey || e.metaKey) zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.01));
@@ -604,9 +643,14 @@ details.fold > summary .meta { margin-left: auto; font-size: 12px; color: var(--
     const h = hitProp(px, py); return h ? (look() ? "pointer" : "move") : "grab"; }
   function showCoords(px, py, t) { const c = $("coords"); c.hidden = false; c.textContent = t; c.style.left = `${px + 14}px`; c.style.top = `${py + 14}px`; }
   function zoomAt(px, py, f) { const bx = wx(px), by = wy(py); ui.cam.ppm = Math.max(6, Math.min(600, ui.cam.ppm * f)); ui.cam.x = bx - (px - W / 2) / ui.cam.ppm; ui.cam.y = by + (py - H / 2) / ui.cam.ppm; draw(); }
-  function fitBox(b, maxPpm) { const pw = phone() ? W - 64 : W - 160, ph = phone() ? H * 0.22 : H - 180;
+  // On a phone, fit into the part of the canvas the bottom sheet and the toolbar leave visible.
+  function visibleRect() { if (!phone()) return { top: 70, bottom: H - 70, left: 80, right: W - 80 };
+    const frac = ui.sheet === "full" ? 0.88 : ui.sheet === "half" ? 0.58 : 0.34;
+    return { top: 110, bottom: H * (1 - frac) - 30, left: 64, right: W - 64 }; }
+  function fitBox(b, maxPpm) { const v = visibleRect(); const pw = v.right - v.left, ph = Math.max(80, v.bottom - v.top);
     ui.cam.ppm = Math.max(6, Math.min(maxPpm, Math.min(pw / Math.max(0.5, b.maxX - b.minX), ph / Math.max(0.5, b.maxY - b.minY))));
-    ui.cam.x = (b.minX + b.maxX) / 2; ui.cam.y = (b.minY + b.maxY) / 2 - (phone() ? (H * 0.22) / ui.cam.ppm : 0); draw(); }
+    const cxs = (v.left + v.right) / 2, cys = (v.top + v.bottom) / 2;
+    ui.cam.x = (b.minX + b.maxX) / 2 - (cxs - W / 2) / ui.cam.ppm; ui.cam.y = (b.minY + b.maxY) / 2 + (cys - H / 2) / ui.cam.ppm; draw(); }
   function fitYard() { if (!state.props.length) return; let b = null;
     for (const p of state.props) { const q = bbox(p); b = b ? { minX: Math.min(b.minX, q.minX), minY: Math.min(b.minY, q.minY, 0), maxX: Math.max(b.maxX, q.maxX), maxY: Math.max(b.maxY, q.maxY) } : { ...q, minY: Math.min(q.minY, 0) }; }
     fitBox(b, 220); }
@@ -623,6 +667,14 @@ details.fold > summary .meta { margin-left: auto; font-size: 12px; color: var(--
   function traceTo(p, pt, ci) { const end = p.runs.length ? p.runs[p.runs.length - 1].b : 0;
     let to = ci; if (to == null) { p.corners.push(pt); to = p.corners.length - 1; } if (to === end) return;
     const r = { id: id("r"), a: end, b: to, label: `Run ${p.runs.length + 1}`, lights: null }; p.runs.push(r); p.drawn = true; ui.selRun = r.id; }
+  // Typing a length moves the run's far end along the run. If that corner is shared with a later run, the later run follows it,
+  // so the shape stays connected (a window side gets longer and the top moves with it).
+  function templateParamFor(p, r) { if (p.drawn) return null; const i = p.runs.indexOf(r);
+    if (p.kind === "line") return "length"; if (p.kind === "window") return i % 2 === 0 ? "width" : "height"; if (p.kind === "triangle" && i === 0) return "width"; return null; }
+  function setRunLength(p, r, m) { const key = templateParamFor(p, r);
+    if (key) { commit(() => { p.params[key] = +m.toFixed(4); regenerate(p); }); return; }
+    commit(() => { const a = p.corners[r.a], b = p.corners[r.b]; const l = runLen(p, r) || 1;
+    b.x = +(a.x + ((b.x - a.x) * m) / l).toFixed(4); b.y = +(a.y + ((b.y - a.y) * m) / l).toFixed(4); r.lights = null; p.drawn = true; }); }
   function deleteRun(p, rid) { const i = p.runs.findIndex((r) => r.id === rid); if (i < 0) return; p.runs.splice(i, 1);
     for (const s of p.sections) s.runs = s.runs.filter((x) => x !== rid); p.drawn = true; ui.selRun = null; }
   function deleteProp(pid) { state.props = state.props.filter((p) => p.id !== pid); for (const k of state.looks) delete k.items[pid]; ui.sel = null; ui.confirmDelete = false; }
@@ -752,29 +804,39 @@ details.fold > summary .meta { margin-left: auto; font-size: 12px; color: var(--
     const unsectioned = p.runs.filter((x) => !sectionOf(p, x.id));
     return `
       ${ui.askDiscard ? `<div class="discard"><span>Leave without saving? Your changes to this prop are lost.</span><button class="btn danger" data-act="discard">Discard</button><button class="btn" data-act="keepediting">Keep editing</button></div>` : ""}
+      ${r ? runEditor(p, r, counts) : ""}
+      ${s ? sectionEditor(p, s) : ""}
       <label class="f">Name<input id="f-name" value="${esc(p.name)}" maxlength="64"></label>
-      <div><h2>${p.corners.length ? "Shape" : "Start from"}</h2><div class="tiles">${tiles}</div>
-        <div class="grid2" style="margin-top:8px"><label class="f">Unit<span class="seg" role="group"><button data-unit="ft" aria-pressed="${state.unit === "ft"}">Feet</button><button data-unit="m" aria-pressed="${state.unit === "m"}">Metres</button></span></label></div>
-        <div style="margin-top:8px">${params}</div>
-        ${p.corners.length && !p.drawn ? `<p class="note" style="margin-top:6px">Picking another shape replaces this one and clears its sections.</p>` : ""}</div>
+      ${!p.corners.length || ui.showTiles ? `<div><h2>${p.corners.length ? "Change shape" : "Start from"}</h2><div class="tiles">${tiles}</div>
+        ${p.corners.length ? `<p class="note" style="margin-top:6px">Picking another shape replaces this one and clears its sections. <button class="btn link" data-act="hidetiles">Keep ${esc(shapeName(p))}</button></p>` : ""}</div>`
+      : `<div><h2>Shape</h2><div class="secrow"><span class="nm">${esc(shapeName(p))} · ${fmtLen(totalLen(p))}</span><button class="btn link" data-act="showtiles">Change shape</button></div></div>`}
+      ${p.corners.length ? `<div><div class="grid2"><label class="f">Unit<span class="seg" role="group"><button data-unit="ft" aria-pressed="${state.unit === "ft"}">Feet</button><button data-unit="m" aria-pressed="${state.unit === "m"}">Metres</button></span></label></div>
+        <div style="margin-top:8px">${params}</div></div>` : ""}
       ${p.runs.length ? `
       <div><h2>Lights</h2><div class="grid2">${num("f-count", "How many lights", propCount(p))}${num("f-pitch", `Spacing (${state.unit === "ft" ? "in" : "cm"})`, state.unit === "ft" ? (pitchOf(p) / 0.0254).toFixed(2) : (pitchOf(p) * 100).toFixed(1))}</div>
         <p class="note">${p.count != null ? `Fixed at ${p.count}, spread over the runs by length.` : "Counted from length and spacing."} Light 1 is at the wire-in.</p></div>
-      <div><h2>${r ? esc(r.label) : "Runs, from the wire-in"}</h2>
-        ${r ? `<div class="grid2">${num("f-rlen", `Length (${uLabel()})`, +toU(runLen(p, r)).toFixed(2))}${num("f-rlights", "Lights on this run", counts[p.runs.indexOf(r)])}</div>
-          <p class="note">${r.lights != null ? `Set by hand. <button class="btn link" data-act="rlreset">Count from length</button>` : "Counted from length. Type a number to set it by hand."}</p>
-          <div class="btnrow" style="margin-top:8px"><button class="btn" data-act="unselrun">All runs</button><button class="btn danger" data-act="delrun">Delete run</button></div>`
-        : `<div class="sectionrows">${p.runs.map((x, i) => `<div class="secrow"><span class="sw" style="background:${sectionOf(p, x.id)?.color || "var(--lit)"}"></span><button class="nm" data-run="${x.id}">${esc(x.label)}</button><span class="rng">${fmtLen(runLen(p, x))} · ${counts[i]}${x.lights != null ? "*" : ""}</span></div>`).join("")}</div>`}</div>
+      <div><h2>Runs, from the wire-in</h2>
+        <div class="sectionrows">${p.runs.map((x, i) => `<div class="secrow"><span class="sw" style="background:${sectionOf(p, x.id)?.color || "var(--lit)"}"></span><button class="nm" data-run="${x.id}">${esc(x.label)}</button><span class="rng">${fmtLen(runLen(p, x))} · ${counts[i]}${x.lights != null ? "*" : ""}</span></div>`).join("")}</div></div>
       <div><h2>Sections</h2><div class="sectionrows">
         ${p.sections.map((x) => `<div class="secrow ${x.id === ui.activeSection ? "on" : ""}"><span class="sw" style="background:${x.color}"></span><button class="nm" data-sec="${x.id}">${esc(x.name)}</button><span class="rng">${rangeText(sectionRanges(p, x))}</span></div>`).join("")}</div>
-        ${s ? `<div class="foldbody"><label class="f">Section name<input id="f-secname" value="${esc(s.name)}"></label>
-          <div class="colorf"><input type="color" id="f-seccolor" value="${s.color}" aria-label="Section colour"><input class="hex" id="f-sechex" value="${s.color.toUpperCase()}" aria-label="Section colour hex" maxlength="7"></div>
-          <p class="note">Click runs on the canvas to put them in or take them out. Lights ${rangeText(sectionRanges(p, s))}${sectionRanges(p, s).length ? ` (WLED counts from 0: ${sectionRanges(p, s).map(([a, b]) => `${a - 1}–${b - 1}`).join(", ")})` : ""}.</p>
-          <div class="btnrow"><button class="btn" data-act="secdone">Done with ${esc(s.name)}</button><button class="btn danger" data-act="delsec">Delete section</button></div></div>` : ""}
         <div class="btnrow" style="margin-top:8px"><button class="btn" data-act="addsec">New section</button></div>
         ${unsectioned.length && p.sections.length ? `<p class="note" style="margin-top:6px">Not in any section: ${unsectioned.map((x) => esc(x.label)).join(", ")}.</p>` : ""}</div>` : ""}
       <div class="btnrow"><button class="btn primary" data-act="save">${ui.draftIsNew ? "Save and place" : "Save"}</button><button class="btn" data-act="cancel">Cancel</button></div>
       <p class="note">Keys: V select, T trace, A add point, Delete removes the selected run, ⌘/Ctrl+S saves, Esc leaves.</p>`;
+  }
+  function runEditor(p, r, counts) {
+    const st = state.unit === "ft" ? "1 in" : "5 cm";
+    return `<div class="runbox"><h2>Selected run · ${esc(r.label)}</h2>
+      <label class="f">Length (${uLabel()})<span class="stepper"><button data-act="rlminus" aria-label="Shorter by ${st}">−</button><input class="num" id="f-rlen" inputmode="decimal" value="${+toU(runLen(p, r)).toFixed(2)}"><button data-act="rlplus" aria-label="Longer by ${st}">+</button></span></label>
+      <div class="grid2" style="margin-top:8px">${num("f-rlights", "Lights on this run", counts[p.runs.indexOf(r)])}<label class="f">&nbsp;<button class="btn danger" data-act="delrun">Delete run</button></label></div>
+      <p class="note">${r.lights != null ? `Lights set by hand. <button class="btn link" data-act="rlreset">Count from length</button>` : "Lights follow the length."} ${templateParamFor(p, r) ? `Changes the ${TITLES[p.kind]}'s ${templateParamFor(p, r)}, so the shape stays square.` : "The run's far end moves along the run."} ± steps ${st}.</p>
+      <div class="btnrow" style="margin-top:6px"><button class="btn" data-act="unselrun">Done with this run</button></div></div>`;
+  }
+  function sectionEditor(p, s) {
+    return `<div class="runbox"><h2>Section · tap runs to add or remove</h2><label class="f">Section name<input id="f-secname" value="${esc(s.name)}"></label>
+      <div class="colorf" style="margin-top:8px"><input type="color" id="f-seccolor" value="${s.color}" aria-label="Section colour"><input class="hex" id="f-sechex" value="${s.color.toUpperCase()}" aria-label="Section colour hex" maxlength="7"></div>
+      <p class="note">Lights ${rangeText(sectionRanges(p, s))}${sectionRanges(p, s).length ? ` (WLED counts from 0: ${sectionRanges(p, s).map(([a, b]) => `${a - 1}–${b - 1}`).join(", ")})` : ""}.</p>
+      <div class="btnrow" style="margin-top:6px"><button class="btn" data-act="secdone">Done with ${esc(s.name)}</button><button class="btn danger" data-act="delsec">Delete section</button></div></div>`;
   }
   const pitchOf = (p) => (p.count != null && totalLen(p) > 0 ? totalLen(p) / Math.max(1, p.count) : p.pitch);
 
@@ -845,11 +907,11 @@ details.fold > summary .meta { margin-left: auto; font-size: 12px; color: var(--
     if (t.tagName === "A") e.preventDefault();
     if (t.dataset.look) { openLook(t.dataset.look, false); return; }
     if (t.dataset.pick) { ui.sel = t.dataset.pick; ui.confirmDelete = false; ui.railOpen = false; ui.lensSection = null; ui.sheet = ui.sheet || "half"; render(); fitIfOff(yardSel()); return; }
-    if (t.dataset.start) { const k = t.dataset.start; commit(() => startFrom(ui.draft, k)); fitDraft(); if (ui.draft.name && !$("f-name").matches(":focus")) {} return; }
+    if (t.dataset.start) { const k = t.dataset.start; ui.showTiles = false; if (phone()) ui.sheet = ""; commit(() => startFrom(ui.draft, k)); fitDraft(); return; }
     if (t.dataset.tool) { ui.tool = t.dataset.tool; render(); return; }
     if (t.dataset.unit) { if (inProp()) { state.unit = t.dataset.unit; render(); } else commit(() => (state.unit = t.dataset.unit)); return; }
     if (t.dataset.sec) { ui.activeSection = ui.activeSection === t.dataset.sec ? null : t.dataset.sec; ui.tool = "move"; ui.selRun = null; render(); return; }
-    if (t.dataset.run) { ui.selRun = t.dataset.run; render(); return; }
+    if (t.dataset.run) { ui.selRun = t.dataset.run; ui.activeSection = null; if (phone()) ui.sheet = ""; render(); $("insp").scrollTop = 0; return; }
     if (t.dataset.task) { ui.tasksDone[t.dataset.task] = !ui.tasksDone[t.dataset.task]; render(); return; }
     if ("lsec" in t.dataset) { ui.lensSection = t.dataset.lsec || null; render(); return; }
     const p = cur(); const a = t.dataset.act;
@@ -872,6 +934,9 @@ details.fold > summary .meta { margin-left: auto; font-size: 12px; color: var(--
       case "delrun": commit(() => deleteRun(p, ui.selRun)); break;
       case "unsel": ui.sel = null; render(); break;
       case "unselrun": ui.selRun = null; render(); break;
+      case "rlminus": case "rlplus": { const st = state.unit === "ft" ? 0.0254 : 0.05; const r = p.runs.find((x) => x.id === ui.selRun); setRunLength(p, r, Math.max(st, runLen(p, r) + (a === "rlplus" ? st : -st))); break; }
+      case "showtiles": ui.showTiles = true; render(); break;
+      case "hidetiles": ui.showTiles = false; render(); break;
       case "rlreset": commit(() => { p.runs.find((r) => r.id === ui.selRun).lights = null; }); break;
       case "blink": ui.blink = !ui.blink; render(); break;
       case "apply": ui.applied = p.id; ui.blink = false; render(); break;
@@ -914,9 +979,7 @@ details.fold > summary .meta { margin-left: auto; font-size: 12px; color: var(--
     if (t.id === "f-count" && v != null && v >= 0) commit(() => { p.count = Math.round(v); p.runs.forEach((r) => (r.lights = null)); });
     if (t.id === "f-pitch" && v != null && v > 0) commit(() => { p.pitch = state.unit === "ft" ? v * 0.0254 : v / 100; p.count = null; });
     if (t.id === "f-ypitch" && v != null && v > 0) commit(() => (state.pitchDefault = state.unit === "ft" ? v * 0.0254 : v / 100));
-    if (t.id === "f-rlen" && v != null && v > 0) { commit(() => { const r = p.runs.find((x) => x.id === ui.selRun); const a = p.corners[r.a], b = p.corners[r.b]; const l = runLen(p, r) || 1; const m = fromU(v);
-      const shared = p.runs.some((x) => x !== r && (x.a === r.b || x.b === r.b)); if (shared) { p.corners.push({ x: a.x + ((b.x - a.x) * m) / l, y: a.y + ((b.y - a.y) * m) / l }); r.b = p.corners.length - 1; } else { b.x = a.x + ((b.x - a.x) * m) / l; b.y = a.y + ((b.y - a.y) * m) / l; }
-      r.lights = null; p.drawn = true; }); }
+    if (t.id === "f-rlen" && v != null && v > 0) setRunLength(p, p.runs.find((x) => x.id === ui.selRun), fromU(v));
     if (t.id === "f-rlights" && v != null && v >= 0) commit(() => { const counts = runCounts(p); if (p.count != null) { p.runs.forEach((r, i) => (r.lights = r.lights ?? counts[i])); p.count = null; } p.runs.find((x) => x.id === ui.selRun).lights = Math.round(v); });
     if (t.id === "f-seccolor" || (t.id === "f-sechex" && hexOk(t.value))) commit(() => (p.sections.find((s) => s.id === ui.activeSection).color = t.value.toLowerCase()));
     if (t.id === "f-light") commit(() => { p.ctrl = t.value ? { light: t.value, output: 1, after: "" } : null; ui.applied = null; });
