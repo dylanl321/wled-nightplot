@@ -19,26 +19,42 @@ export function runBadge(stringIndex: number, order: number): string {
   return `${stringLetter(stringIndex)}${order}`;
 }
 
-export type ScreenRun = { ax: number; ay: number; bx: number; by: number };
+export type ScreenRun = {
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+  /** A selected run keeps its label. Others hide when they would cover it. */
+  selected?: boolean;
+};
 
-export type LabelSpot = { badge: Point; caption: Point };
+export type LabelSide = "left" | "right" | "top" | "bottom";
+
+export type LabelSpot = {
+  badge: Point | null;
+  caption: Point | null;
+  /** Set when the run's midpoint is off the stage. The label is not drawn. */
+  off: LabelSide | null;
+};
 
 /** The length caption is 104 px wide and centred on its point. */
 export const CAPTION_HALF_W = 52;
 export const CAPTION_HALF_H = 10;
-const BADGE_HALF = 16;
+const BADGE_R = 16;
+const BADGE_OFFSET = 20;
+const CAPTION_OFFSET = 36;
 const EDGE_PAD = 8;
 
-/** The stage rectangle, in screen pixels, that labels must stay inside. */
+/** The stage rectangle, in screen pixels. */
 export type LabelFrame = { w: number; h: number };
 
 type Occupied = { x: number; y: number; r: number };
 
 /**
- * A badge and a length caption for every run. Captions are always returned,
- * including on a short run. Spots stay off the line and away from each other
- * and from `obstacles` (a Wire in label, the zoom controls). When `frame` is
- * set, a label that would leave the stage is nudged back inside it.
+ * Badge and length caption sit on the run's midpoint, a fixed offset to one
+ * side, at every zoom. A run whose midpoint is off the stage is hidden.
+ * When two labels would cover each other, the selected run stays and the
+ * other is hidden. Labels are not pulled back onto the edge of the view.
  */
 export function placeRunLabels(
   runs: readonly ScreenRun[],
@@ -46,86 +62,67 @@ export function placeRunLabels(
   gap = 28,
   frame?: LabelFrame,
 ): LabelSpot[] {
-  const placed: Occupied[] = obstacles.map((point) => ({ x: point.x, y: point.y, r: 18 }));
-  return runs.map((run) => {
+  const order = runs.map((run, index) => ({ run, index }))
+    .sort((left, right) => Number(Boolean(right.run.selected)) - Number(Boolean(left.run.selected)) || left.index - right.index);
+  const placed: Occupied[] = obstacles.map((point) => ({ x: point.x, y: point.y, r: 22 }));
+  const spots: LabelSpot[] = runs.map(() => ({ badge: null, caption: null, off: null }));
+  for (const item of order) {
+    const run = item.run;
     const dx = run.bx - run.ax;
     const dy = run.by - run.ay;
     const len = Math.hypot(dx, dy) || 1;
     const nx = -dy / len;
     const ny = dx / len;
-    const ux = dx / len;
-    const uy = dy / len;
     const mx = (run.ax + run.bx) / 2;
     const my = (run.ay + run.by) / 2;
-    const badge = nudgeInside(pick({ x: mx + nx * 22, y: my + ny * 22 }, 14, BADGE_HALF, BADGE_HALF, gap, placed, frame, (dist, side, along) => ({
-      x: mx + nx * dist * side + ux * along,
-      y: my + ny * dist * side + uy * along,
-    }), [22, 36, 52, 70], [0, 18, -18, 36, -36]), BADGE_HALF, BADGE_HALF, frame);
-    placed.push({ ...badge, r: 14 });
-    const awayX = badge.x - mx;
-    const awayY = badge.y - my;
-    const away = Math.hypot(awayX, awayY) || 1;
-    const caption = nudgeInside(pick({ x: badge.x + (awayX / away) * 56, y: badge.y + (awayY / away) * 16 }, 32, CAPTION_HALF_W, CAPTION_HALF_H, gap, placed, frame, (extra, _side, slide) => ({
-      x: badge.x + (awayX / away) * extra + ux * slide,
-      y: badge.y + (awayY / away) * extra * 0.4 + uy * slide,
-    }), [52, 70, 90], [0, 24, -24, 48]), CAPTION_HALF_W, CAPTION_HALF_H, frame);
-    placed.push({ ...caption, r: 32 });
-    return { badge, caption };
-  });
+    const off = frame ? offSide(mx, my, frame) : null;
+    if (off) {
+      spots[item.index] = { badge: null, caption: null, off };
+      continue;
+    }
+    const sides = [1, -1].map((side) => ({
+      badge: { x: mx + nx * BADGE_OFFSET * side, y: my + ny * BADGE_OFFSET * side },
+      caption: { x: mx + nx * CAPTION_OFFSET * side, y: my + ny * CAPTION_OFFSET * side },
+    }));
+    const clear = sides.find((side) => fits(side.badge, BADGE_R, placed, gap) && fits(side.caption, 28, placed, gap));
+    const chosen = clear ?? (run.selected ? sides[0] : null);
+    if (!chosen) continue;
+    spots[item.index] = { badge: chosen.badge, caption: chosen.caption, off: null };
+    placed.push({ ...chosen.badge, r: BADGE_R }, { ...chosen.caption, r: 28 });
+  }
+  return spots;
 }
 
-/** Pull a centred label back so its box stays on the stage. */
-export function nudgeInside(point: Point, halfW: number, halfH: number, frame?: LabelFrame): Point {
-  if (!frame || !(frame.w > 0) || !(frame.h > 0)) return point;
-  const minX = EDGE_PAD + halfW;
-  const maxX = frame.w - EDGE_PAD - halfW;
-  const minY = EDGE_PAD + halfH;
-  const maxY = frame.h - EDGE_PAD - halfH;
-  return {
-    x: maxX < minX ? frame.w / 2 : Math.min(maxX, Math.max(minX, point.x)),
-    y: maxY < minY ? frame.h / 2 : Math.min(maxY, Math.max(minY, point.y)),
+/** How many hidden runs sit past each edge. One chip per side is enough. */
+export function labelsOffScreen(spots: readonly LabelSpot[]): { side: LabelSide; count: number }[] {
+  const counts: Record<LabelSide, number> = { left: 0, right: 0, top: 0, bottom: 0 };
+  for (const spot of spots) {
+    if (spot.off) counts[spot.off] += 1;
+  }
+  const sides: LabelSide[] = ["left", "right", "top", "bottom"];
+  return sides.filter((side) => counts[side] > 0).map((side) => ({ side, count: counts[side] }));
+}
+
+function fits(point: Point, radius: number, placed: readonly Occupied[], gap: number): boolean {
+  return placed.every((other) => Math.hypot(point.x - other.x, point.y - other.y) >= other.r + radius + Math.min(gap, 12));
+}
+
+function offSide(x: number, y: number, frame: LabelFrame): LabelSide | null {
+  if (!(frame.w > 0) || !(frame.h > 0)) return null;
+  const past = {
+    left: EDGE_PAD - x,
+    right: x - (frame.w - EDGE_PAD),
+    top: EDGE_PAD - y,
+    bottom: y - (frame.h - EDGE_PAD),
   };
-}
-
-function pick(
-  seed: Point,
-  radius: number,
-  halfW: number,
-  halfH: number,
-  gap: number,
-  placed: readonly Occupied[],
-  frame: LabelFrame | undefined,
-  at: (dist: number, side: number, along: number) => Point,
-  distances: readonly number[],
-  alongs: readonly number[],
-): Point {
-  let chosen = seed;
-  let best = score(seed, radius, halfW, halfH, placed, frame);
-  for (const dist of distances) {
-    for (const side of [1, -1]) {
-      for (const along of alongs) {
-        const next = at(dist, side, along);
-        const room = score(next, radius, halfW, halfH, placed, frame);
-        if (room > best) {
-          best = room;
-          chosen = next;
-        }
-        if (room >= gap) return next;
-      }
+  let side: LabelSide | null = null;
+  let most = 0;
+  const keys: LabelSide[] = ["left", "right", "top", "bottom"];
+  for (const key of keys) {
+    if (past[key] > most) {
+      most = past[key];
+      side = key;
     }
   }
-  return chosen;
-}
-
-function score(point: Point, radius: number, halfW: number, halfH: number, placed: readonly Occupied[], frame?: LabelFrame): number {
-  const room = clearance(point, radius, placed);
-  if (!frame) return room;
-  const kept = nudgeInside(point, halfW, halfH, frame);
-  if (kept.x === point.x && kept.y === point.y) return room;
-  return room - 10000;
-}
-
-function clearance(point: Point, radius: number, placed: readonly Occupied[]): number {
-  if (placed.length === 0) return 999;
-  return placed.reduce((min, other) => Math.min(min, Math.hypot(point.x - other.x, point.y - other.y) - other.r - radius), 999);
+  return side;
 }

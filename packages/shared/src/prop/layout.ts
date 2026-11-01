@@ -869,6 +869,143 @@ export function gapLabel(gapM: number, units: LayoutUnits): string {
   return `misses by ${Math.max(1, Math.round(gapM * 100))} cm`;
 }
 
+/** Spacing for the field. Feet show inches. Metres show centimetres. The stored value stays metres. */
+export function formatPitch(pitchM: number, units: LayoutUnits): string {
+  if (units !== "ft") return formatPitchCm(pitchM);
+  const inches = pitchM / METRES_PER_INCH;
+  const rounded = Math.round(inches * 100) / 100;
+  if (!Number.isFinite(rounded)) return "";
+  if (Number.isInteger(rounded)) return String(rounded);
+  return rounded.toFixed(2).replace(/0$/, "").replace(/\.0$/, "");
+}
+
+/** Inches when the prop is in feet, centimetres when it is in metres. Null leaves the drawing alone. */
+export function parsePitch(text: string, units: LayoutUnits): number | null {
+  if (units !== "ft") return parsePitchCm(text);
+  const raw = text.trim();
+  if (!/^\d+(?:\.\d+)?$/.test(raw)) return null;
+  const inches = Number(raw);
+  if (!(inches > 0) || inches > 80) return null;
+  return inches * METRES_PER_INCH;
+}
+
+export type RunGap = {
+  stringId: string;
+  /** The run that ends before the gap. */
+  afterId: string;
+  beforeId: string;
+  lengthM: number;
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+};
+
+/** Where one run ends somewhere other than where the next run starts. */
+export function runGaps(layout: PropLayout): RunGap[] {
+  const gaps: RunGap[] = [];
+  for (const string of layoutStrings(layout)) {
+    for (let index = 0; index < string.run.length - 1; index += 1) {
+      const previous = string.run[index]!;
+      const next = string.run[index + 1]!;
+      if (previous.to === next.from) continue;
+      const from = cornerById(layout, previous.to);
+      const to = cornerById(layout, next.from);
+      if (!from || !to) continue;
+      const lengthM = Math.hypot(to.x - from.x, to.y - from.y);
+      if (lengthM <= 0.005) continue;
+      gaps.push({
+        stringId: string.id,
+        afterId: previous.id,
+        beforeId: next.id,
+        lengthM,
+        from: { x: from.x, y: from.y },
+        to: { x: to.x, y: to.y },
+      });
+    }
+  }
+  return gaps;
+}
+
+/**
+ * Turn the gap after `afterId` into a dark run. The wire counts and it has
+ * no lights. The runs on either side keep their ids.
+ */
+export function addUnlitConnector(layout: PropLayout, afterId: string): PropLayout {
+  const gap = runGaps(layout).find((row) => row.afterId === afterId);
+  if (!gap) return layout;
+  const base = ensureStrings(layout);
+  const id = nextId(base, "e");
+  const strings = (base.strings ?? []).map((string) => {
+    if (string.id !== gap.stringId) return string;
+    const index = string.run.findIndex((edge) => edge.id === afterId);
+    if (index < 0) return string;
+    const previous = string.run[index]!;
+    const next = string.run[index + 1];
+    if (!next || next.id !== gap.beforeId) return string;
+    const wire: LayoutEdge = { id, from: previous.to, to: next.from, kind: "wire" };
+    return { ...string, run: [...string.run.slice(0, index + 1), wire, ...string.run.slice(index + 1)] };
+  });
+  return writeStrings(base, strings);
+}
+
+/** Length of every run, including dark runs, plus the gaps between them. */
+export function layoutWireLengthM(layout: PropLayout): number {
+  const runs = countLayout(layout).edges.reduce((sum, edge) => sum + edge.lengthM, 0);
+  const gaps = runGaps(layout).reduce((sum, gap) => sum + gap.lengthM, 0);
+  return runs + gaps;
+}
+
+/**
+ * Store the template's description on each run that does not have one, so a
+ * later split cannot hand "Wall 1 top" to a different run. Index names are
+ * written only when every lit run is still unnamed and the count still
+ * matches the template. A well-house id such as `top.0` is named on its own.
+ */
+export function stampEdgeNames(layout: PropLayout): PropLayout {
+  const lit = layoutStrings(layout).flatMap((string) => string.run).filter((edge) => edge.kind === "lit");
+  const list = templateNames(layout);
+  const useIndex = list != null && lit.length === list.length && lit.every((edge) => !edge.name);
+  let litIndex = 0;
+  let changed = false;
+  const named = mapEdges(layout, (edge) => {
+    if (edge.name) {
+      if (edge.kind === "lit") litIndex += 1;
+      return edge;
+    }
+    const fromId = wellHouseEdgeLabel(edge.id);
+    if (fromId) {
+      changed = true;
+      if (edge.kind === "lit") litIndex += 1;
+      return { ...edge, name: fromId };
+    }
+    if (edge.kind !== "lit") return edge;
+    const index = litIndex;
+    litIndex += 1;
+    if (!useIndex || !list) return edge;
+    const name = list[index];
+    if (!name) return edge;
+    changed = true;
+    return { ...edge, name };
+  });
+  return changed ? named : layout;
+}
+
+function templateNames(layout: PropLayout): string[] | null {
+  const type = layout.template?.type;
+  if (type === "window") return windowSideNames(layout);
+  if (type === "roofline") return ["Along the roof"];
+  if (type === "arch") return ["Left side", "Right side"];
+  if (type === "tree") {
+    return layout.template?.params.closed === 1
+      ? ["Left side", "Right side", "Base"]
+      : ["Left side", "Right side"];
+  }
+  if (type === "stake-row") {
+    const stakes = layout.run.filter((edge) => edge.kind === "lit").length;
+    return Array.from({ length: stakes }, (_, index) => `Stake ${index + 1}`);
+  }
+  return null;
+}
+
 export function windowLayout(input: {
   widthM: number;
   heightM: number;
@@ -894,7 +1031,7 @@ export function windowLayout(input: {
     to: corners[(index + 1) % corners.length]!.id,
     kind: "lit" as const,
   }));
-  return {
+  return stampEdgeNames({
     source: "template",
     template: { type: "window", params: { ...input.params, start: input.startCorner, clockwise: input.clockwise ? 1 : 0 } },
     units: input.units,
@@ -902,7 +1039,7 @@ export function windowLayout(input: {
     startOffsetM: 0,
     corners,
     run,
-  };
+  });
 }
 
 /** Bottom, Right, Top, Left in the layout's wiring order. */
@@ -934,7 +1071,7 @@ export function rooflineLayout(input: {
   const far = { id: "c2", x: input.lengthM, y: 0 };
   const corners = input.startAtFarEnd ? [far, near] : [near, far];
   const ordered = corners.map((corner, index) => ({ ...corner, id: `c${index + 1}` }));
-  return {
+  return stampEdgeNames({
     source: "template",
     template: { type: "roofline", params: input.params },
     units: input.units,
@@ -942,7 +1079,7 @@ export function rooflineLayout(input: {
     startOffsetM: 0,
     corners: ordered,
     run: [{ id: "e1", from: ordered[0]!.id, to: ordered[1]!.id, kind: "lit" }],
-  };
+  });
 }
 
 export function layoutFromMeasurements(input: {
@@ -953,11 +1090,13 @@ export function layoutFromMeasurements(input: {
 }): PropLayout | null {
   const { units, pitchM, params } = input;
   const toM = (value: number) => value * (units === "ft" ? METRES_PER_FOOT : 1);
+  let built: PropLayout | null;
   switch (input.shape) {
     case "roofline":
-      return rooflineLayout({ lengthM: toM(params.length ?? 0), units, pitchM, startAtFarEnd: false, params });
+      built = rooflineLayout({ lengthM: toM(params.length ?? 0), units, pitchM, startAtFarEnd: false, params });
+      break;
     case "window":
-      return windowLayout({
+      built = windowLayout({
         widthM: toM(params.width ?? 0),
         heightM: toM(params.height ?? 0),
         units,
@@ -966,27 +1105,33 @@ export function layoutFromMeasurements(input: {
         clockwise: false,
         params,
       });
+      break;
     case "arch":
-      return polylineLayout("arch", units, pitchM, params, [
+      built = polylineLayout("arch", units, pitchM, params, [
         { x: 0, y: 0 },
         { x: toM(params.width ?? 0) / 2, y: toM(params.height ?? 0) },
         { x: toM(params.width ?? 0), y: 0 },
       ], false);
+      break;
     case "tree":
-      return polylineLayout("tree", units, pitchM, params, [
+      built = polylineLayout("tree", units, pitchM, params, [
         { x: 0, y: 0 },
         { x: toM(params.base ?? 0) / 2, y: toM(params.height ?? 0) },
         { x: toM(params.base ?? 0), y: 0 },
       ], params.closed === 1);
+      break;
     case "stake-row":
-      return stakeLayout(toM(params.height ?? 0), Math.round(params.stakes ?? 0), units, pitchM, params);
+      built = stakeLayout(toM(params.height ?? 0), Math.round(params.stakes ?? 0), units, pitchM, params);
+      break;
     case "wireframe":
-      return wellHouseLayout(input);
+      built = wellHouseLayout(input);
+      break;
     default: {
       const _never: never = input.shape;
       return _never;
     }
   }
+  return built ? stampEdgeNames(built) : null;
 }
 
 function polylineLayout(
@@ -1005,7 +1150,7 @@ function polylineLayout(
   if (close && corners.length > 2) {
     run.push({ id: `e${corners.length}`, from: corners[corners.length - 1]!.id, to: corners[0]!.id, kind: "lit" });
   }
-  return { source: "template", template: { type, params }, units, pitchM, startOffsetM: 0, corners, run };
+  return stampEdgeNames({ source: "template", template: { type, params }, units, pitchM, startOffsetM: 0, corners, run });
 }
 
 function stakeLayout(heightM: number, stakes: number, units: LayoutUnits, pitchM: number, params: Record<string, number>): PropLayout | null {
@@ -1024,7 +1169,7 @@ function stakeLayout(heightM: number, stakes: number, units: LayoutUnits, pitchM
       run.push({ id: `e-wire-${index + 1}`, from: top.id, to: nextBase, kind: "wire" });
     }
   }
-  return { source: "template", template: { type: "stake-row", params }, units, pitchM, startOffsetM: 0, corners, run };
+  return stampEdgeNames({ source: "template", template: { type: "stake-row", params }, units, pitchM, startOffsetM: 0, corners, run });
 }
 
 /**
@@ -1105,7 +1250,7 @@ function wellHouseLayout(input: {
     }
   }
   const run = wellHouseEdgeOrder(sides).map((id) => byId.get(id)).filter((edge): edge is LayoutEdge => Boolean(edge));
-  return {
+  return stampEdgeNames({
     source: "template",
     template: { type: "wireframe", params: input.params },
     net: { sides, widthM: side, heightM: height },
@@ -1114,7 +1259,7 @@ function wellHouseLayout(input: {
     startOffsetM: 0,
     corners,
     run,
-  };
+  });
 }
 
 function startIdOf(layout: PropLayout): string {

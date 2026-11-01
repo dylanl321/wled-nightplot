@@ -29,6 +29,8 @@ export type EditorStageHandle = {
   fit: () => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  /** Keep the zoom and put this world point in the middle of the view. */
+  centerOn: (world: Point) => void;
   camera: () => Camera;
   /** Screen px (relative to the stage) to world metres, through the inverted stage transform. */
   toWorld: (screen: Point) => Point;
@@ -156,6 +158,14 @@ export function EditorStage({
 
   const zoomIn = useCallback(() => moveCamera((current) => zoomStep(current, 1, sizeRef.current, limitsRef.current)), [moveCamera]);
   const zoomOut = useCallback(() => moveCamera((current) => zoomStep(current, -1, sizeRef.current, limitsRef.current)), [moveCamera]);
+  const centerOn = useCallback((world: Point) => {
+    const size = sizeRef.current;
+    moveCamera((current) => ({
+      ppm: current.ppm,
+      ox: size.w / 2 - world.x * current.ppm,
+      oy: size.h / 2 + world.y * current.ppm,
+    }));
+  }, [moveCamera]);
 
   const screenToWorld = useCallback((screen: Point): Point => {
     const node = stage.current;
@@ -167,7 +177,7 @@ export function EditorStage({
     return { x: local.x, y: -local.y };
   }, []);
 
-  useImperativeHandle(ref, () => ({ fit, zoomIn, zoomOut, camera: () => cameraRef.current, toWorld: screenToWorld }), [fit, zoomIn, zoomOut, screenToWorld]);
+  useImperativeHandle(ref, () => ({ fit, zoomIn, zoomOut, centerOn, camera: () => cameraRef.current, toWorld: screenToWorld }), [fit, zoomIn, zoomOut, centerOn, screenToWorld]);
 
   useEffect(() => {
     const node = frame.current;

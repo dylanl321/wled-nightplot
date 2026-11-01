@@ -68,7 +68,9 @@ export function RunList({
     if (!picked) return;
     const rows = list.current?.querySelectorAll<HTMLElement>("[data-edge]") ?? [];
     const row = [...rows].find((node) => node.dataset.edge === picked);
-    row?.scrollIntoView?.({ block: "nearest" });
+    // Keep the highlighted row fully on screen. A row left on the bottom edge
+    // is clipped on a phone, and the highlight is easy to miss.
+    row?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }, [picked]);
 
   if (rows.length === 0) {
@@ -198,7 +200,7 @@ function RunRowItem({
     <li
       data-edge={row.edgeId}
       aria-current={selected ? "true" : undefined}
-      className={`border-t border-border ${selected ? "bg-card shadow-[inset_3px_0_0_0_var(--color-primary)]" : ""}`}
+      className={`scroll-mb-3 border-t border-border ${selected ? "bg-card shadow-[inset_3px_0_0_0_var(--color-primary)]" : ""}`}
     >
       <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_4.5rem] items-center gap-2 px-3 py-1">
       <button type="button" className="min-h-11 min-w-0 truncate text-left text-[15px]" onClick={onPick}>

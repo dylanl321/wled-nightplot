@@ -2,6 +2,7 @@
 
 import {
   addStringAt,
+  addUnlitConnector,
   continueToCorner,
   clearEdgeLights,
   continueToPoint,
@@ -11,7 +12,8 @@ import {
   edgeLengthM,
   ensureStrings,
   formatLength,
-  formatPitchCm,
+  formatPitch,
+  layoutWireLengthM,
   gapLabel,
   gridScaleLabel,
   gridSizeM,
@@ -20,7 +22,8 @@ import {
   layoutStrings,
   mergeShortRuns,
   moveCorner,
-  parsePitchCm,
+  parsePitch,
+  runGaps,
   runsOnSameSpan,
   setEdgeLength,
   setEdgeLights,
@@ -42,7 +45,7 @@ import { Circle, Group, Line, Text } from "react-konva";
 import { EditorStage, boundsOf, toScreen, toWorld, type Camera, type EditorStageHandle, type Point } from "@/components/canvas";
 import { Button } from "@/components/ui/button";
 import { RunList } from "./run-list";
-import { placeRunLabels, runBadge, stringColour } from "./run-labels";
+import { labelsOffScreen, placeRunLabels, runBadge, stringColour } from "./run-labels";
 
 /** Trace adds runs from the wire-in. Edit moves corners. Both pan, zoom, and select. */
 export type EditorMode = "trace" | "edit";
@@ -300,6 +303,19 @@ export function PropLayoutEditor({
     if (next !== layoutRef.current) commit(next);
   }
 
+  function pickRun(edgeId: string) {
+    setPicked(edgeId);
+    const current = layoutRef.current;
+    const edge = layoutStrings(current).flatMap((string) => string.run).find((row) => row.id === edgeId);
+    const from = edge ? current.corners.find((corner) => corner.id === edge.from) : undefined;
+    const to = edge ? current.corners.find((corner) => corner.id === edge.to) : undefined;
+    if (!from || !to) return;
+    const handle = stage.current;
+    if (handle && typeof handle.centerOn === "function") {
+      handle.centerOn({ x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 });
+    }
+  }
+
   function applyName(edgeId: string, edgeName: string) {
     const next = setEdgeName(layoutRef.current, edgeId, edgeName);
     if (next !== layoutRef.current) commit(next);
@@ -497,12 +513,15 @@ export function PropLayoutEditor({
   const guideAnchor = guideAnchorOf(drawing, drag?.id, stringEndId(stringById(drawing, activeString)), placing);
   const guide = drag?.guide ? { x: drag.x, y: drag.y } : ghost?.guide ? { x: ghost.x, y: ghost.y } : null;
 
+  const wireLength = formatLength(layoutWireLengthM(layout), layout.units);
+  const wireText = layout.units === "m" ? `${wireLength} m of wire` : `${wireLength} of wire`;
   const totalText = stringLights == null
-    ? `${counted.total} lights`
-    : `${counted.total} lights · string has ${stringLights} · ${short ? `${Math.abs(spare ?? 0)} short` : `${spare} spare`}`;
+    ? `${counted.total} lights · ${wireText}`
+    : `${counted.total} lights · ${wireText} · string has ${stringLights} · ${short ? `${Math.abs(spare ?? 0)} short` : `${spare} spare`}`;
+  const gaps = runGaps(drawing);
 
   return (
-    <div className="flex h-dvh max-h-dvh w-full max-w-full flex-col bg-background max-lg:portrait:overflow-y-auto lg:flex-row lg:overflow-hidden max-lg:landscape:flex-row max-lg:landscape:overflow-hidden">
+    <div className="flex h-dvh max-h-dvh w-full max-w-full flex-col bg-background max-lg:portrait:overflow-y-auto max-lg:portrait:pb-4 lg:flex-row lg:overflow-hidden max-lg:landscape:flex-row max-lg:landscape:overflow-hidden">
       <div className="flex w-full min-w-0 flex-col bg-background max-lg:portrait:shrink-0 lg:min-h-0 lg:flex-1 lg:overflow-hidden max-lg:landscape:min-h-0 max-lg:landscape:flex-1 max-lg:landscape:overflow-hidden">
         <header className="flex h-14 shrink-0 items-center gap-1 bg-background px-1">
           <button type="button" className="min-h-11 shrink-0 px-3 text-[16px]" onClick={() => void leave()}>{leaving ? "Saving…" : backLabel}</button>
@@ -555,13 +574,29 @@ export function PropLayoutEditor({
                 return corner ? [toScreen(corner, camera)] : [];
               });
               const spots = placeRunLabels(
-                drawn.map((run) => ({ ax: run.a.x, ay: run.a.y, bx: run.b.x, by: run.b.y })),
-                [...wireIns, { x: size.w - 28, y: 22 }, { x: size.w - 28, y: 72 }],
+                drawn.map((run) => ({ ax: run.a.x, ay: run.a.y, bx: run.b.x, by: run.b.y, selected: picked === run.edge.id })),
+                [...wireIns, { x: size.w - 28, y: 22 }, { x: size.w - 28, y: 72 }, { x: size.w - 28, y: 122 }],
                 28,
                 { w: size.w, h: size.h },
               );
+              const gapLines = gaps.flatMap((gap) => {
+                const from = corners.find((corner) => corner.x === gap.from.x && corner.y === gap.from.y) ?? gap.from;
+                const to = corners.find((corner) => corner.x === gap.to.x && corner.y === gap.to.y) ?? gap.to;
+                return [{ id: gap.afterId, a: toScreen(from, camera), b: toScreen(to, camera) }];
+              });
+              const more = labelsOffScreen(spots);
               return (
               <>
+                {gapLines.map((gap) => (
+                  <Line key={`gap-${gap.id}`} points={[gap.a.x, gap.a.y, gap.b.x, gap.b.y]} stroke={WARN} strokeWidth={2} dash={[4, 4]} listening={false} />
+                ))}
+                {more.map(({ side, count }) => {
+                  const at = side === "left" ? { x: 8, y: size.h / 2 }
+                    : side === "right" ? { x: size.w - 64, y: size.h / 2 }
+                    : side === "top" ? { x: size.w / 2 - 24, y: 8 }
+                    : { x: size.w / 2 - 24, y: size.h - 18 };
+                  return <Text key={side} x={at.x} y={at.y} text={count === 1 ? "1 more" : `${count} more`} fontSize={11} fill="#a8a296" listening={false} />;
+                })}
                 {guide && guideAnchor ? (
                   <Line points={flat([toScreen(guideAnchor, camera), toScreen(guide, camera)])} stroke={START} strokeWidth={1} dash={[4, 3]} listening={false} />
                 ) : null}
@@ -575,6 +610,7 @@ export function PropLayoutEditor({
                 ) : null}
                 {drawn.map(({ edge, order, stringIndex, a, b }, index) => {
                   const spot = spots[index]!;
+                  const showLabel = spot.badge != null && spot.caption != null;
                   const colour = stringColour(stringIndex);
                   const row = counted.edges.find((item) => item.id === edge.id);
                   const zero = row?.lights === 0 && edge.kind === "lit";
@@ -628,24 +664,28 @@ export function PropLayoutEditor({
                         onTap={pick}
                       />
                       <Chevron a={a} b={b} colour={edge.kind === "wire" ? WIRE : colour} />
-                      <Group x={spot.badge.x} y={spot.badge.y} onPointerDown={pressRun} onClick={clickRun} onTap={pick}>
-                        <Circle radius={14} fill={selectedRun ? colour : "#12141a"} stroke={selectedRun ? "#f4efe6" : zero ? WARN : colour} strokeWidth={selectedRun ? 3 : 1.5} />
-                        <Text text={runBadge(stringIndex, order)} fontSize={11} fill={selectedRun ? "#0c0d10" : zero ? WARN : INK} width={28} offsetX={14} offsetY={5} align="center" listening={false} />
-                        {edge.lockedLengthM ? <LockMark /> : null}
-                      </Group>
-                      {row ? (
-                        <Text
-                          x={spot.caption.x}
-                          y={spot.caption.y}
-                          text={lengthCaption(row.lengthM, layout.units, row.lights)}
-                          fontSize={11}
-                          fill={selectedRun ? "#f4efe6" : edge.lockedLights != null ? colour : "#a8a296"}
-                          width={104}
-                          offsetX={52}
-                          offsetY={6}
-                          align="center"
-                          listening={false}
-                        />
+                      {showLabel && spot.badge && spot.caption ? (
+                        <>
+                          <Group x={spot.badge.x} y={spot.badge.y} onPointerDown={pressRun} onClick={clickRun} onTap={pick}>
+                            <Circle radius={14} fill={selectedRun ? colour : "#12141a"} stroke={selectedRun ? "#f4efe6" : zero ? WARN : colour} strokeWidth={selectedRun ? 3 : 1.5} />
+                            <Text text={runBadge(stringIndex, order)} fontSize={11} fill={selectedRun ? "#0c0d10" : zero ? WARN : INK} width={28} offsetX={14} offsetY={5} align="center" listening={false} />
+                            {edge.lockedLengthM ? <LockMark /> : null}
+                          </Group>
+                          {row ? (
+                            <Text
+                              x={spot.caption.x}
+                              y={spot.caption.y}
+                              text={lengthCaption(row.lengthM, layout.units, row.lights)}
+                              fontSize={11}
+                              fill={selectedRun ? "#f4efe6" : edge.lockedLights != null ? colour : "#a8a296"}
+                              width={104}
+                              offsetX={52}
+                              offsetY={6}
+                              align="center"
+                              listening={false}
+                            />
+                          ) : null}
+                        </>
                       ) : null}
                     </Group>
                   );
@@ -696,6 +736,24 @@ export function PropLayoutEditor({
         aria-label="Path tools"
         className="flex w-full min-w-0 flex-col bg-background lg:min-h-0 lg:w-[380px] lg:shrink-0 lg:border-l lg:border-border max-lg:landscape:w-[300px] max-lg:landscape:shrink-0 max-lg:landscape:border-l max-lg:landscape:border-border"
       >
+      {gaps.length > 0 ? (
+        <div className="flex items-center gap-2 border-t border-border bg-background px-3 py-2">
+          <p className="min-w-0 flex-1 text-[13px] leading-4 text-amber-200">
+            {gaps.length === 1 ? "The wire has a gap." : `The wire has ${gaps.length} gaps.`}
+          </p>
+          <button
+            type="button"
+            className="min-h-11 shrink-0 rounded-lg border border-border px-3 text-[14px]"
+            onClick={() => {
+              let next = layoutRef.current;
+              for (const gap of runGaps(next)) next = addUnlitConnector(next, gap.afterId);
+              commit(next, gaps.length === 1 ? "Added an unlit connector." : "Added unlit connectors.");
+            }}
+          >
+            Add unlit connector
+          </button>
+        </div>
+      ) : null}
       {shortRuns(layout).length > 0 ? (
         <div className="flex items-center gap-2 border-t border-border bg-background px-3 py-2">
           <p className="min-w-0 flex-1 text-[13px] leading-4 text-amber-200">
@@ -712,7 +770,7 @@ export function PropLayoutEditor({
         className="min-h-0 border-t border-border bg-background max-lg:portrait:overflow-visible lg:flex-1 lg:overflow-y-auto lg:border-t-0 max-lg:landscape:flex-1 max-lg:landscape:overflow-y-auto max-lg:landscape:border-t-0"
         layout={layout}
         picked={picked}
-        onPick={setPicked}
+        onPick={pickRun}
         onLength={applyLength}
         onLights={applyLights}
         onName={applyName}
@@ -722,7 +780,7 @@ export function PropLayoutEditor({
           <ChoiceButton active={layout.units === "ft"} onClick={() => applyUnits("ft")}>Feet</ChoiceButton>
           <ChoiceButton active={layout.units === "m"} onClick={() => applyUnits("m")}>Metres</ChoiceButton>
         </div>
-        <SpacingField pitchM={layout.pitchM} onPitch={applyPitch} />
+        <SpacingField pitchM={layout.pitchM} units={layout.units} onPitch={applyPitch} />
       </div>
       <div className="flex gap-2 bg-background px-2 pb-2">
         <DockButton onClick={undo} disabled={past.length === 0}>Undo</DockButton>
@@ -803,8 +861,9 @@ function ChoiceButton({ active, onClick, children }: { active: boolean; onClick:
   );
 }
 
-function SpacingField({ pitchM, onPitch }: { pitchM: number; onPitch: (pitchM: number) => void }) {
-  const shown = formatPitchCm(pitchM);
+function SpacingField({ pitchM, units, onPitch }: { pitchM: number; units: PropLayout["units"]; onPitch: (pitchM: number) => void }) {
+  const shown = formatPitch(pitchM, units);
+  const unitLabel = units === "ft" ? "in" : "cm";
   const [value, setValue] = useState(shown);
   const [last, setLast] = useState(shown);
   if (last !== shown) {
@@ -812,7 +871,8 @@ function SpacingField({ pitchM, onPitch }: { pitchM: number; onPitch: (pitchM: n
     setValue(shown);
   }
   function apply() {
-    const pitch = parsePitchCm(value);
+    if (value.trim() === shown) return;
+    const pitch = parsePitch(value, units);
     if (pitch == null) return setValue(shown);
     if (Math.abs(pitch - pitchM) > 1e-6) onPitch(pitch);
   }
@@ -821,14 +881,14 @@ function SpacingField({ pitchM, onPitch }: { pitchM: number; onPitch: (pitchM: n
       <label htmlFor="light-spacing" className="text-[13px] text-muted-foreground">Spacing</label>
       <input
         id="light-spacing"
-        aria-label="Light spacing (cm)"
+        aria-label={units === "ft" ? "Light spacing (in)" : "Light spacing (cm)"}
         value={value}
         inputMode="decimal"
         onChange={(event) => setValue(event.target.value)}
         onBlur={apply}
         className="min-h-11 w-16 rounded-md border border-input bg-background px-2 text-base"
       />
-      <span className="text-[13px] text-muted-foreground">cm</span>
+      <span className="text-[13px] text-muted-foreground">{unitLabel}</span>
     </form>
   );
 }

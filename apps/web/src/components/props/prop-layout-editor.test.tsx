@@ -53,10 +53,10 @@ async function stagePoint(world: { x: number; y: number }) {
 describe("PropLayoutEditor on the Konva stage", () => {
   it("a tap on empty space in Trace adds a run from the end, without changing the first run", async () => {
     render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="trace" onDone={vi.fn()} onBack={vi.fn()} />);
-    expect(screen.getByText("10 lights")).toBeTruthy();
+    expect(screen.getByText(/^10 lights ·/)).toBeTruthy();
     const at = await stagePoint({ x: 1, y: 0.5 });
     tap(at.node, at.x, at.y, { altKey: true });
-    expect(screen.getByText("15 lights")).toBeTruthy();
+    expect(screen.getByText(/^15 lights ·/)).toBeTruthy();
     expect(screen.getByText(/String A: Wire in, 2 runs/)).toBeTruthy();
   });
 
@@ -64,13 +64,13 @@ describe("PropLayoutEditor on the Konva stage", () => {
     render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="trace" onDone={vi.fn()} onBack={vi.fn()} />);
     const at = await stagePoint({ x: 1, y: 1 });
     tap(at.node, at.x, at.y, { altKey: true });
-    expect(screen.getByText("20 lights")).toBeTruthy();
+    expect(screen.getByText(/^20 lights ·/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
-    expect(screen.getByText("10 lights")).toBeTruthy();
+    expect(screen.getByText(/^10 lights ·/)).toBeTruthy();
     fireEvent.keyDown(window, { key: "z", ctrlKey: true, shiftKey: true });
-    expect(screen.getByText("20 lights")).toBeTruthy();
+    expect(screen.getByText(/^20 lights ·/)).toBeTruthy();
     fireEvent.keyDown(window, { key: "z", ctrlKey: true });
-    expect(screen.getByText("10 lights")).toBeTruthy();
+    expect(screen.getByText(/^10 lights ·/)).toBeTruthy();
   });
 
   it("Mark dark arms only the next run, then turns itself off", async () => {
@@ -82,14 +82,14 @@ describe("PropLayoutEditor on the Konva stage", () => {
     expect(screen.getByText("The next run is dark: the wire jumps and no lights are on it.")).toBeTruthy();
     const at = await stagePoint({ x: 2, y: 0 });
     tap(at.node, at.x, at.y, { altKey: true });
-    expect(screen.getByText("10 lights")).toBeTruthy();
+    expect(screen.getByText(/^10 lights ·/)).toBeTruthy();
     expect(screen.getByText(/2 runs/)).toBeTruthy();
     expect(mark.getAttribute("aria-pressed")).toBe("false");
     expect(screen.queryByText(/The next run is dark/)).toBeNull();
     expect(screen.getByText(/Trace adds runs/)).toBeTruthy();
     const next = await stagePoint({ x: 2, y: 1 });
     tap(next.node, next.x, next.y, { altKey: true });
-    expect(screen.getByText("20 lights")).toBeTruthy();
+    expect(screen.getByText(/^20 lights ·/)).toBeTruthy();
     expect(screen.getByRole("button", { name: /A2 · dark/ })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /A3 · dark/ })).toBeNull();
     expect(screen.getByRole("button", { name: "A3" })).toBeTruthy();
@@ -104,14 +104,14 @@ describe("PropLayoutEditor on the Konva stage", () => {
     const next = await stagePoint({ x: 1, y: 1 });
     tap(next.node, next.x, next.y, { altKey: true });
     expect(screen.getByText(/String B: Wire in, 1 run/)).toBeTruthy();
-    expect(screen.getByText("20 lights")).toBeTruthy();
+    expect(screen.getByText(/^20 lights ·/)).toBeTruthy();
   });
 
   it("in Edit, a tap on empty space adds nothing", async () => {
     render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
     const at = await stagePoint({ x: 2, y: 2 });
     tap(at.node, at.x, at.y);
-    expect(screen.getByText("10 lights")).toBeTruthy();
+    expect(screen.getByText(/^10 lights ·/)).toBeTruthy();
     expect(screen.getByText(/String A: Wire in, 1 run/)).toBeTruthy();
   });
 
@@ -136,7 +136,7 @@ describe("run list", () => {
     const field = await screen.findByLabelText("A1 length (m)");
     fireEvent.change(field, { target: { value: "3" } });
     fireEvent.submit(field.closest("form")!);
-    expect(screen.getByText("30 lights")).toBeTruthy();
+    expect(screen.getByText(/^30 lights ·/)).toBeTruthy();
     expect(screen.getByLabelText("A1 lights")).toHaveProperty("value", "30");
   });
 
@@ -146,13 +146,13 @@ describe("run list", () => {
     const count = await screen.findByLabelText("A1 lights");
     fireEvent.change(count, { target: { value: "12" } });
     fireEvent.submit(count.closest("form")!);
-    expect(screen.getByText("12 lights")).toBeTruthy();
+    expect(screen.getByText(/^12 lights ·/)).toBeTruthy();
     expect(screen.getByLabelText("A1 length (m)")).toHaveProperty("value", "1.00");
     expect(screen.getByText(/lights typed in/)).toBeTruthy();
     const length = screen.getByLabelText("A1 length (m)");
     fireEvent.change(length, { target: { value: "2" } });
     fireEvent.submit(length.closest("form")!);
-    expect(screen.getByText("20 lights")).toBeTruthy();
+    expect(screen.getByText(/^20 lights ·/)).toBeTruthy();
     expect(screen.queryByText(/lights typed in/)).toBeNull();
   });
 
@@ -166,16 +166,16 @@ describe("run list", () => {
     render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="trace" onDone={vi.fn()} onBack={vi.fn()} />);
     const at = await stagePoint({ x: 2, y: 0 });
     tap(at.node, at.x, at.y, { altKey: true });
-    expect(screen.getByText("20 lights")).toBeTruthy();
+    expect(screen.getByText(/^20 lights ·/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "A2" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete A2" }));
-    expect(screen.getByText("10 lights")).toBeTruthy();
+    expect(screen.getByText(/^10 lights ·/)).toBeTruthy();
     expect(screen.queryByLabelText("A2 lights")).toBeNull();
     fireEvent.click(screen.getAllByRole("button", { name: "Undo" })[0]!);
-    expect(screen.getByText("20 lights")).toBeTruthy();
+    expect(screen.getByText(/^20 lights ·/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "A1" }));
     fireEvent.keyDown(window, { key: "Delete" });
-    expect(screen.getByText("10 lights")).toBeTruthy();
+    expect(screen.getByText(/^10 lights ·/)).toBeTruthy();
     expect(screen.getByLabelText("A1 length (m)")).toHaveProperty("value", "1.00");
   });
 
@@ -192,6 +192,7 @@ describe("run list", () => {
     const done = vi.fn();
     render(<PropLayoutEditor name="Wall" initial={oneRun()} mode="edit" onDone={done} onBack={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Feet" }));
+    expect(screen.getByLabelText("Light spacing (in)")).toHaveProperty("value", "3.94");
     expect(screen.getByTestId("grid-scale")).toHaveProperty("textContent", "1 square = 1 ft");
     expect(screen.getByLabelText("A1 length (ft)")).toHaveProperty("value", "3' 3\"");
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
@@ -206,7 +207,7 @@ describe("run list", () => {
     const spacing = await screen.findByLabelText("Light spacing (cm)");
     fireEvent.change(spacing, { target: { value: "20" } });
     fireEvent.submit(spacing.closest("form")!);
-    expect(screen.getByText("5 lights")).toBeTruthy();
+    expect(screen.getByText(/^5 lights ·/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     const layout = done.mock.calls[0]![0];
     expect(layout.pitchM).toBeCloseTo(0.2, 6);
@@ -219,7 +220,7 @@ describe("run list", () => {
     fireEvent.change(field, { target: { value: "abc" } });
     fireEvent.submit(field.closest("form")!);
     expect(screen.getByText("Enter a length in metres, greater than zero.")).toBeTruthy();
-    expect(screen.getByText("10 lights")).toBeTruthy();
+    expect(screen.getByText(/^10 lights ·/)).toBeTruthy();
     expect(field).toHaveProperty("value", "abc");
   });
 
@@ -229,7 +230,7 @@ describe("run list", () => {
     fireEvent.change(lights, { target: { value: "0" } });
     fireEvent.submit(lights.closest("form")!);
     expect(screen.getByText("Enter a whole number of lights, or leave it empty.")).toBeTruthy();
-    expect(screen.getByText("10 lights")).toBeTruthy();
+    expect(screen.getByText(/^10 lights ·/)).toBeTruthy();
   });
 
   it("says a new length moves the end, and shows a short run that can be merged", async () => {
@@ -249,7 +250,7 @@ describe("run list", () => {
     expect(screen.getByRole("button", { name: /^A2/ }).textContent).toMatch(/short/);
     fireEvent.click(screen.getByRole("button", { name: "Merge short runs" }));
     expect(screen.queryByText(/shorter than the light spacing/)).toBeNull();
-    expect(screen.getByText("10 lights")).toBeTruthy();
+    expect(screen.getByText(/^10 lights ·/)).toBeTruthy();
     expect(screen.queryByLabelText("A2 lights")).toBeNull();
   });
 
@@ -348,6 +349,36 @@ describe("run list", () => {
     const saved = done.mock.calls[0]![0];
     expect(saved.run).toHaveLength(1);
     expect(saved.run[0]).toMatchObject({ id: "e1", name: "near", lockedLights: 12, from: "c1", to: "c2" });
+  });
+
+  it("warns about a gap and adds an unlit connector", async () => {
+    const run = [
+      { id: "e1", from: "c1", to: "c2", kind: "lit" as const, name: "near" },
+      { id: "e2", from: "c3", to: "c4", kind: "lit" as const, name: "far" },
+    ];
+    const layout = {
+      ...oneRun(),
+      corners: [
+        { id: "c1", x: 0, y: 0 },
+        { id: "c2", x: 1, y: 0 },
+        { id: "c3", x: 2, y: 0 },
+        { id: "c4", x: 3, y: 0 },
+      ],
+      run,
+      strings: [{ id: "s1", startId: "c1", run }],
+    };
+    const done = vi.fn();
+    render(<PropLayoutEditor name="Ridge" initial={layout} mode="edit" onDone={done} onBack={vi.fn()} />);
+    expect(screen.getByText(/The wire has a gap/)).toBeTruthy();
+    expect(screen.getByText(/^20 lights · 3\.00 m of wire$/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add unlit connector" }));
+    expect(screen.getByText(/Added an unlit connector/)).toBeTruthy();
+    expect(screen.queryByText(/The wire has a gap/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    const saved = done.mock.calls[0]![0];
+    expect(saved.run.map((edge: { kind: string }) => edge.kind)).toEqual(["lit", "wire", "lit"]);
+    expect(saved.run[0]).toMatchObject({ id: "e1", name: "near" });
+    expect(saved.run[2]).toMatchObject({ id: "e2", name: "far" });
   });
 
   it("saves a change and says Saved", async () => {
