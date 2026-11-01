@@ -64,3 +64,26 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to TrueNAS
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: build
+    runs-on: [self-hosted, linux, x64, nightplot-deploy]
+    timeout-minutes: 15
+    concurrency:
+      group: nightplot-production
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy immutable image and verify production
+        run: |
+          python3 scripts/deploy_truenas.py \
+            --compose .deploy/truenas-compose.yml \
+            --sha "$GITHUB_SHA" \
+            --env-file "$HOME/.hermes/.env" \
+            --health-url https://nightplot.home.dlewis.me/health \
+            --discover-url https://nightplot.home.dlewis.me/api/discover \
+            --expected-candidates 4
