@@ -834,7 +834,7 @@ export function layoutFromMeasurements(input: {
         { x: 0, y: 0 },
         { x: toM(params.base ?? 0) / 2, y: toM(params.height ?? 0) },
         { x: toM(params.base ?? 0), y: 0 },
-      ], false);
+      ], params.closed === 1);
     case "stake-row":
       return stakeLayout(toM(params.height ?? 0), Math.round(params.stakes ?? 0), units, pitchM, params);
     case "wireframe":
@@ -1135,4 +1135,31 @@ export function convertSize(value: string, factor: number, decimals: number): st
   if (!Number.isFinite(n)) return value;
   const scale = 10 ** decimals;
   return String(Math.round(n * factor * scale) / scale);
+}
+
+/**
+ * Spread a typed total of lights over the lit runs, in proportion to their
+ * lengths: spacing becomes total length ÷ lights, and each run gets a typed
+ * count (largest remainder) so the runs add up to exactly `total`.
+ */
+export function spreadLights(layout: PropLayout, total: number): PropLayout {
+  if (!Number.isInteger(total) || total < 1) return layout;
+  const lit = layoutStrings(layout).flatMap((string) => string.run).filter((edge) => edge.kind === "lit");
+  const lengths = lit.map((edge) => edgeLengthM(layout, edge));
+  const sum = lengths.reduce((a, b) => a + b, 0);
+  if (!(sum > 0)) return layout;
+  const shares = lengths.map((length) => (length / sum) * total);
+  const counts = shares.map((share) => Math.floor(share));
+  let left = total - counts.reduce((a, b) => a + b, 0);
+  const order = shares.map((share, index) => ({ index, rest: share - Math.floor(share) })).sort((a, b) => b.rest - a.rest || a.index - b.index);
+  for (const row of order) {
+    if (left <= 0) break;
+    counts[row.index] = (counts[row.index] ?? 0) + 1;
+    left -= 1;
+  }
+  let next = setPitchM(layout, sum / total);
+  lit.forEach((edge, index) => {
+    next = setEdgeLights(next, edge.id, counts[index]!);
+  });
+  return next;
 }

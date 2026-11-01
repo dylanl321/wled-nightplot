@@ -113,7 +113,8 @@ function edgeSectionNames(layout: PropLayout): string[] {
   const type = layout.template?.type;
   if (type === "window") return windowSideNames(layout);
   if (type === "roofline") return ["Along the roof"];
-  if (type === "arch" || type === "tree") return ["Left side", "Right side"];
+  if (type === "arch") return ["Left side", "Right side"];
+  if (type === "tree") return ["Left side", "Right side", "Base"];
   if (type === "stake-row") {
     return layout.run.filter((edge) => edge.kind === "lit").map((_, index) => `Stake ${index + 1}`);
   }

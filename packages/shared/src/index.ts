@@ -504,6 +504,7 @@ export {
   type LayoutCount,
   type LayoutEdge,
   convertSize,
+  spreadLights,
   type LayoutCorner,
   type LengthEdit,
   type PropLayout,

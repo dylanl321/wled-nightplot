@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { propShapeChanged } from "./design.ts";
-import { continueToPoint, deleteRun, layoutFromMeasurements, layoutStrings, moveCorner, type PropLayout } from "./layout.ts";
+import { continueToPoint, countLayout, deleteRun, layoutFromMeasurements, layoutStrings, moveCorner, spreadLights, type PropLayout } from "./layout.ts";
 import { defaultSections, reconcileSections } from "./sections.ts";
 
 function tree(): PropLayout {
@@ -51,5 +51,18 @@ describe("propShapeChanged", () => {
     const second = layoutStrings(layout)[0]!.run[1]!;
     expect(propShapeChanged({ kind: "tree", layout: deleteRun(layout, second.id), design })).toBe(true);
     expect(propShapeChanged({ kind: "custom", layout: deleteRun(layout, second.id), design })).toBe(false);
+  });
+});
+
+describe("triangle and a typed light count", () => {
+  it("a closed Mini tree has a lit base, and a typed count is spread to exactly that total", () => {
+    const triangle = layoutFromMeasurements({ units: "m", pitchM: 0.1, shape: "tree", params: { height: 2, base: 2, closed: 1 } })!;
+    expect(layoutStrings(triangle)[0]!.run).toHaveLength(3);
+    const spread = spreadLights(triangle, 60);
+    const counts = countLayout(spread);
+    expect(counts.total).toBe(60);
+    expect(counts.edges.map((edge) => Math.round(edge.lengthM * 1000))).toEqual(countLayout(triangle).edges.map((edge) => Math.round(edge.lengthM * 1000)));
+    // The two slopes are the same length, so they get the same count.
+    expect(counts.edges[0]!.lights).toBe(counts.edges[1]!.lights);
   });
 });
