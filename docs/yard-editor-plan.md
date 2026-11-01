@@ -5,6 +5,8 @@ This is a plan to approve before any code. Nothing here is built yet.
 **Ask:** make, place, change, section and light props on one page instead of seven.
 **Proposal:** one Konva yard drawing at `/` with a side panel that shows whatever is selected. Adding a prop, editing its path, naming sections, attaching it to a controller, and setting its colours in a Look all happen there. Hardware and show-level pages (Lights, LED products, Backups, Sync, Settings, the Looks playlist and schedule, Yard check) stay where they are.
 
+A clickable prototype is in [`docs/prototypes/yard-page.html`](prototypes/yard-page.html) (open it in a browser). It has the eight test tasks built in.
+
 Checked on main `7261b09` by reading every route and component on the prop path, and against Dylan's usability test of 2026-11-01 (epic #122). A software drawing is not a lit strip. Preview is temporary. Apply persists. Not Hardware Done.
 
 ## What a prop costs today
