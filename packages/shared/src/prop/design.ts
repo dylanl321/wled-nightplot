@@ -152,7 +152,7 @@ function measurementParams(measurements: PropMeasurements): Record<string, numbe
     case "arch":
       return { width: measurements.width, height: measurements.height };
     case "tree":
-      return { height: measurements.height, base: measurements.base };
+      return { height: measurements.height, base: measurements.base, ...(measurements.closed ? { closed: 1 } : {}) };
     case "stake-row":
       return { stakes: measurements.stakes, height: measurements.height };
     case "wireframe":
@@ -176,7 +176,7 @@ function edgeNames(measurements: PropMeasurements, layout: PropLayout): string[]
     case "arch":
       return ["Left side", "Right side"];
     case "tree":
-      return ["Left side", "Right side"];
+      return ["Left side", "Right side", "Base"];
     case "stake-row":
       return Array.from({ length: measurements.stakes }, (_, index) => `Stake ${index + 1}`);
     case "wireframe":

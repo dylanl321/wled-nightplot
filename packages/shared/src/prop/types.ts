@@ -60,7 +60,8 @@ export type PropMeasurements =
   | { shape: "roofline"; length: number }
   | { shape: "window"; width: number; height: number }
   | { shape: "arch"; width: number; height: number }
-  | { shape: "tree"; height: number; base: number }
+  /** `closed` adds a lit run along the base, so the tree is a triangle. */
+  | { shape: "tree"; height: number; base: number; closed?: boolean }
   | { shape: "stake-row"; stakes: number; height: number }
   | { shape: "wireframe"; sides: number; side: number; height: number }
   | { shape: "custom" }

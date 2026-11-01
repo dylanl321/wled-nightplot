@@ -206,7 +206,6 @@ function RunRowItem({
         {row.name ? <span className="text-muted-foreground"> · {row.name}</span> : null}
         {row.kind === "wire" ? <span className="text-muted-foreground"> · dark</span> : null}
         {row.short ? <span className="text-amber-200"> · short</span> : null}
-        {row.typedCount ? <span className="text-muted-foreground"> · typed count</span> : null}
       </button>
       <form
         onSubmit={(event) => {
@@ -266,6 +265,12 @@ function RunRowItem({
             className="min-h-11 w-full rounded-md border border-input bg-background px-2 text-base"
           />
         </form>
+      ) : null}
+      {row.typedCount ? (
+        // On its own line, so a narrow run name never cuts it to "typed co…".
+        <p className="px-3 pb-2 text-[13px] leading-5 text-muted-foreground">
+          {row.lights} lights typed in: this overrides length ÷ spacing until the length changes. Clear the field to count from the length.
+        </p>
       ) : null}
       {lengthError || lightsError ? <p className="px-3 pb-2 text-[13px] text-red-400">{lengthError ?? lightsError}</p> : null}
     </li>

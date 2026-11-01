@@ -56,7 +56,7 @@ export function AppShell({
             Looks
           </NavLink>
           <NavLink href="/yard" active={nav === "yard"}>
-            Yard
+            Yard check
           </NavLink>
           <NavLink href="/sync" active={nav === "sync"}>
             Sync

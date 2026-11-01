@@ -27,6 +27,7 @@ import {
 } from "@nightplot/shared";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { ColourField } from "@/components/ui/colour-field";
 import { Input } from "@/components/ui/input";
 import { postJson, putJson } from "@/lib/api";
 
@@ -523,9 +524,7 @@ function SectionRows({
                     <span className="min-w-0 truncate">{section.name}</span>
                     {!touched && section.color ? <span className="text-[12px] text-quiet">section colour</span> : null}
                   </label>
-                  <input type="color" aria-label={`${name} colour`} disabled={off}
-                    className="h-11 w-16 rounded-md border border-border bg-background disabled:opacity-50"
-                    value={style.color} onChange={(event) => set(prop, section, { color: event.target.value })} />
+                  <ColourField label={`${name} colour`} disabled={off} value={style.color} onChange={(color) => set(prop, section, { color })} />
                   <select aria-label={`${name} effect`} disabled={off} className={`${selectClass} min-h-11 disabled:opacity-50`}
                     value={style.fx} onChange={(event) => set(prop, section, { fx: Number(event.target.value) })}>
                     {LOOK_EFFECTS.map((effect) => <option key={effect.fx} value={effect.fx}>{effect.label}</option>)}
@@ -553,16 +552,14 @@ function shown(look: Look, prop: Prop, section: PropSection) {
 function StyleFields({ label, style, onChange }: { label: string; style: LookStyle; onChange: (patch: Partial<LookStyle>) => void }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      <label className="flex flex-col gap-1 text-[14px]">
+      <div className="flex flex-col gap-1 text-[14px]">
         <span className="font-medium">Colour</span>
-        <input aria-label={`${label} colour`} type="color" className="h-10 w-16 rounded-md border border-border bg-background"
-          value={style.color} onChange={(event) => onChange({ color: event.target.value })} />
-      </label>
-      <label className="flex flex-col gap-1 text-[14px]">
+        <ColourField label={`${label} colour`} value={style.color} onChange={(color) => onChange({ color })} />
+      </div>
+      <div className="flex flex-col gap-1 text-[14px]">
         <span className="font-medium">Second colour</span>
-        <input aria-label={`${label} second colour`} type="color" className="h-10 w-16 rounded-md border border-border bg-background"
-          value={style.color2 ?? "#000000"} onChange={(event) => onChange({ color2: event.target.value })} />
-      </label>
+        <ColourField label={`${label} second colour`} value={style.color2 ?? "#000000"} onChange={(color2) => onChange({ color2 })} />
+      </div>
       <label className="flex flex-col gap-1 text-[14px]">
         <span className="font-medium">Effect</span>
         <select aria-label={`${label} effect`} className={selectClass} value={style.fx} onChange={(event) => onChange({ fx: Number(event.target.value) })}>
