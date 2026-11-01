@@ -3,17 +3,19 @@
 import {
   addStringAt,
   continueToCorner,
+  clearEdgeLights,
   continueToPoint,
   countLayout,
+  deleteRun,
   edgeLengthM,
   ensureStrings,
   gapLabel,
   gridSizeM,
   isClosed,
   layoutStrings,
-  lengthLabel,
   moveCorner,
   setEdgeLength,
+  setEdgeLights,
   snapPoint,
   stringById,
   stringEndId,
@@ -24,11 +26,11 @@ import { useEffect, useRef, useState } from "react";
 import { Circle, Group, Line, Text } from "react-konva";
 import { EditorStage, boundsOf, toScreen, toWorld, type Camera, type EditorStageHandle, type Point } from "@/components/canvas";
 import { Button } from "@/components/ui/button";
+import { RunList, lengthInUnit } from "./run-list";
 
 /** Trace adds runs from the wire-in. Edit moves corners. Both pan, zoom, and select. */
 export type EditorMode = "trace" | "edit";
 
-const FT = 0.3048;
 const LIT = "#d4a574";
 const WIRE = "#8a8478";
 const START = "#7ee0d0";
@@ -60,7 +62,6 @@ export function PropLayoutEditor({
   const [snap, setSnap] = useState(true);
   const [ghost, setGhost] = useState<Ghost | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
-  const [sheet, setSheet] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
@@ -106,6 +107,9 @@ export function PropLayoutEditor({
     } else if (event.key === "Enter" || event.key === "Escape") {
       event.preventDefault();
       onDone(layoutRef.current);
+    } else if ((event.key === "Delete" || event.key === "Backspace") && picked) {
+      event.preventDefault();
+      removeRun(picked);
     } else if (event.key.startsWith("Arrow") && selected) {
       event.preventDefault();
       nudge(event.key);
@@ -159,7 +163,18 @@ export function PropLayoutEditor({
     const edited = setEdgeLength(layoutRef.current, edgeId, lengthM);
     commit(edited.layout, edited.scaledAll ? "Scaled the drawing about the controller end." : undefined);
     if (edited.gapM) setGap(gapLabel(edited.gapM, layoutRef.current.units));
-    setSheet(null);
+  }
+
+  function applyLights(edgeId: string, lights: number | null) {
+    commit(lights == null ? clearEdgeLights(layoutRef.current, edgeId) : setEdgeLights(layoutRef.current, edgeId, lights));
+  }
+
+  function removeRun(edgeId: string) {
+    const next = deleteRun(layoutRef.current, edgeId);
+    if (next === layoutRef.current) return;
+    setPicked(null);
+    setSelected(null);
+    commit(next, "Deleted the run.");
   }
 
   /** Where a new point or a dragged corner lands, after snap. */
@@ -256,9 +271,6 @@ export function PropLayoutEditor({
   const strings = layoutStrings(drawing);
   const runs = strings.flatMap((string) => string.run.map((edge, index) => ({ edge, order: index + 1, stringId: string.id })));
   const starts = new Set(strings.map((string) => string.startId));
-  const pickedRun = runs.find((row) => row.edge.id === picked) ?? null;
-  const pickedCount = pickedRun ? counted.edges.find((row) => row.id === pickedRun.edge.id) : null;
-  const pickedLength = pickedRun ? lengthLabel(edgeLengthM(layout, pickedRun.edge), layout.units) : null;
   const stringLights = layout.stringLights;
   const spare = stringLights == null ? null : stringLights - counted.total;
   const short = spare != null && spare < 0;
@@ -340,6 +352,18 @@ export function PropLayoutEditor({
                         <Circle radius={12} fill={picked === edge.id ? "#1c2430" : "#12141a"} stroke={zero ? WARN : INK} />
                         <Text text={String(order)} fontSize={12} fill={zero ? WARN : INK} width={24} offsetX={12} offsetY={6} align="center" listening={false} />
                         {edge.lockedLengthM ? <LockMark /> : null}
+                        {Math.hypot(b.x - a.x, b.y - a.y) > 72 && row ? (
+                          <Text
+                            text={`${lengthInUnit(row.lengthM, layout.units)} ${layout.units === "ft" ? "ft" : "m"} · ${row.lights}`}
+                            fontSize={11}
+                            fill={edge.lockedLights != null ? LIT : "#a8a296"}
+                            y={15}
+                            width={90}
+                            offsetX={45}
+                            align="center"
+                            listening={false}
+                          />
+                        ) : null}
                       </Group>
                     </Group>
                   );
@@ -383,16 +407,20 @@ export function PropLayoutEditor({
           </ul>
         </div>
       </div>
-      {pickedRun && pickedLength && pickedCount ? (
-        <div className="flex min-h-11 items-center gap-2 border-t border-border bg-background px-3 py-2 text-[15px]">
-          <p className="min-w-0 flex-1">Run {pickedRun.order} · {pickedLength.whole}{pickedLength.extra ? ` ${pickedLength.extra}` : ""} · {pickedCount.lights} lights</p>
-          <button type="button" className="min-h-11 shrink-0 px-3 text-primary" onClick={() => setSheet(pickedRun.edge.id)}>Change</button>
-        </div>
-      ) : null}
+      <RunList
+        className="max-h-[24dvh] shrink-0 border-t border-border bg-background"
+        layout={layout}
+        picked={picked}
+        onPick={setPicked}
+        onLength={applyLength}
+        onLights={applyLights}
+        onDelete={removeRun}
+      />
       <div className="flex gap-2 border-t border-border bg-background p-2">
         <DockButton onClick={undo} disabled={past.length === 0}>Undo</DockButton>
         <DockButton onClick={redo} disabled={future.length === 0}>Redo</DockButton>
         <DockButton onClick={() => setSnap((value) => !value)} pressed={snap}>Snap</DockButton>
+        <DockButton onClick={() => picked && removeRun(picked)} disabled={!picked}>Delete</DockButton>
       </div>
       <div className="flex gap-2 bg-background px-2 pb-2">
         <DockButton onClick={() => { setDark((value) => !value); setPlacing(false); }} pressed={dark}>Mark dark</DockButton>
@@ -407,9 +435,6 @@ export function PropLayoutEditor({
           <span className="flex-1">{toast}</span>
           <button type="button" className="min-h-11 px-3 text-primary" onClick={undo}>Undo</button>
         </div>
-      ) : null}
-      {sheet ? (
-        <LengthSheet layout={layout} edgeId={sheet} onClose={() => setSheet(null)} onApply={(lengthM) => applyLength(sheet, lengthM)} />
       ) : null}
       {ask ? (
         <div className="absolute inset-x-4 top-24 rounded-xl border border-amber-500/60 bg-card p-4 text-[15px]" role="dialog" aria-label="Short edge">
@@ -523,58 +548,6 @@ function Magnifier({ at, world, layout }: { at: Point; world: Point; layout: Pro
         <circle cx={world.x} cy={-world.y} r={0.03} fill={START} />
       </svg>
     </div>
-  );
-}
-
-function LengthSheet({
-  layout,
-  edgeId,
-  onClose,
-  onApply,
-}: {
-  layout: PropLayout;
-  edgeId: string;
-  onClose: () => void;
-  onApply: (lengthM: number) => void;
-}) {
-  const edge = layoutStrings(layout).flatMap((string) => string.run).find((row) => row.id === edgeId);
-  const lengthM = edge ? edgeLengthM(layout, edge) : 0;
-  const per = layout.units === "ft" ? FT : 1;
-  const [length, setLength] = useState(String(Math.round((lengthM / per) * 100) / 100));
-  const [count, setCount] = useState(String(Math.max(1, Math.round(lengthM / layout.pitchM))));
-  if (!edge) return null;
-  return (
-    <form
-      className="absolute inset-x-0 bottom-0 z-30 border-t border-border bg-card p-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const typed = Number(length);
-        if (typed > 0) onApply(typed * per);
-      }}
-    >
-      <p className="text-[15px] font-medium">This edge</p>
-      <label className="mt-3 flex flex-col gap-1 text-[15px]">
-        Length ({layout.units === "ft" ? "ft" : "m"})
-        <input value={length} onChange={(event) => setLength(event.target.value)} inputMode="decimal" className="min-h-11 rounded-md border border-input bg-background px-3 text-base" />
-      </label>
-      <label className="mt-3 flex flex-col gap-1 text-[15px]">
-        Light count
-        <input
-          value={count}
-          onChange={(event) => {
-            setCount(event.target.value);
-            const lights = Number(event.target.value);
-            if (lights > 0) setLength(String(Math.round(((lights * layout.pitchM) / per) * 100) / 100));
-          }}
-          inputMode="numeric"
-          className="min-h-11 rounded-md border border-input bg-background px-3 text-base"
-        />
-      </label>
-      <div className="mt-3 flex gap-2">
-        <Button type="button" variant="outline" className="min-h-11 flex-1 text-base" onClick={onClose}>Back</Button>
-        <Button type="submit" className="min-h-11 flex-1 text-base">Apply</Button>
-      </div>
-    </form>
   );
 }
 

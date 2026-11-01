@@ -76,7 +76,15 @@ describe("light count along a run", () => {
 });
 
 describe("scaling and typed length", () => {
-  it("scales the whole drawing about the start when nothing is locked", () => {
+  it("scales a traced drawing about the start when nothing is locked yet", () => {
+    const layout = chain([1, 1]);
+    const edited = setEdgeLength(layout, "e1", 2);
+    expect(edited.scaledAll).toBe(true);
+    expect(edited.layout.corners.map((corner) => corner.x)).toEqual([0, 2, 4]);
+    expect(edited.layout.run[0]?.lockedLengthM).toBe(2);
+  });
+
+  it("a template keeps its other sides: only the edited side and the corners after it move", () => {
     const layout = windowLayout({
       widthM: 1,
       heightM: 1,
@@ -87,14 +95,9 @@ describe("scaling and typed length", () => {
       params: { width: 1, height: 1 },
     });
     const edited = setEdgeLength(layout, "e1", 2);
-    expect(edited.scaledAll).toBe(true);
-    expect(edited.layout.corners.map((corner) => [corner.x, corner.y])).toEqual([
-      [0, 0],
-      [2, 0],
-      [2, 2],
-      [0, 2],
-    ]);
+    expect(edited.scaledAll).toBe(false);
     expect(edited.layout.run[0]?.lockedLengthM).toBe(2);
+    expect(countLayout(edited.layout).edges.map((edge) => edge.lights).slice(0, 3)).toEqual([20, 10, 10]);
   });
 
   it("lengthens one edge and shifts only the corners after it", () => {

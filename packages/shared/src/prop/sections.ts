@@ -9,7 +9,7 @@
  */
 
 import { rangesOverlap } from "../range.ts";
-import { cornerById, edgeLengthM, layoutStrings, lightsOnLength, windowSideNames, type LayoutEdge, type PropLayout } from "./layout.ts";
+import { cornerById, edgeLengthM, edgeLightCount, layoutStrings, lightsOnLength, windowSideNames, type LayoutEdge, type PropLayout } from "./layout.ts";
 import {
   isPropSection,
   type PropIndexRange,
@@ -47,7 +47,7 @@ export type SectionColourPlan = {
 
 function runLights(layout: PropLayout, edge: LayoutEdge): { lights: number; hidden: number } {
   if (edge.kind === "wire") return { lights: 0, hidden: 0 };
-  const count = lightsOnLength(edgeLengthM(layout, edge), layout.pitchM);
+  const count = edgeLightCount(layout, edge);
   if (edge.kind === "hidden") return { lights: 0, hidden: count };
   return { lights: count, hidden: 0 };
 }
