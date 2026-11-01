@@ -8,7 +8,9 @@ import {
   lookSectionNotes,
   lookTargets,
   normalizeLook,
+  pinLookProps,
   resolveLookStyle,
+  resolveLookTarget,
   type Look,
 } from "./look.ts";
 
@@ -131,5 +133,22 @@ describe("section overrides in the library", () => {
     expect(isLookOverride({ propId: "prop-arch", sectionId: "left", off: false, style })).toBe(false);
     const kept = normalizeLook(look([{ propId: "prop-arch", sectionId: "left", off: true, style }]));
     expect(kept.overrides[0]).toMatchObject({ propId: "prop-arch", sectionId: "left", off: true });
+  });
+});
+
+describe("props in a Look", () => {
+  it("turns off a prop the Look's list leaves out, and keeps every prop on in a Look with no list", () => {
+    const style = { fx: 0, pal: 0, sx: 128, ix: 128, bri: 180, color: "#ff0000" };
+    const look = { id: "l", name: "Half", slot: 1, style, overrides: [], propIds: ["a"] };
+    const a = { id: "a", label: "A", kind: "roofline" as const, elementIds: [] };
+    const b = { id: "b", label: "B", kind: "roofline" as const, elementIds: [] };
+    expect(resolveLookTarget(look, { start: 0, stop: 1, prop: a }).off).toBe(false);
+    expect(resolveLookTarget(look, { start: 0, stop: 1, prop: b }).off).toBe(true);
+    const { propIds: _none, ...legacy } = look;
+    expect(resolveLookTarget(legacy, { start: 0, stop: 1, prop: b }).off).toBe(false);
+    const pinned = pinLookProps([legacy, look], ["a"]);
+    expect(pinned.changed).toBe(1);
+    expect(pinned.looks[0]!.propIds).toEqual(["a"]);
+    expect(pinned.looks[1]).toBe(look);
   });
 });

@@ -230,14 +230,20 @@ describe("prop yard point", () => {
       playlists: [],
       schedule: null,
     });
+    // A prop made after the Look is off in it until it is ticked.
+    const third = await make("Star");
+    expect(looks.read().looks[0]!.propIds).toEqual([first.id, second.id]);
+    expect(looks.read().looks[0]!.propIds).not.toContain(third.id);
+
     const deleted = await app.request(`/api/props/${second.id}`, { method: "DELETE" });
     expect(deleted.status).toBe(200);
     const body = await deleted.json() as { message: string };
     expect(body.message).toContain("Deleted Line");
     expect(body.message).toContain("1 Look");
     expect(body.message).toContain("Nothing was sent");
-    expect(store.loadProps().map((row) => row.id)).toEqual([first.id]);
+    expect(store.loadProps().map((row) => row.id)).toEqual([first.id, third.id]);
     expect(looks.read().looks[0]!.overrides).toEqual([]);
+    expect(looks.read().looks[0]!.propIds).toEqual([first.id]);
 
     const again = await app.request(`/api/props/${second.id}`, { method: "DELETE" });
     expect(again.status).toBe(404);

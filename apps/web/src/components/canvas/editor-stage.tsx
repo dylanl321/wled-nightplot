@@ -2,7 +2,7 @@
 
 import type Konva from "konva";
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
-import { Layer, Line, Stage } from "react-konva";
+import { Circle, Layer, Line, Stage, Text } from "react-konva";
 import {
   BACKGROUND_NAME,
   CONTROLS_INSET_PX,
@@ -65,6 +65,14 @@ export type EditorStageProps = {
    * handles, badges, and text that keep one size at every zoom.
    */
   overlay?: (camera: Camera, size: Size) => ReactNode;
+  /**
+   * `zoom` (default): the wheel always zooms. `modifier`: the plain wheel
+   * scrolls the page, and Ctrl / ⌘ + wheel or a trackpad pinch zooms. Use it
+   * when the drawing sits inside a page that scrolls.
+   */
+  wheel?: "zoom" | "modifier";
+  /** Mark the origin and label the grid lines in metres along the edges. */
+  axes?: boolean;
   /** A mouse moving with no button down, in world metres. `null` when it leaves. */
   onHover?: (hover: { world: Point; altKey: boolean; shiftKey: boolean } | null) => void;
 };
@@ -99,6 +107,8 @@ export function EditorStage({
   children,
   overlay,
   onHover,
+  wheel = "zoom",
+  axes = false,
 }: EditorStageProps) {
   const frame = useRef<HTMLDivElement>(null);
   const stage = useRef<Konva.Stage>(null);
@@ -183,6 +193,8 @@ export function EditorStage({
     const node = frame.current;
     if (!node) return;
     const onWheel = (event: WheelEvent) => {
+      // A trackpad pinch arrives as a wheel with ctrlKey set.
+      if (wheel === "modifier" && !event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
       const at = localPoint(node, event);
       const factor = wheelFactor(event.deltaY, event.deltaMode, event.ctrlKey);
@@ -190,7 +202,7 @@ export function EditorStage({
     };
     node.addEventListener("wheel", onWheel, { passive: false });
     return () => node.removeEventListener("wheel", onWheel);
-  }, [moveCamera]);
+  }, [moveCamera, wheel]);
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
@@ -328,6 +340,7 @@ export function EditorStage({
               ))}
             </Layer>
           ) : null}
+          {axes ? <Axes camera={camera} size={size} stepM={axisStep(gridM ?? 1, camera.ppm)} /> : null}
           <Layer>{children?.(camera)}</Layer>
           {overlay ? (
             // Undo the stage transform so this layer is in stage pixels.
@@ -345,6 +358,55 @@ export function EditorStage({
         </div>
       ) : null}
     </div>
+  );
+}
+
+const AXIS = "#7a8290";
+
+/** Grid labels at least 48 px apart: the grid step, or a multiple of it. */
+function axisStep(gridM: number, ppm: number): number {
+  let step = gridM;
+  while (step * ppm < 48) step *= step / gridM >= 5 ? 2 : 5;
+  return step;
+}
+
+function axisLabel(value: number): string {
+  const rounded = Math.round(value * 100) / 100;
+  return `${rounded === 0 ? 0 : rounded} m`;
+}
+
+/**
+ * The origin and grid labels, in stage pixels: x along the bottom edge, y
+ * along the left edge, and a ring at (0, 0) when it is in view.
+ */
+function Axes({ camera, size, stepM }: { camera: Camera; size: Size; stepM: number }) {
+  const left = -camera.ox / camera.ppm;
+  const right = (size.w - camera.ox) / camera.ppm;
+  const top = camera.oy / camera.ppm;
+  const bottom = (camera.oy - size.h) / camera.ppm;
+  const xs: number[] = [];
+  for (let x = Math.ceil(left / stepM) * stepM; x <= right && xs.length < 200; x += stepM) xs.push(x);
+  const ys: number[] = [];
+  for (let y = Math.ceil(bottom / stepM) * stepM; y <= top && ys.length < 200; y += stepM) ys.push(y);
+  const origin = { x: camera.ox, y: camera.oy };
+  const originShown = origin.x >= 0 && origin.x <= size.w && origin.y >= 0 && origin.y <= size.h;
+  return (
+    <Layer listening={false} x={-camera.ox / camera.ppm} y={-camera.oy / camera.ppm} scaleX={1 / camera.ppm} scaleY={1 / camera.ppm}>
+      {originShown ? (
+        <>
+          <Line points={[origin.x, 0, origin.x, size.h]} stroke={AXIS} strokeWidth={1} opacity={0.6} />
+          <Line points={[0, origin.y, size.w, origin.y]} stroke={AXIS} strokeWidth={1} opacity={0.6} />
+          <Circle x={origin.x} y={origin.y} radius={5} stroke="#e8e2d6" strokeWidth={1.5} />
+          <Text x={origin.x + 7} y={origin.y + 5} text="Origin" fontSize={11} fill="#e8e2d6" />
+        </>
+      ) : null}
+      {xs.map((x) => (
+        <Text key={`ax${x}`} x={origin.x + x * camera.ppm - 24} y={size.h - 16} width={48} align="center" text={axisLabel(x)} fontSize={10} fill={AXIS} />
+      ))}
+      {ys.map((y) => (
+        <Text key={`ay${y}`} x={4} y={origin.y - y * camera.ppm - 5} text={axisLabel(y)} fontSize={10} fill={AXIS} />
+      ))}
+    </Layer>
   );
 }
 

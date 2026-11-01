@@ -8,6 +8,7 @@ import {
   WIREFRAME_GROUPS,
   WLED_TIMEZONES,
   defaultScheduleDraft,
+  lookIncludesProp,
   nextLookSlot,
   propKindLabel,
   resolveLookTarget,
@@ -145,7 +146,14 @@ export function LooksPanel({ lights, initial, firstRun = false }: { lights: Ligh
   function addLook() {
     const slot = nextLookSlot(usedSlots);
     if (slot === null) return;
-    const row: Look = { id: newLookId(), name: "New Look", slot, style: blankStyle(), overrides: [] };
+    const row: Look = {
+      id: newLookId(),
+      name: "New Look",
+      slot,
+      style: blankStyle(),
+      overrides: [],
+      propIds: initial.yard.props.map((prop) => prop.id),
+    };
     setLooks((current) => [...current, row]);
     setOpenId(row.id);
     setSavedNote(null);
@@ -210,6 +218,7 @@ export function LooksPanel({ lights, initial, firstRun = false }: { lights: Ligh
                   onAddOverride={(override) => addOverride(row.id, override)}
                   onRemoveOverride={(index) => updateLook(row.id, { overrides: row.overrides.filter((_, item) => item !== index) })}
                   onOverrides={(overrides) => updateLook(row.id, { overrides })}
+                  onPropIds={(propIds) => updateLook(row.id, { propIds })}
                   onRemove={() => { setLooks((current) => current.filter((item) => item.id !== row.id)); setOpenId(null); }}
                 />
               ) : null}
@@ -322,10 +331,12 @@ function LookEditor({
   onAddOverride,
   onRemoveOverride,
   onOverrides,
+  onPropIds,
   onRemove,
 }: {
   look: Look;
   yard: LooksPayload["yard"];
+  onPropIds: (propIds: string[]) => void;
   onName: (name: string) => void;
   onSlot: (slot: number) => void;
   onStyle: (patch: Partial<LookStyle>) => void;
@@ -356,7 +367,8 @@ function LookEditor({
         </label>
       </div>
       <StyleFields label={look.name} style={look.style} onChange={onStyle} />
-      <SectionRows look={look} props={yard.props} onOverrides={onOverrides} />
+      <PropRows look={look} props={yard.props} onPropIds={onPropIds} />
+      <SectionRows look={look} props={yard.props.filter((prop) => lookIncludesProp(look, prop.id))} onOverrides={onOverrides} />
       <div className="flex flex-col gap-2">
         <p className="text-[13px] font-medium">Overrides</p>
         <p className="text-[12px] text-quiet">Whole-yard default applies unless a section, wireframe group, Prop, Prop kind, or Segment overrides it. A section wins, then a face group, then Prop id, then kind, then Segment. A section with none of those keeps its own colour.</p>
@@ -416,6 +428,46 @@ function LookEditor({
       </div>
       <Button variant="outline" onClick={onRemove}>Remove Look</Button>
     </div>
+  );
+}
+
+/**
+ * Which props this Look lights. A prop left out is off while the Look runs.
+ * A prop added after the Look was made starts left out.
+ */
+function PropRows({
+  look,
+  props,
+  onPropIds,
+}: {
+  look: Look;
+  props: LooksPayload["yard"]["props"];
+  onPropIds: (propIds: string[]) => void;
+}) {
+  if (props.length === 0) return null;
+  const current = look.propIds ?? props.map((prop) => prop.id);
+  function toggle(id: string, on: boolean) {
+    onPropIds(on ? [...current.filter((row) => row !== id), id] : current.filter((row) => row !== id));
+  }
+  return (
+    // A fieldset is min-content wide by default; min-w-0 lets long names truncate on a phone.
+    <fieldset className="flex min-w-0 flex-col gap-1">
+      <legend className="text-[13px] font-medium">Props in this Look</legend>
+      <p className="text-[12px] text-quiet">A prop left out is off while this Look runs. A prop you add later starts left out.</p>
+      <ul className="flex flex-col">
+        {props.map((prop) => (
+          <li key={prop.id}>
+            <label className="flex min-h-11 min-w-0 items-center gap-3 text-[14px]">
+              <input type="checkbox" className="size-5 shrink-0" aria-label={`${prop.label} in this Look`}
+                checked={lookIncludesProp(look, prop.id)}
+                onChange={(event) => toggle(prop.id, event.target.checked)} />
+              <span className="min-w-0 truncate">{prop.label}</span>
+              <span className="min-w-0 shrink truncate text-[12px] text-quiet">{prop.lightName}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+    </fieldset>
   );
 }
 

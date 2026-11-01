@@ -60,4 +60,32 @@ describe("New prop wizard", () => {
     expect(screen.getByLabelText("Section name")).toHaveProperty("value", "Front");
     expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
   });
+  it("converts the sizes when switching to Metres, and remembers the unit", () => {
+    window.localStorage.clear();
+    render(<PropWizard products={[]} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "X" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: /Mini tree/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByLabelText("Height (ft)")).toHaveProperty("value", "3");
+    fireEvent.click(screen.getByRole("button", { name: "Metres" }));
+    expect(screen.getByLabelText("Height (m)")).toHaveProperty("value", "0.914");
+    expect(screen.getByLabelText("Base width (m)")).toHaveProperty("value", "0.914");
+    expect(screen.getByLabelText("Light spacing (cm)")).toHaveProperty("value", "10");
+    fireEvent.click(screen.getByRole("button", { name: "Feet" }));
+    expect(screen.getByLabelText("Height (ft)")).toHaveProperty("value", "3");
+    fireEvent.click(screen.getByRole("button", { name: "Metres" }));
+    expect(window.localStorage.getItem("nightplot.propUnit")).toBe("m");
+  });
+
+  it("starts the next prop in Metres with round metric sizes", () => {
+    window.localStorage.setItem("nightplot.propUnit", "m");
+    render(<PropWizard products={[]} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Line" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: /Roofline/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByLabelText("Length (m)")).toHaveProperty("value", "12");
+    window.localStorage.clear();
+  });
 });

@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { deleteRun, layoutFromMeasurements, layoutStrings } from "@nightplot/shared";
 import { YardHome } from "./yard-home";
 
 describe("Your yard", () => {
@@ -62,5 +63,28 @@ describe("Your yard", () => {
     render(<YardHome props={[]} attachments={[]} lights={[]} looksReady={false} yardClear={false} looksKnown yardKnown />);
     expect(screen.queryByRole("region", { name: "Yard drawing" })).toBeNull();
     expect(document.querySelector("[data-yard-layout='stack']")).toBeTruthy();
+  });
+  it("says a Mini tree whose runs changed is a drawn shape", () => {
+    const tree = layoutFromMeasurements({ units: "m", pitchM: 0.1, shape: "tree", params: { height: 2, base: 2 } })!;
+    const layout = deleteRun(tree, layoutStrings(tree)[0]!.run[1]!.id);
+    render(
+      <YardHome
+        props={[{
+          id: "x",
+          label: "X",
+          kind: "tree",
+          elementIds: [],
+          layout,
+          design: { unit: "m", pitchMm: 100, ledProductId: null, measurements: { shape: "tree", height: 2, base: 2 }, ledCount: 22, edges: [] },
+        }]}
+        attachments={[]}
+        lights={[]}
+        looksReady={false}
+        yardClear={false}
+        looksKnown
+        yardKnown
+      />,
+    );
+    expect(screen.getByText("Drawn shape · started as Mini tree")).toBeTruthy();
   });
 });
