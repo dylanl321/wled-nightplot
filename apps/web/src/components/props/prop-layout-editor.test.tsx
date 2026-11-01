@@ -212,6 +212,46 @@ describe("run list", () => {
     expect(layout.corners).toEqual(oneRun().corners);
   });
 
+  it("rejects a length that is not a measurement and leaves the drawing", async () => {
+    render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
+    const field = await screen.findByLabelText("Run 1 length (m)");
+    fireEvent.change(field, { target: { value: "abc" } });
+    fireEvent.submit(field.closest("form")!);
+    expect(screen.getByText("Enter a length in metres, greater than zero.")).toBeTruthy();
+    expect(screen.getByText("10 lights")).toBeTruthy();
+    expect(field).toHaveProperty("value", "abc");
+  });
+
+  it("rejects zero lights and an empty length", async () => {
+    render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
+    const lights = await screen.findByLabelText("Run 1 lights");
+    fireEvent.change(lights, { target: { value: "0" } });
+    fireEvent.submit(lights.closest("form")!);
+    expect(screen.getByText("Enter a whole number of lights, or leave it empty.")).toBeTruthy();
+    expect(screen.getByText("10 lights")).toBeTruthy();
+  });
+
+  it("says a new length moves the end, and shows a short run that can be merged", async () => {
+    const run = [
+      { id: "e1", from: "c1", to: "c2", kind: "lit" as const },
+      { id: "e2", from: "c2", to: "c3", kind: "lit" as const },
+    ];
+    const layout = {
+      ...oneRun(),
+      corners: [{ id: "c1", x: 0, y: 0 }, { id: "c2", x: 1, y: 0 }, { id: "c3", x: 1.05, y: 0 }],
+      run,
+      strings: [{ id: "s1", startId: "c1", run }],
+    };
+    render(<PropLayoutEditor name="Wall" initial={layout} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
+    expect(await screen.findByText(/moves that run's end along the run/)).toBeTruthy();
+    expect(screen.getByText(/1 run is shorter than the light spacing/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Run 2/ }).textContent).toMatch(/short/);
+    fireEvent.click(screen.getByRole("button", { name: "Merge short runs" }));
+    expect(screen.queryByText(/shorter than the light spacing/)).toBeNull();
+    expect(screen.getByText("10 lights")).toBeTruthy();
+    expect(screen.queryByLabelText("Run 2 lights")).toBeNull();
+  });
+
   it("a traced point holds to the inch grid", async () => {
     const feet = { ...oneRun(), units: "ft" as const };
     render(<PropLayoutEditor name="Wall" initial={feet} mode="trace" onDone={vi.fn()} onBack={vi.fn()} />);

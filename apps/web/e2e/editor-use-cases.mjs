@@ -178,6 +178,66 @@ async function useCaseUnits(page, viewport) {
   expect("unsaved unit change leaves stored corners", after.layout.corners[1].x === fourFeet().corners[1].x, after.layout.corners);
 }
 
+async function useCaseGeometry(page, viewport) {
+  const created = await api("/api/props", {
+    method: "POST",
+    body: JSON.stringify({
+      label: `Wall split ${viewport.name} ${run}`,
+      kind: "roofline",
+      unit: "m",
+      pitchMm: 100,
+      layout: {
+        source: "trace",
+        units: "m",
+        pitchM: 0.1,
+        startOffsetM: 0,
+        corners: [{ id: "c1", x: 0, y: 0 }, { id: "c2", x: 2, y: 0 }, { id: "c3", x: 2.01, y: 0 }],
+        run: [
+          { id: "e1", from: "c1", to: "c2", kind: "lit" },
+          { id: "e2", from: "c2", to: "c1", kind: "lit" },
+          { id: "e3", from: "c2", to: "c3", kind: "lit" },
+        ],
+        strings: [{
+          id: "s1",
+          startId: "c1",
+          run: [
+            { id: "e1", from: "c1", to: "c2", kind: "lit" },
+            { id: "e2", from: "c2", to: "c1", kind: "lit" },
+            { id: "e3", from: "c2", to: "c3", kind: "lit" },
+          ],
+        }],
+      },
+    }),
+  });
+  const prop = created.prop;
+  const stored = (await api("/api/props")).props.find((row) => row.id === prop.id);
+  expect("geometry prop loads", stored && stored.layout.corners.length === 3, stored?.layout);
+  await page.goto(`${webOrigin}/props/${prop.id}/edit`, { waitUntil: "domcontentloaded" });
+  const frame = page.getByTestId("layout-canvas");
+  await frame.locator("canvas").first().waitFor({ timeout: 20000 });
+  await hydrated(page.getByLabel("Run 1 length (m)"));
+  expect("short run", (await page.getByText(/shorter than the light spacing/).count()) === 1, "banner missing");
+  const length = page.getByLabel("Run 1 length (m)");
+  await length.fill("nope");
+  await length.press("Enter");
+  await page.getByText("Enter a length in metres, greater than zero.").waitFor();
+  await waitForValue(page.getByLabel("Run 1 lights"), "20", "bad length keeps the count");
+  // The backtrack shares the run. A second click on it selects the other one.
+  const mid = await screenOf(frame, { x: 1, y: 0 });
+  await drag(page, viewport, mid, mid, 1);
+  const first = await page.locator("[aria-current='true']").innerText();
+  await drag(page, viewport, mid, mid, 1);
+  const second = await page.locator("[aria-current='true']").innerText();
+  expect("cycle select", first !== second, { first, second });
+  mkdirSync("/opt/cursor/artifacts", { recursive: true });
+  await page.screenshot({ path: `/opt/cursor/artifacts/editor-geometry-${viewport.name}.png`, fullPage: true });
+  await page.getByRole("button", { name: "Add point" }).click();
+  await drag(page, viewport, mid, mid, 1);
+  await page.getByText(/4 runs/).waitFor();
+  await page.getByRole("button", { name: "Join" }).click();
+  await page.getByText("Joined corners that sat on each other.").waitFor();
+}
+
 async function useCase1(page, viewport) {
   await page.goto(`${webOrigin}/`, { waitUntil: "domcontentloaded" });
   const frame = page.getByTestId("yard-stage");
@@ -313,6 +373,7 @@ try {
     for (const [label, step] of [
       ["1 see the yard", () => useCase1(page, viewport)],
       ["units and snap", () => useCaseUnits(page, viewport)],
+      ["split, join, and typed length", () => useCaseGeometry(page, viewport)],
       ["7 move a corner, 10 set a length", () => useCase7and10(page, viewport, prop)],
       ["12 return to sections", async () => { section = await useCase12(page, prop); }],
       ["13 a Look uses the section", () => (section ? useCase13(page, prop, section) : Promise.reject(new Error("no section from 12")))],

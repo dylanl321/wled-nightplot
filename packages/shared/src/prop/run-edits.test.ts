@@ -2,14 +2,22 @@ import { describe, expect, it } from "vitest";
 import {
   addStringAt,
   clearEdgeLights,
+  continueToCorner,
   continueToPoint,
   countLayout,
   deleteRun,
+  edgeLengthM,
+  emptyTrace,
   isPropLayout,
   layoutStrings,
+  mergeShortRuns,
   moveCorner,
+  runsOnSameSpan,
   setEdgeLength,
   setEdgeLights,
+  shortRuns,
+  splitRun,
+  weldCorners,
   type PropLayout,
 } from "./layout.ts";
 import { pathEdgeIndexRanges } from "./sections.ts";
@@ -98,6 +106,63 @@ describe("set a length on a run", () => {
     expect(run.lockedLengthM).toBe(2);
     expect(countLayout(next).edges.find((edge) => edge.id === edgeId)?.lights).toBe(20);
     expect(next.run).toEqual(layoutStrings(next)[0]!.run);
+  });
+});
+
+describe("split, weld, and short runs", () => {
+  it("splits a run where you point, and the saved corners of the other runs stay", () => {
+    const layout = three();
+    const split = splitRun(layout, "e2", 1.5, 0.4);
+    expect(split.cornerId).not.toBeNull();
+    const runs = layoutStrings(split.layout)[0]!.run;
+    expect(runs.map((edge) => edge.id).slice(0, 2)).toEqual(["e1", "e2"]);
+    expect(runs[1]?.to).toBe(split.cornerId);
+    expect(runs[2]?.from).toBe(split.cornerId);
+    expect(runs[2]?.to).toBe("c3");
+    expect(edgeLengthM(split.layout, runs[1]!)).toBeCloseTo(0.5, 5);
+    expect(edgeLengthM(split.layout, runs[2]!)).toBeCloseTo(0.5, 5);
+    expect(countLayout(split.layout).edges.map((edge) => edge.lights)).toEqual([10, 5, 5, 10]);
+    expect(isPropLayout(split.layout)).toBe(true);
+    expect(split.layout.corners.find((corner) => corner.id === "c1")).toEqual({ id: "c1", x: 0, y: 0 });
+    expect(split.layout.corners.find((corner) => corner.id === "c4")).toEqual({ id: "c4", x: 3, y: 0 });
+  });
+
+  it("welds corners inside the tolerance and leaves a corner outside it", () => {
+    const close = moveCorner(three(), "c3", 1.01, 0);
+    const welded = weldCorners(close, 0.02);
+    expect(welded.corners.map((corner) => corner.id)).toEqual(["c1", "c2", "c4"]);
+    expect(layoutStrings(welded)[0]!.run.map((edge) => [edge.from, edge.to])).toEqual([["c1", "c2"], ["c2", "c4"]]);
+    expect(isPropLayout(welded)).toBe(true);
+    const apart = three();
+    expect(weldCorners(apart, 0.02)).toBe(apart);
+  });
+
+  it("names a backtrack as the same span, in either direction", () => {
+    let layout = continueToPoint(emptyTrace("m", 0.1), "s1", 1, 0);
+    layout = continueToCorner(layout, "s1", "c1");
+    const spans = runsOnSameSpan(layout);
+    expect(spans.get("e1")).toEqual(["e1", "e2"]);
+    expect(spans.get("e2")).toEqual(["e1", "e2"]);
+  });
+
+  it("warns on a run shorter than the spacing and merges it into one corner", () => {
+    const close = moveCorner(three(), "c3", 1.05, 0);
+    expect(edgeLengthM(close, layoutStrings(close)[0]!.run[1]!)).toBeCloseTo(0.05, 5);
+    expect(countLayout(close).edges[1]?.lights).toBe(1);
+    expect(shortRuns(close)).toEqual(["e2"]);
+    const merged = mergeShortRuns(close);
+    expect(shortRuns(merged)).toEqual([]);
+    expect(layoutStrings(merged)[0]!.run.map((edge) => edge.id)).toEqual(["e1", "e3"]);
+    expect(merged.corners.map((corner) => corner.id)).toEqual(["c1", "c2", "c4"]);
+    expect(isPropLayout(merged)).toBe(true);
+  });
+
+  it("grows a vertical run along itself", () => {
+    let layout = continueToPoint(emptyTrace("m", 0.1), "s1", 0, 1);
+    layout = continueToPoint(layout, "s1", 1, 1);
+    const edited = setEdgeLength(layout, "e1", 2).layout;
+    expect(edited.corners.find((corner) => corner.id === "c2")).toMatchObject({ x: 0, y: 2 });
+    expect(edited.corners.find((corner) => corner.id === "c3")).toMatchObject({ x: 1, y: 2 });
   });
 });
 
