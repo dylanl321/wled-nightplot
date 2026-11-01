@@ -591,6 +591,7 @@ export function createApp(deps: AppDeps) {
     palette: () => settings.read().palette,
     refresh: refreshOne,
     applyDrafts: applyDraftsToController,
+    looks: lookDeps.looks,
     endBlink: async (lightId) => {
       if (live.get(lightId)?.kind !== "blink") return;
       await live.end(lightId, "complete");

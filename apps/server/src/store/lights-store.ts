@@ -121,7 +121,36 @@ export class FileLightsStore {
     const attachments = prop.lightId
       ? state.attachments
       : state.attachments.filter((row) => row.propId !== prop.id);
-    this.write(state.lights, state.elements, [...rest, prop], attachments);
+    // Keep the prop where it was in the list, so an edit does not reorder the yard.
+    const at = state.props.findIndex((row) => row.id === prop.id);
+    const props = at < 0 ? [...rest, prop] : state.props.map((row) => (row.id === prop.id ? prop : row));
+    this.write(state.lights, state.elements, props, attachments);
+  }
+
+  /**
+   * Remove a designed prop, its attachment, and the Segments Nightplot made
+   * for it. A prop that followed this one on the same output takes this
+   * prop's place, so it does not point at a prop that is gone.
+   */
+  deleteDesignedProp(id: string): { removedSegments: number; movedFollowers: number } | null {
+    const state = this.readForWrite();
+    const prop = state.props.find((row) => row.id === id);
+    if (!prop) return null;
+    const own = state.attachments.find((row) => row.propId === id) ?? null;
+    const drop = new Set(prop.elementIds);
+    const elements = state.elements.filter((element) => !drop.has(element.id));
+    let movedFollowers = 0;
+    const attachments = state.attachments
+      .filter((row) => row.propId !== id)
+      .map((row) => {
+        if (row.afterPropId !== id) return row;
+        movedFollowers += 1;
+        return own
+          ? { ...row, startIndex: own.startIndex, afterPropId: own.afterPropId }
+          : { ...row, startIndex: 0, afterPropId: null };
+      });
+    this.write(state.lights, elements, state.props.filter((row) => row.id !== id), attachments);
+    return { removedSegments: state.elements.length - elements.length, movedFollowers };
   }
 
   attachProp(prop: Prop, attachment: PropAttachment, elements: Element[]): void {

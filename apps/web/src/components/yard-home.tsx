@@ -9,6 +9,7 @@ import {
   type YardStep,
 } from "@nightplot/shared";
 import Link from "next/link";
+import { PropCardActions } from "@/components/props/prop-card-actions";
 import { PropShapeArt } from "@/components/props/prop-shape-art";
 import { YardStage } from "@/components/yard-stage";
 import { Button } from "@/components/ui/button";
@@ -127,6 +128,7 @@ export function YardHome({
                         </Link>
                       ) : null}
                     </span>
+                    <PropCardActions id={prop.id} label={prop.label} attached={Boolean(attachment || prop.lightId)} />
                   </div>
                 </li>
               );
