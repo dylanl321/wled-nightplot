@@ -225,6 +225,14 @@ try {
       await page.getByText("A clean canvas").waitFor();
       await page.locator("[data-start=triangle]").click();
       await page.locator(".ye .tools button").first().waitFor();
+      // Picking a shape lowers the panel on a phone; wait for its slide to finish.
+      await page.waitForFunction(() => {
+        const sheet = document.querySelector(".ye .insp");
+        const h = sheet ? sheet.getBoundingClientRect().height : 0;
+        const settled = window.__sheetH === h;
+        window.__sheetH = h;
+        return settled;
+      }, null, { polling: 120, timeout: 5000 });
       assertFits(`${viewport.name} editor`, await measure(page));
       const tools = await page.locator(".ye .tools button").evaluateAll((nodes) =>
         nodes.map((node) => {
