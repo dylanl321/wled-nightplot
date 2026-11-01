@@ -224,7 +224,7 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
   }
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-[560px] flex-1 flex-col overflow-x-hidden">
+    <div className={`mx-auto flex min-h-dvh w-full max-w-[560px] flex-1 flex-col overflow-x-hidden ${step === "sections" ? "lg:max-w-[1200px]" : ""}`}>
       <header className="flex h-14 shrink-0 items-center gap-1 px-1">
         <button type="button" className="min-h-11 px-3 text-[16px]" onClick={step === "name" ? () => router.push("/") : back}>Back</button>
         <p className="min-w-0 flex-1 truncate text-[17px] font-medium">{name.trim() || "New prop"}</p>
@@ -371,7 +371,7 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
       {notice ? <p className="text-[15px] text-destructive">{notice}</p> : null}
       </div>
       <div
-        className="fixed inset-x-0 bottom-0 z-20 mx-auto flex w-full max-w-[560px] gap-2 border-t border-border bg-background px-4 py-3"
+        className={`fixed inset-x-0 bottom-0 z-20 mx-auto flex w-full max-w-[560px] gap-2 border-t border-border bg-background px-4 py-3 ${step === "sections" ? "lg:max-w-[1200px]" : ""}`}
         style={{ paddingLeft: "max(1rem, env(safe-area-inset-left))", paddingRight: "max(1rem, env(safe-area-inset-right))" }}
       >
         <Button type="button" variant="outline" className="min-h-11 flex-1 text-base" onClick={back} disabled={step === "name" || busy}>
