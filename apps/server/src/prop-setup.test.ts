@@ -6,6 +6,7 @@ import type { Prop } from "@nightplot/shared";
 import { createApp } from "./app.ts";
 import { FileBackupStore } from "./store/backup-store.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
+import { FileYardSceneStore } from "./store/yard-scene-store.ts";
 import { FileLooksStore } from "./store/looks-store.ts";
 import { FileSettingsStore } from "./store/settings-store.ts";
 
@@ -324,5 +325,43 @@ describe("prop yard point", () => {
     leds = null;
     const missed = await app.request("/api/yard/live") as Response;
     expect((await missed.json() as { lights: { leds: null }[] }).lights[0]?.leds).toBeNull();
+  });
+
+  it("keeps a house beside the lights file, and a missing file is no house", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-house-"));
+    const store = new FileLightsStore(join(dir, "lights.json"));
+    const scene = new FileYardSceneStore(join(dir, "yard-scene.json"));
+    const app = createApp({
+      store,
+      yardScene: scene,
+      settings: new FileSettingsStore(join(dir, "settings.json")),
+      backups: new FileBackupStore(join(dir, "backups")),
+      probe: async () => ({ kind: "found", snapshot: base }),
+      collect: async () => [],
+      write: vi.fn(async () => true),
+      readLive: async () => null,
+      readCfg: async () => null,
+      writeCfg: async () => true,
+      readNativeFiles: async () => ({ cfgJson: "{}", presetsJson: "{}" }),
+      readLedmap: async () => null,
+      writeLedmap: async () => {},
+      now: () => new Date("2026-11-01T02:00:00.000Z"),
+    });
+    expect(await (await app.request("/api/yard-scene")).json()).toEqual({ version: 1, house: null });
+    const house = { footprint: [{ x: -4, z: 0 }, { x: 4, z: 0 }, { x: 4, z: 6 }, { x: -4, z: 6 }], eaveM: 2.5, ridgeM: 1.2 };
+    const saved = await app.request("/api/yard-scene", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ house }),
+    });
+    expect(saved.status).toBe(200);
+    expect(scene.read().house).toEqual(house);
+    expect(store.load()).toEqual([]);
+    const cleared = await app.request("/api/yard-scene", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ house: null }),
+    });
+    expect((await cleared.json() as { house: null }).house).toBeNull();
   });
 });

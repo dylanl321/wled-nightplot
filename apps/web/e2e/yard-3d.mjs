@@ -77,6 +77,23 @@ async function launch() {
   }
 }
 
+async function show3d(page) {
+  const button = page.getByRole("button", { name: "3D" });
+  await button.waitFor();
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await button.click();
+    const view = page.locator("[data-yard-3d=view] canvas");
+    const fallback = page.locator("[data-yard-3d=fallback]");
+    const opened = await Promise.race([
+      view.waitFor({ state: "visible", timeout: 20000 }).then(() => "view"),
+      fallback.waitFor({ state: "visible", timeout: 20000 }).then(() => "fallback"),
+    ]).catch(() => null);
+    if (opened === "fallback") throw new Error(`3D fell back: ${await fallback.innerText()}`);
+    if (opened === "view") return;
+  }
+  throw new Error("3D did not open");
+}
+
 async function fits(page) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   if (overflow > 1) throw new Error(`page scrolls sideways by ${overflow}px`);
@@ -193,7 +210,27 @@ try {
         await page.getByRole("button", { name: "Stop", pressed: true }).waitFor();
         await page.getByRole("button", { name: "Overhead" }).click();
         await page.getByRole("button", { name: "Overhead", pressed: true }).waitFor();
-        await page.waitForTimeout(200);
+        const box = await canvas.boundingBox();
+        if (box) await page.mouse.dblclick(box.x + box.width * 0.82, box.y + 70);
+        await api("/api/yard-scene", {
+          method: "PUT",
+          body: JSON.stringify({
+            house: {
+              footprint: [{ x: -3, z: 2 }, { x: 3, z: 2 }, { x: 3, z: 7 }, { x: -3, z: 7 }],
+              eaveM: 2.5,
+              ridgeM: 1.2,
+            },
+          }),
+        });
+        await page.reload({ waitUntil: "load" });
+        await page.getByRole("heading", { name: "Your yard" }).waitFor();
+        await page.getByRole("button", { name: "2D", pressed: true }).waitFor();
+        await show3d(page);
+        await page.locator("[data-house=yes]").waitFor();
+        await page.locator("[data-yard-ready=yes]").waitFor();
+        await page.getByRole("button", { name: "Street" }).click();
+        await page.getByRole("button", { name: "Street", pressed: true }).waitFor();
+        await page.waitForTimeout(300);
       }
       await page.getByRole("region", { name: "Yard drawing" }).evaluate((node) => node.scrollIntoView({ block: "start" }));
       await fits(page);
@@ -213,6 +250,7 @@ try {
   if (lookSnapshot) {
     await api("/api/looks", { method: "PUT", body: JSON.stringify(lookSnapshot) }).catch(() => {});
   }
+  await api("/api/yard-scene", { method: "PUT", body: JSON.stringify({ house: null }) }).catch(() => {});
   await api(`/api/props/${id}`, { method: "DELETE" }).catch(() => {});
   stopChildren();
 }

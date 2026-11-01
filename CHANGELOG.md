@@ -7,6 +7,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- A house in the 3D yard (GitHub #159): double-click the ground to put down a simple house, walls up to the eave and a roof. Let a roofline go near the eave and it sits on that edge. No house is kept until you do that, so an older yard is unchanged. Nothing is sent to a controller. Not Hardware Done.
+
 - Move a prop in the 3D yard (GitHub #159): drag it along the ground, Turn it, or Lay flat / Stand up. The place is saved and read back, the same as a move on the drawing. Nothing is sent to a controller. Not Hardware Done.
 
 - Look colours in the 3D yard (GitHub #159): pick a Look and press Play. The dots follow a preview of Solid, Breathe, Rainbow, Chase, Running, Twinkle, and Rain. It says Preview. When a prop is attached and the controller answers, those dots use the colours it just reported, and a missing read stays the preview. Nothing is written. Not Hardware Done.

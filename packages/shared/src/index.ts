@@ -906,3 +906,13 @@ export {
   type LookFrameLight,
   type YardLiveFeed,
 } from "./look-preview.ts";
+export {
+  defaultHouse,
+  houseEaves,
+  isYardHouse,
+  snapRoofline,
+  type EaveEdge,
+  type YardHouse,
+  type YardPoint2,
+  type YardScene,
+} from "./house.ts";
