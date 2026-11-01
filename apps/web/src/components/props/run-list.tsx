@@ -288,13 +288,13 @@ function RunRowItem({
       ) : null}
       {selected && lit ? (
         <div className="flex gap-2 px-3 pb-2">
-          <button type="button" className="min-h-11 flex-1 rounded-lg border border-border px-2 text-[14px] disabled:opacity-40" disabled={!row.placed && !row.typedCount} onClick={onSpace}>Space evenly again</button>
+          <button type="button" className="min-h-11 flex-1 rounded-lg border border-border px-2 text-[14px] disabled:opacity-40" disabled={!row.placed} onClick={onSpace}>Space evenly again</button>
           <button type="button" className="min-h-11 flex-1 rounded-lg border border-border px-2 text-[14px] disabled:opacity-40" disabled={!lightSelected} onClick={onRemoveLight}>Remove light</button>
         </div>
       ) : null}
       {row.placed ? (
         <p className="px-3 pb-2 text-[13px] leading-5 text-muted-foreground">
-          These lights stay where you put them. Space evenly again counts from the length.
+          These lights stay where you put them. Space evenly again keeps all {row.lights} and spreads them along the run.
         </p>
       ) : null}
       {row.typedCount ? (

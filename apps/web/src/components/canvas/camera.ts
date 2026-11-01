@@ -194,3 +194,15 @@ function midpoint(a: Point, b: Point): Point {
 function round(value: number): number {
   return Math.round(value * 1e6) / 1e6;
 }
+
+/** Stage attribute set while a second finger has turned a drag into a pinch. */
+export const PINCH_ATTR = "nightplotPinch";
+
+/**
+ * True when this drag was ended by a second finger starting a pinch. A drag
+ * handler then puts the shape back and saves nothing, so a pinch that starts
+ * on a corner or a light never moves it.
+ */
+export function endedByPinch(event: { target: { getStage: () => { getAttr: (name: string) => unknown } | null } }): boolean {
+  return Boolean(event.target.getStage()?.getAttr(PINCH_ATTR));
+}
