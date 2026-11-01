@@ -136,15 +136,19 @@ describe("EditorStage", () => {
     expect((after.oy - at.y) / after.ppm).toBeCloseTo(worldBefore.y, 1);
   });
 
-  it("with wheel=modifier, the plain wheel leaves the camera and Ctrl + wheel zooms", () => {
-    render(<EditorStage bounds={bounds} limits={limits} label="Drawing" wheel="modifier" />);
+  it("a mouse wheel zooms, a trackpad scroll pans, and the limit says so", () => {
+    render(<EditorStage bounds={bounds} limits={limits} label="Drawing" />);
     const stage = screen.getByTestId("editor-stage");
     const before = cameraOf(stage);
-    const plain = fireEvent.wheel(stage, { deltaY: -100, clientX: 200, clientY: 200 });
-    expect(plain).toBe(true);
-    expect(cameraOf(stage).ppm).toBe(before.ppm);
-    fireEvent.wheel(stage, { deltaY: -100, clientX: 200, clientY: 200, ctrlKey: true });
+    fireEvent.wheel(stage, { deltaY: -8, deltaX: -12, clientX: 200, clientY: 200 });
+    const panned = cameraOf(stage);
+    expect(panned.ppm).toBeCloseTo(before.ppm);
+    expect(panned.ox).not.toBeCloseTo(before.ox);
+    fireEvent.wheel(stage, { deltaY: -100, deltaX: 0, clientX: 200, clientY: 200 });
     expect(cameraOf(stage).ppm).toBeGreaterThan(before.ppm);
+    fireEvent.wheel(stage, { deltaY: -4, deltaX: 0, clientX: 200, clientY: 200, ctrlKey: true });
+    for (let step = 0; step < 40; step += 1) fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    expect(screen.getByRole("status").textContent).toMatch(/as close as it goes/);
   });
 
   it("exposes fit, zoom, and the stage transform through a ref", () => {

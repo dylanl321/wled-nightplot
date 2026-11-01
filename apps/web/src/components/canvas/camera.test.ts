@@ -10,6 +10,8 @@ import {
   toScreen,
   toWorld,
   wheelFactor,
+  wheelGesture,
+  zoomLimited,
   zoomAt,
   zoomStep,
   type Camera,
@@ -110,6 +112,16 @@ describe("camera", () => {
     const fitted = fitCamera({ minX: 3, minY: 3, maxX: 3, maxY: 3 }, { w: 300, h: 300 }, limits, { minSpanM: 1 });
     expect(fitted.ppm).toBeCloseTo(244);
     close(toScreen({ x: 3, y: 3 }, fitted), { x: 150, y: 150 });
+  });
+
+  it("a mouse wheel zooms and a trackpad scroll pans", () => {
+    expect(wheelGesture({ deltaX: 0, deltaY: -100, deltaMode: 0, ctrlKey: false, metaKey: false })).toBe("zoom");
+    expect(wheelGesture({ deltaX: 0, deltaY: 3, deltaMode: 1, ctrlKey: false, metaKey: false })).toBe("zoom");
+    expect(wheelGesture({ deltaX: -4, deltaY: -6, deltaMode: 0, ctrlKey: false, metaKey: false })).toBe("pan");
+    expect(wheelGesture({ deltaX: 0, deltaY: -8, deltaMode: 0, ctrlKey: true, metaKey: false })).toBe("zoom");
+    expect(zoomLimited(4000, 1.1, { minPpm: 2, maxPpm: 4000 })).toBe("in");
+    expect(zoomLimited(2, 0.5, { minPpm: 2, maxPpm: 4000 })).toBe("out");
+    expect(zoomLimited(100, 1.1, { minPpm: 2, maxPpm: 4000 })).toBeNull();
   });
 
   it("a wheel down zooms out, up zooms in, and a trackpad pinch is stronger", () => {

@@ -1,3 +1,5 @@
+"use client";
+
 import {
   layoutStrings,
   propAttachmentLabel,
@@ -10,6 +12,7 @@ import {
   type YardStep,
 } from "@nightplot/shared";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { PropCardActions } from "@/components/props/prop-card-actions";
 import { PropShapeArt } from "@/components/props/prop-shape-art";
 import { YardStage } from "@/components/yard-stage";
@@ -33,6 +36,7 @@ export function YardHome({
   looksKnown: boolean;
   yardKnown: boolean;
 }) {
+  const router = useRouter();
   const unattached = props.filter((prop) => !attachments.some((row) => row.propId === prop.id)).length;
   const steps = yardSetupSteps({
     propCount: props.length,
@@ -99,7 +103,22 @@ export function YardHome({
               const output = light?.outputs?.find((row) => row.id === attachment?.outputId);
               const count = prop.design?.ledCount;
               return (
-                <li key={prop.id} className="flex gap-3 rounded-[14px] border border-border bg-card p-3">
+                <li
+                  key={prop.id}
+                  className="flex gap-3 rounded-[14px] border border-border bg-card p-3"
+                  onDoubleClick={(event) => {
+                    if (event.target instanceof Element && event.target.closest("a, button, input, textarea")) return;
+                    router.push(`/props/${prop.id}/edit`);
+                  }}
+                  onPointerUp={(event) => {
+                    if (event.pointerType === "mouse") return;
+                    if (event.target instanceof Element && event.target.closest("a, button, input, textarea")) return;
+                    const now = Date.now();
+                    const last = Number(event.currentTarget.dataset.tap ?? 0);
+                    if (now - last < 450) router.push(`/props/${prop.id}/edit`);
+                    event.currentTarget.dataset.tap = String(now);
+                  }}
+                >
                   <SectionSketch prop={prop} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[16px] font-medium">{prop.label}</p>

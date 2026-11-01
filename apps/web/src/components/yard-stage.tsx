@@ -3,9 +3,10 @@
 import { layoutStrings, yardBounds, yardPlacements, type Prop, type PropYardPoint } from "@nightplot/shared";
 import type Konva from "konva";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Group, Line, Rect, Text } from "react-konva";
-import { EditorStage, toScreen, type Camera, type Size } from "@/components/canvas";
+import { CLOSE_PPM, EditorStage, toScreen, type Camera, type Size } from "@/components/canvas";
 import { placeYardLabels } from "@/components/yard-labels";
 import { patchJson } from "@/lib/api";
 
@@ -21,6 +22,7 @@ type Moving = { propId: string; at: PropYardPoint };
  * controller.
  */
 export function YardStage({ props }: { props: Prop[] }) {
+  const router = useRouter();
   const [saved, setSaved] = useState<Record<string, PropYardPoint>>({});
   const [moving, setMoving] = useState<Moving | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
@@ -98,10 +100,9 @@ export function YardStage({ props }: { props: Prop[] }) {
         <EditorStage
           bounds={bounds}
           fitMinSpanM={4}
-          limits={{ minPpm: 1, maxPpm: 400 }}
+          limits={{ minPpm: 1, maxPpm: CLOSE_PPM }}
           gridM={1}
           axes
-          wheel="modifier"
           label="Yard drawing"
           testId="yard-stage"
           onBackgroundTap={() => setPicked(null)}
@@ -152,6 +153,8 @@ export function YardStage({ props }: { props: Prop[] }) {
                   onDragEnd={(event) => dragTo(prop.id, event.target, true)}
                   onClick={select}
                   onTap={select}
+                  onDblClick={() => router.push(`/props/${prop.id}/edit`)}
+                  onDblTap={() => router.push(`/props/${prop.id}/edit`)}
                 >
                   {/* The whole footprint is the handle, so a thin roofline is easy to grab. */}
                   <Rect x={own.x - 0.2} y={-(own.y + own.h) - 0.2} width={own.w + 0.4} height={own.h + 0.4} fill="transparent" stroke={chosen ? PICKED : undefined} strokeWidth={1} strokeScaleEnabled={false} dash={[4, 4]} />
@@ -197,7 +200,7 @@ export function YardStage({ props }: { props: Prop[] }) {
       ) : (
         <p className="text-[14px] text-muted-foreground">
           Drag a prop to where it sits in the yard, or pick it and type where it goes. One square is 1 m; the ring is the origin.
-          Drag empty space to pan; Ctrl or ⌘ and scroll, or pinch, to zoom. Nothing is sent to a controller.
+          A mouse wheel zooms. A trackpad scroll pans. Pinch, or Ctrl and scroll, zooms toward the pointer. Nothing is sent to a controller.
         </p>
       )}
       {note ? (
