@@ -142,6 +142,7 @@
 .lk .tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--quiet); white-space: nowrap; }
 .lk .tag.new { color: var(--primary); border-color: var(--primary); }
 .lk .tag.live { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--border)); }
+.lk .tag.warn { color: var(--warn); border-color: var(--warn); }
 .lk .card.add { align-items: center; justify-content: center; min-height: 180px; border-style: dashed; color: var(--muted); font-size: 14px; gap: 8px; cursor: pointer; background: transparent; }
 .lk .list { display: flex; flex-direction: column; gap: 10px; }
 .lk .item { border: 1px solid var(--border); border-radius: 12px; background: var(--card); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }

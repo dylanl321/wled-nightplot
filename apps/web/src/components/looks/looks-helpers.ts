@@ -1,3 +1,4 @@
+import type { NowRow } from "./use-looks";
 import {
   LOOK_NAME_MAX,
   LOOK_OFF_SLOT,
@@ -103,4 +104,25 @@ export function takeDeleted(id: string): DeletedLook | null {
     window.sessionStorage.removeItem(DELETED_KEY);
     return value;
   } catch { return null; }
+}
+
+export type SegmentWarning = { lightId: string; lightName: string; lookId: string; lookName: string; need: number; max: number };
+
+/** Looks that need more segments on a Light than it holds. Send refuses that Light. */
+export function segmentWarnings(now: readonly NowRow[] | null, looks: readonly Look[]): SegmentWarning[] {
+  const out: SegmentWarning[] = [];
+  for (const row of now ?? []) {
+    if (typeof row.maxSegments !== "number" || !row.segments) continue;
+    for (const look of looks) {
+      const need = row.segments[look.id];
+      if (typeof need === "number" && need > row.maxSegments) {
+        out.push({ lightId: row.lightId, lightName: row.lightName, lookId: look.id, lookName: look.name, need, max: row.maxSegments });
+      }
+    }
+  }
+  return out;
+}
+
+export function segmentWarningText(row: SegmentWarning): string {
+  return `${row.lookName} needs ${row.need} segments on ${row.lightName}, which holds ${row.max}. Send will skip ${row.lightName} until sections are merged or Segments removed.`;
 }

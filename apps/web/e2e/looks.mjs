@@ -78,6 +78,12 @@ async function enroll(host, name) {
   if (light.name !== name) {
     await api(`/api/lights/${light.id}`, { method: "PATCH", body: JSON.stringify({ name }) }).catch(() => undefined);
   }
+  // Loose Segments left by another check (no prop on them) would overlap the props here.
+  const attached = ((await api("/api/props")).attachments ?? []).some((row) => row.lightId === light.id);
+  const detail = await api(`/api/lights/${light.id}`);
+  if (!attached && (detail.elements ?? []).length) {
+    await api(`/api/lights/${light.id}/elements`, { method: "PATCH", body: JSON.stringify({ elements: [] }) });
+  }
   return (await api("/api/lights")).lights.find((row) => row.id === light.id);
 }
 
@@ -362,6 +368,10 @@ async function tasks(page, vp, ctx) {
   const send = page.getByRole("dialog", { name: "Send to lights" });
   const garageBox = send.getByLabel(/Garage Light/);
   if (!(await garageBox.isChecked())) await garageBox.check();
+  // Keep effects in step: one leader, the rest follow.
+  await tap(page, send.locator("summary", { hasText: "Keep effects in step" }));
+  await send.getByLabel(/Also set a WLED UDP sync group/).check();
+  await send.getByLabel("UDP sync group", { exact: true }).selectOption("3");
   await send.getByRole("button", { name: "Send", exact: true }).click();
   const results = page.getByRole("dialog", { name: "Send results" });
   await results.waitFor({ timeout: 120000 });
@@ -369,6 +379,9 @@ async function tasks(page, vp, ctx) {
   const text = await results.innerText();
   if (!/Garage Light[\s\S]*Not sent/.test(text)) throw new Error(`Garage Light row: ${text}`);
   if ((text.match(/Up to date/g) ?? []).length < 2) throw new Error(`Others not up to date: ${text}`);
+  const eaveCfg = await fetch("http://127.0.0.1:48211/json/cfg").then((res) => res.json());
+  // Group 3 is WLED bit 4.
+  if (!((eaveCfg?.if?.sync?.recv?.grp ?? 0) & 4) && !((eaveCfg?.if?.sync?.send?.grp ?? 0) & 4)) throw new Error(`UDP sync not set: ${JSON.stringify(eaveCfg?.if?.sync)}`);
   await results.getByRole("button", { name: "Close" }).click();
   const pill = await page.locator(".sendpill").innerText();
   if (!/not sent/.test(pill)) throw new Error(`Pill after send: ${pill}`);

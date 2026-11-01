@@ -40,6 +40,10 @@ export type NowRow = {
   playlist: number | null;
   changes: LookChange[];
   lastSentAt: string | null;
+  /** WLED `leds.maxseg`, null until the Light has reported it. */
+  maxSegments?: number | null;
+  /** Segments each saved Look needs on this Light, by Look id. */
+  segments?: Record<string, number>;
 };
 
 export type LightLite = { id: string; name: string; firmware?: string | null; lastLookPush?: LastLookPush | null };
@@ -51,6 +55,9 @@ export type EffectCatalog = {
   missing: { fx: number; name: string; lights: string[] }[];
   caption: string;
 };
+
+/** WLED UDP sync: one leader, the rest follow, so effects stay in step across Lights. */
+export type UdpChoice = { group: number; leaderId: string };
 
 export type SendRow = { lightId: string; lightName: string; status: string; detail: string; safetyBackupId?: string };
 
@@ -151,10 +158,13 @@ export function useLooks(initial: LooksPayload, lights: LightLite[]) {
     return planSchedule(doc.schedule, doc, dialect);
   }, [doc, lights]);
 
-  const send = useCallback(async (lightIds: string[]): Promise<{ rows: SendRow[]; message: string }> => {
+  const send = useCallback(async (lightIds: string[], udp?: UdpChoice | null): Promise<{ rows: SendRow[]; message: string }> => {
     await flush();
     const includeSchedule = doc.schedule?.enabled === true;
-    const result = await postJson<{ rows: SendRow[]; message: string }>("/api/looks/push", { lightIds, includeSchedule });
+    const sync = udp && lightIds.includes(udp.leaderId)
+      ? { group: udp.group, roles: Object.fromEntries(lightIds.map((id) => [id, id === udp.leaderId ? "leader" : "follower"])) }
+      : null;
+    const result = await postJson<{ rows: SendRow[]; message: string }>("/api/looks/push", { lightIds, includeSchedule, ...(sync ? { udp: sync } : {}) });
     if (!result.ok) return { rows: [], message: result.data.message ?? "Nothing was sent." };
     const digests = lookItemDigests(doc);
     setSentNow((current) => {
