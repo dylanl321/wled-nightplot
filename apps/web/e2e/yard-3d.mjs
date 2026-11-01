@@ -107,6 +107,11 @@ const created = await api("/api/props", {
   body: JSON.stringify({ label, kind: "roofline", unit: "m", pitchMm: 100, layout: line() }),
 });
 const id = created.prop.id;
+const decoy = await api("/api/props", {
+  method: "POST",
+  body: JSON.stringify({ label: `Other ${label}`, kind: "roofline", unit: "m", pitchMm: 100, layout: line(), yard: { x: 20, y: 0 } }),
+});
+const decoyId = decoy.prop.id;
 let lookSnapshot;
 
 try {
@@ -184,6 +189,7 @@ try {
         await page.getByRole("button", { name: "This prop", pressed: true }).waitFor();
         await page.getByRole("button", { name: "Street" }).click();
         await page.getByRole("button", { name: "Street", pressed: true }).waitFor();
+        // Other props may already be on the yard. Pick this one on the drawing, then turn it.
         await page.getByRole("button", { name: "2D" }).click();
         const frame = page.getByTestId("yard-stage");
         await frame.locator("canvas").first().waitFor();
@@ -230,7 +236,11 @@ try {
         await page.locator("[data-yard-ready=yes]").waitFor();
         await page.getByRole("button", { name: "Street" }).click();
         await page.getByRole("button", { name: "Street", pressed: true }).waitFor();
-        await page.waitForTimeout(300);
+        await page.getByLabel("Look").selectOption({ label: lookName });
+        await page.getByText("Preview", { exact: true }).waitFor();
+        await page.getByRole("button", { name: "Play" }).click();
+        await page.getByRole("button", { name: "Stop", pressed: true }).waitFor();
+        await page.waitForTimeout(400);
       }
       await page.getByRole("region", { name: "Yard drawing" }).evaluate((node) => node.scrollIntoView({ block: "start" }));
       await fits(page);
@@ -252,5 +262,6 @@ try {
   }
   await api("/api/yard-scene", { method: "PUT", body: JSON.stringify({ house: null }) }).catch(() => {});
   await api(`/api/props/${id}`, { method: "DELETE" }).catch(() => {});
+  await api(`/api/props/${decoyId}`, { method: "DELETE" }).catch(() => {});
   stopChildren();
 }
