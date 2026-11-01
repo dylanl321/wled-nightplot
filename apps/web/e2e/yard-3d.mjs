@@ -90,6 +90,7 @@ const created = await api("/api/props", {
   body: JSON.stringify({ label, kind: "roofline", unit: "m", pitchMm: 100, layout: line() }),
 });
 const id = created.prop.id;
+let lookSnapshot;
 
 try {
   const older = await api(`/api/props/${id}/yard`, {
@@ -123,6 +124,15 @@ try {
     body: JSON.stringify({ yard: { x: 0, y: 0.8, depth: 0, facing: 0, mount: "upright", heightM: 0 } }),
   });
 
+  const beforeLooks = await api("/api/looks");
+  lookSnapshot = { looks: beforeLooks.looks, playlists: beforeLooks.playlists, schedule: beforeLooks.schedule ?? null };
+  const lookName = lookSnapshot.looks[0]?.name;
+  if (!lookName) throw new Error("no Look to play");
+  const withProp = lookSnapshot.looks.map((look, index) => index === 0
+    ? { ...look, propIds: [...new Set([...(look.propIds ?? []), id])] }
+    : look);
+  await api("/api/looks", { method: "PUT", body: JSON.stringify({ ...lookSnapshot, looks: withProp }) });
+
   const browser = await launch();
   const written = [];
   try {
@@ -153,7 +163,11 @@ try {
         await page.getByRole("button", { name: "This prop", pressed: true }).waitFor();
         await page.getByRole("button", { name: "Street" }).click();
         await page.getByRole("button", { name: "Street", pressed: true }).waitFor();
-        await page.waitForTimeout(250);
+        await page.getByLabel("Look").selectOption({ label: lookName });
+        await page.getByText("Preview", { exact: true }).waitFor();
+        await page.getByRole("button", { name: "Play" }).click();
+        await page.getByRole("button", { name: "Stop", pressed: true }).waitFor();
+        await page.waitForTimeout(200);
       }
       await page.getByRole("region", { name: "Yard drawing" }).evaluate((node) => node.scrollIntoView({ block: "start" }));
       await fits(page);
@@ -170,6 +184,9 @@ try {
   }
   console.log(written.join("\n"));
 } finally {
+  if (lookSnapshot) {
+    await api("/api/looks", { method: "PUT", body: JSON.stringify(lookSnapshot) }).catch(() => {});
+  }
   await api(`/api/props/${id}`, { method: "DELETE" }).catch(() => {});
   stopChildren();
 }

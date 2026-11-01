@@ -1,6 +1,7 @@
 "use client";
 
-import { yardCamera, yardLightPositions, type Prop, type YardLight, type YardView } from "@nightplot/shared";
+import { lookFrame, yardCamera, yardLightPositions, yardLiveColour, type Look, type Prop, type PropAttachment, type YardLight, type YardLiveFeed, type YardView } from "@nightplot/shared";
+import { fetchJson } from "@/lib/api";
 import { CameraControls, Grid, type CameraControls as CameraControlsImpl } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -17,14 +18,37 @@ export function Yard3dCanvas({
   props,
   picked,
   onPick,
+  looks,
+  attachments,
+  outputs,
 }: {
   props: Prop[];
   picked: string | null;
   onPick: (propId: string | null) => void;
+  looks: Look[];
+  attachments: PropAttachment[];
+  outputs: { lightId: string; outputId: string; start: number }[];
 }) {
   const [view, setView] = useState<YardView>("street");
   const [ready, setReady] = useState(false);
+  const [lookId, setLookId] = useState("");
+  const [playing, setPlaying] = useState(false);
+  const [feed, setFeed] = useState<YardLiveFeed[]>([]);
+  const [word, setWord] = useState<ColourWord>("section");
   const lights = useMemo(() => coloredLights(props), [props]);
+  const look = looks.find((row) => row.id === lookId) ?? null;
+  useEffect(() => {
+    if (attachments.length === 0) return;
+    let stop = false;
+    const pull = () => {
+      void fetchJson<{ lights: YardLiveFeed[] }>("/api/yard/live")
+        .then((body) => { if (!stop) setFeed(body.lights ?? []); })
+        .catch(() => { if (!stop) setFeed([]); });
+    };
+    const timer = setInterval(pull, 2000);
+    pull();
+    return () => { stop = true; clearInterval(timer); };
+  }, [attachments]);
   return (
     <div className="absolute inset-0" data-yard-3d="view" data-yard-ready={ready ? "yes" : "no"} data-camera={view}>
       <Yard3dBoundary onFail={() => setReady(false)}>
@@ -59,7 +83,17 @@ export function Yard3dCanvas({
             <ringGeometry args={[0.15, 0.22, 40]} />
             <meshBasicMaterial color="#7ee0d0" />
           </mesh>
-          <LightPoints lights={lights} onPick={onPick} />
+          <LightPoints
+            lights={lights}
+            props={props}
+            look={look}
+            playing={playing}
+            attachments={attachments}
+            outputs={outputs}
+            feed={feed}
+            onPick={onPick}
+            onWord={setWord}
+          />
           <Ready onReady={() => setReady(true)} />
         </Canvas>
       </Yard3dBoundary>
@@ -78,6 +112,30 @@ export function Yard3dCanvas({
             {item.label}
           </button>
         ))}
+        <select
+          aria-label="Look"
+          value={lookId}
+          className="pointer-events-auto min-h-11 max-w-40 rounded-lg border border-border bg-[#07080a]/90 px-2 text-base text-foreground"
+          onChange={(event) => {
+            setLookId(event.target.value);
+            setPlaying(false);
+          }}
+        >
+          <option value="">Colours on the prop</option>
+          {looks.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+        </select>
+        <button
+          type="button"
+          aria-pressed={playing}
+          disabled={!look}
+          className="pointer-events-auto min-h-11 rounded-lg border border-border bg-[#07080a]/90 px-3 text-[15px] disabled:opacity-50"
+          onClick={() => setPlaying((value) => !value)}
+        >
+          {playing ? "Stop" : "Play"}
+        </button>
+        {word === "preview" ? <span className="pointer-events-none self-center text-[14px] text-muted-foreground">Preview</span> : null}
+        {word === "live" ? <span className="pointer-events-none self-center text-[14px] text-muted-foreground">From the controller</span> : null}
+        {word === "mixed" ? <span className="pointer-events-none self-center text-[14px] text-muted-foreground">From the controller where it answered. The rest is a preview.</span> : null}
       </div>
     </div>
   );
@@ -103,22 +161,70 @@ function Frame({ view, lights, propId }: { view: YardView; lights: YardLight[]; 
   );
 }
 
-function LightPoints({ lights, onPick }: { lights: ColoredLight[]; onPick: (propId: string | null) => void }) {
+function LightPoints({
+  lights,
+  props,
+  look,
+  playing,
+  attachments,
+  outputs,
+  feed,
+  onPick,
+  onWord,
+}: {
+  lights: ColoredLight[];
+  props: Prop[];
+  look: Look | null;
+  playing: boolean;
+  attachments: PropAttachment[];
+  outputs: { lightId: string; outputId: string; start: number }[];
+  feed: YardLiveFeed[];
+  onPick: (propId: string | null) => void;
+  onWord: (word: ColourWord) => void;
+}) {
   const mesh = useRef<InstancedMesh>(null);
   const dummy = useMemo(() => new Object3D(), []);
   const color = useMemo(() => new Color(), []);
+  const clock = useRef(0);
+  const word = useRef<ColourWord>("section");
+  const lookRef = useRef(look);
+  const playingRef = useRef(playing);
+  const feedRef = useRef(feed);
   useLayoutEffect(() => {
+    lookRef.current = look;
+    playingRef.current = playing;
+    feedRef.current = feed;
+  }, [look, playing, feed]);
+  useLayoutEffect(() => { clock.current = 0; }, [look?.id]);
+  const paint = () => {
     const current = mesh.current;
     if (!current) return;
+    const painted = frameColours({
+      props,
+      lights,
+      look: lookRef.current,
+      t: clock.current,
+      attachments,
+      outputs,
+      feed: feedRef.current,
+    });
     lights.forEach((light, index) => {
       dummy.position.set(light.x, light.y, light.z);
       dummy.updateMatrix();
       current.setMatrixAt(index, dummy.matrix);
-      current.setColorAt(index, color.set(light.color));
+      current.setColorAt(index, color.set(painted.colors[index] ?? light.color));
     });
     current.instanceMatrix.needsUpdate = true;
     if (current.instanceColor) current.instanceColor.needsUpdate = true;
-  }, [lights, dummy, color]);
+    if (painted.word !== word.current) {
+      word.current = painted.word;
+      onWord(painted.word);
+    }
+  };
+  useFrame((_, delta) => {
+    if (playingRef.current) clock.current += delta;
+    paint();
+  });
   if (lights.length === 0) return null;
   return (
     <instancedMesh
@@ -168,6 +274,43 @@ class Yard3dBoundary extends Component<{ children: ReactNode; onFail: () => void
     }
     return this.props.children;
   }
+}
+
+type ColourWord = "section" | "preview" | "live" | "mixed";
+
+function frameColours(input: {
+  props: readonly Prop[];
+  lights: readonly ColoredLight[];
+  look: Look | null;
+  t: number;
+  attachments: readonly PropAttachment[];
+  outputs: readonly { lightId: string; outputId: string; start: number }[];
+  feed: readonly YardLiveFeed[];
+}): { colors: string[]; word: ColourWord } {
+  const preview = input.look ? lookFrame({ look: input.look, props: input.props, t: input.t }) : null;
+  const byKey = new Map(preview?.map((row) => [`${row.propId}:${row.stringId}:${row.index}`, row.color]));
+  let liveCount = 0;
+  let other = 0;
+  const colors = input.lights.map((light) => {
+    const live = yardLiveColour({
+      propId: light.propId,
+      stringId: light.stringId,
+      index: light.index,
+      props: input.props,
+      attachments: input.attachments,
+      outputs: input.outputs,
+      feed: input.feed,
+    });
+    if (live) {
+      liveCount += 1;
+      return live;
+    }
+    other += 1;
+    if (preview) return byKey.get(`${light.propId}:${light.stringId}:${light.index}`) ?? "#000000";
+    return light.color;
+  });
+  const word: ColourWord = liveCount === 0 ? (input.look ? "preview" : "section") : other === 0 ? "live" : "mixed";
+  return { colors, word };
 }
 
 type ColoredLight = YardLight & { color: string };

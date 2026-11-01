@@ -761,6 +761,22 @@ export function createApp(deps: AppDeps) {
     return c.json(payload);
   });
 
+  // Colours the controllers are showing now. A missing read is null.
+  // This does not write, and it is not the Look preview.
+  app.get("/api/yard/live", async (c) => {
+    const ids = [...new Set(deps.store.loadAttachments().map((row) => row.lightId))];
+    const lights = await Promise.all(ids.map(async (lightId) => {
+      const light = deps.store.findById(lightId);
+      if (!light) return { lightId, leds: null };
+      const live = await deps.readLive({ hostname: light.hostname, port: light.port }, light.ledCount);
+      return { lightId, leds: live?.leds ?? null };
+    }));
+    return c.json({
+      lights,
+      caption: "Live colours are what each controller reported just now. A missing read is not the preview.",
+    });
+  });
+
   app.get("/api/discover", (c) =>
     c.json({
       slice: CURRENT_SLICE,

@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { Prop } from "@nightplot/shared";
+import type { Look, Prop, PropAttachment } from "@nightplot/shared";
 import { canShowYard3d } from "./webgl";
 
 const Yard3dCanvas = dynamic(() => import("./view").then((module) => module.Yard3dCanvas), { ssr: false });
@@ -10,10 +10,16 @@ export function Yard3d({
   props,
   picked,
   onPick,
+  looks,
+  attachments,
+  outputs,
 }: {
   props: Prop[];
   picked: string | null;
   onPick: (propId: string | null) => void;
+  looks: Look[];
+  attachments: PropAttachment[];
+  outputs: { lightId: string; outputId: string; start: number }[];
 }) {
   if (!canShowYard3d()) {
     return (
@@ -22,5 +28,5 @@ export function Yard3d({
       </p>
     );
   }
-  return <Yard3dCanvas props={props} picked={picked} onPick={onPick} />;
+  return <Yard3dCanvas props={props} picked={picked} onPick={onPick} looks={looks} attachments={attachments} outputs={outputs} />;
 }
