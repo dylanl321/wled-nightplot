@@ -35,6 +35,8 @@ export type LayoutEdge = {
    * edit on the same run clears it.
    */
   lockedLights?: number;
+  /** Optional position, such as "top" or "left side". Absent on older drawings. */
+  name?: string;
   hiddenCount?: number;
   /** Present for a later arc. Phase 1 draws the straight chord. */
   arc?: { riseM: number };
@@ -74,6 +76,11 @@ export type PropLayout = {
   faces?: LayoutFace[];
   /** Known lights on the real string, when one has been measured. */
   stringLights?: number;
+  /**
+   * Run and corner ids that were deleted. They are not handed out again, so
+   * a section naming a deleted run never lands on a newly traced one.
+   */
+  retiredIds?: string[];
 };
 
 export type CountedEdge = {
@@ -113,6 +120,7 @@ export function isPropLayout(value: unknown): value is PropLayout {
     }
   }
   if (row.stringLights !== undefined && (!Number.isInteger(row.stringLights) || row.stringLights < 0)) return false;
+  if (row.retiredIds !== undefined && (!Array.isArray(row.retiredIds) || !row.retiredIds.every((id) => typeof id === "string"))) return false;
   return true;
 }
 
@@ -133,6 +141,7 @@ function isEdge(value: unknown, ids: Set<string>): value is LayoutEdge {
   if (row.lockedLengthM !== undefined && (!(row.lockedLengthM > 0) || !Number.isFinite(row.lockedLengthM))) return false;
   if (row.hiddenCount !== undefined && (!Number.isInteger(row.hiddenCount) || (row.hiddenCount ?? 0) < 0)) return false;
   if (row.lockedLights !== undefined && (!Number.isInteger(row.lockedLights) || (row.lockedLights ?? 0) < 0)) return false;
+  if (row.name !== undefined && (typeof row.name !== "string" || row.name.trim().length === 0 || row.name.length > 40)) return false;
   return true;
 }
 
@@ -317,6 +326,21 @@ export function setEdgeLights(layout: PropLayout, edgeId: string, lights: number
   return mapEdges(layout, (row) => (row.id === edgeId ? { ...row, lockedLights: lights } : row));
 }
 
+/** A short position name on one run. Blank clears it. The drawing does not move. */
+export function setEdgeName(layout: PropLayout, edgeId: string, name: string): PropLayout {
+  const trimmed = name.trim().slice(0, 40);
+  return mapEdges(layout, (edge) => {
+    if (edge.id !== edgeId) return edge;
+    if (!trimmed) {
+      if (edge.name == null) return edge;
+      const { name: _dropped, ...rest } = edge;
+      return rest;
+    }
+    if (edge.name === trimmed) return edge;
+    return { ...edge, name: trimmed };
+  });
+}
+
 /** Clear a typed light count, so the run counts from its length again. */
 export function clearEdgeLights(layout: PropLayout, edgeId: string): PropLayout {
   return mapEdges(layout, (row) => {
@@ -343,7 +367,9 @@ export function deleteRun(layout: PropLayout, edgeId: string): PropLayout {
       used.add(edge.to);
     }
   }
-  return writeStrings({ ...base, corners: base.corners.filter((corner) => used.has(corner.id)) }, strings);
+  const gone = [edgeId, ...base.corners.filter((corner) => !used.has(corner.id)).map((corner) => corner.id)];
+  const retiredIds = [...new Set([...(base.retiredIds ?? []), ...gone])];
+  return writeStrings({ ...base, retiredIds, corners: base.corners.filter((corner) => used.has(corner.id)) }, strings);
 }
 
 function writeStrings(layout: PropLayout, strings: LayoutString[]): PropLayout {
@@ -501,8 +527,8 @@ export function splitRun(layout: PropLayout, edgeId: string, x: number, y: numbe
   const strings = (base.strings ?? []).map((string) => {
     if (string.id !== owner.id) return string;
     const index = string.run.findIndex((row) => row.id === edgeId);
-    const { lockedLengthM: _length, lockedLights: _lights, ...open } = edge;
-    const first: LayoutEdge = { ...open, to: cornerId };
+    const { lockedLengthM: _length, lockedLights: _lights, name, ...open } = edge;
+    const first: LayoutEdge = name ? { ...open, to: cornerId, name } : { ...open, to: cornerId };
     const second: LayoutEdge = { ...open, id: pieceId, from: cornerId };
     return { ...string, run: [...string.run.slice(0, index), first, second, ...string.run.slice(index + 1)] };
   });
@@ -526,6 +552,46 @@ export function runsOnSameSpan(layout: PropLayout): Map<string, string[]> {
     for (const id of ids) byEdge.set(id, ids);
   }
   return byEdge;
+}
+
+/**
+ * What to say before naming sections. Overlapping runs, runs shorter than
+ * the spacing, and corners that sit close without meeting.
+ */
+export function layoutReview(layout: PropLayout): string[] {
+  const notes: string[] = [];
+  const seen = new Set<string>();
+  let overlaps = 0;
+  for (const ids of runsOnSameSpan(layout).values()) {
+    if (ids.length < 2) continue;
+    const key = [...ids].sort().join("\0");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    overlaps += 1;
+  }
+  if (overlaps === 1) notes.push("1 run lies on top of another.");
+  else if (overlaps > 1) notes.push(`${overlaps} runs lie on top of another.`);
+  const shorts = shortRuns(layout).length;
+  if (shorts === 1) notes.push("1 run is shorter than the light spacing.");
+  else if (shorts > 1) notes.push(`${shorts} runs are shorter than the light spacing.`);
+  const near = nearCorners(layout);
+  if (near === 1) notes.push("1 pair of corners sits close but does not meet.");
+  else if (near > 1) notes.push(`${near} pairs of corners sit close but do not meet.`);
+  return notes;
+}
+
+/** Pairs of corners with a small gap between them, not the same point. */
+export function nearCorners(layout: PropLayout): number {
+  const tolerance = Math.min(0.05, Math.max(layout.pitchM * 0.5, 0.02));
+  let count = 0;
+  const corners = layout.corners;
+  for (let i = 0; i < corners.length; i += 1) {
+    for (let j = i + 1; j < corners.length; j += 1) {
+      const dist = Math.hypot(corners[i]!.x - corners[j]!.x, corners[i]!.y - corners[j]!.y);
+      if (dist > 0.005 && dist <= tolerance) count += 1;
+    }
+  }
+  return count;
 }
 
 /** Lit runs shorter than one light spacing. They still round up to one light. */
@@ -632,7 +698,13 @@ function applyCornerMap(layout: PropLayout, mapId: (id: string) => string): Prop
     }
   }
   const corners = layout.corners.filter((corner) => used.has(corner.id) && mapId(corner.id) === corner.id);
-  return writeStrings({ ...layout, corners }, strings);
+  const kept = new Set([...corners.map((corner) => corner.id), ...strings.flatMap((string) => string.run.map((edge) => edge.id))]);
+  const gone = [
+    ...layout.corners.map((corner) => corner.id),
+    ...(layout.strings ?? []).flatMap((string) => string.run.map((edge) => edge.id)),
+  ].filter((id) => !kept.has(id));
+  const retired = gone.length > 0 ? { retiredIds: [...new Set([...(layout.retiredIds ?? []), ...gone])] } : {};
+  return writeStrings({ ...layout, ...retired, corners }, strings);
 }
 
 export function moveCorner(layout: PropLayout, id: string, x: number, y: number): PropLayout {
@@ -820,7 +892,7 @@ export function layoutFromMeasurements(input: {
         { x: 0, y: 0 },
         { x: toM(params.base ?? 0) / 2, y: toM(params.height ?? 0) },
         { x: toM(params.base ?? 0), y: 0 },
-      ], false);
+      ], params.closed === 1);
     case "stake-row":
       return stakeLayout(toM(params.height ?? 0), Math.round(params.stakes ?? 0), units, pitchM, params);
     case "wireframe":
@@ -1101,7 +1173,7 @@ function normalizeAngle(angle: number): number {
 }
 
 function nextId(layout: PropLayout, prefix: string): string {
-  const used = new Set(layout.corners.map((corner) => corner.id));
+  const used = new Set([...layout.corners.map((corner) => corner.id), ...(layout.retiredIds ?? [])]);
   for (const string of layoutStrings(layout)) {
     used.add(string.id);
     for (const edge of string.run) used.add(edge.id);
@@ -1109,4 +1181,43 @@ function nextId(layout: PropLayout, prefix: string): string {
   let n = 1;
   while (used.has(`${prefix}${n}`)) n += 1;
   return `${prefix}${n}`;
+}
+
+/**
+ * Convert a typed size by `factor`. Metres keep three decimals (to the
+ * millimetre) so feet survive a round trip. Text that is not a number is left alone.
+ */
+export function convertSize(value: string, factor: number, decimals: number): string {
+  if (value.trim() === "") return value;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return value;
+  const scale = 10 ** decimals;
+  return String(Math.round(n * factor * scale) / scale);
+}
+
+/**
+ * Spread a typed total of lights over the lit runs, in proportion to their
+ * lengths: spacing becomes total length ÷ lights, and each run gets a typed
+ * count (largest remainder) so the runs add up to exactly `total`.
+ */
+export function spreadLights(layout: PropLayout, total: number): PropLayout {
+  if (!Number.isInteger(total) || total < 1) return layout;
+  const lit = layoutStrings(layout).flatMap((string) => string.run).filter((edge) => edge.kind === "lit");
+  const lengths = lit.map((edge) => edgeLengthM(layout, edge));
+  const sum = lengths.reduce((a, b) => a + b, 0);
+  if (!(sum > 0)) return layout;
+  const shares = lengths.map((length) => (length / sum) * total);
+  const counts = shares.map((share) => Math.floor(share));
+  let left = total - counts.reduce((a, b) => a + b, 0);
+  const order = shares.map((share, index) => ({ index, rest: share - Math.floor(share) })).sort((a, b) => b.rest - a.rest || a.index - b.index);
+  for (const row of order) {
+    if (left <= 0) break;
+    counts[row.index] = (counts[row.index] ?? 0) + 1;
+    left -= 1;
+  }
+  let next = setPitchM(layout, sum / total);
+  lit.forEach((edge, index) => {
+    next = setEdgeLights(next, edge.id, counts[index]!);
+  });
+  return next;
 }

@@ -121,6 +121,7 @@ import {
   type WledStripProvisionDraft,
   nextPropLabel,
   parsePropKind,
+  pinLookProps,
   parsePropTaps,
   defaultWireframeSpec,
   segmentsFromPropTaps,
@@ -591,6 +592,7 @@ export function createApp(deps: AppDeps) {
     palette: () => settings.read().palette,
     refresh: refreshOne,
     applyDrafts: applyDraftsToController,
+    looks: lookDeps.looks,
     endBlink: async (lightId) => {
       if (live.get(lightId)?.kind !== "blink") return;
       await live.end(lightId, "complete");
@@ -1103,6 +1105,12 @@ export function createApp(deps: AppDeps) {
     const raw = await c.req.json().catch(() => null);
     const row = raw && typeof raw === "object" ? raw as Record<string, unknown> : null;
     const kind = parsePropKind(row?.kind);
+    // Looks made before this prop keep it out until it is ticked in them.
+    {
+      const document = looks.read();
+      const pinned = pinLookProps(document.looks, deps.store.loadProps().map((prop) => prop.id));
+      if (pinned.changed > 0) looks.save({ ...document, looks: pinned.looks });
+    }
     if (kind === "wireframe") {
       const existingProps = deps.store.propsFor(light.id);
       const label = typeof row?.label === "string" && row.label.trim()

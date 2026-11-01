@@ -5,7 +5,9 @@ import {
   describeIndexRanges,
   designFromLayout,
   sectionLightCount,
-  extendEdge,
+  clearEdgeLights,
+  formatLength,
+  setEdgeLights,
   layoutStrings,
   formatTypedRanges,
   parseTypedRanges,
@@ -19,6 +21,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Circle, Group, Line, Text } from "react-konva";
 import { EditorStage, boundsOf as pointBounds, toScreen } from "@/components/canvas";
+import { ColourField } from "@/components/ui/colour-field";
 
 const COLOURS = ["#ffb000", "#3d8bfd", "#ff5a5a", "#3dd68c", "#c084fc", "#38bdf8", "#fb7185", "#fbbf24"];
 
@@ -100,10 +103,17 @@ export function PropSectionsStep({
     commit([...sections, next]);
   }
 
+  // The stepper changes how many lights sit on the edge. The edge keeps its
+  // length, so no corner moves and no other edge changes.
   function nudge(delta: number) {
-    if (!edgeId) return;
-    onLayout(extendEdge(layout, edgeId, delta * layout.pitchM));
+    if (!edgeId || !selected) return;
+    onLayout(setEdgeLights(layout, edgeId, Math.max(0, selected.lights + delta)));
   }
+
+  const selectedEdge = edgeId
+    ? layoutStrings(layout).flatMap((string) => string.run).find((edge) => edge.id === edgeId) ?? null
+    : null;
+  const selectedLength = selectedEdge ? edgeLength(layout, selectedEdge.from, selectedEdge.to) : 0;
 
   function chooseSection(id: string) {
     setActiveId(id);
@@ -128,16 +138,10 @@ export function PropSectionsStep({
               className="min-h-11 w-full rounded-md border border-input bg-[#07080a] px-3 text-base text-foreground outline-none focus:border-primary"
             />
           </label>
-          <label className="flex min-h-11 items-center justify-between gap-3 text-[15px]">
-            Colour
-            <input
-              aria-label="Section colour"
-              type="color"
-              value={active.color ?? "#ffb000"}
-              onChange={(event) => patchActive({ color: event.target.value })}
-              className="h-11 w-16 cursor-pointer rounded-md border border-border bg-transparent"
-            />
-          </label>
+          <div className="flex min-h-11 items-center justify-between gap-3 text-[15px]">
+            <span>Colour</span>
+            <ColourField label="Section colour" value={active.color ?? "#ffb000"} onChange={(color) => patchActive({ color })} />
+          </div>
           <p className="text-[17px] font-medium">{lightsHere === 1 ? "1 light" : `${lightsHere} lights`}</p>
         </div>
       ) : (
@@ -171,10 +175,11 @@ export function PropSectionsStep({
         onEdge={toggle}
       />
       <div className="flex flex-col gap-2 lg:col-start-2">
-        {edgeChoices(layout, active).map((edge) => {
+        {edgeChoices(layout, active).map((edge, index) => {
           const on = active?.edgeIds.includes(edge.id) ?? false;
           const raw = labels.get(edge.id) ?? wellHouseEdgeLabel(edge.id) ?? edge.id;
-          const name = shortEdgeName(raw);
+          // "Edge 2, Right side": the edge's own name, so it does not read as a section name.
+          const name = `Edge ${index + 1}, ${raw.charAt(0).toLowerCase()}${raw.slice(1)}`;
           return (
             <button
               key={edge.id}
@@ -204,6 +209,21 @@ export function PropSectionsStep({
               </div>
             </div>
           ) : null}
+          {selected && selectedLength > 0 ? (
+            <p className="text-[13px] leading-5 text-muted-foreground">
+              {selected.lights === 1 ? "1 light" : `${selected.lights} lights`} on {formatLength(selectedLength, layout.units)}
+              {selected.lights > 0 ? `, about ${(selectedLength / selected.lights * 100).toFixed(1)} cm apart` : ""}.
+              {" "}The edge keeps its length.
+              {selectedEdge?.lockedLights != null ? (
+                <>
+                  {" "}
+                  <button type="button" className="underline underline-offset-4" onClick={() => onLayout(clearEdgeLights(layout, selectedEdge.id))}>
+                    Count from the length again
+                  </button>
+                </>
+              ) : null}
+            </p>
+          ) : null}
           {active ? (
             <label className="flex flex-col gap-2 text-[15px]">
               Light numbers
@@ -216,7 +236,7 @@ export function PropSectionsStep({
               />
             </label>
           ) : null}
-          <p className="text-[13px] leading-5 text-muted-foreground">Type lights by hand when you want a range that stays put. 10-16 includes both ends.</p>
+          <p className="text-[13px] leading-5 text-muted-foreground">Type lights by hand when you want a range that stays put. 10-16 includes both ends. Light numbers start at 0: the light nearest the wire in is light 0, so a 40-light section is 0-39.</p>
           {problem ? <p className="text-[15px] text-destructive">{problem}</p> : null}
           {!problem ? reports.flatMap((row) => row.warnings).filter((warning, index, all) => all.indexOf(warning) === index).map((warning) => (
             <p key={warning} className="text-[15px] text-amber-200">{warning}</p>
@@ -241,6 +261,12 @@ export function PropSectionsStep({
       </div>
     </div>
   );
+}
+
+function edgeLength(layout: PropLayout, fromId: string, toId: string): number {
+  const from = layout.corners.find((corner) => corner.id === fromId);
+  const to = layout.corners.find((corner) => corner.id === toId);
+  return from && to ? Math.hypot(to.x - from.x, to.y - from.y) : 0;
 }
 
 function shortEdgeName(name: string): string {

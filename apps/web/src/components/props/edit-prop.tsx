@@ -4,6 +4,7 @@ import {
   defaultSections,
   isPropLayout,
   layoutFromMeasurements,
+  reconcileSections,
   type Prop,
   type PropLayout,
   type PropMeasurements,
@@ -24,6 +25,7 @@ export function EditProp({ prop, start = "draw" }: { prop: Prop; start?: "draw" 
   const [layout, setLayout] = useState<PropLayout | null>(initial);
   const [sections, setSections] = useState<PropSection[]>(prop.sections ?? (initial ? defaultSections(initial) : []));
   const [rangeError, setRangeError] = useState<string | null>(null);
+  const [pathNote, setPathNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   if (!initial || !layout) {
     return (
@@ -42,6 +44,7 @@ export function EditProp({ prop, start = "draw" }: { prop: Prop; start?: "draw" 
         </header>
         <div className="flex flex-1 flex-col gap-5 overflow-x-hidden px-4 pb-28">
           <h1 className="text-[26px] font-semibold tracking-[-0.01em]">Name the sections</h1>
+          {pathNote ? <p role="status" className="rounded-lg border border-border bg-card px-3 py-2 text-[15px] leading-6">{pathNote}</p> : null}
           <PropSectionsStep
             layout={layout}
             sections={sections}
@@ -69,10 +72,29 @@ export function EditProp({ prop, start = "draw" }: { prop: Prop; start?: "draw" 
         initial={layout}
         mode={prop.kind === "custom" ? "trace" : "edit"}
         doneLabel="Name sections"
-        onBack={() => router.push("/")}
+        backLabel="Save and back"
+        onBack={async (next) => {
+          const res = await patchJson(`/api/props/${prop.id}`, {
+            layout: next,
+            measurements: prop.design?.measurements ?? { shape: "custom" },
+          });
+          if (!res.ok) {
+            setNotice(res.data.message ?? "The drawing was not saved.");
+            return;
+          }
+          router.push("/");
+          router.refresh();
+        }}
         onDone={(next) => {
           setLayout(next);
-          if (sections.length === 0) setSections(defaultSections(next));
+          if (sections.length === 0) {
+            setSections(defaultSections(next));
+            setPathNote(null);
+          } else {
+            const fixed = reconcileSections(next, sections, initial ?? undefined);
+            setSections(fixed.sections);
+            setPathNote(pathChangeNote(fixed.added, fixed.dropped.length));
+          }
           setPhase("sections");
         }}
       />
@@ -95,6 +117,17 @@ export function EditProp({ prop, start = "draw" }: { prop: Prop; start?: "draw" 
     router.push("/");
     router.refresh();
   }
+}
+
+function pathChangeNote(added: string[], dropped: number): string | null {
+  const parts: string[] = [];
+  if (added.length > 0) {
+    parts.push(added.length === 1
+      ? `The path has a new edge, so it has its own section: ${added[0]}. Rename it, or tap the edge to move it into another section.`
+      : `The path has ${added.length} new edges, so each has its own section: ${added.join(", ")}. Rename them, or tap an edge to move it into another section.`);
+  }
+  if (dropped > 0) parts.push(dropped === 1 ? "A deleted edge was taken out of its section." : `${dropped} deleted edges were taken out of their sections.`);
+  return parts.length > 0 ? parts.join(" ") : null;
 }
 
 function layoutFromDesign(prop: Prop): PropLayout | null {

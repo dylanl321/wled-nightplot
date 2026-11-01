@@ -45,7 +45,7 @@ Layout:
 - `apps/web` — Quiet-utility shell (Next.js)
 - `apps/server` — catalogs, Discover/connect, JSON Light store, live / Apply / provision / Safe / All Off / fleet setup
 - `packages/shared` — types and catalogs
-- `docs/ui/` — bead-language prototype. The running shell is the v3 top bar on a wide screen (Lights, LED products, Backups, Looks, Yard, Sync, All Off; Segments and Settings on a Light). On a phone the same destinations sit in a bottom bar (Lights, Looks, Yard, Sync, More) with All Off above it. Find Lights, LED products, Backups, and Settings are under More.
+- `docs/ui/` — bead-language prototype. The running shell is the v3 top bar on a wide screen (Lights, LED products, Backups, Looks, Yard check, Sync, All Off; Segments and Settings on a Light). On a phone the same destinations sit in a bottom bar (Lights, Looks, Yard, Sync, More) with All Off above it. Find Lights, LED products, Backups, and Settings are under More.
 
 The store is `data/lights.json` (controller → outputs → Segments). Setup profiles are `data/setup-profiles.json`. Looks and the nightly Schedule are `data/looks.json`. Yard Fix undo tokens are `data/yard-undo.json`. A season file is an operator download, not a store.
 

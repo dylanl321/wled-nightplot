@@ -8,6 +8,7 @@ import {
   isPropYardPoint,
   parsePropKind,
   parsePropSections,
+  pinLookProps,
   planPropPlacement,
   validateDeclaredRangesForLight,
   defaultWireframeSpec,
@@ -21,6 +22,7 @@ import {
 } from "@nightplot/shared";
 import type { Hono } from "hono";
 import type { FileLightsStore } from "./store/lights-store.ts";
+import type { FileLooksStore } from "./store/looks-store.ts";
 import { persistWireframeOnLight } from "./wireframe-persist.ts";
 
 export type PropSetupDeps = {
@@ -34,6 +36,8 @@ export type PropSetupDeps = {
   ) => Promise<{ status: number; body: Record<string, unknown> }>;
   /** Ends a Blink on this Light when one is open, so Apply is not stuck behind it. */
   endBlink?: (lightId: string) => Promise<void>;
+  /** Looks that may name a prop. Deleting a prop drops its rows here. */
+  looks?: FileLooksStore;
 };
 
 export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
@@ -99,6 +103,12 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     if (!prop.design) {
       return c.json({ error: "invalid-shape", message: "That drawing could not be saved." }, 422);
     }
+    // Looks made before this prop keep it out until it is ticked in them.
+    if (deps.looks) {
+      const document = deps.looks.read();
+      const pinned = pinLookProps(document.looks, deps.store.loadProps().map((row) => row.id));
+      if (pinned.changed > 0) deps.looks.save({ ...document, looks: pinned.looks });
+    }
     deps.store.saveDesignedProp(prop);
     return c.json({
       prop,
@@ -110,6 +120,14 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     const existing = deps.store.loadProps().find((row) => row.id === c.req.param("id"));
     if (!existing) return c.json({ error: "not_found", message: "That prop is not in the yard." }, 404);
     const row = await c.req.json().catch(() => null) as Record<string, unknown> | null;
+    const label = typeof row?.label === "string" ? row.label.trim().slice(0, 64) : null;
+    if (label === "") {
+      return c.json({ error: "invalid", message: "Give the prop a name. Nothing was saved." }, 400);
+    }
+    if (row?.layout === undefined && label) {
+      const renamed = renameProp(deps.store, existing, label);
+      return c.json({ prop: renamed, message: "Renamed in Nightplot. Nothing was sent to a controller." });
+    }
     if (!isPropLayout(row?.layout)) {
       return c.json({ error: "invalid", message: "Send the drawing. Nothing was saved." }, 400);
     }
@@ -124,14 +142,36 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     if (row?.sections !== undefined && !sections) {
       return c.json({ error: "invalid-sections", message: "Those sections could not be read. Nothing was saved." }, 400);
     }
+    const base = label && label !== existing.label ? renameProp(deps.store, existing, label) : existing;
     const prop: Prop = {
-      ...existing,
+      ...base,
       design,
       layout: row.layout,
       ...(sections ? { sections } : {}),
     };
     deps.store.saveDesignedProp(prop);
     return c.json({ prop, message: "Prop saved in Nightplot. Nothing was sent to a controller." });
+  });
+
+  // Delete a designed prop. Its Segments leave Nightplot's store; the
+  // controller keeps whatever it has until the next Apply.
+  app.delete("/api/props/:id", (c) => {
+    const id = c.req.param("id");
+    const existing = deps.store.loadProps().find((row) => row.id === id);
+    if (!existing) return c.json({ error: "not_found", message: "That prop is not in the yard." }, 404);
+    const attached = deps.store.loadAttachments().some((row) => row.propId === id) || Boolean(existing.lightId);
+    const result = deps.store.deleteDesignedProp(id);
+    if (!result || deps.store.loadProps().some((row) => row.id === id)) {
+      return c.json({ error: "readback-mismatch", message: "The yard still has that prop. Nothing was deleted." }, 500);
+    }
+    const looksTouched = deps.looks ? dropPropFromLooks(deps.looks, id) : 0;
+    const parts = [`Deleted ${existing.label} from Nightplot.`];
+    if (looksTouched > 0) parts.push(`Removed it from ${looksTouched === 1 ? "1 Look" : `${looksTouched} Looks`}.`);
+    if (result.movedFollowers > 0) parts.push("The prop after it on that output now starts where it did.");
+    parts.push(attached
+      ? "Nothing was sent. The controller keeps these lights until the next Apply."
+      : "Nothing was sent to a controller.");
+    return c.json({ deleted: id, message: parts.join(" ") });
   });
 
   // Where the prop sits on the yard drawing. Only the point changes; the
@@ -256,6 +296,42 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     const result = await deps.applyDrafts(fresh.light, fresh.live, merged.map(toDraft));
     return c.json({ ...result.body, prop: next, summary: plan.summary }, statusOf(result.status));
   });
+}
+
+/** Rename a prop and the Segments made for it ("Old · Top" becomes "New · Top"). */
+function renameProp(store: FileLightsStore, prop: Prop, label: string): Prop {
+  const next: Prop = { ...prop, label };
+  const lightId = prop.lightId ?? store.loadAttachments().find((row) => row.propId === prop.id)?.lightId;
+  if (lightId && prop.elementIds.length > 0) {
+    const prefix = `${prop.label} · `;
+    const elements = store.elementsFor(lightId).map((element) => {
+      if (!prop.elementIds.includes(element.id)) return element;
+      const side = element.label.startsWith(prefix) ? element.label.slice(prefix.length) : element.label;
+      return { ...element, label: `${label} · ${side}` };
+    });
+    store.replaceElements(lightId, elements);
+  }
+  store.saveDesignedProp(next);
+  return store.loadProps().find((row) => row.id === prop.id) ?? next;
+}
+
+/** Drop every override and inclusion that names this prop. Returns how many Looks changed. */
+function dropPropFromLooks(looks: FileLooksStore, propId: string): number {
+  const document = looks.read();
+  let changed = 0;
+  const next = document.looks.map((look) => {
+    const overrides = look.overrides.filter((row) => row.propId !== propId);
+    const listed = look.propIds?.includes(propId) ?? false;
+    if (overrides.length === look.overrides.length && !listed) return look;
+    changed += 1;
+    return {
+      ...look,
+      overrides,
+      ...(look.propIds ? { propIds: look.propIds.filter((id) => id !== propId) } : {}),
+    };
+  });
+  if (changed > 0) looks.save({ ...document, looks: next });
+  return changed;
 }
 
 function statusOf(status: number): 200 | 409 | 422 | 503 {

@@ -2,6 +2,8 @@
 
 import {
   compilePropDesign,
+  convertSize,
+  spreadLights,
   defaultSections,
   DEFAULT_PITCH_MM,
   emptyTrace,
@@ -29,7 +31,7 @@ const SHAPES: { kind: PropKind; title: string; blurb: string }[] = [
   { kind: "roofline", title: "Roofline", blurb: "One line along the roof" },
   { kind: "window", title: "Window", blurb: "A box around a window" },
   { kind: "arch", title: "Arch", blurb: "A curve between two bases" },
-  { kind: "tree", title: "Mini tree", blurb: "A cone" },
+  { kind: "tree", title: "Mini tree", blurb: "Two sloped sides, or a triangle" },
   { kind: "stake-row", title: "Stake row", blurb: "Uprights in a row" },
   { kind: "wireframe", title: "Well house", blurb: "One string around the walls" },
   { kind: "custom", title: "Draw it", blurb: "Your own line" },
@@ -42,18 +44,23 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
   const [step, setStep] = useState<Step>("name");
   const [name, setName] = useState("");
   const [kind, setKind] = useState<PropKind | null>(null);
-  const [unit, setUnit] = useState<PropLengthUnit>("ft");
+  // Start in the unit used last time. The size fields are not on the first
+  // step, so reading this browser's choice here cannot change the server render.
+  const [start] = useState(() => (readLastUnit() === "m" ? METRIC_START : IMPERIAL_START));
+  const [unit, setUnit] = useState<PropLengthUnit>(start.unit);
   const [spacingCm, setSpacingCm] = useState("10");
   const [productId, setProductId] = useState<string | null>(null);
-  const [length, setLength] = useState("40");
-  const [width, setWidth] = useState("4");
-  const [height, setHeight] = useState("3");
-  const [base, setBase] = useState("3");
+  const [length, setLength] = useState(start.length);
+  const [width, setWidth] = useState(start.width);
+  const [height, setHeight] = useState(start.height);
+  const [base, setBase] = useState(start.base);
   const [stakes, setStakes] = useState("8");
   const [sides, setSides] = useState("4");
-  const [side, setSide] = useState("4");
-  const [postHeight, setPostHeight] = useState("4");
+  const [side, setSide] = useState(start.side);
+  const [postHeight, setPostHeight] = useState(start.side);
   const [postTouched, setPostTouched] = useState(false);
+  const [closedBase, setClosedBase] = useState(false);
+  const [lightCount, setLightCount] = useState("");
   const [startCorner, setStartCorner] = useState<0 | 1 | 2 | 3>(0);
   const [clockwise, setClockwise] = useState(true);
   const [startAtFarEnd, setStartAtFarEnd] = useState(false);
@@ -65,10 +72,34 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /** Switching units converts every size, the same way spacing is converted. */
+  function switchUnit(next: PropLengthUnit) {
+    if (next === unit) return;
+    const factor = next === "m" ? METRES_PER_FOOT : 1 / METRES_PER_FOOT;
+    const convert = (value: string) => convertSize(value, factor, next === "m" ? 3 : 2);
+    setLength(convert);
+    setWidth(convert);
+    setHeight(convert);
+    setBase(convert);
+    setSide(convert);
+    setPostHeight(convert);
+    setUnit(next);
+    writeLastUnit(next);
+  }
+
   const pitchMm = Number(spacingCm) * 10;
   const measurements = useMemo(() => buildMeasurements({
-    kind, length, width, height, base, stakes, sides, side, postHeight,
-  }), [kind, length, width, height, base, stakes, sides, side, postHeight]);
+    kind, length, width, height, base, stakes, sides, side, postHeight, closedBase,
+  }), [kind, length, width, height, base, stakes, sides, side, postHeight, closedBase]);
+  const typedCount = lightCount.trim() === "" ? null : Number(lightCount);
+  const countProblem = typedCount !== null && !(Number.isInteger(typedCount) && typedCount >= 1 && typedCount <= 10000)
+    ? "Type a whole number of lights, or leave it empty."
+    : null;
+
+  /** A typed light count is spread over the runs by length; empty keeps length ÷ spacing. */
+  function withCount(layout: PropLayout): PropLayout {
+    return typedCount !== null && !countProblem ? spreadLights(layout, typedCount) : layout;
+  }
 
   const compiled = kind && kind !== "custom" && measurements
     ? compilePropDesign({
@@ -115,6 +146,10 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
       return;
     }
     if (step === "size") {
+      if (countProblem) {
+        setNotice(countProblem);
+        return;
+      }
       if (!compiled || !compiled.ok) {
         setNotice(compiled && !compiled.ok ? compiled.message : "Check the measurements.");
         return;
@@ -124,11 +159,11 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
         return;
       }
       if (kind === "wireframe" && compiled.ok) {
-        setDrawLayout(compiled.layout);
+        setDrawLayout(withCount(compiled.layout));
         setStep("draw");
         return;
       }
-      if (compiled.ok) openSections(compiled.layout, "size");
+      if (compiled.ok) openSections(withCount(compiled.layout), "size");
     }
   }
 
@@ -217,7 +252,10 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
         initial={drawLayout ?? emptyTrace(unit)}
         mode={kind === "custom" ? "trace" : "edit"}
         doneLabel="Name sections"
-        onBack={() => setStep(kind === "custom" ? "shape" : kind === "wireframe" ? "size" : "origin")}
+        onBack={(layout) => {
+          setDrawLayout(layout);
+          setStep(kind === "custom" ? "shape" : kind === "wireframe" ? "size" : "origin");
+        }}
         onDone={(layout) => openSections(layout, "draw")}
       />
     );
@@ -289,16 +327,17 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
       ) : null}
       {step === "origin" && kind === "roofline" ? (
         <div className="flex flex-col gap-3">
-          <p className="text-[15px] leading-6">The controller plugs in at one end of the roof.</p>
-          <button type="button" className={`min-h-11 rounded-lg border text-base ${!startAtFarEnd ? "border-primary" : "border-border"}`} onClick={() => setStartAtFarEnd(false)}>This end</button>
-          <button type="button" className={`min-h-11 rounded-lg border text-base ${startAtFarEnd ? "border-primary" : "border-border"}`} onClick={() => setStartAtFarEnd(true)}>The far end</button>
+          <p className="text-[15px] leading-6">The controller plugs in at one end of the roof. Stand facing the house: which end does the wire come in?</p>
+          <EndPicture farEnd={startAtFarEnd} />
+          <button type="button" aria-pressed={!startAtFarEnd} className={`min-h-11 rounded-lg border text-base ${!startAtFarEnd ? "border-primary" : "border-border"}`} onClick={() => setStartAtFarEnd(false)}>Left end</button>
+          <button type="button" aria-pressed={startAtFarEnd} className={`min-h-11 rounded-lg border text-base ${startAtFarEnd ? "border-primary" : "border-border"}`} onClick={() => setStartAtFarEnd(true)}>Right end</button>
         </div>
       ) : null}
       {step === "size" && kind && kind !== "custom" ? (
         <div className="flex flex-col gap-4">
           <div className="flex gap-2">
-            <UnitButton active={unit === "ft"} onClick={() => setUnit("ft")}>Feet</UnitButton>
-            <UnitButton active={unit === "m"} onClick={() => setUnit("m")}>Metres</UnitButton>
+            <UnitButton active={unit === "ft"} onClick={() => switchUnit("ft")}>Feet</UnitButton>
+            <UnitButton active={unit === "m"} onClick={() => switchUnit("m")}>Metres</UnitButton>
           </div>
           <SizeFields
             kind={kind}
@@ -326,6 +365,23 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
               setPostHeight(value);
             }}
           />
+          {kind === "tree" ? (
+            <label className="flex min-h-11 items-center gap-3 text-[15px]">
+              <input type="checkbox" className="size-5" checked={closedBase} onChange={(event) => setClosedBase(event.target.checked)} />
+              Lights along the base too (a triangle)
+            </label>
+          ) : null}
+          <label className="flex flex-col gap-2 text-[15px]">
+            How many lights (optional)
+            <input
+              inputMode="numeric"
+              value={lightCount}
+              placeholder={compiled?.ok ? `${compiled.design.ledCount} from the spacing` : ""}
+              onChange={(event) => setLightCount(event.target.value)}
+              className="min-h-11 w-full rounded-md border border-input bg-[#07080a] px-3 text-base text-foreground outline-none focus:border-primary"
+            />
+            <span className="text-[13px] leading-5 text-muted-foreground">Type the count on your string and it is spread over the sides by length. Leave it empty to count from the spacing below.</span>
+          </label>
           <label className="flex flex-col gap-2 text-[15px]">
             {unit === "ft" ? "Light spacing (inches)" : "Light spacing (cm)"}
             <input
@@ -378,7 +434,7 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
           Back
         </Button>
         {step === "origin" ? (
-          <Button type="button" className="min-h-11 flex-1 text-base" onClick={() => { setDrawLayout(drawing()); setStep("draw"); }}>Next</Button>
+          <Button type="button" className="min-h-11 flex-1 text-base" onClick={() => { setDrawLayout(withCount(drawing())); setStep("draw"); }}>Next</Button>
         ) : step === "sections" ? (
           <Button type="button" className="min-h-11 flex-1 text-base" onClick={() => void saveSections()} disabled={busy || Boolean(rangeError) || !sectionLayout}>
             {busy ? "Saving…" : "Save"}
@@ -394,6 +450,21 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
         )}
       </div>
     </div>
+  );
+}
+
+/** A roofline seen from the yard, with the plug at the chosen end. */
+function EndPicture({ farEnd }: { farEnd: boolean }) {
+  const plug = farEnd ? 284 : 36;
+  return (
+    <svg viewBox="0 0 320 96" className="h-24 w-full" role="img" aria-label={farEnd ? "The wire comes in at the right end" : "The wire comes in at the left end"}>
+      <path d="M20 70 L160 22 L300 70" fill="none" stroke="#4a463c" strokeWidth="2" />
+      <line x1="36" y1="70" x2="284" y2="70" stroke="#d4a574" strokeWidth="4" strokeLinecap="round" />
+      <circle cx={plug} cy="70" r="8" fill="#7ee0d0" />
+      <text x={plug} y="92" textAnchor="middle" fontSize="12" fill="#e8e2d6">Wire in</text>
+      <text x="36" y="58" textAnchor="middle" fontSize="11" fill="#8a8478">Left</text>
+      <text x="284" y="58" textAnchor="middle" fontSize="11" fill="#8a8478">Right</text>
+    </svg>
   );
 }
 
@@ -499,6 +570,7 @@ function buildMeasurements(input: {
   sides: string;
   side: string;
   postHeight: string;
+  closedBase?: boolean;
 }): PropMeasurements | null {
   const num = (value: string) => Number(value);
   switch (input.kind) {
@@ -509,7 +581,7 @@ function buildMeasurements(input: {
     case "arch":
       return { shape: "arch", width: num(input.width), height: num(input.height) };
     case "tree":
-      return { shape: "tree", height: num(input.height), base: num(input.base) };
+      return { shape: "tree", height: num(input.height), base: num(input.base), ...(input.closedBase ? { closed: true } : {}) };
     case "stake-row":
       return { shape: "stake-row", stakes: num(input.stakes), height: num(input.height) };
     case "wireframe":
@@ -522,6 +594,30 @@ function buildMeasurements(input: {
       const _never: never = input.kind;
       return _never;
     }
+  }
+}
+
+const UNIT_KEY = "nightplot.propUnit";
+
+const IMPERIAL_START = { unit: "ft" as PropLengthUnit, length: "40", width: "4", height: "3", base: "3", side: "4" };
+/** Round metric sizes, not 3 ft read as 0.914 m. */
+const METRIC_START = { unit: "m" as PropLengthUnit, length: "12", width: "1.2", height: "1", base: "1", side: "1.2" };
+
+function readLastUnit(): PropLengthUnit | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const value = window.localStorage.getItem(UNIT_KEY);
+    return value === "m" || value === "ft" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLastUnit(unit: PropLengthUnit) {
+  try {
+    window.localStorage.setItem(UNIT_KEY, unit);
+  } catch {
+    /* A private window may refuse storage. The unit still switches. */
   }
 }
 

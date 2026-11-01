@@ -8,6 +8,7 @@ import {
   WIREFRAME_GROUPS,
   WLED_TIMEZONES,
   defaultScheduleDraft,
+  lookIncludesProp,
   nextLookSlot,
   propKindLabel,
   resolveLookTarget,
@@ -26,6 +27,7 @@ import {
 } from "@nightplot/shared";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { ColourField } from "@/components/ui/colour-field";
 import { Input } from "@/components/ui/input";
 import { postJson, putJson } from "@/lib/api";
 
@@ -145,7 +147,14 @@ export function LooksPanel({ lights, initial, firstRun = false }: { lights: Ligh
   function addLook() {
     const slot = nextLookSlot(usedSlots);
     if (slot === null) return;
-    const row: Look = { id: newLookId(), name: "New Look", slot, style: blankStyle(), overrides: [] };
+    const row: Look = {
+      id: newLookId(),
+      name: "New Look",
+      slot,
+      style: blankStyle(),
+      overrides: [],
+      propIds: initial.yard.props.map((prop) => prop.id),
+    };
     setLooks((current) => [...current, row]);
     setOpenId(row.id);
     setSavedNote(null);
@@ -210,6 +219,7 @@ export function LooksPanel({ lights, initial, firstRun = false }: { lights: Ligh
                   onAddOverride={(override) => addOverride(row.id, override)}
                   onRemoveOverride={(index) => updateLook(row.id, { overrides: row.overrides.filter((_, item) => item !== index) })}
                   onOverrides={(overrides) => updateLook(row.id, { overrides })}
+                  onPropIds={(propIds) => updateLook(row.id, { propIds })}
                   onRemove={() => { setLooks((current) => current.filter((item) => item.id !== row.id)); setOpenId(null); }}
                 />
               ) : null}
@@ -322,10 +332,12 @@ function LookEditor({
   onAddOverride,
   onRemoveOverride,
   onOverrides,
+  onPropIds,
   onRemove,
 }: {
   look: Look;
   yard: LooksPayload["yard"];
+  onPropIds: (propIds: string[]) => void;
   onName: (name: string) => void;
   onSlot: (slot: number) => void;
   onStyle: (patch: Partial<LookStyle>) => void;
@@ -356,7 +368,8 @@ function LookEditor({
         </label>
       </div>
       <StyleFields label={look.name} style={look.style} onChange={onStyle} />
-      <SectionRows look={look} props={yard.props} onOverrides={onOverrides} />
+      <PropRows look={look} props={yard.props} onPropIds={onPropIds} />
+      <SectionRows look={look} props={yard.props.filter((prop) => lookIncludesProp(look, prop.id))} onOverrides={onOverrides} />
       <div className="flex flex-col gap-2">
         <p className="text-[13px] font-medium">Overrides</p>
         <p className="text-[12px] text-quiet">Whole-yard default applies unless a section, wireframe group, Prop, Prop kind, or Segment overrides it. A section wins, then a face group, then Prop id, then kind, then Segment. A section with none of those keeps its own colour.</p>
@@ -419,6 +432,46 @@ function LookEditor({
   );
 }
 
+/**
+ * Which props this Look lights. A prop left out is off while the Look runs.
+ * A prop added after the Look was made starts left out.
+ */
+function PropRows({
+  look,
+  props,
+  onPropIds,
+}: {
+  look: Look;
+  props: LooksPayload["yard"]["props"];
+  onPropIds: (propIds: string[]) => void;
+}) {
+  if (props.length === 0) return null;
+  const current = look.propIds ?? props.map((prop) => prop.id);
+  function toggle(id: string, on: boolean) {
+    onPropIds(on ? [...current.filter((row) => row !== id), id] : current.filter((row) => row !== id));
+  }
+  return (
+    // A fieldset is min-content wide by default; min-w-0 lets long names truncate on a phone.
+    <fieldset className="flex min-w-0 flex-col gap-1">
+      <legend className="text-[13px] font-medium">Props in this Look</legend>
+      <p className="text-[12px] text-quiet">A prop left out is off while this Look runs. A prop you add later starts left out.</p>
+      <ul className="flex flex-col">
+        {props.map((prop) => (
+          <li key={prop.id}>
+            <label className="flex min-h-11 min-w-0 items-center gap-3 text-[14px]">
+              <input type="checkbox" className="size-5 shrink-0" aria-label={`${prop.label} in this Look`}
+                checked={lookIncludesProp(look, prop.id)}
+                onChange={(event) => toggle(prop.id, event.target.checked)} />
+              <span className="min-w-0 truncate">{prop.label}</span>
+              <span className="min-w-0 shrink truncate text-[12px] text-quiet">{prop.lightName}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+    </fieldset>
+  );
+}
+
 type SectionedProp = Prop & { lightName: string; sections: PropSection[] };
 
 /**
@@ -471,9 +524,7 @@ function SectionRows({
                     <span className="min-w-0 truncate">{section.name}</span>
                     {!touched && section.color ? <span className="text-[12px] text-quiet">section colour</span> : null}
                   </label>
-                  <input type="color" aria-label={`${name} colour`} disabled={off}
-                    className="h-11 w-16 rounded-md border border-border bg-background disabled:opacity-50"
-                    value={style.color} onChange={(event) => set(prop, section, { color: event.target.value })} />
+                  <ColourField label={`${name} colour`} disabled={off} value={style.color} onChange={(color) => set(prop, section, { color })} />
                   <select aria-label={`${name} effect`} disabled={off} className={`${selectClass} min-h-11 disabled:opacity-50`}
                     value={style.fx} onChange={(event) => set(prop, section, { fx: Number(event.target.value) })}>
                     {LOOK_EFFECTS.map((effect) => <option key={effect.fx} value={effect.fx}>{effect.label}</option>)}
@@ -501,16 +552,14 @@ function shown(look: Look, prop: Prop, section: PropSection) {
 function StyleFields({ label, style, onChange }: { label: string; style: LookStyle; onChange: (patch: Partial<LookStyle>) => void }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      <label className="flex flex-col gap-1 text-[14px]">
+      <div className="flex flex-col gap-1 text-[14px]">
         <span className="font-medium">Colour</span>
-        <input aria-label={`${label} colour`} type="color" className="h-10 w-16 rounded-md border border-border bg-background"
-          value={style.color} onChange={(event) => onChange({ color: event.target.value })} />
-      </label>
-      <label className="flex flex-col gap-1 text-[14px]">
+        <ColourField label={`${label} colour`} value={style.color} onChange={(color) => onChange({ color })} />
+      </div>
+      <div className="flex flex-col gap-1 text-[14px]">
         <span className="font-medium">Second colour</span>
-        <input aria-label={`${label} second colour`} type="color" className="h-10 w-16 rounded-md border border-border bg-background"
-          value={style.color2 ?? "#000000"} onChange={(event) => onChange({ color2: event.target.value })} />
-      </label>
+        <ColourField label={`${label} second colour`} value={style.color2 ?? "#000000"} onChange={(color2) => onChange({ color2 })} />
+      </div>
       <label className="flex flex-col gap-1 text-[14px]">
         <span className="font-medium">Effect</span>
         <select aria-label={`${label} effect`} className={selectClass} value={style.fx} onChange={(event) => onChange({ fx: Number(event.target.value) })}>

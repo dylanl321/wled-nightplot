@@ -152,7 +152,7 @@ function measurementParams(measurements: PropMeasurements): Record<string, numbe
     case "arch":
       return { width: measurements.width, height: measurements.height };
     case "tree":
-      return { height: measurements.height, base: measurements.base };
+      return { height: measurements.height, base: measurements.base, ...(measurements.closed ? { closed: 1 } : {}) };
     case "stake-row":
       return { stakes: measurements.stakes, height: measurements.height };
     case "wireframe":
@@ -176,7 +176,7 @@ function edgeNames(measurements: PropMeasurements, layout: PropLayout): string[]
     case "arch":
       return ["Left side", "Right side"];
     case "tree":
-      return ["Left side", "Right side"];
+      return ["Left side", "Right side", "Base"];
     case "stake-row":
       return Array.from({ length: measurements.stakes }, (_, index) => `Stake ${index + 1}`);
     case "wireframe":
@@ -617,4 +617,26 @@ export function propAttachmentLabel(
   if (!attachment || !lightName) return "Not attached";
   if (outputIndex === null) return `${lightName} · output unknown`;
   return `${lightName} · output ${outputIndex + 1}`;
+}
+
+/**
+ * True when a prop built from a template no longer has that template's
+ * edges: a run was deleted or a new one traced. Moving corners or typing
+ * lengths keeps the shape. A drawn prop, or one with no drawing, is never
+ * "changed" here.
+ */
+export function propShapeChanged(prop: Pick<Prop, "kind" | "layout" | "design">): boolean {
+  const layout = prop.layout;
+  const design = prop.design;
+  if (!layout || !design || prop.kind === "custom") return false;
+  const shape = design.measurements.shape;
+  if (shape === "custom" || shape === "legacy") return false;
+  const params = layout.template?.params;
+  if (!params) return false;
+  const template = layoutFromMeasurements({ units: layout.units, pitchM: layout.pitchM, shape, params });
+  if (!template) return false;
+  const ids = (value: PropLayout) => layoutStrings(value).flatMap((string) => string.run).filter((edge) => edge.kind !== "wire").map((edge) => edge.id).sort();
+  const want = ids(template);
+  const have = ids(layout);
+  return want.length !== have.length || want.some((id, index) => id !== have[index]);
 }
