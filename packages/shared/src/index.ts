@@ -497,6 +497,7 @@ export {
   type CountedEdge,
   type LayoutCount,
   type LayoutEdge,
+  convertSize,
   type LayoutCorner,
   type LengthEdit,
   type PropLayout,

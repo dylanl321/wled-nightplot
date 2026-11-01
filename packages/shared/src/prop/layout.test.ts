@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  convertSize,
+  METRES_PER_FOOT,
   addCorner,
   addStringAt,
   closeLoop,
@@ -368,5 +370,15 @@ describe("unit and spacing", () => {
     expect(parsePitchCm("")).toBeNull();
     expect(parsePitchCm("no")).toBeNull();
     expect(setPitchM(layout, 0)).toBe(layout);
+  });
+});
+
+describe("convertSize", () => {
+  it("converts typed feet to metres to the millimetre and back to the same feet", () => {
+    const m = convertSize("3", METRES_PER_FOOT, 3);
+    expect(m).toBe("0.914");
+    expect(convertSize(m, 1 / METRES_PER_FOOT, 2)).toBe("3");
+    expect(convertSize("", 2, 2)).toBe("");
+    expect(convertSize("abc", 2, 2)).toBe("abc");
   });
 });

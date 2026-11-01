@@ -7,6 +7,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- Feet and Metres in New prop (GitHub #125, epic #122): switching the unit on the size step converts every size, as spacing already was (3 ft becomes 0.914 m, and back to 3 ft). The next new prop starts in the unit used last, with round metric sizes in Metres. The choice is kept in this browser only. Not Hardware Done.
+
 - Section light stepper (GitHub #124, epic #122): − / + beside an edge in Sections → Advanced now changes how many lights sit on that edge (the typed count the run list uses). The edge keeps its length, no corner moves, and the edge beside it keeps its count. Before, it moved the edge's far corner one light pitch, so a 2 m side grew to 3 m and a shared apex changed the other side. The row shows the spacing that count gives, and Count from the length again clears it. Not Hardware Done.
 
 - Rename and delete a prop (GitHub #123, epic #122): each prop card on Your yard has Rename and Delete. Rename is `PATCH /api/props/:id` with only `{ label }`; Segments Nightplot made for an attached prop are renamed with it. Delete asks once, then `DELETE /api/props/:id` removes the prop, its attachment, its Nightplot Segments, and every Look override that names it, reads the store back, and says so. A prop that followed it on the same output takes its place. Nothing is sent to a controller; an attached controller keeps its lights until the next Apply. Saving a prop no longer moves it to the end of the list. Not Hardware Done.

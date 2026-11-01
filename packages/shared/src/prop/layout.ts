@@ -961,3 +961,15 @@ function nextId(layout: PropLayout, prefix: string): string {
   while (used.has(`${prefix}${n}`)) n += 1;
   return `${prefix}${n}`;
 }
+
+/**
+ * Convert a typed size by `factor`. Metres keep three decimals (to the
+ * millimetre) so feet survive a round trip. Text that is not a number is left alone.
+ */
+export function convertSize(value: string, factor: number, decimals: number): string {
+  if (value.trim() === "") return value;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return value;
+  const scale = 10 ** decimals;
+  return String(Math.round(n * factor * scale) / scale);
+}
