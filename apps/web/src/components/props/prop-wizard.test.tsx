@@ -17,7 +17,7 @@ describe("New prop wizard", () => {
     expect(screen.getByRole("heading", { name: "Which end is the controller end?" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "This end" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByText(/122 lights/)).toBeTruthy();
+    expect(screen.getByText("122 lights", { selector: "p" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Name sections" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Undo" })).toBeTruthy();
   });
