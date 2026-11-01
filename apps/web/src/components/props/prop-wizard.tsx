@@ -236,7 +236,10 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
         initial={drawLayout ?? emptyTrace(unit)}
         mode={kind === "custom" ? "trace" : "edit"}
         doneLabel="Name sections"
-        onBack={() => setStep(kind === "custom" ? "shape" : kind === "wireframe" ? "size" : "origin")}
+        onBack={(layout) => {
+          setDrawLayout(layout);
+          setStep(kind === "custom" ? "shape" : kind === "wireframe" ? "size" : "origin");
+        }}
         onDone={(layout) => openSections(layout, "draw")}
       />
     );

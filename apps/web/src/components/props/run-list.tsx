@@ -1,6 +1,7 @@
 "use client";
 
 import { countLayout, formatLength, layoutStrings, parseLength, type PropLayout } from "@nightplot/shared";
+import { runBadge, stringLetter } from "./run-labels";
 import { useEffect, useRef, useState } from "react";
 
 export type RunRow = {
@@ -12,6 +13,7 @@ export type RunRow = {
   lights: number;
   typedCount: boolean;
   short: boolean;
+  name: string;
 };
 
 export function runRows(layout: PropLayout): RunRow[] {
@@ -28,6 +30,7 @@ export function runRows(layout: PropLayout): RunRow[] {
         lights: row?.lights ?? 0,
         typedCount: edge.kind === "lit" && edge.lockedLights != null,
         short: edge.kind === "lit" && (row?.lengthM ?? 0) > 0 && (row?.lengthM ?? 0) < layout.pitchM,
+        name: edge.name ?? "",
       };
     }),
   );
@@ -45,7 +48,7 @@ export function RunList({
   onPick,
   onLength,
   onLights,
-  onDelete,
+  onName,
   className,
 }: {
   layout: PropLayout;
@@ -53,7 +56,7 @@ export function RunList({
   onPick: (edgeId: string) => void;
   onLength: (edgeId: string, lengthM: number) => void;
   onLights: (edgeId: string, lights: number | null) => void;
-  onDelete: (edgeId: string) => void;
+  onName: (edgeId: string, name: string) => void;
   className?: string;
 }) {
   const rows = runRows(layout);
@@ -75,17 +78,16 @@ export function RunList({
   return (
     <section aria-label="Runs" className={`overflow-y-auto ${className ?? ""}`}>
       <div className="sticky top-0 bg-background">
-        <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_4.5rem_2.75rem] items-center gap-2 px-3 py-1 text-[12px] text-muted-foreground">
+        <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_4.5rem] items-center gap-2 px-3 py-1 text-[12px] text-muted-foreground">
           <span>Run</span>
           <span>Length ({unit})</span>
           <span>Lights</span>
-          <span className="sr-only">Delete</span>
         </div>
         <p id="run-length-note" className="px-3 text-[12px] leading-4 text-muted-foreground">
           A new length moves that run&apos;s end along the run.
         </p>
         <p id="run-lights-note" className="px-3 pb-1 text-[12px] leading-4 text-muted-foreground">
-          Lights follow round(length ÷ spacing). A number you type here overrides that until the length changes.
+          Lights are worked out from the length and spacing. Type a number to override it until the length changes.
         </p>
       </div>
       <div ref={list} className="flex flex-col">
@@ -94,22 +96,22 @@ export function RunList({
           const lights = group.reduce((sum, row) => sum + row.lights, 0);
           const word = group.length === 1 ? "run" : "runs";
           return (
-            <section key={string.id} aria-label={`String ${stringIndex + 1}`}>
+            <section key={string.id} aria-label={`String ${stringLetter(stringIndex)}`}>
               <h2 className="border-t border-border bg-card/40 px-3 py-2 text-[14px] font-medium">
-                String {stringIndex + 1}: Wire in, {group.length} {word} · {lights} lights
+                String {stringLetter(stringIndex)}: Wire in, {group.length} {word} · {lights} lights
               </h2>
               <ol className="flex flex-col">
                 {group.map((row) => (
                   <RunRowItem
                     key={row.edgeId}
                     row={row}
-                    label={strings.length > 1 ? `String ${stringIndex + 1} · run ${row.order}` : `Run ${row.order}`}
+                    label={runBadge(stringIndex, row.order)}
                     units={layout.units}
                     selected={picked === row.edgeId}
                     onPick={() => onPick(row.edgeId)}
                     onLength={(lengthM) => onLength(row.edgeId, lengthM)}
                     onLights={(lights) => onLights(row.edgeId, lights)}
-                    onDelete={() => onDelete(row.edgeId)}
+                    onName={(name) => onName(row.edgeId, name)}
                   />
                 ))}
               </ol>
@@ -129,7 +131,7 @@ function RunRowItem({
   onPick,
   onLength,
   onLights,
-  onDelete,
+  onName,
 }: {
   row: RunRow;
   label: string;
@@ -138,7 +140,7 @@ function RunRowItem({
   onPick: () => void;
   onLength: (lengthM: number) => void;
   onLights: (lights: number | null) => void;
-  onDelete: () => void;
+  onName: (name: string) => void;
 }) {
   const shownLength = formatLength(row.lengthM, units);
   const shownLights = String(row.lights);
@@ -158,6 +160,12 @@ function RunRowItem({
     setLastLights(shownLights);
     setLights(shownLights);
     setLightsError(null);
+  }
+  const [position, setPosition] = useState(row.name);
+  const [lastName, setLastName] = useState(row.name);
+  if (lastName !== row.name) {
+    setLastName(row.name);
+    setPosition(row.name);
   }
   const lit = row.kind === "lit";
 
@@ -192,9 +200,10 @@ function RunRowItem({
       aria-current={selected ? "true" : undefined}
       className={`border-t border-border ${selected ? "bg-card shadow-[inset_3px_0_0_0_var(--color-primary)]" : ""}`}
     >
-      <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_4.5rem_2.75rem] items-center gap-2 px-3 py-1">
+      <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_4.5rem] items-center gap-2 px-3 py-1">
       <button type="button" className="min-h-11 min-w-0 truncate text-left text-[15px]" onClick={onPick}>
         {label}
+        {row.name ? <span className="text-muted-foreground"> · {row.name}</span> : null}
         {row.kind === "wire" ? <span className="text-muted-foreground"> · dark</span> : null}
         {row.short ? <span className="text-amber-200"> · short</span> : null}
         {row.typedCount ? <span className="text-muted-foreground"> · typed count</span> : null}
@@ -239,10 +248,25 @@ function RunRowItem({
           className={`min-h-11 w-full rounded-md border bg-background px-2 text-base disabled:opacity-50 ${lightsError ? "border-red-400" : row.typedCount ? "border-primary" : "border-input"}`}
         />
       </form>
-      <button type="button" aria-label={`Delete ${label}`} title="Delete run" className="min-h-11 min-w-11 rounded-md text-[18px] text-muted-foreground hover:text-foreground" onClick={onDelete}>
-        ×
-      </button>
       </div>
+      {selected ? (
+        <form
+          className="px-3 pb-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onName(position);
+          }}
+        >
+          <input
+            aria-label={`${label} position name`}
+            value={position}
+            placeholder="Position, such as top"
+            onChange={(event) => setPosition(event.target.value)}
+            onBlur={() => { if (position !== row.name) onName(position); }}
+            className="min-h-11 w-full rounded-md border border-input bg-background px-2 text-base"
+          />
+        </form>
+      ) : null}
       {lengthError || lightsError ? <p className="px-3 pb-2 text-[13px] text-red-400">{lengthError ?? lightsError}</p> : null}
     </li>
   );

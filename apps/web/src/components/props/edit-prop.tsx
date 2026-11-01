@@ -72,7 +72,19 @@ export function EditProp({ prop, start = "draw" }: { prop: Prop; start?: "draw" 
         initial={layout}
         mode={prop.kind === "custom" ? "trace" : "edit"}
         doneLabel="Name sections"
-        onBack={() => router.push("/")}
+        backLabel="Save and back"
+        onBack={async (next) => {
+          const res = await patchJson(`/api/props/${prop.id}`, {
+            layout: next,
+            measurements: prop.design?.measurements ?? { shape: "custom" },
+          });
+          if (!res.ok) {
+            setNotice(res.data.message ?? "The drawing was not saved.");
+            return;
+          }
+          router.push("/");
+          router.refresh();
+        }}
         onDone={(next) => {
           setLayout(next);
           if (sections.length === 0) {
