@@ -219,3 +219,4 @@
   .ye .alloff > div > p:first-child { display: none; }
   .ye .alloff > div > div { width: min(380px, calc(100vw - 24px)); }
 }
+.ye .lightsbox { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }

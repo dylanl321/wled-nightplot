@@ -6,7 +6,16 @@
  * editor shows.
  */
 import {
+  alongRun,
+  clampManualLights,
   clearEdgeLights,
+  lockRunLights,
+  movePlacedLight,
+  placeLight,
+  pointOnRun,
+  removePlacedLight,
+  spaceEvenly,
+  stringLights,
   continueToCorner,
   continueToPoint,
   countLayout,
@@ -36,6 +45,7 @@ import {
   type PropMeasurements,
   type PropSection,
   type InstallGuide,
+  type StringLight,
 } from "@nightplot/shared";
 
 /** The tiles in "Start from". `draw` traces a path by hand. */
@@ -401,7 +411,7 @@ export function litEdges(layout: PropLayout): LayoutEdge[] {
 }
 
 /** One row per lit run, in wiring order, with its name, length and lights. */
-export function runRows(draft: Draft): { edge: LayoutEdge; name: string; lengthM: number; lights: number; typed: boolean }[] {
+export function runRows(draft: Draft): { edge: LayoutEdge; name: string; lengthM: number; lights: number; typed: boolean; placed: boolean }[] {
   const layout = draft.layout;
   if (!layout) return [];
   const counted = new Map(countLayout(layout).edges.map((row) => [row.id, row]));
@@ -412,6 +422,7 @@ export function runRows(draft: Draft): { edge: LayoutEdge; name: string; lengthM
     lengthM: counted.get(edge.id)?.lengthM ?? edgeLengthM(layout, edge),
     lights: counted.get(edge.id)?.lights ?? 0,
     typed: edge.lockedLights != null && draft.count == null,
+    placed: edge.kind === "lit" && edge.manualLights === true,
   }));
 }
 
@@ -472,7 +483,9 @@ export function setRunLength(draft: Draft, edgeId: string, lengthM: number): Dra
     return setSize(draft, key, roundSize(value, draft.layout.units));
   }
   const edited = setEdgeLength(draft.layout, edgeId, lengthM).layout;
-  const layout = clearEdgeLights(edited, edgeId);
+  // Lights put by hand stay where they are (clamped on a shorter run); otherwise the run counts from its new length.
+  const placed = litEdges(edited).some((edge) => edge.id === edgeId && edge.manualLights);
+  const layout = placed ? clampManualLights(edited) : clearEdgeLights(edited, edgeId);
   return withCount({ ...draft, drawn: true, layout });
 }
 
@@ -606,3 +619,82 @@ export function renameForShape(label: string, shape: ShapeId, taken: readonly st
   return nextName(shape, taken.filter((name) => name !== label));
 }
 
+// ---------- one light at a time ----------
+
+/** A light picked on the canvas: its stored id once the run keeps each light, else its place on the run. */
+export type LightPick = { edgeId: string; id: string | null; station: number };
+
+/** Each light's spot, numbered from 0 at the wire-in. */
+export function lightMarks(draft: Draft): StringLight[] {
+  return draft.layout ? stringLights(draft.layout) : [];
+}
+
+function runEnds(layout: PropLayout, edgeId: string) {
+  const edge = litEdges(layout).find((row) => row.id === edgeId);
+  if (!edge || edge.kind !== "lit") return null;
+  const from = layout.corners.find((c) => c.id === edge.from);
+  const to = layout.corners.find((c) => c.id === edge.to);
+  return from && to ? { edge, from, to } : null;
+}
+
+/** How far along a run a point on the canvas sits, in metres from the run's start. */
+export function alongRunAt(draft: Draft, edgeId: string, x: number, y: number): number | null {
+  const ends = draft.layout ? runEnds(draft.layout, edgeId) : null;
+  return ends ? alongRun(ends.from, ends.to, { x, y }) : null;
+}
+
+export function pointAlongRun(draft: Draft, edgeId: string, alongM: number): { x: number; y: number } | null {
+  const ends = draft.layout ? runEnds(draft.layout, edgeId) : null;
+  return ends ? pointOnRun(ends.from, ends.to, alongM) : null;
+}
+
+/** A light count spread over the whole prop is frozen run by run before one light is moved by hand. */
+function freeze(draft: Draft): Draft {
+  if (!draft.layout || draft.count == null) return draft;
+  let layout = draft.layout;
+  for (const row of runRows(draft)) layout = setEdgeLights(layout, row.edge.id, row.lights);
+  return { ...draft, count: null, layout };
+}
+
+/** The stored id of a picked light, storing the run's lights first if they are still evenly spaced. */
+function lockedPick(draft: Draft, pick: LightPick): { layout: PropLayout; id: string } | null {
+  if (!draft.layout) return null;
+  const layout = lockRunLights(draft.layout, pick.edgeId);
+  const edge = litEdges(layout).find((row) => row.id === pick.edgeId);
+  const lights = [...(edge?.lights ?? [])].sort((a, b) => a.alongM - b.alongM || (a.id < b.id ? -1 : 1));
+  const id = pick.id && lights.some((light) => light.id === pick.id) ? pick.id : lights[pick.station]?.id ?? null;
+  return id ? { layout, id } : null;
+}
+
+/** Slide one light along its run. The run then keeps each light where it is put. */
+export function moveRunLight(draft: Draft, pick: LightPick, alongM: number): { draft: Draft; id: string | null } {
+  const frozen = freeze(draft);
+  const locked = lockedPick(frozen, pick);
+  if (!locked) return { draft, id: null };
+  return { draft: { ...frozen, drawn: true, layout: movePlacedLight(locked.layout, pick.edgeId, locked.id, alongM) }, id: locked.id };
+}
+
+/** Add a light at a spot on a run. Returns the new light's id. */
+export function addRunLight(draft: Draft, edgeId: string, alongM: number): { draft: Draft; id: string | null } {
+  const frozen = freeze(draft);
+  if (!frozen.layout) return { draft, id: null };
+  const before = new Set((litEdges(frozen.layout).find((row) => row.id === edgeId)?.lights ?? []).map((light) => light.id));
+  const layout = placeLight(frozen.layout, edgeId, alongM);
+  if (layout === frozen.layout) return { draft, id: null };
+  const added = (litEdges(layout).find((row) => row.id === edgeId)?.lights ?? []).find((light) => !before.has(light.id));
+  return { draft: { ...frozen, drawn: true, layout }, id: added?.id ?? null };
+}
+
+export function removeRunLight(draft: Draft, pick: LightPick): Draft {
+  const frozen = freeze(draft);
+  const locked = lockedPick(frozen, pick);
+  if (!locked) return draft;
+  return { ...frozen, layout: removePlacedLight(locked.layout, pick.edgeId, locked.id) };
+}
+
+/** Keep every light on the run, and spread them evenly along it. */
+export function spaceRunEvenly(draft: Draft, edgeId: string): Draft {
+  if (!draft.layout) return draft;
+  const layout = spaceEvenly(draft.layout, edgeId);
+  return layout === draft.layout ? draft : { ...draft, layout };
+}

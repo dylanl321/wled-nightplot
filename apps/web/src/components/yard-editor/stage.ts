@@ -59,7 +59,25 @@ export type Scene = {
   fmtLen: (m: number) => string;
   /** Prop canvas only: where lights go when putting the string up. */
   guide?: DrawGuide | null;
+  /** Prop canvas only, zoomed in: every light as a numbered dot, in the prop's frame. */
+  dots?: LightDot[] | null;
 };
+
+export type LightDot = { edgeId: string; id: string | null; station: number; x: number; y: number; label: string; selected: boolean };
+
+/** One spacing, in pixels, before numbered dots are drawn. */
+export const LIGHT_DOT_MIN_PX = 16;
+
+/**
+ * Dots appear once a spacing is at least 16 px. While the whole prop still
+ * fits on screen they wait until a spacing is large enough to grab (64 px),
+ * so a fitted drawing stays the line and the labels.
+ */
+export function showLightDots(pitchM: number, ppm: number, fits: boolean): boolean {
+  const px = pitchM * ppm;
+  if (px < LIGHT_DOT_MIN_PX) return false;
+  return !fits || px >= 64;
+}
 
 export type Colours = Record<"canvas" | "grid" | "gridStrong" | "pick" | "quiet" | "fg" | "card" | "input" | "lit" | "primary", string>;
 
@@ -148,6 +166,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, view: View, scene: Scen
   const labels: LabelBox[] = [];
   if (inProp) {
     for (const p of scene.props) drawProp(ctx, view, scene, c, p, 1, true, false, labels);
+    if (scene.dots) drawDots(ctx, view, c, scene.dots);
     if (scene.guide) for (const p of scene.props) drawGuide(ctx, view, c, p, scene.guide);
   } else {
     const ordered = [...scene.props].sort((a, b) => Number(a.id === scene.selectedId) - Number(b.id === scene.selectedId));
@@ -296,7 +315,37 @@ function drawGuide(ctx: CanvasRenderingContext2D, view: View, c: Colours, p: Dra
   ctx.restore();
 }
 
+function drawDots(ctx: CanvasRenderingContext2D, view: View, c: Colours, dots: readonly LightDot[]) {
+  const { sx, sy, W, H } = view;
+  ctx.save();
+  ctx.font = "10px var(--font-plex-mono), 'IBM Plex Mono', monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (const d of dots) {
+    const x = sx(d.x), y = sy(d.y);
+    if (x < -20 || x > W + 20 || y < -20 || y > H + 20) continue;
+    const r = d.selected ? 9 : 7;
+    ctx.fillStyle = d.selected ? c.fg : c.canvas;
+    ctx.strokeStyle = d.selected ? c.fg : c.lit;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = d.selected ? c.canvas : c.fg;
+    ctx.fillText(d.label, x, y + 0.5);
+  }
+  ctx.restore();
+}
+
 // ---------- hit tests ----------
+
+/** The light dot under the pointer, nearest first. */
+export function hitDot(view: View, dots: readonly LightDot[], px: number, py: number, slop = 14): LightDot | null {
+  let best: { d: LightDot; dist: number } | null = null;
+  for (const d of dots) {
+    const dist = Math.hypot(view.sx(d.x) - px, view.sy(d.y) - py);
+    if (dist < slop && (!best || dist < best.dist)) best = { d, dist };
+  }
+  return best?.d ?? null;
+}
 
 function distSeg(px: number, py: number, ax: number, ay: number, bx: number, by: number): [number, number] {
   const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy;

@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { Prop } from "@nightplot/shared";
 import {
   addPoint,
+  addRunLight,
+  lightMarks,
+  moveRunLight,
+  removeRunLight,
+  spaceRunEvenly,
   addSection,
   draftFromProp,
   lightTotal,
@@ -107,5 +112,58 @@ describe("yard editor drafts", () => {
     expect(opened.shape).toBe("triangle");
     expect(opened.drawn).toBe(false);
     expect(opened.sizes).toEqual({ base: 2, height: 2 });
+  });
+});
+
+describe("single lights on a run", () => {
+  const line = () => startFrom(newDraft("Line 1"), "line", "m", 0.1);
+
+  it("adds a light where the run is tapped, and Space evenly keeps it", () => {
+    const d = line();
+    const run = runRows(d)[0]!;
+    const before = run.lights;
+    const added = addRunLight(d, run.edge.id, 0.33);
+    expect(added.id).not.toBeNull();
+    const placed = runRows(added.draft)[0]!;
+    expect(placed.lights).toBe(before + 1);
+    expect(placed.placed).toBe(true);
+    const spaced = spaceRunEvenly(added.draft, run.edge.id);
+    expect(runRows(spaced)[0]!.lights).toBe(before + 1);
+    expect(runRows(spaced)[0]!.placed).toBe(false);
+  });
+
+  it("slides one light and leaves the rest", () => {
+    const d = line();
+    const run = runRows(d)[0]!;
+    const marks = lightMarks(d).filter((m) => m.edgeId === run.edge.id);
+    const moved = moveRunLight(d, { edgeId: run.edge.id, id: null, station: 0 }, 0.01);
+    expect(moved.id).not.toBeNull();
+    const after = lightMarks(moved.draft).filter((m) => m.edgeId === run.edge.id);
+    expect(after).toHaveLength(marks.length);
+    expect(Math.min(...after.map((m) => m.alongM))).toBeCloseTo(0.01, 5);
+  });
+
+  it("removes the picked light", () => {
+    const d = line();
+    const run = runRows(d)[0]!;
+    const fewer = removeRunLight(d, { edgeId: run.edge.id, id: null, station: 2 });
+    expect(runRows(fewer)[0]!.lights).toBe(run.lights - 1);
+  });
+
+  it("freezes a whole-prop light count before one light moves", () => {
+    const d = setCount(startFrom(newDraft("Triangle 1"), "triangle", "m", 0.1), 50);
+    const total = lightTotal(d.layout);
+    const run = runRows(d)[0]!;
+    const added = addRunLight(d, run.edge.id, 0.2);
+    expect(added.draft.count).toBeNull();
+    expect(lightTotal(added.draft.layout)).toBe(total + 1);
+  });
+
+  it("keeps placed lights when the run's length is typed", () => {
+    const d = line();
+    const run = runRows(d)[0]!;
+    const added = addRunLight(d, run.edge.id, 0.33).draft;
+    const longer = setRunLength(added, run.edge.id, run.lengthM + 1);
+    expect(runRows(longer)[0]!.lights).toBe(run.lights + 1);
   });
 });

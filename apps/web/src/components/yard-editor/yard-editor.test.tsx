@@ -55,11 +55,25 @@ describe("YardEditor", () => {
     }));
   });
 
-  it("shows the yard with its props and Looks", () => {
+  it("shows the yard with its props, and opens a Look on the Looks page", () => {
     setup();
     expect(screen.getByRole("heading", { name: "Your yard" })).toBeTruthy();
     expect(screen.getAllByRole("button", { name: /Peak/ }).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: /Warm white/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Warm white/ }).getAttribute("href")).toBe("/looks/warm");
+  });
+
+  it("says when a prop is in no Look and links to Add to Looks", () => {
+    setup();
+    const add = screen.getAllByRole("link", { name: "Add to Looks…" });
+    expect(add[0]!.getAttribute("href")).toBe("/looks?add=peak");
+  });
+
+  it("switches the yard to Street and back", () => {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Street" }));
+    expect(screen.getByRole("img", { name: "Yard from the street" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "2D" }));
+    expect(screen.queryByRole("img", { name: "Yard from the street" })).toBeNull();
   });
 
   it("builds a new prop on a clean canvas, saves it, and asks where to place it", async () => {
@@ -84,14 +98,5 @@ describe("YardEditor", () => {
     expect(screen.getByText(/Leave without saving/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     expect(screen.getByRole("heading", { name: "Peak" })).toBeTruthy();
-  });
-
-  it("switches a prop on in a Look and saves the Looks", async () => {
-    setup({ query: { look: "warm" } });
-    fireEvent.click(screen.getAllByRole("button", { name: /Peak/ })[0]!);
-    fireEvent.click(screen.getByRole("button", { name: "Switch on in this Look" }));
-    await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/api/looks"))).toBe(true), { timeout: 2000 });
-    const put = calls.find((c) => c.method === "PUT");
-    expect((put?.body as LooksDocument).looks[0]!.propIds).toEqual(["peak"]);
   });
 });

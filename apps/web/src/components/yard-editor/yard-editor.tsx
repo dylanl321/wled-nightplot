@@ -77,16 +77,26 @@ import {
   totalLengthM,
   traceTo,
   updateSection,
+  addRunLight,
+  alongRunAt,
+  lightMarks,
+  moveRunLight,
+  pointAlongRun,
+  removeRunLight,
+  spaceRunEvenly,
   type Draft,
+  type LightPick,
   type SizeKey,
 } from "./model";
 import {
   drawScene,
   fitBox,
   hitCorner,
+  hitDot,
   hitProp,
   hitRun,
   readColours,
+  showLightDots,
   View,
   visibleRect,
   zoomAt,
@@ -94,6 +104,7 @@ import {
   type DrawEdge,
   type DrawGuide,
   type DrawProp,
+  type LightDot,
 } from "./stage";
 import "./yard-editor.css";
 
@@ -165,6 +176,10 @@ export function YardEditor(init: YardEditorProps) {
     allRuns: false,
     tool: "move" as Tool,
     selRun: null as string | null,
+    /** A single light picked on the prop canvas, and where it is while it is dragged. */
+    selLight: null as LightPick | null,
+    slide: null as (LightPick & { alongM: number }) | null,
+    dotsOn: false,
     activeSection: null as string | null,
     lensSection: null as string | null,
     confirmDelete: false,
@@ -286,9 +301,63 @@ export function YardEditor(init: YardEditorProps) {
       sectionRuns: section,
       fmtLen,
       guide: inProp() ? drawGuideFor(s.draft) : null,
+      dots: inProp() ? lightDots() : null,
     }, coloursRef.current, size.current.dpr);
+    // The run panel says whether the dots are showing; zooming changes that without a React render.
+    const dotsNow = inProp() && dotsShown();
+    if (dotsNow !== s.dotsOn) {
+      s.dotsOn = dotsNow;
+      if (s.selRun) render();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** Whole prop on screen: dots wait for a bigger zoom so a fitted drawing stays readable. */
+  function draftFits(d: Draft): boolean {
+    if (!d.layout) return true;
+    const b = layoutBox(d.layout);
+    const vw = view();
+    const { W, H } = size.current;
+    return vw.sx(b.minX) >= 0 && vw.sx(b.maxX) <= W && vw.sy(b.maxY) >= 0 && vw.sy(b.minY) <= H;
+  }
+
+  function dotsShown(): boolean {
+    const d = s.draft;
+    return Boolean(d?.layout && !s.activeSection && showLightDots(d.layout.pitchM, s.cam.ppm, draftFits(d)));
+  }
+
+  /** Every light as a numbered dot, from 0 at the wire-in, once zoomed in. */
+  function lightDots(): LightDot[] | null {
+    const d = s.draft;
+    if (!d || !dotsShown()) return null;
+    const byEdge = new Map<string, ReturnType<typeof lightMarks>>();
+    for (const mark of lightMarks(d)) byEdge.set(mark.edgeId, [...(byEdge.get(mark.edgeId) ?? []), mark]);
+    const dots: LightDot[] = [];
+    const same = (a: LightPick | null, edgeId: string, id: string | null, station: number) =>
+      Boolean(a && a.edgeId === edgeId && (a.id != null ? a.id === id : a.station === station));
+    for (const [edgeId, row] of byEdge) {
+      const shown = row.map((mark, station) => {
+        if (!s.slide || !same(s.slide, edgeId, mark.id, station)) return { mark, station };
+        const at = pointAlongRun(d, edgeId, s.slide.alongM);
+        return { mark: at ? { ...mark, alongM: s.slide.alongM, x: at.x, y: at.y } : mark, station };
+      });
+      const order = [...shown].sort((a, b) => a.mark.alongM - b.mark.alongM || a.station - b.station);
+      const first = Math.min(...row.map((mark) => mark.index));
+      for (const item of shown) {
+        dots.push({
+          edgeId,
+          id: item.mark.id,
+          station: item.station,
+          x: item.mark.x,
+          y: item.mark.y,
+          // Counted from 1 at the wire-in, like the section ranges and the install guide on this page.
+          label: String(first + order.indexOf(item) + 1),
+          selected: same(s.selLight, edgeId, item.mark.id, item.station),
+        });
+      }
+    }
+    return dots;
+  }
 
   function guideShown(d: Draft | null): boolean {
     if (!d) return false;
@@ -690,6 +759,7 @@ export function YardEditor(init: YardEditorProps) {
     | { kind: "pan"; cam: Camera; px: number; py: number; moved: boolean; onTap?: () => void; deselect?: boolean }
     | { kind: "prop"; id: string; ox: number; oy: number; wx: number; wy: number; px: number; py: number; moved: boolean; pushed: boolean }
     | { kind: "corner"; id: string; px: number; py: number; moved: boolean }
+    | { kind: "light"; pick: LightPick; px: number; py: number; moved: boolean }
     | { kind: "ghost"; gx: number; gy: number; wx: number; wy: number; px: number; py: number; moved: boolean };
   const dragRef = useRef<Drag | null>(null);
   const pointers = useRef(new Map<number, { px: number; py: number }>());
@@ -723,7 +793,12 @@ export function YardEditor(init: YardEditorProps) {
     pointers.current.set(e.pointerId, { px, py });
     if (pointers.current.size === 2) {
       const drag = dragRef.current;
-      if (drag?.kind === "corner" && !drag.moved) s.dpast.pop();
+      // A second finger means pinch: whatever the first finger was dragging goes back.
+      if (drag?.kind === "corner") {
+        const before = s.dpast.pop();
+        if (drag.moved && before) s.draft = JSON.parse(before) as Draft;
+      }
+      if (drag?.kind === "light") s.slide = null;
       if (drag?.kind === "prop" && drag.pushed) {
         const q = s.props.find((x) => x.id === drag.id);
         if (q) q.yard = { x: drag.ox, y: drag.oy };
@@ -806,6 +881,16 @@ export function YardEditor(init: YardEditorProps) {
       dragRef.current = { kind: "corner", id: ci, ...start };
       return;
     }
+    const dots = s.tool === "move" ? lightDots() : null;
+    const dot = dots ? hitDot(vw, dots, px, py) : null;
+    if (dot) {
+      const pick = { edgeId: dot.edgeId, id: dot.id, station: dot.station };
+      s.selLight = pick;
+      s.selRun = dot.edgeId;
+      dragRef.current = { kind: "light", pick, ...start };
+      render();
+      return;
+    }
     let onTap: (() => void) | undefined;
     if (s.activeSection && hr) onTap = () => edit((x) => toggleRunInSection(x, s.activeSection!, hr.id));
     else if (hr && s.tool === "split") {
@@ -824,8 +909,21 @@ export function YardEditor(init: YardEditorProps) {
         s.selRun = made.newEdgeId;
         render();
       };
+    } else if (hr && dots && s.selRun === hr.id) {
+      // Zoomed in on the selected run: a tap puts a light there.
+      onTap = () => {
+        if (!s.draft) return;
+        const along = alongRunAt(s.draft, hr.id, vw.wx(px), vw.wy(py));
+        if (along == null) return;
+        const made = addRunLight(s.draft, hr.id, along);
+        if (!made.id) return;
+        edit(() => made.draft);
+        s.selLight = { edgeId: hr.id, id: made.id, station: 0 };
+        render();
+      };
     } else if (hr) {
       onTap = () => {
+        if (s.selLight?.edgeId !== hr.id) s.selLight = null;
         s.selRun = hr.id;
         s.activeSection = null;
         if (s.phone) s.sheet = "";
@@ -842,8 +940,9 @@ export function YardEditor(init: YardEditorProps) {
       };
     } else {
       onTap = () => {
-        if (s.selRun) {
+        if (s.selRun || s.selLight) {
           s.selRun = null;
+          s.selLight = null;
           render();
         }
       };
@@ -905,6 +1004,14 @@ export function YardEditor(init: YardEditorProps) {
       draw();
       return;
     }
+    if (drag.kind === "light" && s.draft) {
+      const along = alongRunAt(s.draft, drag.pick.edgeId, vw.wx(px), vw.wy(py));
+      if (along == null) return;
+      s.slide = { ...drag.pick, alongM: along };
+      showCoords(px, py, `${fmtLen(along)} along the run`);
+      draw();
+      return;
+    }
     if (drag.kind === "corner" && s.draft) {
       const x = snapV(vw.wx(px)), y = snapV(vw.wy(py));
       s.draft = dragCorner(s.draft, drag.id, x, y);
@@ -925,6 +1032,20 @@ export function YardEditor(init: YardEditorProps) {
     const drag = dragRef.current;
     dragRef.current = null;
     if (!drag) return;
+    if (drag.kind === "light") {
+      const slide = s.slide;
+      s.slide = null;
+      if (e.type !== "pointercancel" && drag.moved && slide && s.draft) {
+        const made = moveRunLight(s.draft, drag.pick, slide.alongM);
+        if (made.id) {
+          edit(() => made.draft);
+          s.selLight = { ...drag.pick, id: made.id };
+        }
+      }
+      render();
+      requestAnimationFrame(draw);
+      return;
+    }
     if (e.type === "pointercancel") return;
     if (drag.kind === "ghost") {
       if (!drag.moved && s.placing) {
@@ -1071,9 +1192,13 @@ export function YardEditor(init: YardEditorProps) {
       if (inProp()) {
         if (e.key === "Escape") {
           if (s.activeSection) s.activeSection = null;
+          else if (s.selLight) s.selLight = null;
           else if (s.selRun) s.selRun = null;
           else return cancelProp();
           render();
+        } else if ((e.key === "Delete" || e.key === "Backspace") && s.selLight) {
+          e.preventDefault();
+          removeLight();
         } else if ((e.key === "Delete" || e.key === "Backspace") && s.selRun) {
           e.preventDefault();
           const id = s.selRun;
@@ -1623,6 +1748,14 @@ export function YardEditor(init: YardEditorProps) {
     );
   }
 
+  function removeLight() {
+    const pick = s.selLight;
+    if (!pick) return;
+    s.selLight = null;
+    edit((x) => removeRunLight(x, pick));
+    requestAnimationFrame(draw);
+  }
+
   function runEditor(d: Draft, r: ReturnType<typeof runRows>[number]) {
     const step = s.units === "ft" ? 0.0254 : 0.05;
     const stepText = s.units === "ft" ? "1 in" : "5 cm";
@@ -1643,6 +1776,19 @@ export function YardEditor(init: YardEditorProps) {
           <label className="f">&nbsp;
             <button type="button" className="btn danger" onClick={() => { const id = r.edge.id; s.selRun = null; edit((x) => removeRun(x, id)); }}>Delete run</button>
           </label>
+        </div>
+        <div className="lightsbox">
+          <h2>Single lights</h2>
+          {dotsShown() ? (
+            <p className="note">{tapWord()} the run to add a light. Drag a numbered light along the run. Light 1 is next to the wire-in.</p>
+          ) : (
+            <p className="note">Zoom in on the run to see each light as a numbered dot, then drag one or {tapWord().toLowerCase()} the run to add one.</p>
+          )}
+          {r.placed ? <p className="note">These lights stay where you put them. Space evenly again keeps all {r.lights} and spreads them along the run.</p> : null}
+          <div className="btnrow">
+            <button type="button" className="btn" disabled={s.selLight?.edgeId !== r.edge.id} onClick={removeLight}>Remove light</button>
+            <button type="button" className="btn" disabled={!r.placed} onClick={() => { s.selLight = null; edit((x) => spaceRunEvenly(x, r.edge.id)); requestAnimationFrame(draw); }}>Space evenly again</button>
+          </div>
         </div>
         <p className="note">
           {r.typed ? <>Lights set by hand. <button type="button" className="btn link" onClick={() => edit((x) => countRunFromLength(x, r.edge.id))}>Count from length</button></> : "Lights follow the length."}{" "}
