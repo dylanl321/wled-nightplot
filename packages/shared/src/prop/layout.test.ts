@@ -124,6 +124,8 @@ describe("scaling and typed length", () => {
     expect(edited.layout.corners.map((corner) => corner.x)).toEqual([0, 1, 3, 4]);
     expect(edited.layout.run[1]?.lockedLengthM).toBe(2);
     expect(edited.layout.run[0]?.lockedLengthM).toBe(1);
+    const only = setEdgeLength(layout, "e2", 2, { onlyPoint: true });
+    expect(only.layout.corners.map((corner) => corner.x)).toEqual([0, 1, 3, 3]);
   });
 
   it("lets the closing edge absorb, and shows a gap when that edge is locked", () => {

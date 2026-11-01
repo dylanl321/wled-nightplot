@@ -127,6 +127,29 @@ describe("tool state machine", () => {
     expect(edit.state.gesture).toBe("idle");
   });
 
+  it("types a length, tabs to the angle, and Enter asks to place it", () => {
+    const tracing = initialTool("trace");
+    let step = reduceTool(tracing, { type: "key", key: "6", typing: false, meta: false, chainPoints: 2 });
+    expect(step.state.gesture).toBe("lengthEntry");
+    for (const key of ["'", " ", "4", "\""]) {
+      step = reduceTool(step.state, { type: "key", key, typing: false, meta: false, chainPoints: 2 });
+    }
+    expect(step.state.lengthDraft).toBe("6' 4\"");
+    step = reduceTool(step.state, { type: "key", key: "Tab", typing: false, meta: false, chainPoints: 2 });
+    expect(step.state.entryField).toBe("angle");
+    step = reduceTool(step.state, { type: "key", key: "4", typing: false, meta: false, chainPoints: 2 });
+    step = reduceTool(step.state, { type: "key", key: "5", typing: false, meta: false, chainPoints: 2 });
+    expect(step.state.angleDraft).toBe("45");
+    step = reduceTool(step.state, { type: "key", key: "Enter", typing: false, meta: false, chainPoints: 2 });
+    expect(step.effect.type).toBe("commitLength");
+    expect(step.state.lengthDraft).toBe("6' 4\"");
+    step = reduceTool(step.state, { type: "key", key: "Escape", typing: false, meta: false, chainPoints: 2 });
+    expect(step.effect.type).toBe("clearLength");
+    expect(step.state.gesture).toBe("tracing");
+    step = reduceTool(step.state, { type: "key", key: "Escape", typing: false, meta: false, chainPoints: 2 });
+    expect(step.effect.type).toBe("finishChain");
+  });
+
   it("reads point and run names off the canvas", () => {
     expect(hitFromShape("np:point:c1", { tailId: "c2", wireInIds: ["c1"], onlyPoint: false })).toEqual(wireIn);
     expect(hitFromShape("np:point:c2", { tailId: "c2", wireInIds: ["c1"], onlyPoint: false })).toEqual(tail);

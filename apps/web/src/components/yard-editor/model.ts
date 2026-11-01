@@ -503,14 +503,14 @@ export function sizeForRun(draft: Draft, edgeId: string): SizeKey | null {
 }
 
 /** Type a run's length (metres). */
-export function setRunLength(draft: Draft, edgeId: string, lengthM: number): Draft {
+export function setRunLength(draft: Draft, edgeId: string, lengthM: number, options?: { onlyPoint?: boolean }): Draft {
   if (!draft.layout || !(lengthM > 0)) return draft;
   const key = sizeForRun(draft, edgeId);
-  if (key) {
+  if (key && !options?.onlyPoint) {
     const value = draft.layout.units === "ft" ? lengthM / METRES_PER_FOOT : lengthM;
     return setSize(draft, key, roundSize(value, draft.layout.units));
   }
-  const edited = setEdgeLength(draft.layout, edgeId, lengthM).layout;
+  const edited = setEdgeLength(draft.layout, edgeId, lengthM, options).layout;
   // Lights put by hand stay where they are (clamped on a shorter run); otherwise the run counts from its new length.
   const placed = litEdges(edited).some((edge) => edge.id === edgeId && edge.manualLights);
   const layout = placed ? clampManualLights(edited) : clearEdgeLights(edited, edgeId);

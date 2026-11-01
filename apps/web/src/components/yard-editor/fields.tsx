@@ -17,7 +17,7 @@ export function CommitField({
   ...rest
 }: {
   value: string;
-  onCommit: (text: string) => void;
+  onCommit: (text: string, alt?: boolean) => void;
   /** Called on every keystroke (names update the drawing as you type). */
   onLive?: (text: string) => void;
   selectOnFocus?: boolean;
@@ -62,7 +62,7 @@ export function CommitField({
         fresh.current = false;
         if (event.key === "Enter") {
           event.preventDefault();
-          onCommit(event.currentTarget.value);
+          onCommit(event.currentTarget.value, event.altKey);
         }
         if (event.key === "Escape") {
           setText(value);

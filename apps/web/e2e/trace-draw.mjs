@@ -104,6 +104,25 @@ try {
     const lights = await page.locator("#ye-count").inputValue();
     expect("header count", lights === "20", lights);
     console.log("ok desktop trace");
+    const lengthPage = await desktop.newPage();
+    const opened = await openDraw(lengthPage);
+    await lengthPage.mouse.click(opened.at.x, opened.at.y);
+    await lengthPage.waitForFunction(() => window.__yard?.draft?.layout?.corners?.length === 1);
+    const origin = await corner(lengthPage);
+    const aim = await screenOf(lengthPage, opened.box, { x: origin.x + 2, y: origin.y + 0.05 });
+    await lengthPage.mouse.move(aim.x, aim.y);
+    await lengthPage.keyboard.type("6' 4\"");
+    await lengthPage.locator("#ye-length").waitFor();
+    const typed = await lengthPage.locator("#ye-length").inputValue();
+    expect("length field", typed === "6' 4\"", typed);
+    await lengthPage.waitForFunction(() => {
+      const guides = window.__yard?.guides ?? [];
+      return guides.some((guide) => guide.kind === "align" || guide.kind === "angle");
+    });
+    await lengthPage.screenshot({ path: `${shots}/trace-desktop-length.png` });
+    await lengthPage.keyboard.press("Enter");
+    await lengthPage.waitForFunction(() => (window.__yard?.draft?.layout?.strings?.[0]?.run?.length ?? 0) === 1);
+    console.log("ok desktop length");
   } catch (error) {
     failed += 1;
     console.error(String(error));
@@ -122,7 +141,12 @@ try {
     await touchTap(hand, next);
     await hand.getByRole("button", { name: "A1" }).waitFor();
     const end = await corner(hand);
-    const hover = await screenOf(hand, box, { x: end.x + 0.5, y: end.y + 0.8 });
+    const tailScreen = await screenOf(hand, box, end);
+    await hand.evaluate(() => { window.__yard.snapOn = false; });
+    const hover = {
+      x: Math.min(box.x + box.width - 28, tailScreen.x + 90),
+      y: Math.min(box.y + box.height * 0.62, tailScreen.y + 110),
+    };
     await hand.mouse.move(hover.x, hover.y);
     await hand.waitForFunction(() => {
       const node = document.getElementById("ye-trace");
