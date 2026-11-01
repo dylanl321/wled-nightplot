@@ -230,7 +230,11 @@ try {
         await page.locator("[data-yard-ready=yes]").waitFor();
         await page.getByRole("button", { name: "Street" }).click();
         await page.getByRole("button", { name: "Street", pressed: true }).waitFor();
-        await page.waitForTimeout(300);
+        await page.getByLabel("Look").selectOption({ label: lookName });
+        await page.getByText("Preview", { exact: true }).waitFor();
+        await page.getByRole("button", { name: "Play" }).click();
+        await page.getByRole("button", { name: "Stop", pressed: true }).waitFor();
+        await page.waitForTimeout(400);
       }
       await page.getByRole("region", { name: "Yard drawing" }).evaluate((node) => node.scrollIntoView({ block: "start" }));
       await fits(page);

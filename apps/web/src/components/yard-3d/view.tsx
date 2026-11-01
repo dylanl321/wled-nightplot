@@ -2,10 +2,23 @@
 
 import { defaultHouse, dragOnGround, lookFrame, snapRoofline, toggleYardMount, turnYardPoint, yardCamera, yardLightPositions, yardLiveColour, yardPlacements, type Look, type Prop, type PropAttachment, type PropYardPoint, type YardHouse, type YardLight, type YardLiveFeed, type YardView } from "@nightplot/shared";
 import { fetchJson } from "@/lib/api";
-import { CameraControls, Grid, type CameraControls as CameraControlsImpl } from "@react-three/drei";
+import { CameraControls, Grid, PerformanceMonitor, type CameraControls as CameraControlsImpl } from "@react-three/drei";
+import { EffectComposer, SelectiveBloom } from "@react-three/postprocessing";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Color, DoubleSide, ExtrudeGeometry, Object3D, Plane, Raycaster, Shape, Vector2, Vector3, type InstancedMesh } from "three";
+
+function allowsGlow(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
+    const info = gl?.getExtension("WEBGL_debug_renderer_info");
+    const renderer = info && gl ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "";
+    return !/swiftshader|llvmpipe|softpipe/i.test(renderer);
+  } catch {
+    return false;
+  }
+}
 
 const WARM = "#d4a574";
 const VIEWS: { id: YardView; label: string }[] = [
@@ -33,6 +46,9 @@ export function Yard3dCanvas({
 }) {
   const [view, setView] = useState<YardView>("street");
   const [ready, setReady] = useState(false);
+  const [glow, setGlow] = useState(allowsGlow);
+  const [dpr, setDpr] = useState(1.25);
+  const [pageVisible, setPageVisible] = useState(true);
   const [lookId, setLookId] = useState("");
   const [playing, setPlaying] = useState(false);
   const [feed, setFeed] = useState<YardLiveFeed[]>([]);
@@ -44,6 +60,7 @@ export function Yard3dCanvas({
   const framed = useMemo(() => coloredLights(props), [props]);
   const pickedPoint = yardPlacements(shown).find((row) => row.propId === picked)?.at;
   const controlsRef = useRef<CameraControlsImpl>(null);
+  const lightMesh = useRef<InstancedMesh>(null);
   const houseRef = useRef(house);
   const saveHouseRef = useRef<(next: YardHouse | null) => Promise<void>>(async () => {});
   const dragRef = useRef<{ propId: string; from: { x: number; z: number }; point: PropYardPoint; at: PropYardPoint } | null>(null);
@@ -67,6 +84,11 @@ export function Yard3dCanvas({
     onPick(propId);
   }
   const look = looks.find((row) => row.id === lookId) ?? null;
+  useEffect(() => {
+    const onChange = () => setPageVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", onChange);
+    return () => document.removeEventListener("visibilitychange", onChange);
+  }, []);
   useEffect(() => {
     let stop = false;
     void fetchJson<{ house: YardHouse | null }>("/api/yard-scene")
@@ -109,8 +131,9 @@ export function Yard3dCanvas({
       <Yard3dBoundary onFail={() => setReady(false)}>
         <Canvas
           className="touch-none"
+          frameloop={pageVisible ? "always" : "never"}
           camera={{ fov: 45, position: [0, 1.6, 6], near: 0.05, far: 200 }}
-          dpr={[1, 1.5]}
+          dpr={dpr}
           gl={{ antialias: true, alpha: false, powerPreference: "low-power" }}
           onPointerMissed={() => onPick(null)}
           onCreated={({ gl, camera }) => {
@@ -131,6 +154,10 @@ export function Yard3dCanvas({
           }}
         >
           <color attach="background" args={["#07080a"]} />
+          <PerformanceMonitor
+            onDecline={() => { setDpr(1); setGlow(false); }}
+            onIncline={() => setDpr(1.25)}
+          />
           <Frame view={view} lights={framed} propId={picked} controlsRef={controlsRef} />
           <mesh
             rotation={[-Math.PI / 2, 0, 0]}
@@ -175,7 +202,13 @@ export function Yard3dCanvas({
             <meshBasicMaterial color="#7ee0d0" />
           </mesh>
           {house ? <HouseShape house={house} /> : null}
+          {glow && lights.length > 0 ? (
+            <EffectComposer>
+              <SelectiveBloom selection={lightMesh} intensity={1.1} luminanceThreshold={0} mipmapBlur />
+            </EffectComposer>
+          ) : null}
           <LightPoints
+            meshRef={lightMesh}
             lights={lights}
             props={props}
             look={look}
@@ -276,6 +309,7 @@ function LightPoints({
   onDrop,
   ground,
   groundHit,
+  meshRef,
 }: {
   lights: ColoredLight[];
   props: Prop[];
@@ -290,6 +324,7 @@ function LightPoints({
   onDrop: () => void;
   ground: Plane;
   groundHit: Vector3;
+  meshRef: { current: InstancedMesh | null };
 }) {
   const mesh = useRef<InstancedMesh>(null);
   const dummy = useMemo(() => new Object3D(), []);
@@ -308,6 +343,7 @@ function LightPoints({
   const paint = () => {
     const current = mesh.current;
     if (!current) return;
+    meshRef.current = current;
     const painted = frameColours({
       props,
       lights,
