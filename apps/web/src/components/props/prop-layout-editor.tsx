@@ -15,6 +15,7 @@ import {
   gridScaleLabel,
   gridSizeM,
   isClosed,
+  layoutReview,
   layoutStrings,
   mergeShortRuns,
   moveCorner,
@@ -22,6 +23,7 @@ import {
   runsOnSameSpan,
   setEdgeLength,
   setEdgeLights,
+  setEdgeName,
   setLayoutUnits,
   setPitchM,
   shortRuns,
@@ -61,6 +63,7 @@ export function PropLayoutEditor({
   initial,
   mode: initialMode,
   doneLabel = "Done",
+  backLabel = "Back",
   onDone,
   onBack,
 }: {
@@ -68,8 +71,9 @@ export function PropLayoutEditor({
   initial: PropLayout;
   mode: EditorMode;
   doneLabel?: string;
+  backLabel?: string;
   onDone: (layout: PropLayout) => void;
-  onBack: () => void;
+  onBack: (layout: PropLayout) => void | Promise<void>;
 }) {
   const [layout, setLayout] = useState(initial);
   const [mode, setMode] = useState<EditorMode>(initialMode);
@@ -83,6 +87,8 @@ export function PropLayoutEditor({
   const [picked, setPicked] = useState<string | null>(null);
   const [splitting, setSplitting] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [review, setReview] = useState<string[] | null>(null);
+  const [leaving, setLeaving] = useState(false);
   const [activeString, setActiveString] = useState(layoutStrings(initial)[0]?.id ?? "s1");
   const [dark, setDark] = useState(false);
   const [placing, setPlacing] = useState(false);
@@ -96,6 +102,12 @@ export function PropLayoutEditor({
   const stage = useRef<EditorStageHandle>(null);
   const layoutRef = useRef(layout);
   const keyRef = useRef<(event: KeyboardEvent) => void>(() => {});
+
+  useEffect(() => {
+    const previous = document.title;
+    document.title = name;
+    return () => { document.title = previous; };
+  }, [name]);
 
   useEffect(() => {
     layoutRef.current = layout;
@@ -198,6 +210,30 @@ export function PropLayoutEditor({
     if (next !== layoutRef.current) commit(next);
   }
 
+  function applyName(edgeId: string, edgeName: string) {
+    const next = setEdgeName(layoutRef.current, edgeId, edgeName);
+    if (next !== layoutRef.current) commit(next);
+  }
+
+  async function leave() {
+    setLeaving(true);
+    try {
+      await onBack(ensureStrings(layoutRef.current));
+    } finally {
+      setLeaving(false);
+    }
+  }
+
+  function askDone() {
+    const next = ensureStrings(layoutRef.current);
+    const notes = layoutReview(next);
+    if (notes.length === 0) {
+      onDone(next);
+      return;
+    }
+    setReview(notes);
+  }
+
   function applyLights(edgeId: string, lights: number | null) {
     commit(lights == null ? clearEdgeLights(layoutRef.current, edgeId) : setEdgeLights(layoutRef.current, edgeId, lights));
   }
@@ -259,6 +295,27 @@ export function PropLayoutEditor({
       return;
     }
     finishTrace(continueToPoint(layoutRef.current, activeString, point.x, point.y, dark ? "wire" : "lit"));
+  }
+
+  function splitPickedOrArm() {
+    setPlacing(false);
+    setMode("edit");
+    const edgeId = pickedRef.current;
+    if (edgeId) {
+      const edge = layoutStrings(layoutRef.current).flatMap((string) => string.run).find((row) => row.id === edgeId);
+      const from = edge ? layoutRef.current.corners.find((corner) => corner.id === edge.from) : undefined;
+      const to = edge ? layoutRef.current.corners.find((corner) => corner.id === edge.to) : undefined;
+      if (from && to) {
+        const split = splitRun(layoutRef.current, edgeId, (from.x + to.x) / 2, (from.y + to.y) / 2);
+        if (split.cornerId) {
+          setSplitting(false);
+          setSelected(split.cornerId);
+          commit(split.layout, "Added a point on the run.");
+          return;
+        }
+      }
+    }
+    setSplitting((value) => !value);
   }
 
   function joinNearby() {
@@ -337,11 +394,11 @@ export function PropLayoutEditor({
     <div className="flex h-dvh max-h-dvh w-full max-w-full flex-col bg-background max-lg:portrait:overflow-y-auto lg:flex-row lg:overflow-hidden max-lg:landscape:flex-row max-lg:landscape:overflow-hidden">
       <div className="flex w-full min-w-0 flex-col bg-background max-lg:portrait:shrink-0 lg:min-h-0 lg:flex-1 lg:overflow-hidden max-lg:landscape:min-h-0 max-lg:landscape:flex-1 max-lg:landscape:overflow-hidden">
         <header className="flex h-14 shrink-0 items-center gap-1 bg-background px-1">
-          <button type="button" className="min-h-11 shrink-0 px-3 text-[16px]" onClick={onBack}>Back</button>
+          <button type="button" className="min-h-11 shrink-0 px-3 text-[16px]" onClick={() => void leave()}>{leaving ? "Saving…" : backLabel}</button>
           <h1 className="min-w-0 flex-1 truncate text-[17px] font-medium">{name}</h1>
         </header>
         <p className={`shrink-0 bg-background px-4 text-[15px] ${short ? "text-amber-200" : "text-foreground"}`}>{totalText}</p>
-        <p className="shrink-0 bg-background px-4 pb-2 text-[14px] leading-5 text-muted-foreground">{editorHint(mode, dark, placing)}</p>
+        <p className="shrink-0 bg-background px-4 pb-2 text-[14px] leading-5 text-muted-foreground">{editorHint(mode, dark, placing, splitting)}</p>
         {note ? <p className="shrink-0 bg-background px-4 pb-2 text-[14px] text-amber-200">{note}</p> : null}
         {gap ? <p className="bg-background px-4 text-[14px] text-red-400">{gap}</p> : null}
         <div className="relative h-[45dvh] min-h-[45dvh] w-full min-w-0 overflow-hidden bg-background lg:h-auto lg:min-h-0 lg:flex-1 max-lg:landscape:h-auto max-lg:landscape:min-h-0 max-lg:landscape:flex-1">
@@ -386,6 +443,8 @@ export function PropLayoutEditor({
               const spots = placeRunLabels(
                 drawn.map((run) => ({ ax: run.a.x, ay: run.a.y, bx: run.b.x, by: run.b.y })),
                 [...wireIns, { x: size.w - 28, y: 22 }, { x: size.w - 28, y: 72 }],
+                28,
+                { w: size.w, h: size.h },
               );
               return (
               <>
@@ -533,7 +592,7 @@ export function PropLayoutEditor({
         onPick={setPicked}
         onLength={applyLength}
         onLights={applyLights}
-        onDelete={removeRun}
+        onName={applyName}
       />
       <div className="flex flex-wrap items-center gap-2 border-t border-border bg-background px-2 py-2">
         <div role="group" aria-label="Length unit" className="flex gap-1">
@@ -545,21 +604,35 @@ export function PropLayoutEditor({
       <div className="flex gap-2 bg-background px-2 pb-2">
         <DockButton onClick={undo} disabled={past.length === 0}>Undo</DockButton>
         <DockButton onClick={redo} disabled={future.length === 0}>Redo</DockButton>
-        <DockButton onClick={() => setSnap((value) => !value)} pressed={snap} solid>Snap</DockButton>
-        <DockButton onClick={() => picked && removeRun(picked)} disabled={!picked}>Delete</DockButton>
+        <DockButton onClick={() => setSnap((value) => !value)} pressed={snap}>Snap</DockButton>
+        <DockButton onClick={() => picked && removeRun(picked)} disabled={!picked}>{pickedLabel(layout, picked) ? `Delete ${pickedLabel(layout, picked)}` : "Delete"}</DockButton>
       </div>
       <div className="flex gap-2 bg-background px-2 pb-2">
-        <DockButton onClick={() => { setSplitting((value) => !value); setPlacing(false); setMode("edit"); }} pressed={splitting} solid>Add point</DockButton>
+        <DockButton onClick={() => splitPickedOrArm()} pressed={splitting}>Add point</DockButton>
         <DockButton onClick={joinNearby}>Join</DockButton>
       </div>
       <div className="flex gap-2 bg-background px-2 pb-2">
         <DockButton onClick={() => { setDark((value) => !value); setPlacing(false); }} pressed={dark}>Mark dark</DockButton>
         <DockButton onClick={() => { setPlacing((value) => !value); setMode("trace"); setSplitting(false); }} pressed={placing}>Add another string</DockButton>
       </div>
+      <p className="px-3 pb-1 text-[12px] leading-4 text-muted-foreground">
+        Arrow keys nudge the selected corner. Delete removes the selected run. Ctrl+Z or Cmd+Z undoes.
+      </p>
       <div className="flex gap-2 border-t border-border bg-background px-3 py-3">
-        <Button type="button" variant="outline" className="min-h-12 flex-1 text-base" onClick={onBack}>Back</Button>
-        <Button type="button" className="min-h-12 flex-1 text-base" onClick={() => onDone(ensureStrings(layout))}>{doneLabel}</Button>
+        <Button type="button" className="min-h-12 flex-1 text-base" onClick={askDone}>{doneLabel}</Button>
       </div>
+      {review ? (
+        <div className="border-t border-amber-500/60 bg-card px-3 py-3" role="dialog" aria-label="Check the drawing">
+          <p className="text-[14px]">Before naming sections:</p>
+          <ul className="mt-1 list-disc pl-5 text-[14px] text-amber-200">
+            {review.map((line) => <li key={line}>{line}</li>)}
+          </ul>
+          <div className="mt-3 flex gap-2">
+            <Button type="button" variant="outline" className="min-h-11 flex-1" onClick={() => setReview(null)}>Stay</Button>
+            <Button type="button" className="min-h-11 flex-1" onClick={() => { setReview(null); onDone(ensureStrings(layoutRef.current)); }}>Continue</Button>
+          </div>
+        </div>
+      ) : null}
       </aside>
     </div>
   );
@@ -569,16 +642,17 @@ function runCount(layout: PropLayout): number {
   return layoutStrings(layout).reduce((sum, string) => sum + string.run.length, 0);
 }
 
-function editorHint(mode: EditorMode, dark: boolean, placing: boolean): string {
+function editorHint(mode: EditorMode, dark: boolean, placing: boolean, splitting: boolean): string {
   if (placing) return "Tap where the new string's wire comes in.";
   if (dark) return "The next run is dark: the wire jumps and no lights are on it.";
-  if (mode === "edit") return "Drag a corner to move it. Snap keeps it on the grid. Drag empty space to pan. Fit shows the whole drawing.";
-  return "Continue from where the wire comes in. Tap a corner to run there, or empty space for a new point. Drag to pan.";
+  if (splitting) return "Add point is on. Tap a run to split it there.";
+  if (mode === "edit") return "Edit moves corners. Drag a corner. Add point splits a run. Join welds corners that sit on each other.";
+  return "Trace adds runs from the wire-in. Tap empty space for a new point, or a corner to run there. Edit moves, splits, and joins.";
 }
 
 function ModeButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: string }) {
   return (
-    <button type="button" onClick={onClick} className={`min-h-11 rounded-lg border bg-background/90 px-3 text-[15px] ${active ? "border-primary bg-card" : "border-border"}`} aria-pressed={active}>
+    <button type="button" onClick={onClick} className={`min-h-11 rounded-lg border px-3 text-[15px] ${active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background/90"}`} aria-pressed={active}>
       {children}
     </button>
   );
@@ -622,10 +696,10 @@ function SpacingField({ pitchM, onPitch }: { pitchM: number; onPitch: (pitchM: n
   );
 }
 
-function DockButton({ onClick, disabled, pressed, solid, children }: { onClick: () => void; disabled?: boolean; pressed?: boolean; solid?: boolean; children: string }) {
-  const filled = Boolean(pressed && solid);
+function DockButton({ onClick, disabled, pressed, children }: { onClick: () => void; disabled?: boolean; pressed?: boolean; children: string }) {
+  const filled = Boolean(pressed);
   return (
-    <button type="button" onClick={onClick} disabled={disabled} aria-pressed={pressed} className={`min-h-11 min-w-11 flex-1 rounded-lg border px-1 text-[14px] ${filled ? "border-primary bg-primary text-primary-foreground" : pressed ? "border-primary" : "border-border"} disabled:opacity-40`}>
+    <button type="button" onClick={onClick} disabled={disabled} aria-pressed={pressed} className={`min-h-11 min-w-11 flex-1 whitespace-nowrap rounded-lg border px-1 text-[13px] ${filled ? "border-primary bg-primary text-primary-foreground" : pressed ? "border-primary" : "border-border"} disabled:opacity-40`}>
       {children}
     </button>
   );
@@ -648,6 +722,16 @@ function shiftEnds(a: Point, b: Point, shift: number): { a: Point; b: Point; nx:
     ny,
     shift,
   };
+}
+
+function pickedLabel(layout: PropLayout, edgeId: string | null): string | null {
+  if (!edgeId) return null;
+  const strings = layoutStrings(layout);
+  for (let index = 0; index < strings.length; index += 1) {
+    const at = strings[index]!.run.findIndex((edge) => edge.id === edgeId);
+    if (at >= 0) return runBadge(index, at + 1);
+  }
+  return null;
 }
 
 function lengthCaption(lengthM: number, units: PropLayout["units"], lights: number): string {

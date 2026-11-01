@@ -158,7 +158,7 @@ async function useCaseUnits(page, viewport) {
   await page.goto(`${webOrigin}/props/${prop.id}/edit`, { waitUntil: "domcontentloaded" });
   const frame = page.getByTestId("layout-canvas");
   await frame.locator("canvas").first().waitFor({ timeout: 20000 });
-  const length = page.getByLabel("Run 1 length (ft)");
+  const length = page.getByLabel("A1 length (ft)");
   await hydrated(length);
   await waitForValue(length, "4'", "units start");
   expect("scale", (await page.getByTestId("grid-scale").innerText()) === "1 square = 1 ft", await page.getByTestId("grid-scale").innerText());
@@ -171,9 +171,9 @@ async function useCaseUnits(page, viewport) {
   mkdirSync("/opt/cursor/artifacts", { recursive: true });
   await page.screenshot({ path: `/opt/cursor/artifacts/editor-units-${viewport.name}.png`, fullPage: true });
   await page.getByRole("button", { name: "Metres" }).click();
-  await waitForValue(page.getByLabel("Run 1 length (m)"), "1.30", "units metres");
+  await waitForValue(page.getByLabel("A1 length (m)"), "1.30", "units metres");
   await page.getByRole("button", { name: "Feet" }).click();
-  await waitForValue(page.getByLabel("Run 1 length (ft)"), "4' 3\"", "units back to feet");
+  await waitForValue(page.getByLabel("A1 length (ft)"), "4' 3\"", "units back to feet");
   const after = (await api("/api/props")).props.find((row) => row.id === prop.id);
   expect("unsaved unit change leaves stored corners", after.layout.corners[1].x === fourFeet().corners[1].x, after.layout.corners);
 }
@@ -215,13 +215,13 @@ async function useCaseGeometry(page, viewport) {
   await page.goto(`${webOrigin}/props/${prop.id}/edit`, { waitUntil: "domcontentloaded" });
   const frame = page.getByTestId("layout-canvas");
   await frame.locator("canvas").first().waitFor({ timeout: 20000 });
-  await hydrated(page.getByLabel("Run 1 length (m)"));
+  await hydrated(page.getByLabel("A1 length (m)"));
   expect("short run", (await page.getByText(/shorter than the light spacing/).count()) === 1, "banner missing");
-  const length = page.getByLabel("Run 1 length (m)");
+  const length = page.getByLabel("A1 length (m)");
   await length.fill("nope");
   await length.press("Enter");
   await page.getByText("Enter a length in metres, greater than zero.").waitFor();
-  await waitForValue(page.getByLabel("Run 1 lights"), "20", "bad length keeps the count");
+  await waitForValue(page.getByLabel("A1 lights"), "20", "bad length keeps the count");
   // The backtrack shares the run. A second click on it selects the other one.
   const mid = await screenOf(frame, { x: 1, y: 0 });
   await drag(page, viewport, mid, mid, 1);
@@ -232,8 +232,6 @@ async function useCaseGeometry(page, viewport) {
   mkdirSync("/opt/cursor/artifacts", { recursive: true });
   await page.screenshot({ path: `/opt/cursor/artifacts/editor-geometry-${viewport.name}.png`, fullPage: true });
   await page.getByRole("button", { name: "Add point" }).click();
-  const splitAt = await screenOf(frame, { x: 1, y: 0 });
-  await drag(page, viewport, splitAt, splitAt, 1);
   await page.getByText(/4 runs/).waitFor();
   await page.getByRole("button", { name: "Join" }).click();
   await page.getByText("Joined corners that sat on each other.").waitFor();
@@ -269,8 +267,8 @@ async function useCaseReadability(page, viewport) {
   await page.goto(`${webOrigin}/props/${created.prop.id}/edit`, { waitUntil: "domcontentloaded" });
   const frame = page.getByTestId("layout-canvas");
   await frame.locator("canvas").first().waitFor({ timeout: 20000 });
-  await hydrated(page.getByRole("heading", { name: /String 1: Wire in, 1 run · 20 lights/ }));
-  await page.getByRole("heading", { name: /String 2: Wire in, 1 run · 10 lights/ }).waitFor();
+  await hydrated(page.getByRole("heading", { name: /String A: Wire in, 1 run · 20 lights/ }));
+  await page.getByRole("heading", { name: /String B: Wire in, 1 run · 10 lights/ }).waitFor();
   if (viewport.touch && viewport.height > viewport.width) {
     const box = await frame.boundingBox();
     expect("stage height", box && box.height >= viewport.height * 0.4, box);
@@ -324,7 +322,7 @@ async function useCase7and10(page, viewport, prop) {
     const box = await frame.boundingBox();
     expect("stage height", box && box.height >= viewport.height * 0.4, box);
   }
-  const run2 = page.getByLabel("Run 2 length (m)");
+  const run2 = page.getByLabel("A2 length (m)");
   await hydrated(run2);
   await waitForValue(run2, "1.00", "7 start");
   // Drag the end corner from (2, 1) to (2, 2). Snap lands it on the grid.
@@ -338,10 +336,10 @@ async function useCase7and10(page, viewport, prop) {
   await waitForValue(run2, "2.00", "7 redo");
 
   // 10: 3 m on run 1 at 10 cm is 30 lights; run 2 keeps its length.
-  const run1 = page.getByLabel("Run 1 length (m)");
+  const run1 = page.getByLabel("A1 length (m)");
   await run1.fill("3");
   await run1.press("Enter");
-  await waitForValue(page.getByLabel("Run 1 lights"), "30", "10 count");
+  await waitForValue(page.getByLabel("A1 lights"), "30", "10 count");
   await waitForValue(run2, "2.00", "10 later run");
   // Keep the edits for the sections step: the path's Done opens it.
   await page.getByRole("button", { name: "Name sections" }).click();
