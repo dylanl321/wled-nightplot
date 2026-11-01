@@ -173,6 +173,20 @@ function paramsOf(measurements: PropMeasurements): Record<string, number> | null
       return { stakes: measurements.stakes, height: measurements.height };
     case "wireframe":
       return { sides: measurements.sides, side: measurements.side, height: measurements.height };
+    case "spiral":
+      return {
+        height: measurements.height,
+        around: measurements.around,
+        ...(measurements.aroundTop != null ? { aroundTop: measurements.aroundTop } : {}),
+        gap: measurements.gap,
+      };
+    case "zigzag":
+      return {
+        width: measurements.width,
+        height: measurements.height,
+        passes: measurements.passes,
+        ...(measurements.direction === "horizontal" ? { horizontal: 1 } : {}),
+      };
     case "custom":
     case "legacy":
       return null;

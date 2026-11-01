@@ -99,6 +99,18 @@ export function defaultSections(layout: PropLayout): PropSection[] {
       color: SECTION_COLOURS[index % SECTION_COLOURS.length],
     }));
   }
+  if (layout.template?.type === "spiral" || layout.template?.type === "zigzag") {
+    // One colour for the whole wrap. Fifty half turns as fifty sections is noise.
+    const edgeIds = layout.run.filter((edge) => edge.kind === "lit").map((edge) => edge.id);
+    if (edgeIds.length === 0) return [];
+    return [{
+      id: `section.${layout.template.type}`,
+      name: layout.template.type === "spiral" ? "Spiral" : "Zigzag",
+      edgeIds,
+      pinnedRanges: [],
+      color: SECTION_COLOURS[0],
+    }];
+  }
   const names = edgeSectionNames(layout);
   return layout.run.filter((edge) => edge.kind === "lit").map((edge, index) => ({
     id: `section.${edge.id}`,

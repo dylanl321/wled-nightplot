@@ -6,6 +6,8 @@
  * older readers still see it.
  */
 
+import { spiralLayout, zigzagLayout } from "./wraps.ts";
+
 export const LAYOUT_PITCH_M = 0.1;
 export const METRES_PER_FOOT = 0.3048;
 /** One inch, in metres. Twelve of these are one foot, so an inch snap lands on the foot grid. */
@@ -56,6 +58,14 @@ export type LayoutEdge = {
   hiddenCount?: number;
   /** Present for a later arc. Phase 1 draws the straight chord. */
   arc?: { riseM: number };
+  /**
+   * The run's real length when the drawing is a flat, front-on view of
+   * something that wraps around (half a turn of a spiral). Lengths and light
+   * counts use it. Lights are drawn spread over the drawn line. Consecutive
+   * wrapped runs on a string are counted together, so rounding does not add
+   * a light per half turn.
+   */
+  wrapLengthM?: number;
 };
 
 export type LayoutFace = {
@@ -155,6 +165,7 @@ function isEdge(value: unknown, ids: Set<string>): value is LayoutEdge {
   if (typeof row.id !== "string" || typeof row.from !== "string" || typeof row.to !== "string") return false;
   if (!ids.has(row.from) || !ids.has(row.to)) return false;
   if (row.lockedLengthM !== undefined && (!(row.lockedLengthM > 0) || !Number.isFinite(row.lockedLengthM))) return false;
+  if (row.wrapLengthM !== undefined && (!(row.wrapLengthM > 0) || !Number.isFinite(row.wrapLengthM))) return false;
   if (row.hiddenCount !== undefined && (!Number.isInteger(row.hiddenCount) || (row.hiddenCount ?? 0) < 0)) return false;
   if (row.lockedLights !== undefined && (!Number.isInteger(row.lockedLights) || (row.lockedLights ?? 0) < 0)) return false;
   if (row.manualLights !== undefined && typeof row.manualLights !== "boolean") return false;
@@ -286,6 +297,12 @@ export function cornerById(layout: PropLayout, id: string): LayoutCorner | undef
 
 export function edgeLengthM(layout: PropLayout, edge: LayoutEdge): number {
   if (edge.kind === "hidden") return Math.max(0, edge.hiddenCount ?? 0) * layout.pitchM;
+  if (edge.wrapLengthM != null && edge.wrapLengthM > 0) return edge.wrapLengthM;
+  return drawnLengthM(layout, edge);
+}
+
+/** The straight line between the run's corners on the drawing. Lights are drawn along this. */
+export function drawnLengthM(layout: PropLayout, edge: LayoutEdge): number {
   const from = cornerById(layout, edge.from);
   const to = cornerById(layout, edge.to);
   if (!from || !to) return 0;
@@ -327,7 +344,40 @@ export function edgeLightCount(layout: PropLayout, edge: LayoutEdge): number {
   if (edge.kind === "wire") return 0;
   if (edge.kind === "lit" && edge.manualLights) return edge.lights?.length ?? 0;
   if (edge.kind === "lit" && edge.lockedLights != null) return edge.lockedLights;
+  if (edge.kind === "lit" && edge.wrapLengthM != null && edge.wrapLengthM > 0) {
+    const counted = wrapCounts(layout).get(edge.id);
+    if (counted != null) return counted;
+  }
   return lightsOnLength(edgeLengthM(layout, edge), layout.pitchM);
+}
+
+const wrapCountCache = new WeakMap<PropLayout, Map<string, number>>();
+
+/**
+ * Lights on each wrapped run, counted along the whole wrap: the run gets
+ * round(end ÷ pitch) − round(start ÷ pitch). A 4 in pitch on 7.3 in half
+ * turns then adds up to the real string, instead of 2 per half turn.
+ */
+function wrapCounts(layout: PropLayout): Map<string, number> {
+  const cached = wrapCountCache.get(layout);
+  if (cached) return cached;
+  const counts = new Map<string, number>();
+  for (const string of layoutStrings(layout)) {
+    let along = 0;
+    for (const edge of string.run) {
+      const wrapped = edge.kind === "lit" && edge.wrapLengthM != null && edge.wrapLengthM > 0 &&
+        !edge.manualLights && edge.lockedLights == null;
+      if (!wrapped) {
+        along = 0;
+        continue;
+      }
+      const end = along + edge.wrapLengthM!;
+      counts.set(edge.id, Math.max(0, lightsOnLength(end, layout.pitchM) - lightsOnLength(along, layout.pitchM)));
+      along = end;
+    }
+  }
+  wrapCountCache.set(layout, counts);
+  return counts;
 }
 
 /** Round length ÷ pitch. Zero when either measurement is missing. Equal lengths round the same way. */
@@ -472,7 +522,8 @@ export function scaleAboutStart(layout: PropLayout, factor: number): PropLayout 
   if (!Number.isFinite(factor) || factor <= 0) return layout;
   const start = startCorner(layout);
   const scaled = mapEdges(layout, (edge) => {
-    const next = edge.lockedLengthM == null ? edge : { ...edge, lockedLengthM: edge.lockedLengthM * factor };
+    const locked = edge.lockedLengthM == null ? edge : { ...edge, lockedLengthM: edge.lockedLengthM * factor };
+    const next = locked.wrapLengthM == null ? locked : { ...locked, wrapLengthM: locked.wrapLengthM * factor };
     if (!next.manualLights || !next.lights) return next;
     return { ...next, lights: next.lights.map((light) => ({ ...light, alongM: light.alongM * factor })) };
   });
@@ -494,6 +545,11 @@ export type LengthEdit = {
 };
 
 export function setEdgeLength(layout: PropLayout, edgeId: string, lengthM: number): LengthEdit {
+  const wrapped = findEdge(layout, edgeId);
+  if (wrapped?.kind === "lit" && wrapped.wrapLengthM != null && lengthM > 0 && Number.isFinite(lengthM)) {
+    // A wrapped run's drawing is a flat view. Typing its length changes the wrap, not the drawing.
+    return { layout: mapEdges(layout, (edge) => edge.id === edgeId ? { ...edge, wrapLengthM: lengthM } : edge), scaledAll: false, gapM: null };
+  }
   if (!layout.strings || layout.strings.length === 0) return setEdgeLengthOnRun(layout, edgeId, lengthM);
   const owner = layout.strings.find((string) => string.run.some((edge) => edge.id === edgeId));
   if (!owner) return { layout, scaledAll: false, gapM: null };
@@ -580,12 +636,13 @@ export function splitRun(layout: PropLayout, edgeId: string, x: number, y: numbe
     const index = string.run.findIndex((row) => row.id === edgeId);
     const { lockedLengthM: _length, ...kept } = edge;
     const pieceLength = length * t;
+    const firstWrap = edge.wrapLengthM != null ? { wrapLengthM: edge.wrapLengthM * t } : {};
     const keptLights = edge.manualLights
       ? (edge.lights ?? []).map((light) => ({ ...light, alongM: clampAlong(light.alongM, pieceLength) }))
       : undefined;
     const first: LayoutEdge = edge.manualLights
-      ? { ...kept, to: cornerId, manualLights: true, lights: keptLights ?? [], lockedLights: (keptLights ?? []).length }
-      : { ...kept, to: cornerId };
+      ? { ...kept, ...firstWrap, to: cornerId, manualLights: true, lights: keptLights ?? [], lockedLights: (keptLights ?? []).length }
+      : { ...kept, ...firstWrap, to: cornerId };
     const {
       name: _name,
       lockedLights: _lights,
@@ -595,7 +652,7 @@ export function splitRun(layout: PropLayout, edgeId: string, x: number, y: numbe
       lights: _placed,
       ...opened
     } = edge;
-    const second: LayoutEdge = { ...opened, id: pieceId, from: cornerId };
+    const second: LayoutEdge = { ...opened, id: pieceId, from: cornerId, ...(edge.wrapLengthM != null ? { wrapLengthM: edge.wrapLengthM * (1 - t) } : {}) };
     return { ...string, run: [...string.run.slice(0, index), first, second, ...string.run.slice(index + 1)] };
   });
   const corner = { id: cornerId, x: from.x + dx * t, y: from.y + dy * t };
@@ -1168,7 +1225,7 @@ export function rooflineLayout(input: {
 export function layoutFromMeasurements(input: {
   units: LayoutUnits;
   pitchM: number;
-  shape: "roofline" | "window" | "arch" | "tree" | "stake-row" | "wireframe";
+  shape: "roofline" | "window" | "arch" | "tree" | "stake-row" | "wireframe" | "spiral" | "zigzag";
   params: Record<string, number>;
 }): PropLayout | null {
   const { units, pitchM, params } = input;
@@ -1208,6 +1265,30 @@ export function layoutFromMeasurements(input: {
       break;
     case "wireframe":
       built = wellHouseLayout(input);
+      break;
+    case "spiral": {
+      const around = toM(params.around ?? 0);
+      built = spiralLayout({
+        heightM: toM(params.height ?? 0),
+        aroundM: around,
+        aroundTopM: params.aroundTop == null ? around : toM(params.aroundTop),
+        gapM: toM(params.gap ?? 0),
+        units,
+        pitchM,
+        params,
+      });
+      break;
+    }
+    case "zigzag":
+      built = zigzagLayout({
+        widthM: toM(params.width ?? 0),
+        heightM: toM(params.height ?? 0),
+        passes: params.passes ?? 0,
+        direction: params.horizontal === 1 ? "horizontal" : "vertical",
+        units,
+        pitchM,
+        params,
+      });
       break;
     default: {
       const _never: never = input.shape;
@@ -1527,13 +1608,13 @@ export function evenAlongM(lengthM: number, count: number): number[] {
 
 function stationsOf(layout: PropLayout, edge: LayoutEdge): { id: string | null; alongM: number }[] {
   if (edge.kind !== "lit") return [];
-  const length = edgeLengthM(layout, edge);
+  const length = drawnLengthM(layout, edge);
   if (edge.manualLights) {
     return [...(edge.lights ?? [])]
       .map((light) => ({ id: light.id, alongM: clampAlong(light.alongM, length) }))
       .sort((a, b) => a.alongM - b.alongM || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   }
-  const count = edge.lockedLights != null ? edge.lockedLights : lightsOnLength(length, layout.pitchM);
+  const count = edgeLightCount(layout, edge);
   return evenAlongM(length, count).map((alongM) => ({ id: null, alongM }));
 }
 
@@ -1621,7 +1702,7 @@ export function movePlacedLight(layout: PropLayout, edgeId: string, lightId: str
   const locked = lockRunLights(layout, edgeId);
   const edge = findEdge(locked, edgeId);
   if (!edge?.lights || edge.kind !== "lit") return layout;
-  const length = edgeLengthM(locked, edge);
+  const length = drawnLengthM(locked, edge);
   const nextAlong = clampAlong(alongM, length);
   const current = edge.lights.find((light) => light.id === lightId);
   if (!current) return locked;
@@ -1642,7 +1723,7 @@ export function placeLight(layout: PropLayout, edgeId: string, alongM: number): 
   const edge = findEdge(layout, edgeId);
   if (!edge || edge.kind !== "lit") return layout;
   const locked = lockRunLights(layout, edgeId);
-  const length = edgeLengthM(locked, edge);
+  const length = drawnLengthM(locked, edge);
   const id = nextId(locked, "l");
   return mapEdges(locked, (row) => {
     if (row.id !== edgeId) return row;
@@ -1704,7 +1785,7 @@ export function clampManualLights(layout: PropLayout): PropLayout {
   let changed = false;
   const next = mapEdges(layout, (edge) => {
     if (edge.kind !== "lit" || !edge.manualLights || !edge.lights) return edge;
-    const length = edgeLengthM(layout, edge);
+    const length = drawnLengthM(layout, edge);
     let moved = false;
     const lights = edge.lights.map((light) => {
       const alongM = clampAlong(light.alongM, length);
@@ -1743,7 +1824,7 @@ export function migratePlacedLights(layout: PropLayout): PropLayout {
       }
       return edge;
     }
-    const length = edgeLengthM(layout, edge);
+    const length = drawnLengthM(layout, edge);
     const lights: PlacedLight[] = [];
     for (const light of edge.lights ?? []) {
       let id = light.id;

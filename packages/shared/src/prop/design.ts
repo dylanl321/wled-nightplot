@@ -159,6 +159,20 @@ function measurementParams(measurements: PropMeasurements): Record<string, numbe
       return { stakes: measurements.stakes, height: measurements.height };
     case "wireframe":
       return { sides: measurements.sides, side: measurements.side, height: measurements.height };
+    case "spiral":
+      return {
+        height: measurements.height,
+        around: measurements.around,
+        ...(measurements.aroundTop != null ? { aroundTop: measurements.aroundTop } : {}),
+        gap: measurements.gap,
+      };
+    case "zigzag":
+      return {
+        width: measurements.width,
+        height: measurements.height,
+        passes: measurements.passes,
+        ...(measurements.direction === "horizontal" ? { horizontal: 1 } : {}),
+      };
     case "custom":
     case "legacy":
       return null;
@@ -183,6 +197,9 @@ function edgeNames(measurements: PropMeasurements, layout: PropLayout): string[]
       return Array.from({ length: measurements.stakes }, (_, index) => `Stake ${index + 1}`);
     case "wireframe":
       return layout.run.filter((edge) => edge.kind === "lit").map((edge) => wellHouseEdgeLabel(edge.id) ?? edge.id);
+    case "spiral":
+    case "zigzag":
+      return layout.run.filter((edge) => edge.kind === "lit").map((edge, index) => edge.name ?? `Run ${index + 1}`);
     case "custom":
     case "legacy":
       return [];
@@ -211,6 +228,9 @@ function edgesFor(
       return stakeEdges(measurements.stakes, measurements.height, unit, pitchMm);
     case "wireframe":
       return wellHouseEdges(measurements.sides, measurements.side, measurements.height, unit, pitchMm);
+    case "spiral":
+    case "zigzag":
+      return { ok: false, message: "Spirals and zigzags are counted from their drawing." };
     case "custom":
       return { ok: false, message: "Custom draw is not ready yet. Pick a template shape." };
     case "legacy":
