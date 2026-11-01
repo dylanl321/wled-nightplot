@@ -1,20 +1,15 @@
 "use client";
 
-import { layoutStrings, yardBounds, yardPlacements, type Light, type Look, type Prop, type PropAttachment, type PropYardPoint } from "@nightplot/shared";
+import { drawnYard, layoutStrings, yardBounds, yardPlacements, type Light, type Look, type Prop, type PropAttachment, type PropYardPoint } from "@nightplot/shared";
 import type Konva from "konva";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Group, Line, Rect, Text } from "react-konva";
 import { CLOSE_PPM, EditorStage, toScreen, type Camera, type Size } from "@/components/canvas";
+import { YardCanvas } from "@/components/looks/yard-canvas";
 import { placeYardLabels } from "@/components/yard-labels";
 import { patchJson } from "@/lib/api";
-
-const Yard3d = dynamic(() => import("@/components/yard-3d").then((module) => module.Yard3d), {
-  ssr: false,
-  loading: () => <p className="p-4 text-[15px] text-muted-foreground">Opening the 3D yard…</p>,
-});
 
 const LIT = "#d4a574";
 const PICKED = "#7ee0d0";
@@ -29,9 +24,9 @@ type Moving = { propId: string; at: PropYardPoint };
  */
 export function YardStage({
   props,
-  looks = [],
-  attachments = [],
-  lights = [],
+  looks: _looks = [],
+  attachments: _attachments = [],
+  lights: _lights = [],
 }: {
   props: Prop[];
   looks?: Look[];
@@ -44,7 +39,7 @@ export function YardStage({
   const [picked, setPicked] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [note, setNote] = useState<{ text: string; failed: boolean } | null>(null);
-  const [mode, setMode] = useState<"2d" | "3d">("2d");
+  const [mode, setMode] = useState<"2d" | "street">("2d");
 
   const rows = props.map((prop) => ({ ...prop, yard: saved[prop.id] ?? prop.yard }));
   const placements = yardPlacements(rows);
@@ -117,18 +112,19 @@ export function YardStage({
     <section aria-label="Yard drawing" className="flex flex-col gap-2 lg:h-full lg:min-h-0">
       <div role="group" aria-label="Yard view" className="flex w-fit overflow-hidden rounded-lg border border-border">
         <button type="button" aria-pressed={mode === "2d"} className={modeButton(mode === "2d")} onClick={() => setMode("2d")}>2D</button>
-        <button type="button" aria-pressed={mode === "3d"} className={modeButton(mode === "3d")} onClick={() => setMode("3d")}>3D</button>
+        <button type="button" aria-pressed={mode === "street"} className={modeButton(mode === "street")} onClick={() => setMode("street")}>Street</button>
       </div>
       <div className="relative h-[46dvh] min-h-[300px] overflow-hidden rounded-[14px] border border-border lg:h-[calc(100dvh-12rem)] lg:min-h-0">
-        {mode === "3d" ? (
-          <Yard3d
+        {mode === "street" ? (
+          <YardCanvas
+            drawn={drawnYard(rows)}
             props={rows}
-            picked={picked}
-            onPick={setPicked}
-            looks={looks}
-            attachments={attachments}
-            outputs={lights.flatMap((light) => (light.outputs ?? []).map((output) => ({ lightId: light.id, outputId: output.id, start: output.start })))}
-            onPlace={(propId, at) => arrange(propId, at)}
+            look={null}
+            neutral
+            depth
+            className="absolute inset-0 h-full w-full touch-none"
+            ariaLabel="Yard from the street"
+            onPick={(hit) => setPicked(hit?.propId ?? null)}
           />
         ) : (
         <EditorStage
@@ -236,8 +232,8 @@ export function YardStage({
         </div>
       ) : (
         <p className="text-[14px] text-muted-foreground">
-          {mode === "3d"
-            ? "Drag to look around. Pinch to zoom. Street is eye height. Nothing is sent to a controller."
+          {mode === "street"
+            ? "Drag to look a little left or right. Pinch or the wheel zooms. Street is eye height. Nothing is sent to a controller."
             : "Drag a prop to where it sits in the yard, or pick it and type where it goes. One square is 1 m; the ring is the origin. A mouse wheel zooms. A trackpad scroll pans. Pinch, or Ctrl and scroll, zooms toward the pointer. Nothing is sent to a controller."}
         </p>
       )}
