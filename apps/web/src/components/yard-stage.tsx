@@ -24,7 +24,7 @@ type Moving = { propId: string; at: PropYardPoint };
  */
 export function YardStage({
   props,
-  looks: _looks = [],
+  looks = [],
   attachments: _attachments = [],
   lights: _lights = [],
 }: {
@@ -119,8 +119,8 @@ export function YardStage({
           <YardCanvas
             drawn={drawnYard(rows)}
             props={rows}
-            look={null}
-            neutral
+            look={looks[0] ?? null}
+            neutral={!looks[0]}
             depth
             className="absolute inset-0 h-full w-full touch-none"
             ariaLabel="Yard from the street"

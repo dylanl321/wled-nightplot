@@ -24,10 +24,43 @@ export type StreetPoint = {
 };
 
 /**
- * Project one yard point. `view` is the flat drawing's camera, which is the
- * picture at z = 0. `yaw` turns the eye a little left or right. `zoom` scales
- * the whole picture.
+ * Fit every light into the canvas. The horizon stays about 38% from the top,
+ * and the lights use as much of the frame as that allows, up to about 80%.
  */
+export function fitStreet(
+  width: number,
+  height: number,
+  points: readonly { x: number; y: number; z: number }[],
+  yaw = 0,
+): FlatView {
+  const horizon = height * 0.375;
+  const samples = points.length > 0 ? points : [{ x: -1, y: 0, z: 0 }, { x: 1, y: 2, z: 0 }];
+  const probe = { s: 1, ox: 0, oy: STREET_EYE_M };
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const point of samples) {
+    const placed = streetProject(point, probe, yaw, 1);
+    minX = Math.min(minX, placed.x);
+    maxX = Math.max(maxX, placed.x);
+    minY = Math.min(minY, placed.y);
+    maxY = Math.max(maxY, placed.y);
+  }
+  const padX = Math.max(12, width * 0.08);
+  const padY = Math.max(10, height * 0.06);
+  const spanX = Math.max(0.2, maxX - minX);
+  let scale = (width - padX * 2) / spanX;
+  if (maxY > 0.02) scale = Math.min(scale, (height - padY - horizon) / maxY);
+  if (minY < -0.02) scale = Math.min(scale, (horizon - padY) / -minY);
+  const s = Math.max(4, scale);
+  return {
+    s,
+    ox: width / 2 - ((minX + maxX) / 2) * s,
+    oy: horizon + STREET_EYE_M * s,
+  };
+}
+
 export function streetProject(
   point: { x: number; y: number; z: number },
   view: FlatView,

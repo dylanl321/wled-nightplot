@@ -88,16 +88,24 @@ try {
         isMobile: viewport.touch,
       });
       const page = await context.newPage();
+      const shoot = async (where) => {
+        await page.getByRole("button", { name: "Street" }).click();
+        const canvas = page.locator("[data-yard=street]");
+        await canvas.waitFor();
+        await canvas.scrollIntoViewIfNeeded();
+        await page.waitForTimeout(500);
+        const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        if (overflow > 1) throw new Error(`page scrolls sideways by ${overflow}px`);
+        const path = join(shots, `yard-street-${where}-${viewport.name}.png`);
+        await page.screenshot({ path, fullPage: false });
+        console.log(`ok ${where} ${viewport.name} ${path}`);
+      };
       await page.goto(`${webOrigin}/looks/${warm.id}`, { waitUntil: "domcontentloaded" });
-      await page.getByRole("heading", { name: "Warm white" }).waitFor({ timeout: 20000 }).catch(() => {});
-      await page.getByRole("button", { name: "Street" }).click();
-      await page.locator("[data-yard=street]").waitFor();
-      await page.waitForTimeout(500);
-      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-      if (overflow > 1) throw new Error(`page scrolls sideways by ${overflow}px`);
-      const path = join(shots, `yard-street-${viewport.name}.png`);
-      await page.screenshot({ path, fullPage: false });
-      console.log(`ok ${viewport.name} ${path}`);
+      await page.getByRole("heading", { name: "Warm white", exact: true }).waitFor({ timeout: 20000 });
+      await shoot("looks");
+      await page.goto(webOrigin, { waitUntil: "domcontentloaded" });
+      await page.getByRole("heading", { name: "Your yard" }).waitFor();
+      await shoot("yard");
       await context.close();
     }
   } finally {
