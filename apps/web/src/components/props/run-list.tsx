@@ -57,9 +57,9 @@ export function RunList({
   className?: string;
 }) {
   const rows = runRows(layout);
-  const named = layoutStrings(layout).length > 1;
+  const strings = layoutStrings(layout);
   const unit = layout.units === "ft" ? "ft" : "m";
-  const list = useRef<HTMLOListElement>(null);
+  const list = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!picked) return;
@@ -88,21 +88,35 @@ export function RunList({
           Lights follow round(length ÷ spacing). A number you type here overrides that until the length changes.
         </p>
       </div>
-      <ol ref={list} className="flex flex-col">
-        {rows.map((row) => (
-          <RunRowItem
-            key={row.edgeId}
-            row={row}
-            label={named ? `String ${row.stringIndex + 1} · run ${row.order}` : `Run ${row.order}`}
-            units={layout.units}
-            selected={picked === row.edgeId}
-            onPick={() => onPick(row.edgeId)}
-            onLength={(lengthM) => onLength(row.edgeId, lengthM)}
-            onLights={(lights) => onLights(row.edgeId, lights)}
-            onDelete={() => onDelete(row.edgeId)}
-          />
-        ))}
-      </ol>
+      <div ref={list} className="flex flex-col">
+        {strings.map((string, stringIndex) => {
+          const group = rows.filter((row) => row.stringIndex === stringIndex);
+          const lights = group.reduce((sum, row) => sum + row.lights, 0);
+          const word = group.length === 1 ? "run" : "runs";
+          return (
+            <section key={string.id} aria-label={`String ${stringIndex + 1}`}>
+              <h2 className="border-t border-border bg-card/40 px-3 py-2 text-[14px] font-medium">
+                String {stringIndex + 1}: Wire in, {group.length} {word} · {lights} lights
+              </h2>
+              <ol className="flex flex-col">
+                {group.map((row) => (
+                  <RunRowItem
+                    key={row.edgeId}
+                    row={row}
+                    label={strings.length > 1 ? `String ${stringIndex + 1} · run ${row.order}` : `Run ${row.order}`}
+                    units={layout.units}
+                    selected={picked === row.edgeId}
+                    onPick={() => onPick(row.edgeId)}
+                    onLength={(lengthM) => onLength(row.edgeId, lengthM)}
+                    onLights={(lights) => onLights(row.edgeId, lights)}
+                    onDelete={() => onDelete(row.edgeId)}
+                  />
+                ))}
+              </ol>
+            </section>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -176,7 +190,7 @@ function RunRowItem({
     <li
       data-edge={row.edgeId}
       aria-current={selected ? "true" : undefined}
-      className={`border-t border-border ${selected ? "bg-card" : ""}`}
+      className={`border-t border-border ${selected ? "bg-card shadow-[inset_3px_0_0_0_var(--color-primary)]" : ""}`}
     >
       <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_4.5rem_2.75rem] items-center gap-2 px-3 py-1">
       <button type="button" className="min-h-11 min-w-0 truncate text-left text-[15px]" onClick={onPick}>

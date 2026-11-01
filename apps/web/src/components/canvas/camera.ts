@@ -83,23 +83,31 @@ export function panBy(camera: Camera, dx: number, dy: number): Camera {
  * minimum span. `rightInset` keeps that many px on the right clear, so the
  * zoom buttons never sit on top of a corner.
  */
+export type FitPad = { top?: number; right?: number; bottom?: number; left?: number };
+
 export function fitCamera(
   bounds: Bounds,
   size: Size,
   limits: ZoomLimits,
-  options: { margin?: Point; minSpanM?: number; rightInset?: number } = {},
+  options: { margin?: Point; minSpanM?: number; rightInset?: number; pad?: FitPad } = {},
 ): Camera {
   const margin = options.margin ?? FIT_MARGIN;
-  const inset = Math.max(0, Math.min(options.rightInset ?? 0, size.w / 4));
+  const pad = options.pad ?? {};
+  const left = Math.max(0, pad.left ?? 0);
+  const right = Math.max(0, (options.rightInset ?? 0) + (pad.right ?? 0));
+  const top = Math.max(0, pad.top ?? 0);
+  const bottom = Math.max(0, pad.bottom ?? 0);
   const minSpan = options.minSpanM ?? 0.5;
   const worldW = Math.max(bounds.maxX - bounds.minX, minSpan);
   const worldH = Math.max(bounds.maxY - bounds.minY, minSpan);
-  const roomW = Math.max(40, size.w - inset - margin.x * 2);
-  const roomH = Math.max(40, size.h - margin.y * 2);
+  const roomW = Math.max(40, size.w - left - right - margin.x * 2);
+  const roomH = Math.max(40, size.h - top - bottom - margin.y * 2);
   const ppm = clampPpm(Math.min(roomW / worldW, roomH / worldH), limits);
   const cx = (bounds.minX + bounds.maxX) / 2;
   const cy = (bounds.minY + bounds.maxY) / 2;
-  return { ppm, ox: (size.w - inset) / 2 - cx * ppm, oy: size.h / 2 + cy * ppm };
+  const centerX = left + margin.x + roomW / 2;
+  const centerY = top + margin.y + roomH / 2;
+  return { ppm, ox: centerX - cx * ppm, oy: centerY + cy * ppm };
 }
 
 /**

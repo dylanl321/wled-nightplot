@@ -97,6 +97,15 @@ describe("camera", () => {
     expect(toScreen({ x: 0, y: 0 }, fitted).x).toBeCloseTo(28);
   });
 
+  it("fit leaves room above the drawing for labels and the zoom controls", () => {
+    const bounds = { minX: 0, minY: 0, maxX: 4, maxY: 2 };
+    const fitted = fitCamera(bounds, { w: 456, h: 856 }, limits, { rightInset: 56, pad: { top: 52, left: 24 } });
+    const top = toScreen({ x: 2, y: 2 }, fitted);
+    const left = toScreen({ x: 0, y: 1 }, fitted);
+    expect(top.y).toBeGreaterThanOrEqual(52 + 28 - 1);
+    expect(left.x).toBeGreaterThanOrEqual(24 + 28 - 1);
+  });
+
   it("fit keeps a minimum span for a single point", () => {
     const fitted = fitCamera({ minX: 3, minY: 3, maxX: 3, maxY: 3 }, { w: 300, h: 300 }, limits, { minSpanM: 1 });
     expect(fitted.ppm).toBeCloseTo(244);
