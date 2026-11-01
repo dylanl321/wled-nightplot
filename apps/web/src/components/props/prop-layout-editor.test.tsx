@@ -192,7 +192,7 @@ describe("run list", () => {
     const done = vi.fn();
     render(<PropLayoutEditor name="Wall" initial={oneRun()} mode="edit" onDone={done} onBack={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Feet" }));
-    expect(screen.getByLabelText("Light spacing (in)")).toHaveProperty("value", "3.94");
+    expect(screen.getByLabelText("Light spacing (cm)")).toHaveProperty("value", "10");
     expect(screen.getByTestId("grid-scale")).toHaveProperty("textContent", "1 square = 1 ft");
     expect(screen.getByLabelText("A1 length (ft)")).toHaveProperty("value", "3' 3\"");
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
@@ -370,7 +370,7 @@ describe("run list", () => {
     const done = vi.fn();
     render(<PropLayoutEditor name="Ridge" initial={layout} mode="edit" onDone={done} onBack={vi.fn()} />);
     expect(screen.getByText(/The wire has a gap/)).toBeTruthy();
-    expect(screen.getByText(/^20 lights · 3\.00 m of wire$/)).toBeTruthy();
+    expect(screen.getByText(/^20 lights · 2\.00 m of strip · 3\.00 m of wire$/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Add unlit connector" }));
     expect(screen.getByText(/Added an unlit connector/)).toBeTruthy();
     expect(screen.queryByText(/The wire has a gap/)).toBeNull();

@@ -12,6 +12,7 @@ export type RunRow = {
   lengthM: number;
   lights: number;
   typedCount: boolean;
+  placed: boolean;
   short: boolean;
   name: string;
 };
@@ -28,7 +29,8 @@ export function runRows(layout: PropLayout): RunRow[] {
         kind: edge.kind,
         lengthM: row?.lengthM ?? 0,
         lights: row?.lights ?? 0,
-        typedCount: edge.kind === "lit" && edge.lockedLights != null,
+        typedCount: edge.kind === "lit" && edge.lockedLights != null && edge.manualLights !== true,
+        placed: edge.kind === "lit" && edge.manualLights === true,
         short: edge.kind === "lit" && (row?.lengthM ?? 0) > 0 && (row?.lengthM ?? 0) < layout.pitchM,
         name: edge.name ?? "",
       };
@@ -49,6 +51,9 @@ export function RunList({
   onLength,
   onLights,
   onName,
+  lightEdgeId,
+  onSpace,
+  onRemoveLight,
   className,
 }: {
   layout: PropLayout;
@@ -57,6 +62,10 @@ export function RunList({
   onLength: (edgeId: string, lengthM: number) => void;
   onLights: (edgeId: string, lights: number | null) => void;
   onName: (edgeId: string, name: string) => void;
+  /** The run whose light is selected, when one is. */
+  lightEdgeId: string | null;
+  onSpace: (edgeId: string) => void;
+  onRemoveLight: () => void;
   className?: string;
 }) {
   const rows = runRows(layout);
@@ -114,6 +123,9 @@ export function RunList({
                     onLength={(lengthM) => onLength(row.edgeId, lengthM)}
                     onLights={(lights) => onLights(row.edgeId, lights)}
                     onName={(name) => onName(row.edgeId, name)}
+                    lightSelected={lightEdgeId === row.edgeId}
+                    onSpace={() => onSpace(row.edgeId)}
+                    onRemoveLight={onRemoveLight}
                   />
                 ))}
               </ol>
@@ -134,6 +146,9 @@ function RunRowItem({
   onLength,
   onLights,
   onName,
+  lightSelected,
+  onSpace,
+  onRemoveLight,
 }: {
   row: RunRow;
   label: string;
@@ -143,6 +158,9 @@ function RunRowItem({
   onLength: (lengthM: number) => void;
   onLights: (lights: number | null) => void;
   onName: (name: string) => void;
+  lightSelected: boolean;
+  onSpace: () => void;
+  onRemoveLight: () => void;
 }) {
   const shownLength = formatLength(row.lengthM, units);
   const shownLights = String(row.lights);
@@ -267,6 +285,17 @@ function RunRowItem({
             className="min-h-11 w-full rounded-md border border-input bg-background px-2 text-base"
           />
         </form>
+      ) : null}
+      {selected && lit ? (
+        <div className="flex gap-2 px-3 pb-2">
+          <button type="button" className="min-h-11 flex-1 rounded-lg border border-border px-2 text-[14px] disabled:opacity-40" disabled={!row.placed && !row.typedCount} onClick={onSpace}>Space evenly again</button>
+          <button type="button" className="min-h-11 flex-1 rounded-lg border border-border px-2 text-[14px] disabled:opacity-40" disabled={!lightSelected} onClick={onRemoveLight}>Remove light</button>
+        </div>
+      ) : null}
+      {row.placed ? (
+        <p className="px-3 pb-2 text-[13px] leading-5 text-muted-foreground">
+          These lights stay where you put them. Space evenly again counts from the length.
+        </p>
       ) : null}
       {row.typedCount ? (
         // On its own line, so a narrow run name never cuts it to "typed co…".

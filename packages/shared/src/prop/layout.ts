@@ -15,6 +15,14 @@ export type LayoutSource = "template" | "trace" | "net";
 export type LayoutUnits = "ft" | "m";
 export type RunKind = "lit" | "wire" | "hidden";
 
+/** One light the operator placed on a run. Metres from that run's start. */
+export type PlacedLight = {
+  /** Stable id. Never reused (`retiredIds`). */
+  id: string;
+  /** Metres from this run's start corner, along the straight run. */
+  alongM: number;
+};
+
 export type LayoutCorner = {
   id: string;
   /** Metres. */
@@ -32,9 +40,17 @@ export type LayoutEdge = {
   /**
    * A light count the operator typed for this lit run. It wins over
    * round(length ÷ pitch) for counts, sections, and Attach. A later length
-   * edit on the same run clears it.
+   * edit on the same run clears it. When `manualLights` is set, this stays
+   * equal to `lights.length` so an older reader still sees the count.
    */
   lockedLights?: number;
+  /**
+   * The operator placed these lights by hand. Absent or false: positions are
+   * not stored, and the run is evenly spaced for drawing only.
+   */
+  manualLights?: boolean;
+  /** Hand-placed lights on this lit run. A dark run has none. */
+  lights?: PlacedLight[];
   /** Optional position, such as "top" or "left side". Absent on older drawings. */
   name?: string;
   hiddenCount?: number;
@@ -141,7 +157,22 @@ function isEdge(value: unknown, ids: Set<string>): value is LayoutEdge {
   if (row.lockedLengthM !== undefined && (!(row.lockedLengthM > 0) || !Number.isFinite(row.lockedLengthM))) return false;
   if (row.hiddenCount !== undefined && (!Number.isInteger(row.hiddenCount) || (row.hiddenCount ?? 0) < 0)) return false;
   if (row.lockedLights !== undefined && (!Number.isInteger(row.lockedLights) || (row.lockedLights ?? 0) < 0)) return false;
+  if (row.manualLights !== undefined && typeof row.manualLights !== "boolean") return false;
+  if (row.lights !== undefined && !isPlacedLights(row.lights)) return false;
   if (row.name !== undefined && (typeof row.name !== "string" || row.name.trim().length === 0 || row.name.length > 40)) return false;
+  return true;
+}
+
+function isPlacedLights(value: unknown): value is PlacedLight[] {
+  if (!Array.isArray(value)) return false;
+  const ids = new Set<string>();
+  for (const light of value) {
+    if (!light || typeof light !== "object") return false;
+    const row = light as Partial<PlacedLight>;
+    if (typeof row.id !== "string" || row.id.length === 0 || ids.has(row.id)) return false;
+    if (typeof row.alongM !== "number" || !Number.isFinite(row.alongM) || row.alongM < 0) return false;
+    ids.add(row.id);
+  }
   return true;
 }
 
@@ -288,9 +319,13 @@ export function countLayout(layout: PropLayout): LayoutCount {
   return { total, edges };
 }
 
-/** Lights a run carries (or hides): the typed override on a lit run, else round(length ÷ pitch). A wire has none. */
+/**
+ * Lights a run carries (or hides). A hand-placed run contributes `lights.length`.
+ * Otherwise a typed count wins, else round(length ÷ pitch). A wire has none.
+ */
 export function edgeLightCount(layout: PropLayout, edge: LayoutEdge): number {
   if (edge.kind === "wire") return 0;
+  if (edge.kind === "lit" && edge.manualLights) return edge.lights?.length ?? 0;
   if (edge.kind === "lit" && edge.lockedLights != null) return edge.lockedLights;
   return lightsOnLength(edgeLengthM(layout, edge), layout.pitchM);
 }
@@ -318,12 +353,22 @@ function mapEdges(layout: PropLayout, fn: (edge: LayoutEdge) => LayoutEdge): Pro
   return writeStrings(layout, layout.strings.map((string) => ({ ...string, run: string.run.map(fn) })));
 }
 
-/** Set a typed light count on one lit run. The length stays as drawn. */
+/**
+ * Set a typed light count on one lit run. The length stays as drawn.
+ * Hand-placed lights are dropped: a typed count is even spacing again, remembered as a count.
+ */
 export function setEdgeLights(layout: PropLayout, edgeId: string, lights: number): PropLayout {
   if (!Number.isInteger(lights) || lights < 0) return layout;
-  const edge = layoutStrings(layout).flatMap((string) => string.run).find((row) => row.id === edgeId);
+  const edge = findEdge(layout, edgeId);
   if (!edge || edge.kind !== "lit") return layout;
-  return mapEdges(layout, (row) => (row.id === edgeId ? { ...row, lockedLights: lights } : row));
+  if (!edge.manualLights && edge.lockedLights === lights && edge.lights == null) return layout;
+  const retired = edge.manualLights ? (edge.lights ?? []).map((light) => light.id) : [];
+  const next = mapEdges(layout, (row) => {
+    if (row.id !== edgeId) return row;
+    const { manualLights: _manual, lights: _placed, ...rest } = row;
+    return { ...rest, lockedLights: lights };
+  });
+  return withRetired(next, retired);
 }
 
 /** A short position name on one run. Blank clears it. The drawing does not move. */
@@ -341,13 +386,9 @@ export function setEdgeName(layout: PropLayout, edgeId: string, name: string): P
   });
 }
 
-/** Clear a typed light count, so the run counts from its length again. */
+/** Clear a typed count and any hand-placed lights, so the run counts from its length again. */
 export function clearEdgeLights(layout: PropLayout, edgeId: string): PropLayout {
-  return mapEdges(layout, (row) => {
-    if (row.id !== edgeId || row.lockedLights == null) return row;
-    const { lockedLights: _dropped, ...rest } = row;
-    return rest;
-  });
+  return spaceEvenly(layout, edgeId);
 }
 
 /**
@@ -430,7 +471,11 @@ export function layoutLightTotal(layout: PropLayout): number {
 export function scaleAboutStart(layout: PropLayout, factor: number): PropLayout {
   if (!Number.isFinite(factor) || factor <= 0) return layout;
   const start = startCorner(layout);
-  const scaled = mapEdges(layout, (edge) => edge.lockedLengthM == null ? edge : { ...edge, lockedLengthM: edge.lockedLengthM * factor });
+  const scaled = mapEdges(layout, (edge) => {
+    const next = edge.lockedLengthM == null ? edge : { ...edge, lockedLengthM: edge.lockedLengthM * factor };
+    if (!next.manualLights || !next.lights) return next;
+    return { ...next, lights: next.lights.map((light) => ({ ...light, alongM: light.alongM * factor })) };
+  });
   return {
     ...scaled,
     corners: layout.corners.map((corner) => ({
@@ -505,11 +550,13 @@ export function addCorner(layout: PropLayout, x: number, y: number): PropLayout 
 
 /**
  * Split one run at the point on it nearest `(x, y)`. The first piece keeps
- * the run's id, and with it the position name, the typed light count, and
- * the dark mark. The new piece is a new run: it gets a new id, the same
- * kind (a dark run stays dark on both halves), and none of the name or the
- * typed count. Later runs keep their ids, so their data does not move.
- * A typed length is dropped because both pieces are shorter than it was.
+ * the run's id, and with it the position name, the typed light count, the
+ * hand-placed lights, and the dark mark. Lights past the split stay on that
+ * piece and clamp to its new length. The new piece is a new run: it gets a
+ * new id, the same kind (a dark run stays dark on both halves), and none of
+ * the name, the typed count, or the lights. Later runs keep their ids, so
+ * their data does not move. A typed length is dropped because both pieces
+ * are shorter than it was.
  */
 export function splitRun(layout: PropLayout, edgeId: string, x: number, y: number): { layout: PropLayout; cornerId: string | null } {
   const base = ensureStrings(layout);
@@ -532,8 +579,22 @@ export function splitRun(layout: PropLayout, edgeId: string, x: number, y: numbe
     if (string.id !== owner.id) return string;
     const index = string.run.findIndex((row) => row.id === edgeId);
     const { lockedLengthM: _length, ...kept } = edge;
-    const first: LayoutEdge = { ...kept, to: cornerId };
-    const { name: _name, lockedLights: _lights, lockedLengthM: _locked, hiddenCount: _hidden, ...opened } = edge;
+    const pieceLength = length * t;
+    const keptLights = edge.manualLights
+      ? (edge.lights ?? []).map((light) => ({ ...light, alongM: clampAlong(light.alongM, pieceLength) }))
+      : undefined;
+    const first: LayoutEdge = edge.manualLights
+      ? { ...kept, to: cornerId, manualLights: true, lights: keptLights ?? [], lockedLights: (keptLights ?? []).length }
+      : { ...kept, to: cornerId };
+    const {
+      name: _name,
+      lockedLights: _lights,
+      lockedLengthM: _locked,
+      hiddenCount: _hidden,
+      manualLights: _manual,
+      lights: _placed,
+      ...opened
+    } = edge;
     const second: LayoutEdge = { ...opened, id: pieceId, from: cornerId };
     return { ...string, run: [...string.run.slice(0, index), first, second, ...string.run.slice(index + 1)] };
   });
@@ -572,7 +633,18 @@ export function deletePoint(layout: PropLayout, cornerId: string): PropLayout {
   const first = owner.run[index]!;
   const second = owner.run[index + 1]!;
   const { lockedLengthM: _dropped, ...rest } = first;
-  const merged: LayoutEdge = { ...rest, to: second.to };
+  const from = cornerById(base, first.from);
+  const to = cornerById(base, second.to);
+  const mergedLength = from && to ? Math.hypot(to.x - from.x, to.y - from.y) : 0;
+  const merged: LayoutEdge = first.manualLights
+    ? {
+      ...rest,
+      to: second.to,
+      manualLights: true,
+      lights: (first.lights ?? []).map((light) => ({ ...light, alongM: clampAlong(light.alongM, mergedLength) })),
+      lockedLights: (first.lights ?? []).length,
+    }
+    : { ...rest, to: second.to };
   const run = [...owner.run.slice(0, index), merged, ...owner.run.slice(index + 2)];
   const nextStrings = strings.map((string) => (string.id === owner.id ? { ...string, run } : string));
   const used = new Set<string>();
@@ -583,7 +655,12 @@ export function deletePoint(layout: PropLayout, cornerId: string): PropLayout {
       used.add(edge.to);
     }
   }
-  const retiredIds = [...new Set([...(base.retiredIds ?? []), second.id, ...(used.has(cornerId) ? [] : [cornerId])])];
+  const retiredIds = [...new Set([
+    ...(base.retiredIds ?? []),
+    second.id,
+    ...(second.lights ?? []).map((light) => light.id),
+    ...(used.has(cornerId) ? [] : [cornerId]),
+  ])];
   return writeStrings(
     { ...base, retiredIds, corners: base.corners.filter((corner) => used.has(corner.id)) },
     nextStrings,
@@ -794,7 +871,8 @@ function applyCornerMap(layout: PropLayout, mapId: (id: string) => string): Prop
 
 export function moveCorner(layout: PropLayout, id: string, x: number, y: number): PropLayout {
   const moved = mapEdges(layout, (edge) => edge.from === id || edge.to === id ? { ...edge, lockedLengthM: undefined } : edge);
-  return { ...moved, corners: layout.corners.map((corner) => corner.id === id ? { ...corner, x, y } : corner) };
+  const shifted = { ...moved, corners: layout.corners.map((corner) => corner.id === id ? { ...corner, x, y } : corner) };
+  return clampManualLights(shifted);
 }
 
 export function closeLoop(layout: PropLayout): PropLayout {
@@ -869,24 +947,24 @@ export function gapLabel(gapM: number, units: LayoutUnits): string {
   return `misses by ${Math.max(1, Math.round(gapM * 100))} cm`;
 }
 
-/** Spacing for the field. Feet show inches. Metres show centimetres. The stored value stays metres. */
-export function formatPitch(pitchM: number, units: LayoutUnits): string {
-  if (units !== "ft") return formatPitchCm(pitchM);
-  const inches = pitchM / METRES_PER_INCH;
-  const rounded = Math.round(inches * 100) / 100;
-  if (!Number.isFinite(rounded)) return "";
-  if (Number.isInteger(rounded)) return String(rounded);
-  return rounded.toFixed(2).replace(/0$/, "").replace(/\.0$/, "");
+/**
+ * Pixel spacing for the field. Always centimetres, on a feet prop too.
+ * The stored pitch stays metres and is not rewritten just to display it.
+ */
+export function formatPitch(pitchM: number, _units?: LayoutUnits): string {
+  return formatPitchCm(pitchM);
 }
 
-/** Inches when the prop is in feet, centimetres when it is in metres. Null leaves the drawing alone. */
-export function parsePitch(text: string, units: LayoutUnits): number | null {
-  if (units !== "ft") return parsePitchCm(text);
-  const raw = text.trim();
-  if (!/^\d+(?:\.\d+)?$/.test(raw)) return null;
-  const inches = Number(raw);
-  if (!(inches > 0) || inches > 80) return null;
-  return inches * METRES_PER_INCH;
+/** Centimetres from the spacing field, as metres. A trailing "cm" is allowed. Null leaves the drawing alone. */
+export function parsePitch(text: string, _units?: LayoutUnits): number | null {
+  return parsePitchCm(text.trim().replace(/\s*cm$/i, ""));
+}
+
+/** A buying length. Metres always. Feet sit beside them when the prop is in feet. */
+export function formatPurchaseLength(lengthM: number, units: LayoutUnits): string {
+  const metres = `${formatLength(lengthM, "m")} m`;
+  if (units !== "ft") return metres;
+  return `${formatLength(lengthM, "ft")} (${metres})`;
 }
 
 export type RunGap = {
@@ -945,6 +1023,11 @@ export function addUnlitConnector(layout: PropLayout, afterId: string): PropLayo
     return { ...string, run: [...string.run.slice(0, index + 1), wire, ...string.run.slice(index + 1)] };
   });
   return writeStrings(base, strings);
+}
+
+/** Lit runs only: the LED strip to buy. Dark runs and gaps are wire, not strip. */
+export function layoutStripLengthM(layout: PropLayout): number {
+  return countLayout(layout).edges.reduce((sum, edge) => edge.kind === "lit" ? sum + edge.lengthM : sum, 0);
 }
 
 /** Length of every run, including dark runs, plus the gaps between them. */
@@ -1275,12 +1358,19 @@ function isClosingEdge(layout: PropLayout, edge: LayoutEdge): boolean {
   return edge.id === layout.run[layout.run.length - 1]!.id;
 }
 
-/** Lock the typed length. A length edit clears a typed light count on that run. */
+/**
+ * Lock the typed length. A typed light count clears. Hand-placed lights stay
+ * where they were put, clamped when the run is now shorter.
+ */
 function lock(layout: PropLayout, edgeId: string, lengthM: number): PropLayout {
   return {
     ...layout,
     run: layout.run.map((edge) => {
       if (edge.id !== edgeId) return edge;
+      if (edge.manualLights) {
+        const lights = (edge.lights ?? []).map((light) => ({ ...light, alongM: clampAlong(light.alongM, lengthM) }));
+        return { ...edge, lockedLengthM: lengthM, manualLights: true, lights, lockedLights: lights.length };
+      }
       const { lockedLights: _cleared, ...rest } = edge;
       return { ...rest, lockedLengthM: lengthM };
     }),
@@ -1402,8 +1492,265 @@ function normalizeAngle(angle: number): number {
   return value;
 }
 
+function findEdge(layout: PropLayout, edgeId: string): LayoutEdge | undefined {
+  return layoutStrings(layout).flatMap((string) => string.run).find((edge) => edge.id === edgeId);
+}
+
+function lightIds(layout: PropLayout): string[] {
+  const ids: string[] = [];
+  for (const string of layoutStrings(layout)) {
+    for (const edge of string.run) {
+      for (const light of edge.lights ?? []) ids.push(light.id);
+    }
+  }
+  return ids;
+}
+
+function withRetired(layout: PropLayout, ids: readonly string[]): PropLayout {
+  const extra = ids.filter((id) => id.length > 0 && !(layout.retiredIds ?? []).includes(id));
+  if (extra.length === 0) return layout;
+  return { ...layout, retiredIds: [...(layout.retiredIds ?? []), ...extra] };
+}
+
+function clampAlong(alongM: number, lengthM: number): number {
+  if (!Number.isFinite(alongM)) return 0;
+  const limit = Math.max(0, lengthM);
+  return Math.min(limit, Math.max(0, alongM));
+}
+
+/** Even stations, centred in equal slices, so a drawn light does not sit on the corner. */
+export function evenAlongM(lengthM: number, count: number): number[] {
+  if (count <= 0 || !(lengthM > 0)) return [];
+  const step = lengthM / count;
+  return Array.from({ length: count }, (_, index) => (index + 0.5) * step);
+}
+
+function stationsOf(layout: PropLayout, edge: LayoutEdge): { id: string | null; alongM: number }[] {
+  if (edge.kind !== "lit") return [];
+  const length = edgeLengthM(layout, edge);
+  if (edge.manualLights) {
+    return [...(edge.lights ?? [])]
+      .map((light) => ({ id: light.id, alongM: clampAlong(light.alongM, length) }))
+      .sort((a, b) => a.alongM - b.alongM || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
+  const count = edge.lockedLights != null ? edge.lockedLights : lightsOnLength(length, layout.pitchM);
+  return evenAlongM(length, count).map((alongM) => ({ id: null, alongM }));
+}
+
+/** A point that far along the straight run from `from` toward `to`. */
+export function pointOnRun(from: { x: number; y: number }, to: { x: number; y: number }, alongM: number): { x: number; y: number } {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 1e-9) return { x: from.x, y: from.y };
+  const t = clampAlong(alongM, length) / length;
+  return { x: from.x + dx * t, y: from.y + dy * t };
+}
+
+/** Metres along the run from `from` to the pointer, clamped to the run. */
+export function alongRun(from: { x: number; y: number }, to: { x: number; y: number }, point: { x: number; y: number }): number {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 1e-9) return 0;
+  return clampAlong(((point.x - from.x) * dx + (point.y - from.y) * dy) / length, length);
+}
+
+export type StringLight = {
+  edgeId: string;
+  /** Null while the run is still evenly spaced and nothing is stored. */
+  id: string | null;
+  alongM: number;
+  /** Place on the string, from 0 at the wire-in. The same number Name sections uses. */
+  index: number;
+  x: number;
+  y: number;
+};
+
+/**
+ * Every drawn light in string order. Hand-placed lights are sorted by `alongM`.
+ * A hidden run consumes indexes and is not drawn, matching section ranges.
+ */
+export function stringLights(layout: PropLayout): StringLight[] {
+  const marks: StringLight[] = [];
+  for (const string of layoutStrings(layout)) {
+    let index = 0;
+    for (const edge of string.run) {
+      if (edge.kind === "hidden") {
+        index += edgeLightCount(layout, edge);
+        continue;
+      }
+      if (edge.kind !== "lit") continue;
+      const from = cornerById(layout, edge.from);
+      const to = cornerById(layout, edge.to);
+      if (!from || !to) continue;
+      for (const station of stationsOf(layout, edge)) {
+        const at = pointOnRun(from, to, station.alongM);
+        marks.push({ edgeId: edge.id, id: station.id, alongM: station.alongM, index, x: at.x, y: at.y });
+        index += 1;
+      }
+    }
+  }
+  return marks;
+}
+
+/** Store even positions on a lit run and turn the lock on. A locked run is unchanged. A dark run is refused. */
+export function lockRunLights(layout: PropLayout, edgeId: string): PropLayout {
+  const edge = findEdge(layout, edgeId);
+  if (!edge || edge.kind !== "lit") return layout;
+  if (edge.manualLights) {
+    const count = edge.lights?.length ?? 0;
+    if (edge.lockedLights === count) return layout;
+    return mapEdges(layout, (row) => row.id === edgeId ? { ...row, lockedLights: count } : row);
+  }
+  const placed = stationsOf(layout, edge);
+  const used = new Set<string>([...(layout.retiredIds ?? []), ...lightIds(layout)]);
+  const lights: PlacedLight[] = [];
+  for (const station of placed) {
+    let n = 1;
+    while (used.has(`l${n}`)) n += 1;
+    const id = `l${n}`;
+    used.add(id);
+    lights.push({ id, alongM: station.alongM });
+  }
+  return mapEdges(layout, (row) => row.id === edgeId ? { ...row, manualLights: true, lights, lockedLights: lights.length } : row);
+}
+
+/** Move one stored light along its own run and keep the lock. The id does not change. */
+export function movePlacedLight(layout: PropLayout, edgeId: string, lightId: string, alongM: number): PropLayout {
+  const locked = lockRunLights(layout, edgeId);
+  const edge = findEdge(locked, edgeId);
+  if (!edge?.lights || edge.kind !== "lit") return layout;
+  const length = edgeLengthM(locked, edge);
+  const nextAlong = clampAlong(alongM, length);
+  const current = edge.lights.find((light) => light.id === lightId);
+  if (!current) return locked;
+  if (current.alongM === nextAlong) return locked;
+  return mapEdges(locked, (row) => {
+    if (row.id !== edgeId || !row.lights) return row;
+    return {
+      ...row,
+      manualLights: true,
+      lockedLights: row.lights.length,
+      lights: row.lights.map((light) => light.id === lightId ? { ...light, alongM: nextAlong } : light),
+    };
+  });
+}
+
+/** Add one light on a lit run, at the click, and turn the lock on. Even lights already there are stored first. */
+export function placeLight(layout: PropLayout, edgeId: string, alongM: number): PropLayout {
+  const edge = findEdge(layout, edgeId);
+  if (!edge || edge.kind !== "lit") return layout;
+  const locked = lockRunLights(layout, edgeId);
+  const length = edgeLengthM(locked, edge);
+  const id = nextId(locked, "l");
+  return mapEdges(locked, (row) => {
+    if (row.id !== edgeId) return row;
+    const lights = [...(row.lights ?? []), { id, alongM: clampAlong(alongM, length) }];
+    return { ...row, manualLights: true, lights, lockedLights: lights.length };
+  });
+}
+
+/** Remove one light. Its id is retired. The lock stays on, even when the run is then empty. */
+export function removePlacedLight(layout: PropLayout, edgeId: string, lightId: string): PropLayout {
+  const edge = findEdge(layout, edgeId);
+  if (!edge || edge.kind !== "lit") return layout;
+  const locked = lockRunLights(layout, edgeId);
+  const current = findEdge(locked, edgeId);
+  if (!current?.lights?.some((light) => light.id === lightId)) return layout;
+  const next = mapEdges(locked, (row) => {
+    if (row.id !== edgeId || !row.lights) return row;
+    const lights = row.lights.filter((light) => light.id !== lightId);
+    return { ...row, manualLights: true, lights, lockedLights: lights.length };
+  });
+  return withRetired(next, [lightId]);
+}
+
+/** Drop the lock and the stored lights. The run counts from its length again. */
+export function spaceEvenly(layout: PropLayout, edgeId: string): PropLayout {
+  const edge = findEdge(layout, edgeId);
+  if (!edge || edge.kind !== "lit") return layout;
+  if (!edge.manualLights && edge.lockedLights == null && edge.lights == null) return layout;
+  const ids = (edge.lights ?? []).map((light) => light.id);
+  const next = mapEdges(layout, (row) => {
+    if (row.id !== edgeId) return row;
+    const { manualLights: _manual, lights: _placed, lockedLights: _count, ...rest } = row;
+    return rest;
+  });
+  return withRetired(next, ids);
+}
+
+/** Keep hand-placed lights on the run. A shorter run clamps them. A longer run leaves them. */
+export function clampManualLights(layout: PropLayout): PropLayout {
+  let changed = false;
+  const next = mapEdges(layout, (edge) => {
+    if (edge.kind !== "lit" || !edge.manualLights || !edge.lights) return edge;
+    const length = edgeLengthM(layout, edge);
+    let moved = false;
+    const lights = edge.lights.map((light) => {
+      const alongM = clampAlong(light.alongM, length);
+      if (alongM !== light.alongM) moved = true;
+      return alongM === light.alongM ? light : { ...light, alongM };
+    });
+    if (!moved && edge.lockedLights === lights.length) return edge;
+    changed = true;
+    return { ...edge, lights, manualLights: true, lockedLights: lights.length };
+  });
+  return changed ? next : layout;
+}
+
+/**
+ * A saved drawing keeps working. Hand-placed lights are clamped, `lockedLights`
+ * matches the list, and a dark run cannot keep lights. A drawing with none of
+ * this is returned unchanged.
+ */
+export function migratePlacedLights(layout: PropLayout): PropLayout {
+  const used = new Set<string>(layout.retiredIds ?? []);
+  let changed = false;
+  const retired: string[] = [];
+  const next = mapEdges(layout, (edge) => {
+    if (edge.kind !== "lit") {
+      if (edge.manualLights == null && edge.lights == null) return edge;
+      changed = true;
+      for (const light of edge.lights ?? []) retired.push(light.id);
+      const { manualLights: _manual, lights: _placed, ...rest } = edge;
+      return rest;
+    }
+    if (!edge.manualLights && (edge.lights == null || edge.lights.length === 0)) {
+      if (edge.lights && edge.lights.length === 0) {
+        changed = true;
+        const { lights: _placed, ...rest } = edge;
+        return rest;
+      }
+      return edge;
+    }
+    const length = edgeLengthM(layout, edge);
+    const lights: PlacedLight[] = [];
+    for (const light of edge.lights ?? []) {
+      let id = light.id;
+      if (used.has(id)) {
+        let n = 1;
+        while (used.has(`l${n}`)) n += 1;
+        id = `l${n}`;
+      }
+      used.add(id);
+      const alongM = clampAlong(light.alongM, length);
+      lights.push({ id, alongM });
+    }
+    const same = edge.manualLights === true
+      && edge.lockedLights === lights.length
+      && edge.lights?.length === lights.length
+      && edge.lights.every((light, index) => light.id === lights[index]!.id && light.alongM === lights[index]!.alongM);
+    if (same) return edge;
+    changed = true;
+    return { ...edge, manualLights: true, lights, lockedLights: lights.length };
+  });
+  if (!changed && retired.length === 0) return layout;
+  return withRetired(next, retired);
+}
+
 function nextId(layout: PropLayout, prefix: string): string {
-  const used = new Set([...layout.corners.map((corner) => corner.id), ...(layout.retiredIds ?? [])]);
+  const used = new Set([...layout.corners.map((corner) => corner.id), ...(layout.retiredIds ?? []), ...lightIds(layout)]);
   for (const string of layoutStrings(layout)) {
     used.add(string.id);
     for (const edge of string.run) used.add(edge.id);

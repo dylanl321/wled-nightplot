@@ -6,7 +6,7 @@
 
 import type { Element, Light, LightOutput } from "../lights.ts";
 import { legacyOutputId } from "../outputs.ts";
-import { assignStableRunIds, countLayout, layoutFromMeasurements, layoutStrings, stampEdgeNames, wellHouseEdgeLabel, wellHouseEdgeOrder, windowSideNames, type PropLayout } from "./layout.ts";
+import { assignStableRunIds, countLayout, layoutFromMeasurements, layoutStrings, migratePlacedLights, stampEdgeNames, wellHouseEdgeLabel, wellHouseEdgeOrder, windowSideNames, type PropLayout } from "./layout.ts";
 import { defaultSections, isLegacyWellHouseLayout, sectionIndexRanges } from "./sections.ts";
 import { defaultWireframeSpec } from "./wireframe.ts";
 import {
@@ -423,7 +423,7 @@ export function migrateDesignedProp(prop: Prop): Prop {
   if (!prop.layout) {
     return prop.sections ? prop : prop;
   }
-  const stable = stampEdgeNames(assignStableRunIds(prop.layout));
+  const stable = migratePlacedLights(stampEdgeNames(assignStableRunIds(prop.layout)));
   const source = stable === prop.layout ? prop : { ...prop, layout: stable };
   let layout = source.layout ?? prop.layout;
   let design = source.design;
