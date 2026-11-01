@@ -1,10 +1,19 @@
 /**
  * Nightly Schedule stored as WLED timed presets plus NTP / location.
  *
- * `cfg.if.ntp` and `cfg.timers.ins` follow `wled00/cfg.cpp` (0.14.x / 0.15.x /
- * 16.0.x). Sunset is hour 255 on timer slot 8. Clock-time timers live in
- * slots 0–7. Nightplot writes a full 10-slot `ins` list so a sunset entry
- * cannot jump a later clock-time off onto slot 9.
+ * `cfg.if.ntp` and `cfg.timers.ins` follow `wled00/cfg.cpp` and `ntp.cpp`.
+ *
+ * 0.14.x / 0.15.x keep ten fixed slots. Slots 0–7 are clock times, slot 8 is
+ * sunrise and slot 9 is sunset, both hour 255 (`checkTimers` reads
+ * `timerMinutes[8]` against sunrise and `[9]` against sunset). Reading
+ * `ins`, WLED jumps the first hour-255 entry to slot 8, and writing `ins` it
+ * drops every entry with macro, hour and minute all 0. So Nightplot writes a
+ * full 10-slot list and keeps slot 8 as a disabled hour-255 sunrise, which
+ * WLED always saves. Without it, a reboot would re-read the lone hour-255
+ * sunset into slot 8 and fire it at sunrise.
+ *
+ * 16.0.x keeps a timer list and marks sunset by hour 254 (sunrise is 255),
+ * so position does not matter there.
  *
  * The schedule runs on the controller. Nightplot being closed is the point.
  */
@@ -13,13 +22,33 @@ import { LOOK_OFF_SLOT } from "./look.ts";
 
 export const WLED_TIMER_COUNT = 10;
 export const WLED_CLOCK_TIMER_MAX = 7;
+/** Sunrise / sunset hour marker on 0.14.x / 0.15.x. The slot decides which. */
 export const WLED_SUNSET_HOUR = 255;
-export const WLED_SUNSET_SLOT = 8;
+/** 16.0.x `TH_SUNRISE`. */
+export const WLED_SUNRISE_HOUR_V16 = 255;
+/** 16.0.x `TH_SUNSET`. */
+export const WLED_SUNSET_HOUR_V16 = 254;
+export const WLED_SUNRISE_SLOT = 8;
+export const WLED_SUNSET_SLOT = 9;
 export const WLED_SUNSET_OFFSET_MIN = -120;
 export const WLED_SUNSET_OFFSET_MAX = 120;
 export const WLED_LATITUDE_POLAR = 66.6;
 export const WLED_NTP_HOST_DEFAULT = "1.wled.pool.ntp.org";
 export const WLED_WEEKDAYS_ALL = 127;
+
+/**
+ * How a WLED build stores sunrise / sunset timers. `slots` is 0.14.x /
+ * 0.15.x (hour 255, slot 8 sunrise, slot 9 sunset). `hours` is 16.0.x and
+ * later (hour 255 sunrise, hour 254 sunset).
+ */
+export type WledTimerDialect = "slots" | "hours";
+
+/** Unknown or unparsable firmware gets the 0.14 / 0.15 layout. */
+export function wledTimerDialect(firmware: string | null | undefined): WledTimerDialect {
+  const match = /(\d+)\.\d+/.exec(firmware ?? "");
+  const major = match ? Number(match[1]) : 0;
+  return major >= 16 ? "hours" : "slots";
+}
 
 export type ScheduleOn =
   | { kind: "sunset"; offsetMinutes: number }
@@ -199,13 +228,28 @@ export function disabledTimer(): WledTimer {
   };
 }
 
+/** A disabled sunrise / sunset placeholder. WLED saves it, so slot 9 stays slot 9. */
+function disabledSunTimer(): WledTimer {
+  return { enabled: false, hour: WLED_SUNSET_HOUR, minute: 0, macro: 0, weekdays: WLED_WEEKDAYS_ALL };
+}
+
 /**
  * Ten timer slots in WLED order. Slot 0 is clock-time on (when used). Slot 1
- * is off. Slot 8 is sunset on. Unused slots are disabled so leftover WLED
- * timers do not fire after a push.
+ * is off. Slot 9 is sunset on. Slot 8 (sunrise) is never used and is written
+ * disabled with macro 0, which also clears a sunset that older Nightplot
+ * builds put there. Unused slots are disabled so leftover WLED timers do not
+ * fire after a push.
  */
-export function buildScheduleTimers(schedule: NightlySchedule, runSlot: number): WledTimer[] {
+export function buildScheduleTimers(
+  schedule: NightlySchedule,
+  runSlot: number,
+  dialect: WledTimerDialect = "slots",
+): WledTimer[] {
   const timers = Array.from({ length: WLED_TIMER_COUNT }, () => disabledTimer());
+  if (dialect === "slots") {
+    timers[WLED_SUNRISE_SLOT] = disabledSunTimer();
+    timers[WLED_SUNSET_SLOT] = disabledSunTimer();
+  }
   const off: WledTimer = {
     enabled: true,
     hour: schedule.off.hour,
@@ -221,7 +265,7 @@ export function buildScheduleTimers(schedule: NightlySchedule, runSlot: number):
   if (schedule.on.kind === "sunset") {
     timers[WLED_SUNSET_SLOT] = {
       enabled: true,
-      hour: WLED_SUNSET_HOUR,
+      hour: dialect === "hours" ? WLED_SUNSET_HOUR_V16 : WLED_SUNSET_HOUR,
       minute: schedule.on.offsetMinutes,
       macro: runSlot,
       weekdays: schedule.weekdays,
@@ -242,12 +286,16 @@ export function buildScheduleTimers(schedule: NightlySchedule, runSlot: number):
   return timers;
 }
 
-export function buildScheduleWrite(schedule: NightlySchedule, runSlot: number): {
+export function buildScheduleWrite(
+  schedule: NightlySchedule,
+  runSlot: number,
+  dialect: WledTimerDialect = "slots",
+): {
   body: Record<string, unknown>;
   expectedNtp: WledNtp;
   expectedTimers: WledTimer[];
 } {
-  const timers = buildScheduleTimers(schedule, runSlot);
+  const timers = buildScheduleTimers(schedule, runSlot, dialect);
   const expectedNtp: WledNtp = {
     enabled: true,
     host: schedule.ntp.host.trim() || WLED_NTP_HOST_DEFAULT,
@@ -296,7 +344,7 @@ export function parseWledTimers(cfg: unknown): WledTimer[] | null {
   const ins = record(record(cfg)?.timers)?.ins;
   if (!Array.isArray(ins)) return null;
   const out: WledTimer[] = [];
-  for (const row of ins.slice(0, WLED_TIMER_COUNT)) {
+  for (const row of ins) {
     const timer = record(row);
     if (!timer) return null;
     const hour = integer(timer.hour);
@@ -304,11 +352,13 @@ export function parseWledTimers(cfg: unknown): WledTimer[] | null {
     const macro = integer(timer.macro);
     const weekdays = integer(timer.dow);
     if (hour === null || minute === null || macro === null || weekdays === null) return null;
-    if (typeof timer.en !== "boolean") return null;
+    // 0.15.x and 16.0.x report `en` as 1 / 0, not a boolean.
+    const enabled = typeof timer.en === "boolean" ? timer.en : timer.en === 1 ? true : timer.en === 0 ? false : null;
+    if (enabled === null) return null;
     const start = record(timer.start);
     const end = record(timer.end);
     out.push({
-      enabled: timer.en,
+      enabled,
       hour,
       minute,
       macro,
@@ -334,19 +384,30 @@ export function ntpMatches(expected: WledNtp, read: WledNtp | null): boolean | n
   );
 }
 
+/** WLED leaves out timers whose macro, hour and minute are all 0 when it saves `ins`. */
+function savedByWled(timer: WledTimer): boolean {
+  return !(timer.macro === 0 && timer.hour === 0 && timer.minute === 0);
+}
+
+/**
+ * Compares what WLED reports with what it would report after taking
+ * `expected`. Both sides drop the entries WLED does not save, so a readback
+ * that lists only the used timers still lines up entry for entry.
+ */
 export function timersMatch(expected: readonly WledTimer[], read: WledTimer[] | null): boolean | null {
   if (!read) return null;
-  if (read.length < expected.length) return false;
-  for (let index = 0; index < expected.length; index += 1) {
-    const want = expected[index]!;
-    const got = read[index];
-    if (!got) return false;
+  const want = expected.filter(savedByWled);
+  const got = read.filter(savedByWled);
+  if (got.length !== want.length) return false;
+  for (let index = 0; index < want.length; index += 1) {
+    const a = want[index]!;
+    const b = got[index]!;
     if (
-      got.enabled !== want.enabled ||
-      got.hour !== want.hour ||
-      got.minute !== want.minute ||
-      got.macro !== want.macro ||
-      got.weekdays !== want.weekdays
+      b.enabled !== a.enabled ||
+      b.hour !== a.hour ||
+      b.minute !== a.minute ||
+      b.macro !== a.macro ||
+      b.weekdays !== a.weekdays
     ) {
       return false;
     }
@@ -373,7 +434,7 @@ function timerBody(timer: WledTimer): Record<string, unknown> {
     macro: timer.macro,
     dow: timer.weekdays,
   };
-  if (timer.hour !== WLED_SUNSET_HOUR) {
+  if (timer.hour < WLED_SUNSET_HOUR_V16) {
     body.start = { mon: timer.startMonth ?? 1, day: timer.startDay ?? 1 };
     body.end = { mon: timer.endMonth ?? 12, day: timer.endDay ?? 31 };
   }
