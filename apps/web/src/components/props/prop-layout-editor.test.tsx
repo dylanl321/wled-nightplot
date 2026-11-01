@@ -148,12 +148,12 @@ describe("run list", () => {
     fireEvent.submit(count.closest("form")!);
     expect(screen.getByText("12 lights")).toBeTruthy();
     expect(screen.getByLabelText("A1 length (m)")).toHaveProperty("value", "1.00");
-    expect(screen.getByText(/typed count/)).toBeTruthy();
+    expect(screen.getByText(/lights typed in/)).toBeTruthy();
     const length = screen.getByLabelText("A1 length (m)");
     fireEvent.change(length, { target: { value: "2" } });
     fireEvent.submit(length.closest("form")!);
     expect(screen.getByText("20 lights")).toBeTruthy();
-    expect(screen.queryByText(/typed count/)).toBeNull();
+    expect(screen.queryByText(/lights typed in/)).toBeNull();
   });
 
   it("feet show feet", async () => {

@@ -327,9 +327,10 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
       ) : null}
       {step === "origin" && kind === "roofline" ? (
         <div className="flex flex-col gap-3">
-          <p className="text-[15px] leading-6">The controller plugs in at one end of the roof.</p>
-          <button type="button" className={`min-h-11 rounded-lg border text-base ${!startAtFarEnd ? "border-primary" : "border-border"}`} onClick={() => setStartAtFarEnd(false)}>This end</button>
-          <button type="button" className={`min-h-11 rounded-lg border text-base ${startAtFarEnd ? "border-primary" : "border-border"}`} onClick={() => setStartAtFarEnd(true)}>The far end</button>
+          <p className="text-[15px] leading-6">The controller plugs in at one end of the roof. Stand facing the house: which end does the wire come in?</p>
+          <EndPicture farEnd={startAtFarEnd} />
+          <button type="button" aria-pressed={!startAtFarEnd} className={`min-h-11 rounded-lg border text-base ${!startAtFarEnd ? "border-primary" : "border-border"}`} onClick={() => setStartAtFarEnd(false)}>Left end</button>
+          <button type="button" aria-pressed={startAtFarEnd} className={`min-h-11 rounded-lg border text-base ${startAtFarEnd ? "border-primary" : "border-border"}`} onClick={() => setStartAtFarEnd(true)}>Right end</button>
         </div>
       ) : null}
       {step === "size" && kind && kind !== "custom" ? (
@@ -449,6 +450,21 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
         )}
       </div>
     </div>
+  );
+}
+
+/** A roofline seen from the yard, with the plug at the chosen end. */
+function EndPicture({ farEnd }: { farEnd: boolean }) {
+  const plug = farEnd ? 284 : 36;
+  return (
+    <svg viewBox="0 0 320 96" className="h-24 w-full" role="img" aria-label={farEnd ? "The wire comes in at the right end" : "The wire comes in at the left end"}>
+      <path d="M20 70 L160 22 L300 70" fill="none" stroke="#4a463c" strokeWidth="2" />
+      <line x1="36" y1="70" x2="284" y2="70" stroke="#d4a574" strokeWidth="4" strokeLinecap="round" />
+      <circle cx={plug} cy="70" r="8" fill="#7ee0d0" />
+      <text x={plug} y="92" textAnchor="middle" fontSize="12" fill="#e8e2d6">Wire in</text>
+      <text x="36" y="58" textAnchor="middle" fontSize="11" fill="#8a8478">Left</text>
+      <text x="284" y="58" textAnchor="middle" fontSize="11" fill="#8a8478">Right</text>
+    </svg>
   );
 }
 

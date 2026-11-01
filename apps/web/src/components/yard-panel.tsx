@@ -176,7 +176,7 @@ export function YardPanel({
   if (lights.length === 0) {
     return (
       <section className="flex flex-1 flex-col gap-4 px-5 py-8">
-        <h1 className="text-[26px] font-semibold">Yard</h1>
+        <h1 className="text-[26px] font-semibold">Yard check</h1>
         <p className="text-[15px] leading-6 text-muted-foreground">Connect a controller first. Then this page compares what you saved with what the controller reports.</p>
         <Button asChild size="lg" className="min-h-12">
           <Link href="/discover">Connect controllers</Link>
@@ -188,7 +188,11 @@ export function YardPanel({
   return (
     <section className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8">
       <div className="flex flex-col gap-1">
-        <h1 className="text-[26px] font-semibold tracking-[-0.01em]">Yard</h1>
+        <h1 className="text-[26px] font-semibold tracking-[-0.01em]">Yard check</h1>
+        <p className="text-[15px] leading-6">
+          Checks that each controller still has the lights you saved, and fixes any that drifted. To place props, use{" "}
+          <Link href="/" className="underline underline-offset-4">Your yard</Link>.
+        </p>
         <p className="text-[14px] text-muted-foreground">{YARD_CAPTION}</p>
       </div>
 
