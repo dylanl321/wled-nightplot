@@ -7,7 +7,7 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
-- Layout editor plan: the yard and the prop path move onto react-konva (the same library as dylanl321/nightplot). The plan is `docs/editor-plan.md`. The hand-rolled pointer machine stays until the stage lands. Not Hardware Done.
+- Layout editor plan: `docs/editor-plan.md` compares canvas libraries and chooses react-konva. It lists the use cases, the desktop and phone interactions, and what the current editor can and cannot do. The rebuild waits until that plan is approved. Not Hardware Done.
 
 - First-run props: a prop is one or more strings. Each string is an ordered run of the wire, counted on its own (round length ÷ spacing, so equal sides match, and adding a run does not change the others). Continue from the end, backtrack over a corner, mark a run dark, or add another string. Sections keep the names and colours you set, and Attach writes those colours. See it previews them on the controller. A well house starts at 4 walls, tops first, then opens in the path editor. New prop stays on the yard. Phone spacing is inches when you are using feet.
 
