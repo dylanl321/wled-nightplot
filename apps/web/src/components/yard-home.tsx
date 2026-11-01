@@ -10,6 +10,7 @@ import {
 } from "@nightplot/shared";
 import Link from "next/link";
 import { PropShapeArt } from "@/components/props/prop-shape-art";
+import { YardStage } from "@/components/yard-stage";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -72,6 +73,7 @@ export function YardHome({
       {!next ? (
         <p className="text-[15px] text-muted-foreground">The checklist is done. Look at the lights outside to be sure.</p>
       ) : null}
+      {props.length > 0 ? <YardStage props={props} /> : null}
       <section className="flex flex-col gap-3" aria-label="Props">
         <h2 className="text-[20px] font-semibold">Props</h2>
         {props.length === 0 ? (

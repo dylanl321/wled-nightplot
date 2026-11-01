@@ -384,6 +384,7 @@ export {
   WIREFRAME_GROUPS,
   isHiddenReason,
   isProp,
+  isPropYardPoint,
   isPropIndexRange,
   isPropKind,
   isPropSection,
@@ -393,6 +394,7 @@ export {
   isPropAttachment,
   isPropDesign,
   type Prop,
+  type PropYardPoint,
   type PropAttachment,
   type PropDesign,
   type PropEdge,
@@ -799,3 +801,11 @@ export {
   type SeasonHostMatch,
   type SeasonParseResult,
 } from "./season.ts";
+export {
+  YARD_SLOT_GAP_M,
+  layoutBox,
+  yardBounds,
+  yardPlacements,
+  type YardBox,
+  type YardPlacement,
+} from "./prop/yard.ts";

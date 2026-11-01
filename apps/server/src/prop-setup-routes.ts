@@ -5,6 +5,7 @@ import {
   designFromLayout,
   isPropDesign,
   isPropLayout,
+  isPropYardPoint,
   parsePropKind,
   parsePropSections,
   planPropPlacement,
@@ -131,6 +132,27 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     };
     deps.store.saveDesignedProp(prop);
     return c.json({ prop, message: "Prop saved in Nightplot. Nothing was sent to a controller." });
+  });
+
+  // Where the prop sits on the yard drawing. Only the point changes; the
+  // saved row is read back so a store that did not take the write is not
+  // reported as moved.
+  app.patch("/api/props/:id/yard", async (c) => {
+    const id = c.req.param("id");
+    const existing = deps.store.loadProps().find((row) => row.id === id);
+    if (!existing) return c.json({ error: "not_found", message: "That prop is not in the yard." }, 404);
+    const row = await c.req.json().catch(() => null) as Record<string, unknown> | null;
+    const yard = row?.yard;
+    if (!isPropYardPoint(yard)) {
+      return c.json({ error: "invalid", message: "Send where the prop sits, in metres. Nothing was saved." }, 400);
+    }
+    const at = { x: Math.round(yard.x * 1000) / 1000, y: Math.round(yard.y * 1000) / 1000 };
+    deps.store.saveDesignedProp({ ...existing, yard: at });
+    const saved = deps.store.loadProps().find((prop) => prop.id === id);
+    if (!saved?.yard || saved.yard.x !== at.x || saved.yard.y !== at.y) {
+      return c.json({ error: "readback-mismatch", message: "The yard did not keep that spot. Nothing moved." }, 500);
+    }
+    return c.json({ prop: saved, message: "Moved on the yard drawing. Nothing was sent to a controller." });
   });
 
   app.post("/api/props/:id/attach", async (c) => {
