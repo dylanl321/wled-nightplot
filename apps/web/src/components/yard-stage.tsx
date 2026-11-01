@@ -1,6 +1,6 @@
 "use client";
 
-import { layoutStrings, yardBounds, yardPlacements, type Prop, type PropYardPoint } from "@nightplot/shared";
+import { layoutStrings, yardBounds, yardPlacements, type Light, type Look, type Prop, type PropAttachment, type PropYardPoint } from "@nightplot/shared";
 import type Konva from "konva";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -27,7 +27,17 @@ type Moving = { propId: string; at: PropYardPoint };
  * move it; the new point is saved and read back. Nothing is sent to a
  * controller.
  */
-export function YardStage({ props }: { props: Prop[] }) {
+export function YardStage({
+  props,
+  looks = [],
+  attachments = [],
+  lights = [],
+}: {
+  props: Prop[];
+  looks?: Look[];
+  attachments?: PropAttachment[];
+  lights?: Pick<Light, "id" | "outputs">[];
+}) {
   const router = useRouter();
   const [saved, setSaved] = useState<Record<string, PropYardPoint>>({});
   const [moving, setMoving] = useState<Moving | null>(null);
@@ -110,7 +120,14 @@ export function YardStage({ props }: { props: Prop[] }) {
       </div>
       <div className="relative h-[46dvh] min-h-[300px] overflow-hidden rounded-[14px] border border-border lg:h-[calc(100dvh-12rem)] lg:min-h-0">
         {mode === "3d" ? (
-          <Yard3d props={rows} picked={picked} onPick={setPicked} />
+          <Yard3d
+            props={rows}
+            picked={picked}
+            onPick={setPicked}
+            looks={looks}
+            attachments={attachments}
+            outputs={lights.flatMap((light) => (light.outputs ?? []).map((output) => ({ lightId: light.id, outputId: output.id, start: output.start })))}
+          />
         ) : (
         <EditorStage
           bounds={bounds}

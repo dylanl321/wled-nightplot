@@ -7,6 +7,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- Look colours in the 3D yard (GitHub #159): pick a Look and press Play. The dots follow a preview of Solid, Breathe, Rainbow, Chase, Running, Twinkle, and Rain. It says Preview. When a prop is attached and the controller answers, those dots use the colours it just reported, and a missing read stays the preview. Nothing is written. Not Hardware Done.
+
 - 3D yard (GitHub #159): Your yard has a 2D / 3D switch. 3D opens on Street, from the road at eye height (1.6 m), and also has Overhead and This prop. Drag looks around, the wheel or a pinch zooms, and a right-drag or a second finger pans. The lights are the prop drawing. A browser with no WebGL keeps the drawing and says so. Nothing is sent to a controller. Not Hardware Done.
 
 - Yard place in three dimensions (GitHub #159): a prop's yard point can say how far out from the front wall it sits (`depth`), which way it faces (`facing`, degrees), whether it stands up or lies flat (`mount`), and an extra lift (`heightM`). A point saved before this is still just how far along and how far up, and it loads that way: on the front wall, standing up. Moving it on the drawing keeps the rest. `yardLightPositions` places each light from the drawing. Nothing is sent to a controller. Not Hardware Done.

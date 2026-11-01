@@ -276,4 +276,53 @@ describe("prop yard point", () => {
     const again = await app.request(`/api/props/${second.id}`, { method: "DELETE" });
     expect(again.status).toBe(404);
   });
+
+  it("reads live colours for an attached prop and does not invent a missing read", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-yard-live-"));
+    const store = new FileLightsStore(join(dir, "lights.json"));
+    let leds: (string | null)[] | null = ["#00ff00", "#000000"];
+    const app = createApp({
+      store,
+      settings: new FileSettingsStore(join(dir, "settings.json")),
+      backups: new FileBackupStore(join(dir, "backups")),
+      probe: async () => ({ kind: "found", snapshot: base }),
+      collect: async () => [],
+      write: vi.fn(async () => true),
+      readLive: async () => (leds ? { source: "controller", leds } : null),
+      readCfg: async () => null,
+      writeCfg: async () => true,
+      readNativeFiles: async () => ({ cfgJson: "{}", presetsJson: "{}" }),
+      readLedmap: async () => null,
+      writeLedmap: async () => {},
+      now: () => new Date("2026-11-01T02:00:00.000Z"),
+    });
+    const empty = await app.request("/api/yard/live");
+    expect(await empty.json()).toMatchObject({ lights: [] });
+
+    const enrolled = await app.request("/api/lights", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ host: "192.168.1.40" }),
+    });
+    const light = (await enrolled.json() as { light: { id: string; outputs: { id: string }[] } }).light;
+    const made = await app.request("/api/props", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: "Eave", kind: "roofline", unit: "m", pitchMm: 100, measurements: { shape: "roofline", length: 1 } }),
+    });
+    const prop = (await made.json() as { prop: Prop }).prop;
+    const attached = await app.request(`/api/props/${prop.id}/attach`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ lightId: light.id, outputId: light.outputs[0]!.id, startIndex: 0, apply: false }),
+    });
+    expect(attached.status).toBe(200);
+    const live = await app.request("/api/yard/live");
+    const body = await live.json() as { lights: { lightId: string; leds: string[] | null }[]; caption: string };
+    expect(body.lights).toEqual([{ lightId: light.id, leds: ["#00ff00", "#000000"] }]);
+    expect(body.caption).toContain("missing read");
+    leds = null;
+    const missed = await app.request("/api/yard/live") as Response;
+    expect((await missed.json() as { lights: { leds: null }[] }).lights[0]?.leds).toBeNull();
+  });
 });

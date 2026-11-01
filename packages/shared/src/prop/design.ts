@@ -583,6 +583,22 @@ function segmentsForProp(prop: Prop, absoluteStart: number, outputId: string): P
   return fromEdges;
 }
 
+/** Where this attachment starts on its output. Null when the chain cannot be read. */
+export function outputStartForAttachment(input: {
+  attachment: PropAttachment;
+  props: readonly Prop[];
+  attachments: readonly PropAttachment[];
+}): number | null {
+  const resolved = resolveStartIndex({
+    outputId: input.attachment.outputId,
+    place: { startIndex: input.attachment.startIndex, afterPropId: input.attachment.afterPropId },
+    props: input.props,
+    attachments: input.attachments,
+    selfId: input.attachment.propId,
+  });
+  return resolved.ok ? resolved.startIndex : null;
+}
+
 function resolveStartIndex(input: {
   outputId: string;
   place: { startIndex: number | null; afterPropId: string | null };

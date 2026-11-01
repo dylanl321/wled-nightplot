@@ -444,6 +444,7 @@ export {
   propShapeChanged,
   migrateDesignedProp,
   lightsAlong,
+  outputStartForAttachment,
   planPropPlacement,
   propAttachmentLabel,
   yardSetupSteps,
@@ -895,3 +896,10 @@ export {
   type YardPose,
   type YardView,
 } from "./prop/space.ts";
+export {
+  approximateWledColours,
+  lookFrame,
+  yardLiveColour,
+  type LookFrameLight,
+  type YardLiveFeed,
+} from "./look-preview.ts";
