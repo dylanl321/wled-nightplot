@@ -1,6 +1,7 @@
 import {
   layoutStrings,
   propAttachmentLabel,
+  propShapeChanged,
   yardSetupSteps,
   type Light,
   type Prop,
@@ -102,7 +103,7 @@ export function YardHome({
                   <SectionSketch prop={prop} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[16px] font-medium">{prop.label}</p>
-                    <p className="text-[13px] text-muted-foreground">{shapeTitle(prop.kind)}</p>
+                    <p className="text-[13px] text-muted-foreground">{propShapeChanged(prop) ? `Drawn shape · started as ${shapeTitle(prop.kind)}` : shapeTitle(prop.kind)}</p>
                     <p className="mt-1 text-[15px]">
                       {count === null || count === undefined ? "Light count unknown" : `${count} lights`}
                     </p>

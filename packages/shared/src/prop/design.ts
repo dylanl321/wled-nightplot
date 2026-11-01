@@ -618,3 +618,25 @@ export function propAttachmentLabel(
   if (outputIndex === null) return `${lightName} · output unknown`;
   return `${lightName} · output ${outputIndex + 1}`;
 }
+
+/**
+ * True when a prop built from a template no longer has that template's
+ * edges: a run was deleted or a new one traced. Moving corners or typing
+ * lengths keeps the shape. A drawn prop, or one with no drawing, is never
+ * "changed" here.
+ */
+export function propShapeChanged(prop: Pick<Prop, "kind" | "layout" | "design">): boolean {
+  const layout = prop.layout;
+  const design = prop.design;
+  if (!layout || !design || prop.kind === "custom") return false;
+  const shape = design.measurements.shape;
+  if (shape === "custom" || shape === "legacy") return false;
+  const params = layout.template?.params;
+  if (!params) return false;
+  const template = layoutFromMeasurements({ units: layout.units, pitchM: layout.pitchM, shape, params });
+  if (!template) return false;
+  const ids = (value: PropLayout) => layoutStrings(value).flatMap((string) => string.run).filter((edge) => edge.kind !== "wire").map((edge) => edge.id).sort();
+  const want = ids(template);
+  const have = ids(layout);
+  return want.length !== have.length || want.some((id, index) => id !== have[index]);
+}

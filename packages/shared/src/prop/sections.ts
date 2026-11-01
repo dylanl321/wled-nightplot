@@ -337,3 +337,58 @@ function rangesOverlapAny(left: readonly PropIndexRange[], right: readonly PropI
 function unique(values: readonly string[]): string[] {
   return [...new Set(values)];
 }
+
+export type SectionReconcile = {
+  sections: PropSection[];
+  /** Names of sections made for lit edges that were in no section. */
+  added: string[];
+  /** Edge ids dropped because the path no longer has them. */
+  dropped: string[];
+};
+
+/**
+ * Bring sections in line with an edited path. Edge ids the path no longer
+ * has are dropped. A lit edge in no section gets a section of its own, the
+ * way a new prop's edges do, so a new edge is never silently left out.
+ * Pinned ranges are left alone; the section report flags any that fall off.
+ * Deleted run ids are never handed out again (`retiredIds`), so a section
+ * cannot pick up a newly traced run by accident. Pass `before` (the path
+ * before the edit) to add sections only for runs that are new.
+ */
+export function reconcileSections(layout: PropLayout, sections: readonly PropSection[], before?: PropLayout): SectionReconcile {
+  // With the path as it was, only runs that are new get a section; a run the
+  // operator left out of every section on purpose stays out.
+  const known = before ? new Set(layoutStrings(before).flatMap((string) => string.run).map((edge) => edge.id)) : null;
+  const edges = layoutStrings(layout).flatMap((string) => string.run);
+  const lit = edges.filter((edge) => edge.kind === "lit");
+  const present = new Set(edges.map((edge) => edge.id));
+  const dropped: string[] = [];
+  const kept = sections.map((section) => {
+    const edgeIds = section.edgeIds.filter((id) => {
+      if (present.has(id)) return true;
+      dropped.push(id);
+      return false;
+    });
+    return edgeIds.length === section.edgeIds.length ? section : { ...section, edgeIds };
+  });
+  const covered = new Set(kept.flatMap((section) => section.edgeIds));
+  const ids = new Set(kept.map((section) => section.id));
+  const added: PropSection[] = [];
+  lit.forEach((edge, index) => {
+    if (covered.has(edge.id) || known?.has(edge.id)) return;
+    let id = `section.${edge.id}`;
+    for (let n = 2; ids.has(id); n += 1) id = `section.${edge.id}.${n}`;
+    ids.add(id);
+    const names = new Set([...kept, ...added].map((section) => section.name));
+    let name = `Side ${index + 1}`;
+    for (let n = 2; names.has(name); n += 1) name = `Side ${index + 1} (${n})`;
+    added.push({
+      id,
+      name,
+      edgeIds: [edge.id],
+      pinnedRanges: [],
+      color: SECTION_COLOURS[(kept.length + added.length) % SECTION_COLOURS.length],
+    });
+  });
+  return { sections: [...kept, ...added], added: added.map((section) => section.name), dropped };
+}

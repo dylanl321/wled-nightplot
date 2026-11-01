@@ -7,6 +7,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- Sections after a path edit (GitHub #126, epic #122): when you change a saved prop's path and go on to Sections, an edge you deleted is taken out of its section, and each new edge gets a section of its own (Side 3, Side 4, …) instead of belonging to none. The Sections page says what changed. A deleted run's or corner's id is never handed to a new one (`layout.retiredIds`), so an old section cannot pick up a newly traced run. A prop card says **Drawn shape · started as Mini tree** once its runs no longer match the template. Not Hardware Done.
+
 - Feet and Metres in New prop (GitHub #125, epic #122): switching the unit on the size step converts every size, as spacing already was (3 ft becomes 0.914 m, and back to 3 ft). The next new prop starts in the unit used last, with round metric sizes in Metres. The choice is kept in this browser only. Not Hardware Done.
 
 - Section light stepper (GitHub #124, epic #122): − / + beside an edge in Sections → Advanced now changes how many lights sit on that edge (the typed count the run list uses). The edge keeps its length, no corner moves, and the edge beside it keeps its count. Before, it moved the edge's far corner one light pitch, so a 2 m side grew to 3 m and a shared apex changed the other side. The row shows the spacing that count gives, and Count from the length again clears it. Not Hardware Done.
