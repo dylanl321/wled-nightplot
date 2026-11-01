@@ -1,7 +1,8 @@
 /**
  * Street at 1440×900 and 390×844, with Warm white playing.
  * A roofline stands on the front wall, a tree is in front of it, and an
- * arch is off to the side. Nothing is sent to a controller.
+ * arch is off to the side. Street is shot on the Looks page and on Your yard.
+ * Nothing is sent to a controller.
  */
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
