@@ -9,14 +9,21 @@ import {
   deleteRun,
   edgeLengthM,
   ensureStrings,
+  formatLength,
+  formatPitchCm,
   gapLabel,
+  gridScaleLabel,
   gridSizeM,
   isClosed,
   layoutStrings,
   moveCorner,
+  parsePitchCm,
   setEdgeLength,
   setEdgeLights,
+  setLayoutUnits,
+  setPitchM,
   snapPoint,
+  snapStepM,
   stringById,
   stringEndId,
   type PropLayout,
@@ -26,7 +33,7 @@ import { useEffect, useRef, useState } from "react";
 import { Circle, Group, Line, Text } from "react-konva";
 import { EditorStage, boundsOf, toScreen, toWorld, type Camera, type EditorStageHandle, type Point } from "@/components/canvas";
 import { Button } from "@/components/ui/button";
-import { RunList, lengthInUnit } from "./run-list";
+import { RunList } from "./run-list";
 
 /** Trace adds runs from the wire-in. Edit moves corners. Both pan, zoom, and select. */
 export type EditorMode = "trace" | "edit";
@@ -154,7 +161,7 @@ export function PropLayoutEditor({
   }
 
   function nudge(key: string) {
-    const step = gridSizeM(layoutRef.current.units);
+    const step = snapStepM(layoutRef.current.units);
     const delta = key === "ArrowLeft" ? [-step, 0] : key === "ArrowRight" ? [step, 0] : key === "ArrowUp" ? [0, step] : [0, -step];
     const corner = layoutRef.current.corners.find((row) => row.id === selected);
     if (!corner) return;
@@ -165,6 +172,16 @@ export function PropLayoutEditor({
     const edited = setEdgeLength(layoutRef.current, edgeId, lengthM);
     commit(edited.layout, edited.scaledAll ? "Scaled the drawing about the controller end." : undefined);
     if (edited.gapM) setGap(gapLabel(edited.gapM, layoutRef.current.units));
+  }
+
+  function applyUnits(units: PropLayout["units"]) {
+    const next = setLayoutUnits(layoutRef.current, units);
+    if (next !== layoutRef.current) commit(next);
+  }
+
+  function applyPitch(pitchM: number) {
+    const next = setPitchM(layoutRef.current, pitchM);
+    if (next !== layoutRef.current) commit(next);
   }
 
   function applyLights(edgeId: string, lights: number | null) {
@@ -206,6 +223,7 @@ export function PropLayoutEditor({
       excludeIds: exclude ? [exclude, anchorId ?? ""] : [anchorId ?? ""],
       pitchM: current.pitchM,
       gridM: gridSizeM(current.units),
+      stepM: snapStepM(current.units),
       snapOff: alt || !snap,
       force45: shift,
     });
@@ -214,6 +232,11 @@ export function PropLayoutEditor({
   function addPoint(world: Point, alt: boolean, shift: boolean) {
     const point = snapped(world.x, world.y, undefined, alt, shift);
     setGhost(null);
+    if (!placing) {
+      const endId = stringEndId(stringById(layoutRef.current, activeString));
+      const end = layoutRef.current.corners.find((corner) => corner.id === endId);
+      if (end && Math.hypot(point.x - end.x, point.y - end.y) < 1e-4) return;
+    }
     if (placing) {
       const next = addStringAt(layoutRef.current, point.x, point.y);
       setActiveString(layoutStrings(next).at(-1)?.id ?? activeString);
@@ -363,7 +386,7 @@ export function PropLayoutEditor({
                         {edge.lockedLengthM ? <LockMark /> : null}
                         {Math.hypot(b.x - a.x, b.y - a.y) > 72 && row ? (
                           <Text
-                            text={`${lengthInUnit(row.lengthM, layout.units)} ${layout.units === "ft" ? "ft" : "m"} · ${row.lights}`}
+                            text={lengthCaption(row.lengthM, layout.units, row.lights)}
                             fontSize={11}
                             fill={edge.lockedLights != null ? LIT : "#a8a296"}
                             listening={false}
@@ -400,6 +423,9 @@ export function PropLayoutEditor({
             }}
           />
           {drag ? <Magnifier at={drag.screen} world={{ x: drag.x, y: drag.y }} layout={drawing} /> : null}
+          <p data-testid="grid-scale" className="pointer-events-none absolute left-2 top-14 rounded-md bg-background/90 px-2 py-1 text-[12px] text-muted-foreground">
+            {gridScaleLabel(layout.units)}
+          </p>
           <div className="absolute left-2 top-2 flex gap-2">
             <ModeButton active={mode === "trace"} onClick={() => switchMode("trace")}>Trace</ModeButton>
             <ModeButton active={mode === "edit"} onClick={() => switchMode("edit")}>Edit</ModeButton>
@@ -439,10 +465,17 @@ export function PropLayoutEditor({
         onLights={applyLights}
         onDelete={removeRun}
       />
-      <div className="flex gap-2 border-t border-border bg-background p-2">
+      <div className="flex flex-wrap items-center gap-2 border-t border-border bg-background px-2 py-2">
+        <div role="group" aria-label="Length unit" className="flex gap-1">
+          <ChoiceButton active={layout.units === "ft"} onClick={() => applyUnits("ft")}>Feet</ChoiceButton>
+          <ChoiceButton active={layout.units === "m"} onClick={() => applyUnits("m")}>Metres</ChoiceButton>
+        </div>
+        <SpacingField pitchM={layout.pitchM} onPitch={applyPitch} />
+      </div>
+      <div className="flex gap-2 bg-background px-2 pb-2">
         <DockButton onClick={undo} disabled={past.length === 0}>Undo</DockButton>
         <DockButton onClick={redo} disabled={future.length === 0}>Redo</DockButton>
-        <DockButton onClick={() => setSnap((value) => !value)} pressed={snap}>Snap</DockButton>
+        <DockButton onClick={() => setSnap((value) => !value)} pressed={snap} solid>Snap</DockButton>
         <DockButton onClick={() => picked && removeRun(picked)} disabled={!picked}>Delete</DockButton>
       </div>
       <div className="flex gap-2 bg-background px-2 pb-2">
@@ -477,12 +510,56 @@ function ModeButton({ active, onClick, children }: { active: boolean; onClick: (
   );
 }
 
-function DockButton({ onClick, disabled, pressed, children }: { onClick: () => void; disabled?: boolean; pressed?: boolean; children: string }) {
+function ChoiceButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: string }) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled} aria-pressed={pressed} className={`min-h-11 min-w-11 flex-1 rounded-lg border px-1 text-[14px] ${pressed ? "border-primary" : "border-border"} disabled:opacity-40`}>
+    <button type="button" onClick={onClick} aria-pressed={active} className={`min-h-11 rounded-lg border px-3 text-[14px] ${active ? "border-primary bg-primary text-primary-foreground" : "border-border"}`}>
       {children}
     </button>
   );
+}
+
+function SpacingField({ pitchM, onPitch }: { pitchM: number; onPitch: (pitchM: number) => void }) {
+  const shown = formatPitchCm(pitchM);
+  const [value, setValue] = useState(shown);
+  const [last, setLast] = useState(shown);
+  if (last !== shown) {
+    setLast(shown);
+    setValue(shown);
+  }
+  function apply() {
+    const pitch = parsePitchCm(value);
+    if (pitch == null) return setValue(shown);
+    if (Math.abs(pitch - pitchM) > 1e-6) onPitch(pitch);
+  }
+  return (
+    <form className="flex min-w-0 items-center gap-1" onSubmit={(event) => { event.preventDefault(); apply(); }}>
+      <label htmlFor="light-spacing" className="text-[13px] text-muted-foreground">Spacing</label>
+      <input
+        id="light-spacing"
+        aria-label="Light spacing (cm)"
+        value={value}
+        inputMode="decimal"
+        onChange={(event) => setValue(event.target.value)}
+        onBlur={apply}
+        className="min-h-11 w-16 rounded-md border border-input bg-background px-2 text-base"
+      />
+      <span className="text-[13px] text-muted-foreground">cm</span>
+    </form>
+  );
+}
+
+function DockButton({ onClick, disabled, pressed, solid, children }: { onClick: () => void; disabled?: boolean; pressed?: boolean; solid?: boolean; children: string }) {
+  const filled = Boolean(pressed && solid);
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} aria-pressed={pressed} className={`min-h-11 min-w-11 flex-1 rounded-lg border px-1 text-[14px] ${filled ? "border-primary bg-primary text-primary-foreground" : pressed ? "border-primary" : "border-border"} disabled:opacity-40`}>
+      {children}
+    </button>
+  );
+}
+
+function lengthCaption(lengthM: number, units: PropLayout["units"], lights: number): string {
+  const length = formatLength(lengthM, units);
+  return `${units === "m" ? `${length} m` : length} · ${lights}`;
 }
 
 function Chevron({ a, b }: { a: Point; b: Point }) {

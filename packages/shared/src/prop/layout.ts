@@ -8,6 +8,8 @@
 
 export const LAYOUT_PITCH_M = 0.1;
 export const METRES_PER_FOOT = 0.3048;
+/** One inch, in metres. Twelve of these are one foot, so an inch snap lands on the foot grid. */
+export const METRES_PER_INCH = METRES_PER_FOOT / 12;
 
 export type LayoutSource = "template" | "trace" | "net";
 export type LayoutUnits = "ft" | "m";
@@ -145,8 +147,97 @@ export function emptyTrace(units: LayoutUnits, pitchM = LAYOUT_PITCH_M): PropLay
   };
 }
 
+/** Major grid. Feet: 1 ft. Metres: 0.5 m. The snap step is finer and divides this. */
 export function gridSizeM(units: LayoutUnits): number {
   return units === "ft" ? METRES_PER_FOOT : 0.5;
+}
+
+/** Where a corner holds. Feet: 1 inch. Metres: 5 cm. Both divide the major grid. */
+export function snapStepM(units: LayoutUnits): number {
+  return units === "ft" ? METRES_PER_INCH : 0.05;
+}
+
+/** What one major square is, in the prop's unit. */
+export function gridScaleLabel(units: LayoutUnits): string {
+  return units === "ft" ? "1 square = 1 ft" : "1 square = 0.5 m";
+}
+
+/**
+ * A length for a field or a label. Feet and inches (`3' 11"`), or metres to
+ * two decimal places (`1.20`). The same length always prints the same way.
+ */
+export function formatLength(lengthM: number, units: LayoutUnits): string {
+  if (!Number.isFinite(lengthM)) return "";
+  if (units === "m") return (Math.round(lengthM * 100) / 100).toFixed(2);
+  const total = Math.round(lengthM / METRES_PER_INCH);
+  const sign = total < 0 ? "-" : "";
+  const abs = Math.abs(total);
+  const feet = Math.floor(abs / 12);
+  const inches = abs % 12;
+  if (feet === 0) return `${sign}${inches}"`;
+  if (inches === 0) return `${sign}${feet}'`;
+  return `${sign}${feet}' ${inches}"`;
+}
+
+/**
+ * Read a length field back to metres. Feet accepts `3' 11"`, `3'`, `11"`, or
+ * a decimal number of feet. Metres accepts a positive decimal. Anything else
+ * is null, and the drawing stays as it was.
+ */
+export function parseLength(text: string, units: LayoutUnits): number | null {
+  const raw = text.trim().replace(/[′’]/g, "'").replace(/[″“”]/g, '"');
+  if (!raw) return null;
+  if (units === "m") {
+    if (!/^\d+(?:\.\d+)?$/.test(raw)) return null;
+    const metres = Number(raw);
+    return metres > 0 ? metres : null;
+  }
+  if (/^\d+(?:\.\d+)?$/.test(raw)) {
+    const feet = Number(raw);
+    return feet > 0 ? feet * METRES_PER_FOOT : null;
+  }
+  const inchesOnly = /^(\d+(?:\.\d+)?)\s*"$/.exec(raw);
+  if (inchesOnly) {
+    const inches = Number(inchesOnly[1]);
+    return inches > 0 ? inches * METRES_PER_INCH : null;
+  }
+  const feetInches = /^(\d+)\s*'\s*(\d+(?:\.\d+)?)?\s*"?$/.exec(raw);
+  if (!feetInches) return null;
+  const feet = Number(feetInches[1]);
+  const inches = feetInches[2] == null || feetInches[2] === "" ? 0 : Number(feetInches[2]);
+  if (!Number.isFinite(inches) || inches < 0 || inches >= 12) return null;
+  if (feet === 0 && inches === 0) return null;
+  return feet * METRES_PER_FOOT + inches * METRES_PER_INCH;
+}
+
+/** Change the display and snap unit. Corners stay where they are, in metres. */
+export function setLayoutUnits(layout: PropLayout, units: LayoutUnits): PropLayout {
+  if (layout.units === units) return layout;
+  return { ...layout, units };
+}
+
+/** Light spacing in metres. Counts are round(length ÷ this) unless a run has a typed count. */
+export function setPitchM(layout: PropLayout, pitchM: number): PropLayout {
+  if (!(pitchM > 0) || pitchM > 2 || !Number.isFinite(pitchM)) return layout;
+  if (layout.pitchM === pitchM) return layout;
+  return { ...layout, pitchM };
+}
+
+/** Spacing as centimetres for the field. Whole centimetres stay whole (`10`). */
+export function formatPitchCm(pitchM: number): string {
+  const cm = Math.round(pitchM * 10000) / 100;
+  if (!Number.isFinite(cm)) return "";
+  if (Number.isInteger(cm)) return String(cm);
+  return cm.toFixed(2).replace(/0$/, "").replace(/\.0$/, "");
+}
+
+/** Centimetres from the spacing field, as metres. Blank, zero, and letters are null. */
+export function parsePitchCm(text: string): number | null {
+  const raw = text.trim();
+  if (!/^\d+(?:\.\d+)?$/.test(raw)) return null;
+  const cm = Number(raw);
+  if (!(cm > 0) || cm > 200) return null;
+  return cm / 100;
 }
 
 export function cornerById(layout: PropLayout, id: string): LayoutCorner | undefined {
@@ -433,10 +524,13 @@ export function snapPoint(input: {
   excludeIds?: readonly string[];
   pitchM: number;
   gridM: number;
+  /** Lattice the point holds to. Defaults to the major grid. */
+  stepM?: number;
   snapOff: boolean;
   force45: boolean;
 }): { x: number; y: number; guide: SnapGuide | null } {
   const { point } = input;
+  const step = input.stepM != null && input.stepM > 0 ? input.stepM : input.gridM;
   if (input.snapOff && !input.force45) return { ...point, guide: null };
   const exclude = new Set(input.excludeIds ?? []);
   if (!input.snapOff && !input.force45) {
@@ -449,25 +543,19 @@ export function snapPoint(input: {
     }
     if (best) return { x: best.x, y: best.y, guide: "corner" };
   }
-  if (!input.anchor) return gridOrRaw(point, input.gridM, input.pitchM * 0.45, input.snapOff);
+  if (!input.anchor) {
+    if (input.snapOff) return { ...point, guide: null };
+    return { ...snapLattice(point, step), guide: "grid" };
+  }
   const angled = snapAngle(input.anchor, point, input.previousAngle, input.force45, input.pitchM * 0.45);
-  const aimed = angled ?? { x: point.x, y: point.y, guide: null as SnapGuide | null };
-  const lit = snapLightLength(input.anchor, aimed, input.pitchM);
-  if (lit) return { ...lit, guide: "light" };
-  if (angled) return { x: angled.x, y: angled.y, guide: "angle" };
-  return gridOrRaw(point, input.gridM, input.pitchM * 0.45, input.snapOff);
+  if (input.snapOff) return angled ? { x: angled.x, y: angled.y, guide: "angle" } : { ...point, guide: null };
+  if (angled) return { ...snapAlong(input.anchor, angled, step), guide: "angle" };
+  return { ...snapLattice(point, step), guide: "grid" };
 }
 
 export function lengthLabel(lengthM: number, units: LayoutUnits): { whole: string; extra: string | null } {
-  const per = units === "ft" ? METRES_PER_FOOT : 1;
-  const unitName = units === "ft" ? "ft" : "m";
-  const amount = lengthM / per;
-  const whole = Math.floor(amount + 1e-9);
-  const cm = Math.round((amount - whole) * (units === "ft" ? 30.48 : 100));
-  return {
-    whole: `${whole} ${unitName}`,
-    extra: cm > 0 ? `+${cm} cm` : null,
-  };
+  const shown = formatLength(lengthM, units);
+  return { whole: units === "m" ? `${shown} m` : shown, extra: null };
 }
 
 export function gapLabel(gapM: number, units: LayoutUnits): string {
@@ -803,17 +891,30 @@ function gapAfter(layout: PropLayout, editedId: string): number | null {
   return gap > 0.005 ? gap : null;
 }
 
-function gridOrRaw(
+/** Round both axes onto the snap lattice. Holds even when the point is far from a major line. */
+function snapLattice(point: { x: number; y: number }, step: number): { x: number; y: number } {
+  return { x: snapScalar(point.x, step), y: snapScalar(point.y, step) };
+}
+
+/** Keep the point on the locked ray, and hold its length to the snap step. */
+function snapAlong(
+  anchor: { x: number; y: number },
   point: { x: number; y: number },
-  gridM: number,
-  threshold: number,
-  snapOff: boolean,
-): { x: number; y: number; guide: SnapGuide | null } {
-  if (snapOff || !(gridM > 0)) return { ...point, guide: null };
-  const x = Math.round(point.x / gridM) * gridM;
-  const y = Math.round(point.y / gridM) * gridM;
-  if (Math.hypot(x - point.x, y - point.y) <= threshold) return { x, y, guide: "grid" };
-  return { ...point, guide: null };
+  step: number,
+): { x: number; y: number } {
+  const dx = point.x - anchor.x;
+  const dy = point.y - anchor.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 1e-9) return { x: anchor.x, y: anchor.y };
+  const target = Math.round(length / step) * step;
+  if (target < 1e-9) return { x: anchor.x, y: anchor.y };
+  const scale = target / length;
+  return { x: snapScalar(anchor.x + dx * scale, 1e-6), y: snapScalar(anchor.y + dy * scale, 1e-6) };
+}
+
+function snapScalar(value: number, step: number): number {
+  if (!(step > 0)) return value;
+  return Math.round(Math.round(value / step) * step * 1e6) / 1e6;
 }
 
 function snapAngle(
@@ -841,22 +942,6 @@ function snapAngle(
   const miss = Math.hypot(projected.x - point.x, projected.y - point.y);
   if (!force && best.diff > limit && miss > threshold) return null;
   return projected;
-}
-
-function snapLightLength(
-  anchor: { x: number; y: number },
-  point: { x: number; y: number },
-  pitchM: number,
-): { x: number; y: number } | null {
-  const dx = point.x - anchor.x;
-  const dy = point.y - anchor.y;
-  const length = Math.hypot(dx, dy);
-  if (length < 1e-9) return null;
-  const steps = Math.max(1, Math.round(length / pitchM));
-  const target = steps * pitchM;
-  if (Math.abs(target - length) > pitchM * 0.35) return null;
-  const scale = target / length;
-  return { x: anchor.x + dx * scale, y: anchor.y + dy * scale };
 }
 
 function normalizeAngle(angle: number): number {

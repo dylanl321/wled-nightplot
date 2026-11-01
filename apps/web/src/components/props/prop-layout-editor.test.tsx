@@ -127,7 +127,7 @@ describe("run list", () => {
   it("shows every run's length and count without a tap", async () => {
     render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
     await screen.findByTestId("layout-canvas");
-    expect(screen.getByLabelText("Run 1 length (m)")).toHaveProperty("value", "1");
+    expect(screen.getByLabelText("Run 1 length (m)")).toHaveProperty("value", "1.00");
     expect(screen.getByLabelText("Run 1 lights")).toHaveProperty("value", "10");
   });
 
@@ -147,7 +147,7 @@ describe("run list", () => {
     fireEvent.change(count, { target: { value: "12" } });
     fireEvent.submit(count.closest("form")!);
     expect(screen.getByText("12 lights")).toBeTruthy();
-    expect(screen.getByLabelText("Run 1 length (m)")).toHaveProperty("value", "1");
+    expect(screen.getByLabelText("Run 1 length (m)")).toHaveProperty("value", "1.00");
     expect(screen.getByText(/typed count/)).toBeTruthy();
     const length = screen.getByLabelText("Run 1 length (m)");
     fireEvent.change(length, { target: { value: "2" } });
@@ -159,7 +159,7 @@ describe("run list", () => {
   it("feet show feet", async () => {
     const feet = { ...oneRun(), units: "ft" as const };
     render(<PropLayoutEditor name="Ridge" initial={feet} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
-    expect(await screen.findByLabelText("Run 1 length (ft)")).toHaveProperty("value", "3.28");
+    expect(await screen.findByLabelText("Run 1 length (ft)")).toHaveProperty("value", "3' 3\"");
   });
 
   it("deletes a run by its button, by Delete, and Undo brings it back", async () => {
@@ -175,6 +175,48 @@ describe("run list", () => {
     fireEvent.click(screen.getByRole("button", { name: "Run 1" }));
     fireEvent.keyDown(window, { key: "Delete" });
     expect(screen.getByText("10 lights")).toBeTruthy();
-    expect(screen.getByLabelText("Run 1 length (m)")).toHaveProperty("value", "1");
+    expect(screen.getByLabelText("Run 1 length (m)")).toHaveProperty("value", "1.00");
+  });
+
+  it("shows the grid scale, a filled Snap control, and editable spacing", async () => {
+    render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
+    expect(await screen.findByTestId("grid-scale")).toHaveProperty("textContent", "1 square = 0.5 m");
+    expect(screen.getByRole("button", { name: "Snap" }).className).toContain("bg-primary");
+    expect(screen.getByRole("button", { name: "Metres" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByLabelText("Light spacing (cm)")).toHaveProperty("value", "10");
+    expect(screen.getByText(/overrides that until the length changes/)).toBeTruthy();
+  });
+
+  it("switching to feet keeps the corners and shows feet and inches", async () => {
+    const done = vi.fn();
+    render(<PropLayoutEditor name="Wall" initial={oneRun()} mode="edit" onDone={done} onBack={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Feet" }));
+    expect(screen.getByTestId("grid-scale")).toHaveProperty("textContent", "1 square = 1 ft");
+    expect(screen.getByLabelText("Run 1 length (ft)")).toHaveProperty("value", "3' 3\"");
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    const layout = done.mock.calls[0]![0];
+    expect(layout.units).toBe("ft");
+    expect(layout.corners).toEqual(oneRun().corners);
+  });
+
+  it("editing the spacing recounts lights and leaves the corners", async () => {
+    const done = vi.fn();
+    render(<PropLayoutEditor name="Wall" initial={oneRun()} mode="edit" onDone={done} onBack={vi.fn()} />);
+    const spacing = await screen.findByLabelText("Light spacing (cm)");
+    fireEvent.change(spacing, { target: { value: "20" } });
+    fireEvent.submit(spacing.closest("form")!);
+    expect(screen.getByText("5 lights")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    const layout = done.mock.calls[0]![0];
+    expect(layout.pitchM).toBeCloseTo(0.2, 6);
+    expect(layout.corners).toEqual(oneRun().corners);
+  });
+
+  it("a traced point holds to the inch grid", async () => {
+    const feet = { ...oneRun(), units: "ft" as const };
+    render(<PropLayoutEditor name="Wall" initial={feet} mode="trace" onDone={vi.fn()} onBack={vi.fn()} />);
+    const at = await stagePoint({ x: 1, y: 0.5 });
+    tap(at.node, at.x, at.y);
+    expect(await screen.findByLabelText("Run 2 length (ft)")).toHaveProperty("value", "1' 8\"");
   });
 });
