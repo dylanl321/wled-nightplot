@@ -70,6 +70,12 @@ export type Look = {
   slot: number;
   style: LookStyle;
   overrides: LookOverride[];
+  /**
+   * Props in this Look. A prop not listed is off while the Look runs, so a
+   * prop added later does not light up in Looks made before it. Absent on
+   * Looks saved before this list existed: every prop is in.
+   */
+  propIds?: string[];
 };
 
 export type LookPlaylist = {
@@ -175,7 +181,8 @@ export function isLook(value: unknown): value is Look {
     row.slot !== LOOK_OFF_SLOT &&
     isLookStyle(row.style) &&
     Array.isArray(row.overrides) &&
-    row.overrides.every(isLookOverride)
+    row.overrides.every(isLookOverride) &&
+    (row.propIds === undefined || (Array.isArray(row.propIds) && row.propIds.every((id) => typeof id === "string" && id.length > 0)))
   );
 }
 
@@ -233,7 +240,27 @@ export function normalizeLook(row: Look): Look {
       ...(entry.sectionId ? { sectionId: entry.sectionId } : {}),
       ...(entry.off ? { off: true as const } : {}),
     })),
+    ...(row.propIds ? { propIds: [...new Set(row.propIds)] } : {}),
   };
+}
+
+/** Whether a prop is in a Look. A Look with no list has every prop. */
+export function lookIncludesProp(look: Pick<Look, "propIds">, propId: string): boolean {
+  return !look.propIds || look.propIds.includes(propId);
+}
+
+/**
+ * Give every Look that has no prop list the props that exist now, so a prop
+ * added after this keeps out of them until it is ticked.
+ */
+export function pinLookProps(looks: readonly Look[], propIds: readonly string[]): { looks: Look[]; changed: number } {
+  let changed = 0;
+  const next = looks.map((look) => {
+    if (look.propIds) return look;
+    changed += 1;
+    return { ...look, propIds: [...propIds] };
+  });
+  return { looks: next, changed };
 }
 
 export function normalizePlaylist(row: LookPlaylist): LookPlaylist {
@@ -441,6 +468,9 @@ export function resolveLookStyle(look: Look, target: LookTarget): LookStyle {
 
 /** The style for a target and whether this Look turns it off. */
 export function resolveLookTarget(look: Look, target: LookTarget): { style: LookStyle; off: boolean } {
+  if (target.prop && !lookIncludesProp(look, target.prop.id)) {
+    return { style: resolveWithoutSection(look, target), off: true };
+  }
   if (target.sectionId && target.prop) {
     const bySection = look.overrides.find((row) => row.sectionId === target.sectionId && row.propId === target.prop!.id);
     if (bySection) return { style: bySection.style, off: bySection.off === true };

@@ -136,6 +136,17 @@ describe("EditorStage", () => {
     expect((after.oy - at.y) / after.ppm).toBeCloseTo(worldBefore.y, 1);
   });
 
+  it("with wheel=modifier, the plain wheel leaves the camera and Ctrl + wheel zooms", () => {
+    render(<EditorStage bounds={bounds} limits={limits} label="Drawing" wheel="modifier" />);
+    const stage = screen.getByTestId("editor-stage");
+    const before = cameraOf(stage);
+    const plain = fireEvent.wheel(stage, { deltaY: -100, clientX: 200, clientY: 200 });
+    expect(plain).toBe(true);
+    expect(cameraOf(stage).ppm).toBe(before.ppm);
+    fireEvent.wheel(stage, { deltaY: -100, clientX: 200, clientY: 200, ctrlKey: true });
+    expect(cameraOf(stage).ppm).toBeGreaterThan(before.ppm);
+  });
+
   it("exposes fit, zoom, and the stage transform through a ref", () => {
     const ref = createRef<EditorStageHandle>();
     render(<EditorStage ref={ref} bounds={bounds} limits={limits} label="Drawing" />);

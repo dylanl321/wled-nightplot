@@ -76,6 +76,11 @@ export type PropLayout = {
   faces?: LayoutFace[];
   /** Known lights on the real string, when one has been measured. */
   stringLights?: number;
+  /**
+   * Run and corner ids that were deleted. They are not handed out again, so
+   * a section naming a deleted run never lands on a newly traced one.
+   */
+  retiredIds?: string[];
 };
 
 export type CountedEdge = {
@@ -115,6 +120,7 @@ export function isPropLayout(value: unknown): value is PropLayout {
     }
   }
   if (row.stringLights !== undefined && (!Number.isInteger(row.stringLights) || row.stringLights < 0)) return false;
+  if (row.retiredIds !== undefined && (!Array.isArray(row.retiredIds) || !row.retiredIds.every((id) => typeof id === "string"))) return false;
   return true;
 }
 
@@ -361,7 +367,9 @@ export function deleteRun(layout: PropLayout, edgeId: string): PropLayout {
       used.add(edge.to);
     }
   }
-  return writeStrings({ ...base, corners: base.corners.filter((corner) => used.has(corner.id)) }, strings);
+  const gone = [edgeId, ...base.corners.filter((corner) => !used.has(corner.id)).map((corner) => corner.id)];
+  const retiredIds = [...new Set([...(base.retiredIds ?? []), ...gone])];
+  return writeStrings({ ...base, retiredIds, corners: base.corners.filter((corner) => used.has(corner.id)) }, strings);
 }
 
 function writeStrings(layout: PropLayout, strings: LayoutString[]): PropLayout {
@@ -690,7 +698,13 @@ function applyCornerMap(layout: PropLayout, mapId: (id: string) => string): Prop
     }
   }
   const corners = layout.corners.filter((corner) => used.has(corner.id) && mapId(corner.id) === corner.id);
-  return writeStrings({ ...layout, corners }, strings);
+  const kept = new Set([...corners.map((corner) => corner.id), ...strings.flatMap((string) => string.run.map((edge) => edge.id))]);
+  const gone = [
+    ...layout.corners.map((corner) => corner.id),
+    ...(layout.strings ?? []).flatMap((string) => string.run.map((edge) => edge.id)),
+  ].filter((id) => !kept.has(id));
+  const retired = gone.length > 0 ? { retiredIds: [...new Set([...(layout.retiredIds ?? []), ...gone])] } : {};
+  return writeStrings({ ...layout, ...retired, corners }, strings);
 }
 
 export function moveCorner(layout: PropLayout, id: string, x: number, y: number): PropLayout {
@@ -1159,7 +1173,7 @@ function normalizeAngle(angle: number): number {
 }
 
 function nextId(layout: PropLayout, prefix: string): string {
-  const used = new Set(layout.corners.map((corner) => corner.id));
+  const used = new Set([...layout.corners.map((corner) => corner.id), ...(layout.retiredIds ?? [])]);
   for (const string of layoutStrings(layout)) {
     used.add(string.id);
     for (const edge of string.run) used.add(edge.id);
@@ -1167,4 +1181,16 @@ function nextId(layout: PropLayout, prefix: string): string {
   let n = 1;
   while (used.has(`${prefix}${n}`)) n += 1;
   return `${prefix}${n}`;
+}
+
+/**
+ * Convert a typed size by `factor`. Metres keep three decimals (to the
+ * millimetre) so feet survive a round trip. Text that is not a number is left alone.
+ */
+export function convertSize(value: string, factor: number, decimals: number): string {
+  if (value.trim() === "") return value;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return value;
+  const scale = 10 ** decimals;
+  return String(Math.round(n * factor * scale) / scale);
 }

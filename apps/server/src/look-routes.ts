@@ -13,6 +13,7 @@ import {
   FLEET_LOOK_CONCURRENCY,
   parseLightIdList,
   parseWledPresets,
+  pinLookProps,
   runPresetSlot,
   scheduleMatches,
   validateLooksLibrary,
@@ -148,7 +149,9 @@ export function registerLookRoutes(app: Hono, deps: LookRouteDeps) {
       const scheduleError = validateSchedule(schedule, looks, playlists);
       if (scheduleError) return c.json({ error: "invalid-schedule", message: scheduleError }, 400);
     }
-    const saved = deps.looks.save({ version: 1, looks, playlists, schedule });
+    // A Look saved without a prop list gets the props that exist now.
+    const pinned = pinLookProps(looks, deps.store.loadProps().map((prop) => prop.id)).looks;
+    const saved = deps.looks.save({ version: 1, looks: pinned, playlists, schedule });
     return c.json({ ...saved, yard: yardFrom(deps.store), caption: LOOK_CAPTION });
   });
 

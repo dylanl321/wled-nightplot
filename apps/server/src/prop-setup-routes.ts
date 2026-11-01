@@ -8,6 +8,7 @@ import {
   isPropYardPoint,
   parsePropKind,
   parsePropSections,
+  pinLookProps,
   planPropPlacement,
   validateDeclaredRangesForLight,
   defaultWireframeSpec,
@@ -101,6 +102,12 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     };
     if (!prop.design) {
       return c.json({ error: "invalid-shape", message: "That drawing could not be saved." }, 422);
+    }
+    // Looks made before this prop keep it out until it is ticked in them.
+    if (deps.looks) {
+      const document = deps.looks.read();
+      const pinned = pinLookProps(document.looks, deps.store.loadProps().map((row) => row.id));
+      if (pinned.changed > 0) deps.looks.save({ ...document, looks: pinned.looks });
     }
     deps.store.saveDesignedProp(prop);
     return c.json({
@@ -314,9 +321,14 @@ function dropPropFromLooks(looks: FileLooksStore, propId: string): number {
   let changed = 0;
   const next = document.looks.map((look) => {
     const overrides = look.overrides.filter((row) => row.propId !== propId);
-    if (overrides.length === look.overrides.length) return look;
+    const listed = look.propIds?.includes(propId) ?? false;
+    if (overrides.length === look.overrides.length && !listed) return look;
     changed += 1;
-    return { ...look, overrides };
+    return {
+      ...look,
+      overrides,
+      ...(look.propIds ? { propIds: look.propIds.filter((id) => id !== propId) } : {}),
+    };
   });
   if (changed > 0) looks.save({ ...document, looks: next });
   return changed;

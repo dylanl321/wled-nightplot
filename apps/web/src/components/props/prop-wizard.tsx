@@ -2,6 +2,7 @@
 
 import {
   compilePropDesign,
+  convertSize,
   defaultSections,
   DEFAULT_PITCH_MM,
   emptyTrace,
@@ -42,17 +43,20 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
   const [step, setStep] = useState<Step>("name");
   const [name, setName] = useState("");
   const [kind, setKind] = useState<PropKind | null>(null);
-  const [unit, setUnit] = useState<PropLengthUnit>("ft");
+  // Start in the unit used last time. The size fields are not on the first
+  // step, so reading this browser's choice here cannot change the server render.
+  const [start] = useState(() => (readLastUnit() === "m" ? METRIC_START : IMPERIAL_START));
+  const [unit, setUnit] = useState<PropLengthUnit>(start.unit);
   const [spacingCm, setSpacingCm] = useState("10");
   const [productId, setProductId] = useState<string | null>(null);
-  const [length, setLength] = useState("40");
-  const [width, setWidth] = useState("4");
-  const [height, setHeight] = useState("3");
-  const [base, setBase] = useState("3");
+  const [length, setLength] = useState(start.length);
+  const [width, setWidth] = useState(start.width);
+  const [height, setHeight] = useState(start.height);
+  const [base, setBase] = useState(start.base);
   const [stakes, setStakes] = useState("8");
   const [sides, setSides] = useState("4");
-  const [side, setSide] = useState("4");
-  const [postHeight, setPostHeight] = useState("4");
+  const [side, setSide] = useState(start.side);
+  const [postHeight, setPostHeight] = useState(start.side);
   const [postTouched, setPostTouched] = useState(false);
   const [startCorner, setStartCorner] = useState<0 | 1 | 2 | 3>(0);
   const [clockwise, setClockwise] = useState(true);
@@ -64,6 +68,21 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
   const [rangeError, setRangeError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  /** Switching units converts every size, the same way spacing is converted. */
+  function switchUnit(next: PropLengthUnit) {
+    if (next === unit) return;
+    const factor = next === "m" ? METRES_PER_FOOT : 1 / METRES_PER_FOOT;
+    const convert = (value: string) => convertSize(value, factor, next === "m" ? 3 : 2);
+    setLength(convert);
+    setWidth(convert);
+    setHeight(convert);
+    setBase(convert);
+    setSide(convert);
+    setPostHeight(convert);
+    setUnit(next);
+    writeLastUnit(next);
+  }
 
   const pitchMm = Number(spacingCm) * 10;
   const measurements = useMemo(() => buildMeasurements({
@@ -300,8 +319,8 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
       {step === "size" && kind && kind !== "custom" ? (
         <div className="flex flex-col gap-4">
           <div className="flex gap-2">
-            <UnitButton active={unit === "ft"} onClick={() => setUnit("ft")}>Feet</UnitButton>
-            <UnitButton active={unit === "m"} onClick={() => setUnit("m")}>Metres</UnitButton>
+            <UnitButton active={unit === "ft"} onClick={() => switchUnit("ft")}>Feet</UnitButton>
+            <UnitButton active={unit === "m"} onClick={() => switchUnit("m")}>Metres</UnitButton>
           </div>
           <SizeFields
             kind={kind}
@@ -525,6 +544,30 @@ function buildMeasurements(input: {
       const _never: never = input.kind;
       return _never;
     }
+  }
+}
+
+const UNIT_KEY = "nightplot.propUnit";
+
+const IMPERIAL_START = { unit: "ft" as PropLengthUnit, length: "40", width: "4", height: "3", base: "3", side: "4" };
+/** Round metric sizes, not 3 ft read as 0.914 m. */
+const METRIC_START = { unit: "m" as PropLengthUnit, length: "12", width: "1.2", height: "1", base: "1", side: "1.2" };
+
+function readLastUnit(): PropLengthUnit | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const value = window.localStorage.getItem(UNIT_KEY);
+    return value === "m" || value === "ft" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLastUnit(unit: PropLengthUnit) {
+  try {
+    window.localStorage.setItem(UNIT_KEY, unit);
+  } catch {
+    /* A private window may refuse storage. The unit still switches. */
   }
 }
 

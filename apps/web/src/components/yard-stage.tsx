@@ -31,6 +31,7 @@ export function YardStage({ props }: { props: Prop[] }) {
   const placements = yardPlacements(rows);
   const bounds = yardBounds(placements) ?? { minX: 0, minY: 0, maxX: 4, maxY: 3 };
   const pickedProp = props.find((prop) => prop.id === picked) ?? null;
+  const pickedAt = pickedProp ? placements.find((row) => row.propId === pickedProp.id)?.at ?? null : null;
 
   async function save(propId: string, at: PropYardPoint, quiet = false) {
     const before = saved[propId] ?? props.find((prop) => prop.id === propId)?.yard;
@@ -99,6 +100,8 @@ export function YardStage({ props }: { props: Prop[] }) {
           fitMinSpanM={4}
           limits={{ minPpm: 1, maxPpm: 400 }}
           gridM={1}
+          axes
+          wheel="modifier"
           label="Yard drawing"
           testId="yard-stage"
           onBackgroundTap={() => setPicked(null)}
@@ -107,15 +110,27 @@ export function YardStage({ props }: { props: Prop[] }) {
             setHoverId((current) => (current === next ? current : next));
           }}
           overlay={(camera, size) => (
-            <Labels
-              props={rows}
-              placements={placements}
-              moving={moving}
-              picked={picked}
-              expandedId={hoverId ?? picked}
-              camera={camera}
-              stage={size}
-            />
+            <>
+              <Labels
+                props={rows}
+                placements={placements}
+                moving={moving}
+                picked={picked}
+                expandedId={hoverId ?? picked}
+                camera={camera}
+                stage={size}
+              />
+              {moving ? (
+                <Text
+                  text={positionText(moving.at)}
+                  x={toScreen(moving.at, camera).x + 10}
+                  y={toScreen(moving.at, camera).y + 8}
+                  fontSize={12}
+                  fill={PICKED}
+                  listening={false}
+                />
+              ) : null}
+            </>
           )}
         >
           {() =>
@@ -167,12 +182,23 @@ export function YardStage({ props }: { props: Prop[] }) {
         </EditorStage>
       </div>
       {pickedProp ? (
-        <div className="flex items-center gap-2 text-[15px]">
-          <p className="min-w-0 flex-1 truncate">{pickedProp.label}</p>
-          <Link href={`/props/${pickedProp.id}/edit`} className="inline-flex min-h-11 items-center rounded-lg border border-border px-4">Edit path</Link>
+        <div className="flex flex-col gap-2 text-[15px]">
+          <div className="flex items-center gap-2">
+            <p className="min-w-0 flex-1 truncate">{pickedProp.label}</p>
+            <Link href={`/props/${pickedProp.id}/edit`} className="inline-flex min-h-11 items-center rounded-lg border border-border px-4">Edit path</Link>
+          </div>
+          <PositionFields
+            key={`${pickedProp.id}:${pickedAt?.x}:${pickedAt?.y}`}
+            name={pickedProp.label}
+            at={pickedAt ?? { x: 0, y: 0 }}
+            onSave={(at) => arrange(pickedProp.id, at)}
+          />
         </div>
       ) : (
-        <p className="text-[14px] text-muted-foreground">Drag a prop to where it sits in the yard. Drag empty space to pan. Nothing is sent to a controller.</p>
+        <p className="text-[14px] text-muted-foreground">
+          Drag a prop to where it sits in the yard, or pick it and type where it goes. One square is 1 m; the ring is the origin.
+          Drag empty space to pan; Ctrl or ⌘ and scroll, or pinch, to zoom. Nothing is sent to a controller.
+        </p>
       )}
       {note ? (
         <p role="status" className={`text-[14px] ${note.failed ? "text-red-400" : "text-muted-foreground"}`}>{note.text}</p>
@@ -237,6 +263,49 @@ function Labels({
 
 function colourOf(prop: Prop, edgeId: string): string | undefined {
   return prop.sections?.find((section) => section.color && section.edgeIds.includes(edgeId))?.color;
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100 + 0;
+}
+
+function positionText(at: PropYardPoint): string {
+  return `${round2(at.x)} m right, ${round2(at.y)} m up`;
+}
+
+/**
+ * Where the picked prop's start point sits, in metres from the origin. Typed
+ * values go through the same save and read-back as a drag.
+ */
+export function PositionFields({ name, at, onSave }: { name: string; at: PropYardPoint; onSave: (at: PropYardPoint) => Promise<void> | void }) {
+  const [x, setX] = useState(String(round2(at.x)));
+  const [y, setY] = useState(String(round2(at.y)));
+  const nx = Number(x);
+  const ny = Number(y);
+  const valid = x.trim() !== "" && y.trim() !== "" && Number.isFinite(nx) && Number.isFinite(ny) && Math.abs(nx) <= 10000 && Math.abs(ny) <= 10000;
+  const changed = valid && (round2(nx) !== round2(at.x) || round2(ny) !== round2(at.y));
+  return (
+    <form
+      className="flex flex-wrap items-end gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (changed) void onSave({ x: round2(nx), y: round2(ny) });
+      }}
+    >
+      <label className="flex w-28 flex-col gap-1 text-[13px] text-muted-foreground">
+        Right of origin (m)
+        <input aria-label={`${name} metres right of the origin`} inputMode="decimal" value={x} onChange={(event) => setX(event.target.value)}
+          className="min-h-11 rounded-md border border-input bg-[#07080a] px-3 text-base text-foreground outline-none focus:border-primary" />
+      </label>
+      <label className="flex w-28 flex-col gap-1 text-[13px] text-muted-foreground">
+        Up from origin (m)
+        <input aria-label={`${name} metres up from the origin`} inputMode="decimal" value={y} onChange={(event) => setY(event.target.value)}
+          className="min-h-11 rounded-md border border-input bg-[#07080a] px-3 text-base text-foreground outline-none focus:border-primary" />
+      </label>
+      <button type="submit" disabled={!changed} className="min-h-11 rounded-lg border border-border px-4 disabled:opacity-50">Move</button>
+      {!valid ? <p className="w-full text-[13px] text-destructive">Type a number of metres for each.</p> : null}
+    </form>
+  );
 }
 
 function snap(value: number): number {

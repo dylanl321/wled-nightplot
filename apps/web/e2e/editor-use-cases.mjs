@@ -290,12 +290,19 @@ async function useCase1(page, viewport) {
   await drag(page, viewport, from, { x: from.x + 80, y: from.y + 40 });
   const panned = await camera(frame);
   expect("1 pan", Math.abs(panned.ox - fitted.ox - 80) < 4 && Math.abs(panned.oy - fitted.oy - 40) < 4, { fitted, panned });
-  // Zoom: the wheel on a mouse, two fingers on a phone.
+  // Zoom: Ctrl + wheel on a mouse (the plain wheel scrolls the page past
+  // the yard), two fingers on a phone.
   const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   if (viewport.touch) await pinchOut(page, centre);
   else {
     await page.mouse.move(centre.x, centre.y);
     await page.mouse.wheel(0, -240);
+    await page.waitForTimeout(150);
+    const still = await camera(frame);
+    expect("1 plain wheel scrolls, not zooms", Math.abs(still.ppm - panned.ppm) < 0.01, { panned, still });
+    await page.keyboard.down("Control");
+    await page.mouse.wheel(0, -240);
+    await page.keyboard.up("Control");
   }
   await page.waitForTimeout(150);
   const zoomed = await camera(frame);
@@ -382,10 +389,13 @@ async function useCase13(page, prop, section) {
   if (await more.count()) await more.click();
   const row = `${prop.label} ${section.name}`;
   const colour = page.getByLabel(`${row} colour`);
-  if (!(await colour.count())) {
+  const included = page.getByLabel(`${prop.label} in this Look`, { exact: true });
+  if (!(await included.count())) {
     // The first Look is open by default; open it if a reload closed it.
     await page.locator("ul > li > button").first().click();
   }
+  // A prop made after the Look starts left out of it (#127): tick it in.
+  if (!(await included.isChecked())) await included.check();
   await waitForValue(colour, "#33cc99", "13 section colour default");
   await colour.fill("#ff00aa");
   await page.getByLabel(`${row} effect`).selectOption({ label: "Twinkle" });
