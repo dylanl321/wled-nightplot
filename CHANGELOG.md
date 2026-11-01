@@ -7,6 +7,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- Props in a Look (GitHub #127, epic #122): a Look keeps the list of props it lights (`propIds`). A prop that is not on the list is off while the Look runs, so a prop added later no longer lights up in Looks made before it. Each Look shows a **Props in this Look** tick box for every prop, and a prop's sections show only while it is ticked. A Look saved before this has no list and lights every prop, as before; creating a prop or saving the library gives such Looks the props that exist at that moment. Deleting a prop takes it off every list. Not Hardware Done.
+
 - Sections after a path edit (GitHub #126, epic #122): when you change a saved prop's path and go on to Sections, an edge you deleted is taken out of its section, and each new edge gets a section of its own (Side 3, Side 4, …) instead of belonging to none. The Sections page says what changed. A deleted run's or corner's id is never handed to a new one (`layout.retiredIds`), so an old section cannot pick up a newly traced run. A prop card says **Drawn shape · started as Mini tree** once its runs no longer match the template. Not Hardware Done.
 
 - Feet and Metres in New prop (GitHub #125, epic #122): switching the unit on the size step converts every size, as spacing already was (3 ft becomes 0.914 m, and back to 3 ft). The next new prop starts in the unit used last, with round metric sizes in Metres. The choice is kept in this browser only. Not Hardware Done.

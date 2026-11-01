@@ -727,6 +727,8 @@ export {
   lookSectionNotes,
   propSectionPlan,
   resolveLookTarget,
+  lookIncludesProp,
+  pinLookProps,
   managedLookSlots,
   managedPresetSlotsMatch,
   mergeWledPresets,

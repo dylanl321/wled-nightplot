@@ -43,6 +43,27 @@ const arch = {
   ],
 };
 
+describe("Props in a Look", () => {
+  it("leaves out a prop the Look's list does not have, hides its sections, and saves a tick", async () => {
+    const puts: { looks: { id: string; propIds?: string[] }[] }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as (typeof puts)[number];
+      puts.push(body);
+      return new Response(JSON.stringify({ ...initial, ...body }));
+    }));
+    const looks = [{ ...DEFAULT_LOOKS[0]!, propIds: ["prop-window"] }, ...DEFAULT_LOOKS.slice(1)];
+    render(<LooksPanel lights={lights} initial={{ ...initial, looks, yard: { ...initial.yard, props: [...initial.yard.props, arch] } }} />);
+    expect(screen.getByLabelText("Front window in this Look")).toHaveProperty("checked", true);
+    expect(screen.getByLabelText("Arch in this Look")).toHaveProperty("checked", false);
+    expect(screen.queryByLabelText("Arch Left colour")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Arch in this Look"));
+    expect(screen.getByLabelText("Arch Left colour")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save library" }));
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0]!.looks[0]!.propIds).toEqual(["prop-window", "prop-arch"]);
+  });
+});
+
 describe("Looks with sections", () => {
   it("lists each section with its own colour, and saves a colour, an effect, and a section left out", async () => {
     const puts: { looks: { id: string; overrides: Record<string, unknown>[] }[] }[] = [];
