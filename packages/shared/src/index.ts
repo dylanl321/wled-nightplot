@@ -464,6 +464,8 @@ export {
   gapLabel,
   gridSizeM,
   isClosed,
+  stringById,
+  stringEndId,
   isPropLayout,
   layoutFromMeasurements,
   layoutLightTotal,
@@ -503,15 +505,6 @@ export {
   type SectionColourPlan,
   type SectionRangeReport,
 } from "./prop/sections.ts";
-export {
-  idleGesture,
-  reduceGesture,
-  type GestureEffect,
-  type GestureEvent,
-  type GestureHit,
-  type GestureMode,
-  type GestureState,
-} from "./prop/gestures.ts";
 export {
   WIREFRAME_DEFAULT_PITCH_MM,
   WIREFRAME_DEFAULT_SIDES,

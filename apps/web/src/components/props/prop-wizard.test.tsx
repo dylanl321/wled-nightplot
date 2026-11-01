@@ -44,7 +44,7 @@ describe("New prop wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clockwise" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByRole("button", { name: "Edit", pressed: true })).toBeTruthy();
-    expect(screen.getAllByText("Wire in").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Wire in/).length).toBeGreaterThan(0);
   });
 
   it("opens well house sections after the size, with one section per wall", () => {

@@ -38,6 +38,8 @@ export type EditorStageProps = {
   /** The world box Fit frames, in metres. */
   bounds: Bounds;
   limits?: ZoomLimits;
+  /** Fit never frames less than this many metres, so one corner is not a wall of pixels. */
+  fitMinSpanM?: number;
   /** Grid step in metres. Leave out for no grid. */
   gridM?: number;
   /** Accessible name of the drawing. */
@@ -56,6 +58,13 @@ export type EditorStageProps = {
    * on lines.
    */
   children?: (camera: Camera) => ReactNode;
+  /**
+   * Screen-space content drawn above the world, in stage pixels. Use it for
+   * handles, badges, and text that keep one size at every zoom.
+   */
+  overlay?: (camera: Camera) => ReactNode;
+  /** A mouse moving with no button down, in world metres. `null` when it leaves. */
+  onHover?: (hover: { world: Point; altKey: boolean; shiftKey: boolean } | null) => void;
 };
 
 type Press =
@@ -75,6 +84,7 @@ type Press =
 export function EditorStage({
   bounds,
   limits = DEFAULT_LIMITS,
+  fitMinSpanM = 0.5,
   gridM,
   label,
   testId = "editor-stage",
@@ -84,6 +94,8 @@ export function EditorStage({
   onBackgroundTap,
   onCameraChange,
   children,
+  overlay,
+  onHover,
 }: EditorStageProps) {
   const frame = useRef<HTMLDivElement>(null);
   const stage = useRef<Konva.Stage>(null);
@@ -94,18 +106,22 @@ export function EditorStage({
   const sizeRef = useRef(size);
   const boundsRef = useRef(bounds);
   const limitsRef = useRef(limits);
+  const spanRef = useRef(fitMinSpanM);
   const pointers = useRef(new Map<number, Point>());
   const press = useRef<Press>({ kind: "idle" });
   const space = useRef(false);
   const fitted = useRef(false);
   const tapRef = useRef(onBackgroundTap);
   const changeRef = useRef(onCameraChange);
+  const hoverRef = useRef(onHover);
   // Pointer and wheel handlers read the latest props without re-binding.
   useLayoutEffect(() => {
     boundsRef.current = bounds;
     limitsRef.current = limits;
+    spanRef.current = fitMinSpanM;
     tapRef.current = onBackgroundTap;
     changeRef.current = onCameraChange;
+    hoverRef.current = onHover;
   });
 
   const moveCamera = useCallback((next: Camera | ((current: Camera) => Camera)) => {
@@ -118,7 +134,7 @@ export function EditorStage({
   const fit = useCallback(() => {
     const current = sizeRef.current;
     if (current.w <= 0 || current.h <= 0) return;
-    moveCamera(fitCamera(boundsRef.current, current, limitsRef.current));
+    moveCamera(fitCamera(boundsRef.current, current, limitsRef.current, { minSpanM: spanRef.current }));
   }, [moveCamera]);
 
   const zoomIn = useCallback(() => moveCamera((current) => zoomStep(current, 1, sizeRef.current, limitsRef.current)), [moveCamera]);
@@ -145,7 +161,7 @@ export function EditorStage({
       setSize(next);
       if (!fitted.current && next.w > 0 && next.h > 0) {
         fitted.current = true;
-        moveCamera(fitCamera(boundsRef.current, next, limitsRef.current));
+        moveCamera(fitCamera(boundsRef.current, next, limitsRef.current, { minSpanM: spanRef.current }));
       }
     };
     measure();
@@ -197,6 +213,8 @@ export function EditorStage({
     pointers.current.set(event.pointerId, at);
     if (pointers.current.size >= 2) {
       press.current = { kind: "pinch" };
+      // A second finger ends any shape drag the first finger started.
+      stage.current?.find((node: Konva.Node) => node.isDragging()).forEach((node) => node.stopDrag());
       capture(node, event.pointerId);
       return;
     }
@@ -217,7 +235,13 @@ export function EditorStage({
 
   function onPointerMove(event: React.PointerEvent<HTMLDivElement>) {
     const node = frame.current;
-    if (!node || !pointers.current.has(event.pointerId)) return;
+    if (!node) return;
+    if (!pointers.current.has(event.pointerId)) {
+      if (event.pointerType === "mouse" && event.buttons === 0 && hoverRef.current) {
+        hoverRef.current({ world: screenToWorld(localPoint(node, event)), altKey: event.altKey, shiftKey: event.shiftKey });
+      }
+      return;
+    }
     const at = localPoint(node, event);
     const before = [...pointers.current.values()];
     pointers.current.set(event.pointerId, at);
@@ -282,6 +306,7 @@ export function EditorStage({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onPointerLeave={() => hoverRef.current?.(null)}
       onAuxClick={(event) => event.preventDefault()}
     >
       {size.w > 0 && size.h > 0 ? (
@@ -297,6 +322,12 @@ export function EditorStage({
             </Layer>
           ) : null}
           <Layer>{children?.(camera)}</Layer>
+          {overlay ? (
+            // Undo the stage transform so this layer is in stage pixels.
+            <Layer x={-camera.ox / camera.ppm} y={-camera.oy / camera.ppm} scaleX={1 / camera.ppm} scaleY={1 / camera.ppm}>
+              {overlay(camera)}
+            </Layer>
+          ) : null}
         </Stage>
       ) : null}
       {controls ? (
