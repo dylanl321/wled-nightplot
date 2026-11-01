@@ -388,7 +388,7 @@ export function setEdgeName(layout: PropLayout, edgeId: string, name: string): P
 
 /** Clear a typed count and any hand-placed lights, so the run counts from its length again. */
 export function clearEdgeLights(layout: PropLayout, edgeId: string): PropLayout {
-  return spaceEvenly(layout, edgeId);
+  return countFromLength(layout, edgeId);
 }
 
 /**
@@ -1666,8 +1666,27 @@ export function removePlacedLight(layout: PropLayout, edgeId: string, lightId: s
   return withRetired(next, [lightId]);
 }
 
-/** Drop the lock and the stored lights. The run counts from its length again. */
+/**
+ * Spread the run's lights evenly along it and keep how many there are. Lights
+ * added or removed by hand stay added or removed; only their places change.
+ * The count stays typed in until the length changes or it is cleared.
+ */
 export function spaceEvenly(layout: PropLayout, edgeId: string): PropLayout {
+  const edge = findEdge(layout, edgeId);
+  if (!edge || edge.kind !== "lit") return layout;
+  if (!edge.manualLights && edge.lights == null) return layout;
+  const count = edgeLightCount(layout, edge);
+  const ids = (edge.lights ?? []).map((light) => light.id);
+  const next = mapEdges(layout, (row) => {
+    if (row.id !== edgeId) return row;
+    const { manualLights: _manual, lights: _placed, lockedLights: _count, ...rest } = row;
+    return { ...rest, lockedLights: count };
+  });
+  return withRetired(next, ids);
+}
+
+/** Drop the lock, the stored lights and any typed count. The run counts from its length again. */
+export function countFromLength(layout: PropLayout, edgeId: string): PropLayout {
   const edge = findEdge(layout, edgeId);
   if (!edge || edge.kind !== "lit") return layout;
   if (!edge.manualLights && edge.lockedLights == null && edge.lights == null) return layout;

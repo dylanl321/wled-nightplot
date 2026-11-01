@@ -5,6 +5,7 @@ import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, u
 import { Circle, Layer, Line, Stage, Text } from "react-konva";
 import {
   BACKGROUND_NAME,
+  PINCH_ATTR,
   CONTROLS_INSET_PX,
   DEFAULT_LIMITS,
   fitCamera,
@@ -262,9 +263,12 @@ export function EditorStage({
     if (!node || isControl(event.target)) return;
     const at = localPoint(node, event);
     pointers.current.set(event.pointerId, at);
+    if (pointers.current.size === 1) stage.current?.setAttr(PINCH_ATTR, false);
     if (pointers.current.size >= 2) {
       press.current = { kind: "pinch" };
-      // A second finger ends any shape drag the first finger started.
+      // A second finger cancels any shape drag the first finger started: the
+      // corner or light goes back where it was and nothing is saved.
+      stage.current?.setAttr(PINCH_ATTR, true);
       stage.current?.find((node: Konva.Node) => node.isDragging()).forEach((node) => node.stopDrag());
       capture(node, event.pointerId);
       return;

@@ -151,3 +151,15 @@ describe("camera", () => {
     expect(far.xs.length + far.ys.length).toBeLessThanOrEqual(124);
   });
 });
+
+describe("endedByPinch", () => {
+  it("reads the stage's pinch flag, so a drag cut short by a second finger is put back", async () => {
+    const { endedByPinch, PINCH_ATTR } = await import("./camera");
+    const attrs: Record<string, unknown> = {};
+    const event = { target: { getStage: () => ({ getAttr: (name: string) => attrs[name] }) } };
+    expect(endedByPinch(event)).toBe(false);
+    attrs[PINCH_ATTR] = true;
+    expect(endedByPinch(event)).toBe(true);
+    expect(endedByPinch({ target: { getStage: () => null } })).toBe(false);
+  });
+});

@@ -510,6 +510,7 @@ export {
   runGaps,
   shortRuns,
   spaceEvenly,
+  countFromLength,
   splitRun,
   stringLights,
   stampEdgeNames,
