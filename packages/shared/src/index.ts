@@ -884,8 +884,11 @@ export {
   type YardPlacement,
 } from "./prop/yard.ts";
 export {
+  dragOnGround,
   layoutLightPoints,
   placeYardLight,
+  toggleYardMount,
+  turnYardPoint,
   yardCamera,
   yardLightPositions,
   yardPointForStore,

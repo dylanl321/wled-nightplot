@@ -137,6 +137,10 @@ try {
   const written = [];
   try {
     for (const viewport of viewports) {
+      await api(`/api/props/${id}/yard`, {
+        method: "PATCH",
+        body: JSON.stringify({ yard: { x: 0, y: 0.8, depth: 0, facing: 0, mount: "upright", heightM: 0 } }),
+      });
       const context = await browser.newContext({
         viewport: { width: viewport.width, height: viewport.height },
         hasTouch: viewport.touch,
@@ -163,10 +167,32 @@ try {
         await page.getByRole("button", { name: "This prop", pressed: true }).waitFor();
         await page.getByRole("button", { name: "Street" }).click();
         await page.getByRole("button", { name: "Street", pressed: true }).waitFor();
+        await page.getByRole("button", { name: "2D" }).click();
+        const frame = page.getByTestId("yard-stage");
+        await frame.locator("canvas").first().waitFor();
+        await frame.evaluate((node) => node.scrollIntoView({ block: "center" }));
+        const cam = await frame.evaluate((node) => ({ ppm: Number(node.dataset.ppm), ox: Number(node.dataset.ox), oy: Number(node.dataset.oy) }));
+        const stage = await frame.boundingBox();
+        if (!stage || !cam.ppm) throw new Error("the drawing has no camera");
+        await page.mouse.click(stage.x + cam.ox + 0.4 * cam.ppm, stage.y + cam.oy - 1.2 * cam.ppm);
+        await page.getByRole("button", { name: "3D" }).click();
+        await page.locator("[data-yard-ready=yes]").waitFor();
+        await page.getByRole("button", { name: "Turn" }).click();
+        await page.getByRole("button", { name: "Lay flat" }).click();
+        let moved;
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          const listed = await api("/api/props");
+          moved = listed.props.find((prop) => prop.id === id)?.yard;
+          if (moved?.facing === 45 && moved?.mount === "flat") break;
+          await page.waitForTimeout(100);
+        }
+        if (moved?.facing !== 45 || moved?.mount !== "flat") throw new Error(`3D move did not stick ${JSON.stringify(moved)}`);
         await page.getByLabel("Look").selectOption({ label: lookName });
         await page.getByText("Preview", { exact: true }).waitFor();
         await page.getByRole("button", { name: "Play" }).click();
         await page.getByRole("button", { name: "Stop", pressed: true }).waitFor();
+        await page.getByRole("button", { name: "Overhead" }).click();
+        await page.getByRole("button", { name: "Overhead", pressed: true }).waitFor();
         await page.waitForTimeout(200);
       }
       await page.getByRole("region", { name: "Yard drawing" }).evaluate((node) => node.scrollIntoView({ block: "start" }));

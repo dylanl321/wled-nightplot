@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PropLayout } from "./layout.ts";
-import { layoutLightPoints, placeYardLight, yardCamera, yardLightPositions, yardPointForStore, yardPose } from "./space.ts";
+import { dragOnGround, layoutLightPoints, placeYardLight, toggleYardMount, turnYardPoint, yardCamera, yardLightPositions, yardPointForStore, yardPose } from "./space.ts";
 import { isProp } from "./types.ts";
 import { layoutBox, yardBounds, yardPlacements } from "./yard.ts";
 
@@ -142,5 +142,14 @@ describe("yard lights", () => {
     const prop = yardCamera({ view: "prop", lights, propId: "tree" });
     expect(prop.target.x).toBe(8);
     expect(prop.position.y).toBeGreaterThanOrEqual(1.6);
+  });
+
+  it("moves on the ground, turns, and lays flat without dropping the rest", () => {
+    const point = { x: 1, y: 2, depth: 3, facing: 10 };
+    expect(dragOnGround({ point, from: { x: 0, z: 0 }, to: { x: 0.54, z: -1.02 } })).toEqual({ x: 1.5, y: 2, depth: 2, facing: 10 });
+    expect(turnYardPoint(point)).toEqual({ x: 1, y: 2, depth: 3, facing: 55 });
+    expect(turnYardPoint({ x: 1, y: 2, facing: 330 })).toEqual({ x: 1, y: 2, facing: 15 });
+    expect(toggleYardMount(point).mount).toBe("flat");
+    expect(toggleYardMount({ ...point, mount: "flat" }).mount).toBeUndefined();
   });
 });

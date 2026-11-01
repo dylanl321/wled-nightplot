@@ -1,11 +1,11 @@
 "use client";
 
-import { lookFrame, yardCamera, yardLightPositions, yardLiveColour, type Look, type Prop, type PropAttachment, type YardLight, type YardLiveFeed, type YardView } from "@nightplot/shared";
+import { dragOnGround, lookFrame, toggleYardMount, turnYardPoint, yardCamera, yardLightPositions, yardLiveColour, yardPlacements, type Look, type Prop, type PropAttachment, type PropYardPoint, type YardLight, type YardLiveFeed, type YardView } from "@nightplot/shared";
 import { fetchJson } from "@/lib/api";
 import { CameraControls, Grid, type CameraControls as CameraControlsImpl } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Color, Object3D, type InstancedMesh } from "three";
+import { Color, Object3D, Plane, Vector3, type InstancedMesh } from "three";
 
 const WARM = "#d4a574";
 const VIEWS: { id: YardView; label: string }[] = [
@@ -21,6 +21,7 @@ export function Yard3dCanvas({
   looks,
   attachments,
   outputs,
+  onPlace,
 }: {
   props: Prop[];
   picked: string | null;
@@ -28,6 +29,7 @@ export function Yard3dCanvas({
   looks: Look[];
   attachments: PropAttachment[];
   outputs: { lightId: string; outputId: string; start: number }[];
+  onPlace: (propId: string, at: PropYardPoint) => Promise<boolean> | boolean;
 }) {
   const [view, setView] = useState<YardView>("street");
   const [ready, setReady] = useState(false);
@@ -35,7 +37,29 @@ export function Yard3dCanvas({
   const [playing, setPlaying] = useState(false);
   const [feed, setFeed] = useState<YardLiveFeed[]>([]);
   const [word, setWord] = useState<ColourWord>("section");
-  const lights = useMemo(() => coloredLights(props), [props]);
+  const [draft, setDraft] = useState<{ id: string; at: PropYardPoint } | null>(null);
+  const shown = useMemo(() => props.map((prop) => draft && prop.id === draft.id ? { ...prop, yard: draft.at } : prop), [props, draft]);
+  const lights = useMemo(() => coloredLights(shown), [shown]);
+  const framed = useMemo(() => coloredLights(props), [props]);
+  const pickedPoint = yardPlacements(shown).find((row) => row.propId === picked)?.at;
+  const controlsRef = useRef<CameraControlsImpl>(null);
+  const dragRef = useRef<{ propId: string; from: { x: number; z: number }; point: PropYardPoint; at: PropYardPoint } | null>(null);
+  const ground = useMemo(() => new Plane(new Vector3(0, 1, 0), 0), []);
+  const groundHit = useMemo(() => new Vector3(), []);
+  async function finishDrag() {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    if (controlsRef.current) controlsRef.current.enabled = true;
+    if (!drag) return;
+    const kept = await onPlace(drag.propId, drag.at);
+    if (!kept) setDraft(null);
+  }
+  function beginDrag(propId: string, from: { x: number; z: number }) {
+    const point = yardPlacements(shown).find((row) => row.propId === propId)?.at ?? { x: 0, y: 0 };
+    dragRef.current = { propId, from, point, at: point };
+    if (controlsRef.current) controlsRef.current.enabled = false;
+    onPick(propId);
+  }
   const look = looks.find((row) => row.id === lookId) ?? null;
   useEffect(() => {
     if (attachments.length === 0) return;
@@ -61,8 +85,22 @@ export function Yard3dCanvas({
           onCreated={({ gl }) => gl.setClearColor("#07080a")}
         >
           <color attach="background" args={["#07080a"]} />
-          <Frame view={view} lights={lights} propId={picked} />
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+          <Frame view={view} lights={framed} propId={picked} controlsRef={controlsRef} />
+          <mesh
+            rotation={[-Math.PI / 2, 0, 0]}
+            position={[0, 0, 0]}
+            onPointerMove={(event) => {
+              const drag = dragRef.current;
+              if (!drag) return;
+              const hit = event.ray.intersectPlane(ground, groundHit);
+              if (!hit) return;
+              event.stopPropagation();
+              const at = dragOnGround({ point: drag.point, from: drag.from, to: { x: hit.x, z: hit.z } });
+              drag.at = at;
+              setDraft({ id: drag.propId, at });
+            }}
+            onPointerUp={() => { void finishDrag(); }}
+          >
             <planeGeometry args={[80, 80]} />
             <meshBasicMaterial color="#101218" />
           </mesh>
@@ -93,6 +131,10 @@ export function Yard3dCanvas({
             feed={feed}
             onPick={onPick}
             onWord={setWord}
+            onGrab={(propId, from) => beginDrag(propId, from)}
+            onDrop={() => { void finishDrag(); }}
+            ground={ground}
+            groundHit={groundHit}
           />
           <Ready onReady={() => setReady(true)} />
         </Canvas>
@@ -133,6 +175,12 @@ export function Yard3dCanvas({
         >
           {playing ? "Stop" : "Play"}
         </button>
+        {picked && pickedPoint ? (
+          <>
+            <button type="button" className="pointer-events-auto min-h-11 rounded-lg border border-border bg-[#07080a]/90 px-3 text-[15px]" onClick={() => void onPlace(picked, turnYardPoint(pickedPoint))}>Turn</button>
+            <button type="button" className="pointer-events-auto min-h-11 rounded-lg border border-border bg-[#07080a]/90 px-3 text-[15px]" onClick={() => void onPlace(picked, toggleYardMount(pickedPoint))}>{pickedPoint.mount === "flat" ? "Stand up" : "Lay flat"}</button>
+          </>
+        ) : null}
         {word === "preview" ? <span className="pointer-events-none self-center text-[14px] text-muted-foreground">Preview</span> : null}
         {word === "live" ? <span className="pointer-events-none self-center text-[14px] text-muted-foreground">From the controller</span> : null}
         {word === "mixed" ? <span className="pointer-events-none self-center text-[14px] text-muted-foreground">From the controller where it answered. The rest is a preview.</span> : null}
@@ -141,17 +189,16 @@ export function Yard3dCanvas({
   );
 }
 
-function Frame({ view, lights, propId }: { view: YardView; lights: YardLight[]; propId: string | null }) {
-  const controls = useRef<CameraControlsImpl>(null);
+function Frame({ view, lights, propId, controlsRef }: { view: YardView; lights: YardLight[]; propId: string | null; controlsRef: { current: CameraControlsImpl | null } }) {
   const pose = useMemo(() => yardCamera({ view, lights, propId }), [view, lights, propId]);
   useEffect(() => {
-    const current = controls.current;
+    const current = controlsRef.current;
     if (!current) return;
     void current.setLookAt(pose.position.x, pose.position.y, pose.position.z, pose.target.x, pose.target.y, pose.target.z, false);
-  }, [pose]);
+  }, [pose, controlsRef]);
   return (
     <CameraControls
-      ref={controls}
+      ref={controlsRef}
       makeDefault
       minPolarAngle={0.05}
       maxPolarAngle={Math.PI / 2 - 0.02}
@@ -171,6 +218,10 @@ function LightPoints({
   feed,
   onPick,
   onWord,
+  onGrab,
+  onDrop,
+  ground,
+  groundHit,
 }: {
   lights: ColoredLight[];
   props: Prop[];
@@ -181,6 +232,10 @@ function LightPoints({
   feed: YardLiveFeed[];
   onPick: (propId: string | null) => void;
   onWord: (word: ColourWord) => void;
+  onGrab: (propId: string, from: { x: number; z: number }) => void;
+  onDrop: () => void;
+  ground: Plane;
+  groundHit: Vector3;
 }) {
   const mesh = useRef<InstancedMesh>(null);
   const dummy = useMemo(() => new Object3D(), []);
@@ -230,6 +285,18 @@ function LightPoints({
     <instancedMesh
       ref={mesh}
       args={[undefined, undefined, lights.length]}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        const index = event.instanceId;
+        const propId = index == null ? undefined : lights[index]?.propId;
+        const hit = event.ray.intersectPlane(ground, groundHit);
+        if (!propId || !hit) return;
+        onGrab(propId, { x: hit.x, z: hit.z });
+      }}
+      onPointerUp={(event) => {
+        event.stopPropagation();
+        onDrop();
+      }}
       onClick={(event) => {
         event.stopPropagation();
         const index = event.instanceId;

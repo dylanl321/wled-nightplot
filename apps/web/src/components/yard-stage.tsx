@@ -81,8 +81,9 @@ export function YardStage({
    */
   async function arrange(propId: string, at: PropYardPoint) {
     const shown = placements.filter((row) => row.defaulted && row.propId !== propId);
-    if (!(await save(propId, at))) return;
+    if (!(await save(propId, at))) return false;
     for (const row of shown) await save(row.propId, row.at, true);
+    return true;
   }
 
   function dragTo(propId: string, node: Konva.Node, end: boolean) {
@@ -127,6 +128,7 @@ export function YardStage({
             looks={looks}
             attachments={attachments}
             outputs={lights.flatMap((light) => (light.outputs ?? []).map((output) => ({ lightId: light.id, outputId: output.id, start: output.start })))}
+            onPlace={(propId, at) => arrange(propId, at)}
           />
         ) : (
         <EditorStage
@@ -228,7 +230,7 @@ export function YardStage({
               key={`${pickedProp.id}:${pickedAt?.x}:${pickedAt?.y}`}
               name={pickedProp.label}
               at={pickedAt ?? { x: 0, y: 0 }}
-              onSave={(at) => arrange(pickedProp.id, at)}
+              onSave={(at) => { void arrange(pickedProp.id, at); }}
             />
           ) : null}
         </div>
