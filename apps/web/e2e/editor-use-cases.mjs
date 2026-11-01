@@ -232,10 +232,51 @@ async function useCaseGeometry(page, viewport) {
   mkdirSync("/opt/cursor/artifacts", { recursive: true });
   await page.screenshot({ path: `/opt/cursor/artifacts/editor-geometry-${viewport.name}.png`, fullPage: true });
   await page.getByRole("button", { name: "Add point" }).click();
-  await drag(page, viewport, mid, mid, 1);
+  const splitAt = await screenOf(frame, { x: 1, y: 0 });
+  await drag(page, viewport, splitAt, splitAt, 1);
   await page.getByText(/4 runs/).waitFor();
   await page.getByRole("button", { name: "Join" }).click();
   await page.getByText("Joined corners that sat on each other.").waitFor();
+}
+
+async function useCaseReadability(page, viewport) {
+  const runA = [{ id: "e1", from: "c1", to: "c2", kind: "lit" }];
+  const runB = [{ id: "e2", from: "c3", to: "c4", kind: "lit" }];
+  const created = await api("/api/props", {
+    method: "POST",
+    body: JSON.stringify({
+      label: `Wall strings ${viewport.name} ${run}`,
+      kind: "custom",
+      unit: "m",
+      pitchMm: 100,
+      layout: {
+        source: "trace",
+        units: "m",
+        pitchM: 0.1,
+        startOffsetM: 0,
+        corners: [
+          { id: "c1", x: 0, y: 0 }, { id: "c2", x: 2, y: 0 },
+          { id: "c3", x: 0, y: 0.8 }, { id: "c4", x: 1, y: 0.8 },
+        ],
+        run: runA,
+        strings: [
+          { id: "s1", startId: "c1", run: runA },
+          { id: "s2", startId: "c3", run: runB },
+        ],
+      },
+    }),
+  });
+  await page.goto(`${webOrigin}/props/${created.prop.id}/edit`, { waitUntil: "domcontentloaded" });
+  const frame = page.getByTestId("layout-canvas");
+  await frame.locator("canvas").first().waitFor({ timeout: 20000 });
+  await hydrated(page.getByRole("heading", { name: /String 1: Wire in, 1 run · 20 lights/ }));
+  await page.getByRole("heading", { name: /String 2: Wire in, 1 run · 10 lights/ }).waitFor();
+  if (viewport.touch && viewport.height > viewport.width) {
+    const box = await frame.boundingBox();
+    expect("stage height", box && box.height >= viewport.height * 0.4, box);
+  }
+  mkdirSync("/opt/cursor/artifacts", { recursive: true });
+  await page.screenshot({ path: `/opt/cursor/artifacts/editor-readability-${viewport.name}.png`, fullPage: true });
 }
 
 async function useCase1(page, viewport) {
@@ -272,6 +313,10 @@ async function useCase7and10(page, viewport, prop) {
   await page.goto(`${webOrigin}/props/${prop.id}/edit`, { waitUntil: "domcontentloaded" });
   const frame = page.getByTestId("layout-canvas");
   await frame.locator("canvas").first().waitFor({ timeout: 20000 });
+  if (viewport.touch && viewport.height > viewport.width) {
+    const box = await frame.boundingBox();
+    expect("stage height", box && box.height >= viewport.height * 0.4, box);
+  }
   const run2 = page.getByLabel("Run 2 length (m)");
   await hydrated(run2);
   await waitForValue(run2, "1.00", "7 start");
@@ -374,6 +419,7 @@ try {
       ["1 see the yard", () => useCase1(page, viewport)],
       ["units and snap", () => useCaseUnits(page, viewport)],
       ["split, join, and typed length", () => useCaseGeometry(page, viewport)],
+      ["string headings and phone stage", () => useCaseReadability(page, viewport)],
       ["7 move a corner, 10 set a length", () => useCase7and10(page, viewport, prop)],
       ["12 return to sections", async () => { section = await useCase12(page, prop); }],
       ["13 a Look uses the section", () => (section ? useCase13(page, prop, section) : Promise.reject(new Error("no section from 12")))],

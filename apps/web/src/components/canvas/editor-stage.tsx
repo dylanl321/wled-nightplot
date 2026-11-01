@@ -9,6 +9,7 @@ import {
   DEFAULT_LIMITS,
   fitCamera,
   gridLines,
+  type FitPad,
   isTap,
   panBy,
   pinchStep,
@@ -46,6 +47,8 @@ export type EditorStageProps = {
   testId?: string;
   /** Show Zoom in, Zoom out, and Fit. On by default. */
   controls?: boolean;
+  /** Extra screen px Fit keeps clear, on top of the margin and the zoom-button inset. */
+  fitPad?: FitPad;
   className?: string;
   ref?: Ref<EditorStageHandle>;
   /** A press on empty space (or a background shape) that did not move. */
@@ -88,6 +91,7 @@ export function EditorStage({
   label,
   testId = "editor-stage",
   controls = true,
+  fitPad,
   className,
   ref,
   onBackgroundTap,
@@ -107,6 +111,7 @@ export function EditorStage({
   const limitsRef = useRef(limits);
   const spanRef = useRef(fitMinSpanM);
   const insetRef = useRef(controls ? CONTROLS_INSET_PX : 0);
+  const padRef = useRef(fitPad);
   const pointers = useRef(new Map<number, Point>());
   const press = useRef<Press>({ kind: "idle" });
   const space = useRef(false);
@@ -120,6 +125,7 @@ export function EditorStage({
     limitsRef.current = limits;
     spanRef.current = fitMinSpanM;
     insetRef.current = controls ? CONTROLS_INSET_PX : 0;
+    padRef.current = fitPad;
     tapRef.current = onBackgroundTap;
     changeRef.current = onCameraChange;
     hoverRef.current = onHover;
@@ -135,7 +141,7 @@ export function EditorStage({
   const fit = useCallback(() => {
     const current = sizeRef.current;
     if (current.w <= 0 || current.h <= 0) return;
-    moveCamera(fitCamera(boundsRef.current, current, limitsRef.current, { minSpanM: spanRef.current, rightInset: insetRef.current }));
+    moveCamera(fitCamera(boundsRef.current, current, limitsRef.current, { minSpanM: spanRef.current, rightInset: insetRef.current, pad: padRef.current }));
   }, [moveCamera]);
 
   const zoomIn = useCallback(() => moveCamera((current) => zoomStep(current, 1, sizeRef.current, limitsRef.current)), [moveCamera]);
@@ -162,7 +168,7 @@ export function EditorStage({
       setSize(next);
       if (!fitted.current && next.w > 0 && next.h > 0) {
         fitted.current = true;
-        moveCamera(fitCamera(boundsRef.current, next, limitsRef.current, { minSpanM: spanRef.current, rightInset: insetRef.current }));
+        moveCamera(fitCamera(boundsRef.current, next, limitsRef.current, { minSpanM: spanRef.current, rightInset: insetRef.current, pad: padRef.current }));
       }
     };
     measure();
