@@ -111,7 +111,7 @@ export function YardCanvas({ drawn, props, look, className, small, labels, selec
         drawnProp.lights.forEach((light, index) => {
           const at = place(light.x, light.y, light.z);
           const x = at.x, y = at.y;
-          const dot = Math.min(Math.max(1.15, r * at.scale), Number.isFinite(gap) ? gap * 0.22 : r * at.scale);
+          const dot = Math.min(Math.max(1.15, r * at.scale), Number.isFinite(gap) ? gap * 0.34 : r * at.scale);
           const c = neutral ? [212, 165, 116] : look ? drawnLightColour(look, prop, drawnProp, index, time) : null;
           if (!c || c[0] + c[1] + c[2] < 6) {
             g.globalCompositeOperation = "source-over";
@@ -121,11 +121,19 @@ export function YardCanvas({ drawn, props, look, className, small, labels, selec
           }
           const [cr, cg, cb] = [c[0]! | 0, c[1]! | 0, c[2]! | 0];
           const core = Math.max(1.1, dot);
-          // The flat drawing's halo: 3.2× the dot, alpha 0.16, added with lighter.
-          // A tight row uses a smaller halo so neighbouring dots stay apart.
           const halo = lightHalo(core, gap);
-          if (!small) { g.fillStyle = `rgba(${cr},${cg},${cb},${0.16 * k * at.fade})`; g.beginPath(); g.arc(x, y, halo, 0, 7); g.fill(); }
-          g.fillStyle = `rgba(${cr},${cg},${cb},${k * at.fade})`; g.beginPath(); g.arc(x, y, core, 0, 7); g.fill();
+          const strength = k * at.fade;
+          if (!small) {
+            const sprite = glowSprite(cr, cg, cb);
+            g.globalAlpha = strength;
+            g.drawImage(sprite, x - halo, y - halo, halo * 2, halo * 2);
+            g.globalAlpha = 1;
+          }
+          g.fillStyle = `rgba(${cr},${cg},${cb},${strength})`;
+          g.beginPath(); g.arc(x, y, core, 0, 7); g.fill();
+          const hot = Math.max(0.6, core * 0.4);
+          g.fillStyle = `rgba(${hotChannel(cr)},${hotChannel(cg)},${hotChannel(cb)},${strength})`;
+          g.beginPath(); g.arc(x, y, hot, 0, 7); g.fill();
         });
         g.globalCompositeOperation = "source-over";
         if (!drawnProp.lights.length || small) continue;
@@ -299,9 +307,40 @@ function drawEaveWalls(
   }
 }
 
+const glowSprites = new Map<number, HTMLCanvasElement>();
+
+/** A soft glow for one colour: 0.55 at the centre, fading to nothing at the edge. */
+function glowSprite(cr: number, cg: number, cb: number): HTMLCanvasElement {
+  const key = (cr << 16) | (cg << 8) | cb;
+  const cached = glowSprites.get(key);
+  if (cached) return cached;
+  const size = 96;
+  const sprite = document.createElement("canvas");
+  sprite.width = size;
+  sprite.height = size;
+  const sg = sprite.getContext("2d");
+  if (sg) {
+    const mid = size / 2;
+    const grd = sg.createRadialGradient(mid, mid, 0, mid, mid, mid);
+    grd.addColorStop(0, `rgba(${cr},${cg},${cb},0.55)`);
+    grd.addColorStop(0.14, `rgba(${cr},${cg},${cb},0.26)`);
+    grd.addColorStop(0.38, `rgba(${cr},${cg},${cb},0.08)`);
+    grd.addColorStop(0.7, `rgba(${cr},${cg},${cb},0.02)`);
+    grd.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+    sg.fillStyle = grd;
+    sg.fillRect(0, 0, size, size);
+  }
+  glowSprites.set(key, sprite);
+  return sprite;
+}
+
+function hotChannel(channel: number): number {
+  return Math.round(channel + (255 - channel) * 0.72);
+}
+
 /**
- * The flat drawing's halo is 3.2× the dot. That disc is used when the lights
- * have room. On a tight row it shrinks so neighbouring glows do not join into a bar.
+ * The glow reaches 3.2× the dot when the lights have room. On a tight row it
+ * stops short of the next light, and the fade to nothing lets neighbours blend.
  */
 function lightHalo(core: number, gap: number): number {
   const full = core * 3.2;
