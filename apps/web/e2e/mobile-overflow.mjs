@@ -15,6 +15,13 @@ const viewports = [
   { name: "android-360x780", width: 360, height: 780 },
 ];
 
+/** The path editor at a wide window and a short landscape phone, beside the phone checks. */
+const editorViewports = [
+  { name: "desktop-1440x900", width: 1440, height: 900, touch: false },
+  { name: "desktop-1280x800", width: 1280, height: 800, touch: false },
+  { name: "landscape-844x390", width: 844, height: 390, touch: true },
+];
+
 const children = [];
 
 async function up(url) {
@@ -315,13 +322,49 @@ try {
 
     await context.close();
   }
+
+  // The path editor on a wide window and a short landscape phone: no
+  // overflow, every tool a real target (not a hairline column), and the
+  // drawing takes the pointer.
+  for (const viewport of editorViewports) {
+    const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, hasTouch: viewport.touch });
+    const page = await context.newPage();
+    try {
+      await page.goto(`${webOrigin}/props/new`, { waitUntil: "domcontentloaded" });
+      await settle(page);
+      await page.getByRole("textbox").fill("Ridge");
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      await page.getByRole("button", { name: /Draw it/ }).click();
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      await page.getByRole("button", { name: "Name sections" }).waitFor();
+      await page.locator("[data-testid=layout-canvas] canvas").first().waitFor();
+      assertFits(`${viewport.name} editor`, await measure(page));
+      const tools = await page.locator("aside[aria-label='Path tools'] button").evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const box = node.getBoundingClientRect();
+          return { name: node.textContent?.trim() ?? "", w: box.width, h: box.height, bottom: box.bottom, right: box.right };
+        }),
+      );
+      const bad = tools.filter((tool) => tool.w < 44 || tool.h < 40 || tool.h > 72 || tool.bottom > viewport.height + 1 || tool.right > viewport.width + 1);
+      if (tools.length < 6 || bad.length) throw new Error(`${viewport.name} editor tools\n${JSON.stringify(bad.length ? bad : tools)}`);
+      const canvas = await page.getByTestId("layout-canvas").boundingBox();
+      if (!canvas || canvas.width < 200 || canvas.height < 150) throw new Error(`${viewport.name} drawing too small ${JSON.stringify(canvas)}`);
+      const hit = await page.evaluate(([x, y]) => Boolean(document.elementFromPoint(x, y)?.closest("[data-testid=layout-canvas]")), [canvas.x + canvas.width / 2, canvas.y + canvas.height / 2]);
+      if (!hit) throw new Error(`${viewport.name} the drawing does not take the pointer`);
+      console.log(`ok ${viewport.name} editor`);
+    } catch (error) {
+      failed += 1;
+      console.error(String(error));
+    }
+    await context.close();
+  }
 } finally {
   await browser.close();
   stopChildren();
 }
 
 if (failed > 0) {
-  console.error(`${failed} phone viewport check(s) failed`);
+  console.error(`${failed} viewport check(s) failed`);
   process.exit(1);
 }
-console.log("phone viewports fit");
+console.log("phone and editor viewports fit");
