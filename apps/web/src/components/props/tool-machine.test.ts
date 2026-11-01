@@ -108,6 +108,25 @@ describe("tool state machine", () => {
     expect(doubled.state.gesture).toBe("idle");
   });
 
+  it("a finger tap selects a point, and a hold removes it", () => {
+    const tracing = initialTool("trace");
+    expect(click(tracing, tail, 0, "touch").effect).toEqual({ type: "selectPoint", pointId: "c2" });
+    expect(click(tracing, corner, 0, "touch").effect).toEqual({ type: "selectPoint", pointId: "c9" });
+    expect(click(tracing, wireIn, 0, "touch").effect).toEqual({ type: "selectPoint", pointId: "c1" });
+    const held = reduceTool(tracing, pointer({ phase: "up", button: 0, hit: corner, pointerType: "touch", held: true }));
+    expect(held.effect).toEqual({ type: "removePoint", pointId: "c9" });
+    expect(held.state.gesture).toBe("tracing");
+    const wire = reduceTool(tracing, pointer({ phase: "up", button: 0, hit: wireIn, pointerType: "touch", held: true }));
+    expect(wire.effect.type).toBe("refuseWireIn");
+    const only = reduceTool(tracing, pointer({ phase: "up", button: 0, hit: onlyWire, pointerType: "touch", held: true }));
+    expect(only.effect.type).toBe("removeWireIn");
+    const slid = reduceTool(tracing, pointer({ phase: "up", button: 0, hit: tail, pointerType: "touch", moved: true }));
+    expect(slid.effect.type).toBe("none");
+    const edit = reduceTool(initialTool("edit"), pointer({ phase: "up", button: 0, hit: corner, pointerType: "touch" }));
+    expect(edit.effect).toEqual({ type: "selectPoint", pointId: "c9" });
+    expect(edit.state.gesture).toBe("idle");
+  });
+
   it("reads point and run names off the canvas", () => {
     expect(hitFromShape("np:point:c1", { tailId: "c2", wireInIds: ["c1"], onlyPoint: false })).toEqual(wireIn);
     expect(hitFromShape("np:point:c2", { tailId: "c2", wireInIds: ["c1"], onlyPoint: false })).toEqual(tail);

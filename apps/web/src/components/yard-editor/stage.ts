@@ -65,7 +65,17 @@ export type Scene = {
   dots?: LightDot[] | null;
   /** Draw-it canvas: badges (A1) beside the length caption. */
   badges?: boolean;
+  /** A point picked on a phone, drawn with a ring. */
+  selectedPoint?: string | null;
 };
+
+/** Drawn corners stay small. A finger still gets a 44 px square. */
+export const POINT_TOUCH_PX = 44;
+
+/** Half the hit size. Touch uses the 44 px target; a mouse stays tight. */
+export function pointHitSlop(touch: boolean): number {
+  return touch ? POINT_TOUCH_PX / 2 : 9;
+}
 
 /** The rubber band while tracing. Dots are in world metres. */
 export type RubberBand = {
@@ -286,6 +296,10 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
     for (const corner of p.corners) {
       const x = sx(corner.x + p.x), y = sy(corner.y + p.y);
       const isStart = p.start && Math.abs(p.start.x - corner.x) < 1e-9 && Math.abs(p.start.y - corner.y) < 1e-9;
+      if (scene.selectedPoint === corner.id) {
+        ctx.beginPath(); ctx.arc(x, y, POINT_TOUCH_PX / 2, 0, Math.PI * 2);
+        ctx.strokeStyle = c.pick; ctx.lineWidth = 3; ctx.stroke();
+      }
       ctx.fillStyle = c.card; ctx.strokeStyle = isStart ? c.primary : c.pick; ctx.lineWidth = 2;
       const r = crowded && !isStart ? 2.5 : 5;
       ctx.beginPath(); ctx.rect(x - r, y - r, r * 2, r * 2); ctx.fill(); ctx.stroke();
@@ -458,11 +472,16 @@ export function hitRun(view: View, p: DrawProp, px: number, py: number, slop = 1
 }
 
 export function hitCorner(view: View, p: DrawProp, px: number, py: number, slop = 9): string | null {
-  for (let i = p.corners.length - 1; i >= 0; i--) {
-    const c = p.corners[i]!;
-    if (Math.abs(view.sx(c.x + p.x) - px) < slop && Math.abs(view.sy(c.y + p.y) - py) < slop) return c.id;
+  let best: { id: string; d: number } | null = null;
+  for (const c of p.corners) {
+    const dx = view.sx(c.x + p.x) - px;
+    const dy = view.sy(c.y + p.y) - py;
+    if (Math.abs(dx) <= slop && Math.abs(dy) <= slop) {
+      const d = Math.hypot(dx, dy);
+      if (!best || d < best.d) best = { id: c.id, d };
+    }
   }
-  return null;
+  return best?.id ?? null;
 }
 
 export function hitProp(view: View, props: DrawProp[], px: number, py: number): DrawProp | null {

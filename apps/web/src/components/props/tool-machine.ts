@@ -38,6 +38,9 @@ export type ToolState = {
   press: { button: PointerButton; pointerType: PointerKind } | null;
 };
 
+/** A still finger on a point for this long removes it. */
+export const LONG_PRESS_MS = 500;
+
 export type ToolPointer = {
   type: "pointer";
   phase: "down" | "move" | "up" | "cancel";
@@ -46,6 +49,8 @@ export type ToolPointer = {
   hit: ToolHit;
   /** True once the pointer has moved past the tap slop. */
   moved: boolean;
+  /** True when a finger stayed on a point for `LONG_PRESS_MS`. */
+  held?: boolean;
   /** 2 is the second click of a double-click. */
   detail: number;
   shift: boolean;
@@ -65,6 +70,7 @@ export type ToolEffect =
   | { type: "place"; kind: "lit" | "wire" }
   | { type: "join"; pointId: string; kind: "lit" | "wire" }
   | { type: "removePoint"; pointId: string }
+  | { type: "selectPoint"; pointId: string }
   | { type: "popTail" }
   | { type: "refuseWireIn" }
   | { type: "removeWireIn" }
@@ -121,8 +127,25 @@ export function hitFromShape(
 function onPointer(state: ToolState, event: ToolPointer): ToolStep {
   if (event.modifierPan || event.button === 1) return pan(state, event);
   if (event.phase === "cancel") return release(state);
+  // A finger has no right-click. A tap selects the point; a still hold removes it.
+  if (event.phase === "up" && event.pointerType !== "mouse" && !event.moved && event.hit.kind === "point") {
+    return touchPoint(state, event);
+  }
   if (state.mode === "edit") return editPointer(state, event);
   return tracePointer(state, event);
+}
+
+function touchPoint(state: ToolState, event: ToolPointer): ToolStep {
+  const hit = event.hit;
+  if (hit.kind !== "point") return { state, effect: { type: "none" } };
+  const gesture = state.mode === "trace" && state.gesture !== "idle" ? "tracing" : "idle";
+  const next: ToolState = { ...state, gesture, press: null, dragId: null, lengthDraft: "" };
+  if (event.held) {
+    if (hit.role === "wire-in" && !hit.onlyPoint) return { state: next, effect: { type: "refuseWireIn" } };
+    if (hit.role === "wire-in") return { state: next, effect: { type: "removeWireIn" } };
+    return { state: next, effect: { type: "removePoint", pointId: hit.id } };
+  }
+  return { state: next, effect: { type: "selectPoint", pointId: hit.id } };
 }
 
 function tracePointer(state: ToolState, event: ToolPointer): ToolStep {
