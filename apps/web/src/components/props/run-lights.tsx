@@ -3,7 +3,7 @@
 import { alongRun, layoutStrings, pointOnRun, stringLights, type PropLayout, type StringLight } from "@nightplot/shared";
 import type Konva from "konva";
 import { Circle, Group, Text } from "react-konva";
-import { toScreen, type Camera, type Point } from "@/components/canvas";
+import { endedByPinch, toScreen, type Camera, type Point } from "@/components/canvas";
 
 /** One spacing, in pixels, before numbered dots are drawn. */
 export const LIGHT_DOT_MIN_PX = 16;
@@ -64,7 +64,7 @@ export function RunLightLayer({
   selected: LightPick | null;
   slide: LightSlide | null;
   onSelect: (pick: LightPick) => void;
-  onDrag: (pick: LightPick, alongM: number, done: boolean) => void;
+  onDrag: (pick: LightPick, alongM: number, done: boolean, cancelled?: boolean) => void;
 }) {
   if (!showLightDots(layout.pitchM, camera.ppm, fits)) return null;
   const byEdge = new Map<string, StringLight[]>();
@@ -103,6 +103,14 @@ export function RunLightLayer({
           selected={isSelected}
           onSelect={() => onSelect(pick)}
           onDrag={(event, done) => {
+            if (endedByPinch(event)) {
+              // A pinch began on this light: put it back and save nothing.
+              if (!done) { event.target.stopDrag(); return; }
+              const home = row[item.station];
+              if (home) event.target.position(toScreen({ x: home.x, y: home.y }, camera));
+              onDrag(pick, home?.alongM ?? item.mark.alongM, true, true);
+              return;
+            }
             const pointer = event.target.getStage()?.getPointerPosition();
             const world = pointer ? screenToWorld(pointer, camera) : screenToWorld(event.target.position(), camera);
             const along = alongRun(from, to, world);
@@ -141,7 +149,12 @@ function LightDot({
       onTouchStart={(event) => { event.cancelBubble = true; }}
       onClick={(event) => { event.cancelBubble = true; onSelect(); }}
       onTap={(event) => { event.cancelBubble = true; onSelect(); }}
-      onDragStart={(event) => { event.cancelBubble = true; onSelect(); }}
+      onDragStart={(event) => {
+        event.cancelBubble = true;
+        // A drag that only starts once a pinch is under way is not a drag.
+        if (endedByPinch(event)) { event.target.stopDrag(); return; }
+        onSelect();
+      }}
       onDragMove={(event) => onDrag(event, false)}
       onDragEnd={(event) => onDrag(event, true)}
     >
