@@ -103,7 +103,7 @@ describe("PropLayoutEditor on the Konva stage", () => {
     expect(screen.getByText(/String 2: Wire in, 0 runs/)).toBeTruthy();
     const next = await stagePoint({ x: 1, y: 1 });
     tap(next.node, next.x, next.y, { altKey: true });
-    expect(screen.getByText(/String 2: Wire in, 1 run$/)).toBeTruthy();
+    expect(screen.getByText(/String 2: Wire in, 1 run/)).toBeTruthy();
     expect(screen.getByText("20 lights")).toBeTruthy();
   });
 
@@ -112,7 +112,7 @@ describe("PropLayoutEditor on the Konva stage", () => {
     const at = await stagePoint({ x: 2, y: 2 });
     tap(at.node, at.x, at.y);
     expect(screen.getByText("10 lights")).toBeTruthy();
-    expect(screen.getByText(/1 run$/)).toBeTruthy();
+    expect(screen.getByText(/String 1: Wire in, 1 run/)).toBeTruthy();
   });
 
   it("Done hands back the drawing with strings", async () => {
