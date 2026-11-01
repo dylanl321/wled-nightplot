@@ -26,15 +26,37 @@ async function up(url) {
   }
 }
 
+const childLogs = new Map();
+
 function start(args, env = {}) {
   const child = spawn("corepack", args, {
     cwd: root,
     env: { ...process.env, ...env },
     detached: true,
-    stdio: "ignore",
+    stdio: ["ignore", "pipe", "pipe"],
   });
+  const chunks = [];
+  const keep = (stream) => {
+    stream.on("data", (chunk) => {
+      chunks.push(chunk);
+      let size = chunks.reduce((sum, item) => sum + item.length, 0);
+      while (size > 24_000 && chunks.length > 1) size -= chunks.shift().length;
+    });
+  };
+  keep(child.stdout);
+  keep(child.stderr);
+  childLogs.set(child, chunks);
   children.push(child);
   return child;
+}
+
+function recentLogs() {
+  const parts = [];
+  for (const chunks of childLogs.values()) {
+    const text = Buffer.concat(chunks).toString("utf8").trim();
+    if (text) parts.push(text.split("\n").slice(-30).join("\n"));
+  }
+  return parts.join("\n---\n");
 }
 
 async function waitFor(url, ms) {
@@ -43,7 +65,8 @@ async function waitFor(url, ms) {
     if (await up(url)) return;
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  throw new Error(`timed out waiting for ${url}`);
+  const logs = recentLogs();
+  throw new Error(`timed out waiting for ${url}${logs ? `\n${logs}` : ""}`);
 }
 
 function stopChildren() {
