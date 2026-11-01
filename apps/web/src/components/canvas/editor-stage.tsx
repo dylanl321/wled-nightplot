@@ -5,6 +5,7 @@ import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, u
 import { Layer, Line, Stage } from "react-konva";
 import {
   BACKGROUND_NAME,
+  CONTROLS_INSET_PX,
   DEFAULT_LIMITS,
   fitCamera,
   gridLines,
@@ -105,6 +106,7 @@ export function EditorStage({
   const boundsRef = useRef(bounds);
   const limitsRef = useRef(limits);
   const spanRef = useRef(fitMinSpanM);
+  const insetRef = useRef(controls ? CONTROLS_INSET_PX : 0);
   const pointers = useRef(new Map<number, Point>());
   const press = useRef<Press>({ kind: "idle" });
   const space = useRef(false);
@@ -117,6 +119,7 @@ export function EditorStage({
     boundsRef.current = bounds;
     limitsRef.current = limits;
     spanRef.current = fitMinSpanM;
+    insetRef.current = controls ? CONTROLS_INSET_PX : 0;
     tapRef.current = onBackgroundTap;
     changeRef.current = onCameraChange;
     hoverRef.current = onHover;
@@ -132,7 +135,7 @@ export function EditorStage({
   const fit = useCallback(() => {
     const current = sizeRef.current;
     if (current.w <= 0 || current.h <= 0) return;
-    moveCamera(fitCamera(boundsRef.current, current, limitsRef.current, { minSpanM: spanRef.current }));
+    moveCamera(fitCamera(boundsRef.current, current, limitsRef.current, { minSpanM: spanRef.current, rightInset: insetRef.current }));
   }, [moveCamera]);
 
   const zoomIn = useCallback(() => moveCamera((current) => zoomStep(current, 1, sizeRef.current, limitsRef.current)), [moveCamera]);
@@ -159,7 +162,7 @@ export function EditorStage({
       setSize(next);
       if (!fitted.current && next.w > 0 && next.h > 0) {
         fitted.current = true;
-        moveCamera(fitCamera(boundsRef.current, next, limitsRef.current, { minSpanM: spanRef.current }));
+        moveCamera(fitCamera(boundsRef.current, next, limitsRef.current, { minSpanM: spanRef.current, rightInset: insetRef.current }));
       }
     };
     measure();

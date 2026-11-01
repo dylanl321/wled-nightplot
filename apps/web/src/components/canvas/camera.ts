@@ -26,6 +26,8 @@ export const TAP_SLOP_PX = 6;
 export const ZOOM_STEP = 1.25;
 export const DEFAULT_LIMITS: ZoomLimits = { minPpm: 2, maxPpm: 800 };
 export const FIT_MARGIN: Point = { x: 28, y: 28 };
+/** Screen px the zoom buttons take on the right edge (8 px gap + a 44 px button + 4). */
+export const CONTROLS_INSET_PX = 56;
 
 export function toScreen(point: Point, camera: Camera): Point {
   return { x: camera.ox + point.x * camera.ppm, y: camera.oy - point.y * camera.ppm };
@@ -76,23 +78,28 @@ export function panBy(camera: Camera, dx: number, dy: number): Camera {
   return { ...camera, ox: camera.ox + dx, oy: camera.oy + dy };
 }
 
-/** Centre `bounds` in `size` with a margin. A tiny or empty box keeps a minimum span. */
+/**
+ * Centre `bounds` in `size` with a margin. A tiny or empty box keeps a
+ * minimum span. `rightInset` keeps that many px on the right clear, so the
+ * zoom buttons never sit on top of a corner.
+ */
 export function fitCamera(
   bounds: Bounds,
   size: Size,
   limits: ZoomLimits,
-  options: { margin?: Point; minSpanM?: number } = {},
+  options: { margin?: Point; minSpanM?: number; rightInset?: number } = {},
 ): Camera {
   const margin = options.margin ?? FIT_MARGIN;
+  const inset = Math.max(0, Math.min(options.rightInset ?? 0, size.w / 4));
   const minSpan = options.minSpanM ?? 0.5;
   const worldW = Math.max(bounds.maxX - bounds.minX, minSpan);
   const worldH = Math.max(bounds.maxY - bounds.minY, minSpan);
-  const roomW = Math.max(40, size.w - margin.x * 2);
+  const roomW = Math.max(40, size.w - inset - margin.x * 2);
   const roomH = Math.max(40, size.h - margin.y * 2);
   const ppm = clampPpm(Math.min(roomW / worldW, roomH / worldH), limits);
   const cx = (bounds.minX + bounds.maxX) / 2;
   const cy = (bounds.minY + bounds.maxY) / 2;
-  return { ppm, ox: size.w / 2 - cx * ppm, oy: size.h / 2 + cy * ppm };
+  return { ppm, ox: (size.w - inset) / 2 - cx * ppm, oy: size.h / 2 + cy * ppm };
 }
 
 /**

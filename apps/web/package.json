@@ -9,7 +9,8 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
-    "test:mobile": "node e2e/mobile-overflow.mjs"
+    "test:mobile": "node e2e/mobile-overflow.mjs",
+    "test:editor": "node e2e/editor-use-cases.mjs"
   },
   "dependencies": {
     "@nightplot/shared": "workspace:*",

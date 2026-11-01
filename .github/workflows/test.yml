@@ -67,3 +67,6 @@ jobs:
 
       - name: Phone overflow
         run: pnpm --filter @nightplot/web test:mobile
+
+      - name: Editor use cases at 1440×900 and 390×844
+        run: pnpm --filter @nightplot/web test:editor
