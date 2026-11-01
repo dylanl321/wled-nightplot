@@ -987,7 +987,7 @@ export {
   type YardPoint2,
   type YardScene,
 } from "./house.ts";
-export { STREET_EYE_M, STREET_FOCAL_M, streetProject, type FlatView, type StreetPoint } from "./prop/street.ts";
+export { STREET_EYE_M, STREET_FOCAL_M, fitStreet, streetProject, type FlatView, type StreetPoint } from "./prop/street.ts";
 export {
   drawnLightColour,
   drawnLightStyle,

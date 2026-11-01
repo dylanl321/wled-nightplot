@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { STREET_EYE_M, streetProject } from "./street.ts";
+import { STREET_EYE_M, fitStreet, streetProject } from "./street.ts";
 
 const view = { s: 40, ox: 200, oy: 300 };
 
@@ -22,5 +22,26 @@ describe("street projection", () => {
     expect(Math.abs(far.y - horizon)).toBeLessThan(Math.abs(wall.y - horizon));
     expect(Math.abs(near.y - horizon)).toBeGreaterThan(Math.abs(wall.y - horizon));
     expect(far.fade).toBeLessThan(wall.fade);
+  });
+
+  it("fits the lights under a horizon in the top third", () => {
+    const lights = [
+      { x: -3, y: 3, z: 0 },
+      { x: 3, y: 3, z: 0 },
+      { x: 0, y: 0, z: -4 },
+      { x: 0, y: 1.6, z: -4 },
+    ];
+    const view = fitStreet(800, 600, lights);
+    const horizon = view.oy - STREET_EYE_M * view.s;
+    expect(horizon / 600).toBeGreaterThan(0.35);
+    expect(horizon / 600).toBeLessThan(0.4);
+    const placed = lights.map((point) => streetProject(point, view));
+    const top = Math.min(...placed.map((point) => point.y));
+    const bottom = Math.max(...placed.map((point) => point.y));
+    expect((bottom - top) / 600).toBeGreaterThan(0.7);
+    expect(top).toBeGreaterThan(8);
+    expect(bottom).toBeLessThan(592);
+    expect(Math.min(...placed.map((point) => point.x))).toBeGreaterThan(8);
+    expect(Math.max(...placed.map((point) => point.x))).toBeLessThan(792);
   });
 });

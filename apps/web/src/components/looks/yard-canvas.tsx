@@ -1,6 +1,6 @@
 "use client";
 
-import { drawnLightColour, sampleLookStyle, streetProject, type DrawnProp, type FlatView, type Look, type LookStyle, type Prop } from "@nightplot/shared";
+import { drawnLightColour, fitStreet, sampleLookStyle, streetProject, type DrawnProp, type FlatView, type Look, type LookStyle, type Prop } from "@nightplot/shared";
 import { useEffect, useRef } from "react";
 
 /** One clock for every canvas on the page, so thumbnails and strips move together. */
@@ -83,35 +83,35 @@ export function YardCanvas({ drawn, props, look, className, small, labels, selec
       if (!g) return;
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.fillStyle = "#07080b"; g.fillRect(0, 0, w, h);
-      let view = fit(w, h, bounds(drawn), small ? 6 : depth ? 36 : 26);
-      if (depth) {
-        const nearest = drawn.reduce((min, prop) => prop.lights.reduce((m, light) => Math.min(m, light.z), min), 0);
-        const persp = 8 / (8 + Math.max(-7.5, nearest));
-        view = { ...view, s: view.s / Math.max(1, persp) * 0.86 };
-      }
-      viewRef.current = view;
       const { yaw, zoom } = eye.current;
-      const place = (x: number, y: number, z = 0) => depth ? streetProject({ x, y, z }, view, yaw, zoom) : { ...flatPoint(view, x, y), scale: 1, fade: 1 };
-      if (depth) drawGround(g, w, h, view, yaw, zoom);
+      const lights = drawn.flatMap((prop) => prop.lights);
+      const fitted = depth ? fitStreet(w, h, lights, yaw) : null;
+      const view = fitted
+        ? { s: fitted.s * zoom, ox: w / 2 + (fitted.ox - w / 2) * zoom, oy: h * 0.375 + 1.6 * fitted.s * zoom }
+        : fit(w, h, bounds(drawn), small ? 6 : 26);
+      viewRef.current = view;
+      const place = (x: number, y: number, z = 0) => depth ? streetProject({ x, y, z }, view, yaw, 1) : { ...flatPoint(view, x, y), scale: 1, fade: 1 };
+      if (depth) drawGround(g, w, h, view, yaw);
       else {
         const gy = toScreen(view, 0, 0)[1];
         g.fillStyle = "#0e1117"; g.fillRect(0, gy, w, h - gy);
         g.strokeStyle = "#1e232c"; g.beginPath(); g.moveTo(0, gy); g.lineTo(w, gy); g.stroke();
       }
-      const r = Math.max(1.1, Math.min(4, view.s * 0.045 * (depth ? zoom : 1)));
+      const r = Math.max(1.1, Math.min(small ? 2.2 : 4.5, view.s * (small ? 0.03 : 0.04)));
       const time = still ? 0.7 : t;
       const order = depth ? [...drawn].sort((a, b) => meanZ(b) - meanZ(a)) : drawn;
-      if (depth) drawPosts(g, order, place);
+      if (depth) drawEaveWalls(g, order, place);
       for (const drawnProp of order) {
         const prop = props.find((row) => row.id === drawnProp.id);
         if (!prop) continue;
         const isSel = selected?.includes(prop.id) ?? false;
         const k = selected?.length && !isSel && dim ? 0.35 : 1;
         g.globalCompositeOperation = "lighter";
+        const gap = neighbourGap(drawnProp, place);
         drawnProp.lights.forEach((light, index) => {
           const at = place(light.x, light.y, light.z);
           const x = at.x, y = at.y;
-          const dot = r * at.scale;
+          const dot = Math.min(Math.max(1.15, r * at.scale), gap * 0.34);
           const c = neutral ? [212, 165, 116] : look ? drawnLightColour(look, prop, drawnProp, index, time) : null;
           if (!c || c[0] + c[1] + c[2] < 6) {
             g.globalCompositeOperation = "source-over";
@@ -121,7 +121,8 @@ export function YardCanvas({ drawn, props, look, className, small, labels, selec
           }
           const [cr, cg, cb] = [c[0]! | 0, c[1]! | 0, c[2]! | 0];
           const dimmer = at.fade;
-          if (!small) { g.fillStyle = `rgba(${cr},${cg},${cb},${0.16 * k * dimmer})`; g.beginPath(); g.arc(x, y, dot * 3.2, 0, 7); g.fill(); }
+          const halo = Math.min(dot * 2.2, gap * 0.46);
+          if (!small) { g.fillStyle = `rgba(${cr},${cg},${cb},${0.2 * k * dimmer})`; g.beginPath(); g.arc(x, y, halo, 0, 7); g.fill(); }
           g.fillStyle = `rgba(${cr},${cg},${cb},${k * dimmer})`; g.beginPath(); g.arc(x, y, Math.max(1.1, dot), 0, 7); g.fill();
         });
         g.globalCompositeOperation = "source-over";
@@ -232,43 +233,80 @@ function meanZ(prop: DrawnProp): number {
   return prop.lights.reduce((sum, light) => sum + light.z, 0) / prop.lights.length;
 }
 
-function drawGround(g: CanvasRenderingContext2D, w: number, h: number, view: FlatView, yaw: number, zoom: number) {
-  const horizon = streetProject({ x: 0, y: STREET_EYE, z: 40 }, view, yaw, zoom).y;
-  g.fillStyle = "#0e1117";
+function drawGround(g: CanvasRenderingContext2D, w: number, h: number, view: FlatView, yaw: number) {
+  const horizon = Math.min(h - 1, Math.max(0, view.oy - 1.6 * view.s));
+  const sky = g.createLinearGradient(0, 0, 0, Math.max(horizon, 1));
+  sky.addColorStop(0, "#07080b");
+  sky.addColorStop(1, "#161b24");
+  g.fillStyle = sky;
+  g.fillRect(0, 0, w, horizon);
+  const ground = g.createLinearGradient(0, horizon, 0, h);
+  ground.addColorStop(0, "#232a36");
+  ground.addColorStop(1, "#0c0e13");
+  g.fillStyle = ground;
   g.fillRect(0, horizon, w, h - horizon);
-  g.strokeStyle = "#2a3140";
+  const tone = (y: number) => {
+    const t = (y - horizon) / Math.max(1, h - horizon);
+    return Math.max(0, Math.min(0.45, t * 0.55));
+  };
   g.lineWidth = 1;
-  for (const z of [0, 2, 4, 6, 8]) {
-    const a = streetProject({ x: -8, y: 0, z }, view, yaw, zoom);
-    const b = streetProject({ x: 8, y: 0, z }, view, yaw, zoom);
+  for (const z of [-1, 0, 1.5, 3, 5, 8, 12]) {
+    const a = streetProject({ x: -40, y: 0, z }, view, yaw, 1);
+    const b = streetProject({ x: 40, y: 0, z }, view, yaw, 1);
+    const shade = g.createLinearGradient(a.x, a.y, b.x, b.y);
+    shade.addColorStop(0, `rgba(186, 198, 214, ${tone(a.y)})`);
+    shade.addColorStop(1, `rgba(186, 198, 214, ${tone(b.y)})`);
+    g.strokeStyle = shade;
     g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
   }
-  for (const x of [-6, -3, 0, 3, 6]) {
-    const a = streetProject({ x, y: 0, z: -2 }, view, yaw, zoom);
-    const b = streetProject({ x, y: 0, z: 10 }, view, yaw, zoom);
+  for (const x of [-8, -4, 0, 4, 8]) {
+    const a = streetProject({ x, y: 0, z: -3 }, view, yaw, 1);
+    const b = streetProject({ x, y: 0, z: 16 }, view, yaw, 1);
+    const shade = g.createLinearGradient(a.x, a.y, b.x, b.y);
+    shade.addColorStop(0, `rgba(186, 198, 214, ${tone(a.y)})`);
+    shade.addColorStop(1, `rgba(186, 198, 214, ${tone(b.y)})`);
+    g.strokeStyle = shade;
     g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
   }
 }
 
-const STREET_EYE = 1.6;
-
-function drawPosts(
+function drawEaveWalls(
   g: CanvasRenderingContext2D,
   props: readonly DrawnProp[],
   place: (x: number, y: number, z?: number) => { x: number; y: number },
 ) {
-  g.strokeStyle = "rgba(255,255,255,0.16)";
-  g.lineWidth = 1;
+  g.fillStyle = "rgba(18, 22, 30, 0.72)";
   for (const prop of props) {
-    if (!prop.lights.length) continue;
-    const x = prop.lights.reduce((sum, light) => sum + light.x, 0) / prop.lights.length;
-    const y = prop.lights.reduce((sum, light) => sum + light.y, 0) / prop.lights.length;
+    if (prop.kind !== "roofline" || prop.lights.length < 2) continue;
     const z = meanZ(prop);
-    if (y < 0.4) continue;
-    const foot = place(x, 0, z);
-    const head = place(x, y, z);
-    g.beginPath(); g.moveTo(foot.x, foot.y); g.lineTo(head.x, head.y); g.stroke();
+    const xs = prop.lights.map((light) => light.x);
+    const y = prop.lights.reduce((sum, light) => sum + light.y, 0) / prop.lights.length;
+    const left = Math.min(...xs);
+    const right = Math.max(...xs);
+    const topL = place(left, y, z);
+    const topR = place(right, y, z);
+    const botL = place(left, 0, z);
+    const botR = place(right, 0, z);
+    g.beginPath();
+    g.moveTo(topL.x, topL.y);
+    g.lineTo(topR.x, topR.y);
+    g.lineTo(botR.x, botR.y);
+    g.lineTo(botL.x, botL.y);
+    g.closePath();
+    g.fill();
   }
+}
+
+function neighbourGap(prop: DrawnProp, place: (x: number, y: number, z?: number) => { x: number; y: number }): number {
+  let gap = Infinity;
+  for (let index = 1; index < prop.lights.length; index += 1) {
+    const a = prop.lights[index - 1]!;
+    const b = prop.lights[index]!;
+    const pa = place(a.x, a.y, a.z);
+    const pb = place(b.x, b.y, b.z);
+    gap = Math.min(gap, Math.hypot(pa.x - pb.x, pa.y - pb.y));
+  }
+  return gap;
 }
 
 function hitAt(cv: HTMLCanvasElement, clientX: number, clientY: number, view: YardView | null, eye: { yaw: number; zoom: number }, depth: boolean, drawn: readonly DrawnProp[]): { propId: string; index: number } | null {
