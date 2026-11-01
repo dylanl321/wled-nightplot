@@ -138,6 +138,67 @@ export function yardLightPositions(props: readonly Pick<Prop, "id" | "layout" | 
   return lights;
 }
 
+export type YardView = "street" | "overhead" | "prop";
+
+export type YardCamera = {
+  position: { x: number; y: number; z: number };
+  target: { x: number; y: number; z: number };
+};
+
+/**
+ * Street looks from the road at eye height (1.6 m). Overhead looks down.
+ * This prop frames one prop, or the first prop when none is picked.
+ * The eye stays above the ground.
+ */
+export function yardCamera(input: {
+  view: YardView;
+  lights: readonly { propId?: string; x: number; y: number; z: number }[];
+  propId?: string | null;
+}): YardCamera {
+  const focusId = input.view === "prop" ? (input.propId ?? input.lights[0]?.propId ?? null) : null;
+  const lights = focusId ? input.lights.filter((light) => light.propId === focusId) : input.lights;
+  const box = lightBox(lights.length > 0 ? lights : input.lights);
+  const center = {
+    x: (box.minX + box.maxX) / 2,
+    y: (box.minY + box.maxY) / 2,
+    z: (box.minZ + box.maxZ) / 2,
+  };
+  const span = Math.max(box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ, 1);
+  if (input.view === "overhead") {
+    return {
+      position: { x: round3(center.x), y: round3(Math.max(6, span * 1.8)), z: round3(center.z + span * 0.15) },
+      target: { x: round3(center.x), y: 0, z: round3(center.z) },
+    };
+  }
+  const back = input.view === "prop" ? Math.max(1.6, span * 1.5) : Math.max(4, span * 1.3);
+  const eyeY = input.view === "prop" ? Math.max(1.6, center.y) : 1.6;
+  return {
+    position: { x: round3(center.x), y: round3(eyeY), z: round3(box.minZ - back) },
+    target: { x: round3(center.x), y: round3(Math.min(center.y, 1.2)), z: round3(center.z) },
+  };
+}
+
+function lightBox(lights: readonly { x: number; y: number; z: number }[]): {
+  minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number;
+} {
+  if (lights.length === 0) return { minX: -1, maxX: 1, minY: 0, maxY: 2, minZ: 0, maxZ: 0 };
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const light of lights) {
+    minX = Math.min(minX, light.x);
+    maxX = Math.max(maxX, light.x);
+    minY = Math.min(minY, light.y);
+    maxY = Math.max(maxY, light.y);
+    minZ = Math.min(minZ, light.z);
+    maxZ = Math.max(maxZ, light.z);
+  }
+  return { minX, maxX, minY, maxY, minZ, maxZ };
+}
+
 function round3(value: number): number {
   return Math.round(value * 1000) / 1000 + 0;
 }

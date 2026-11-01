@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { deleteRun, layoutFromMeasurements, layoutStrings } from "@nightplot/shared";
 import { YardHome } from "./yard-home";
@@ -90,5 +90,24 @@ describe("Your yard", () => {
       />,
     );
     expect(screen.getByText("Drawn shape · started as Mini tree")).toBeTruthy();
+  });
+
+  it("switches between the drawing and 3D, and says when 3D cannot draw", async () => {
+    render(
+      <YardHome
+        props={[{ id: "roof", label: "Front roof", kind: "roofline", elementIds: [], lightId: "l1" }]}
+        attachments={[]}
+        lights={[]}
+        looksReady={false}
+        yardClear={false}
+        looksKnown
+        yardKnown
+      />,
+    );
+    expect(screen.getByRole("button", { name: "2D", pressed: true })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "3D" }));
+    expect(await screen.findByText(/cannot show the 3D yard/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "2D" }));
+    expect(screen.queryByText(/cannot show the 3D yard/)).toBeNull();
   });
 });

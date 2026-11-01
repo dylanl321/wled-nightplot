@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PropLayout } from "./layout.ts";
-import { layoutLightPoints, placeYardLight, yardLightPositions, yardPointForStore, yardPose } from "./space.ts";
+import { layoutLightPoints, placeYardLight, yardCamera, yardLightPositions, yardPointForStore, yardPose } from "./space.ts";
 import { isProp } from "./types.ts";
 import { layoutBox, yardBounds, yardPlacements } from "./yard.ts";
 
@@ -124,5 +124,23 @@ describe("yard lights", () => {
       heightM: 0.4,
     });
     expect(yardPointForStore({ x: 1, y: 2, depth: 0, facing: 0, mount: "upright", heightM: 0 })).toEqual({ x: 1, y: 2 });
+  });
+
+  it("opens at eye height on the street, and can look down or at one prop", () => {
+    const lights = [
+      { propId: "roof", x: 0, y: 3, z: 0 },
+      { propId: "roof", x: 4, y: 3, z: 0 },
+      { propId: "tree", x: 8, y: 0, z: 2 },
+    ];
+    const street = yardCamera({ view: "street", lights, propId: null });
+    expect(street.position.y).toBe(1.6);
+    expect(street.position.z).toBeLessThan(0);
+    expect(street.position.y).toBeGreaterThan(0);
+    const overhead = yardCamera({ view: "overhead", lights, propId: null });
+    expect(overhead.position.y).toBeGreaterThan(overhead.target.y);
+    expect(overhead.target.y).toBe(0);
+    const prop = yardCamera({ view: "prop", lights, propId: "tree" });
+    expect(prop.target.x).toBe(8);
+    expect(prop.position.y).toBeGreaterThanOrEqual(1.6);
   });
 });

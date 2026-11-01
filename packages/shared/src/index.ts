@@ -885,10 +885,13 @@ export {
 export {
   layoutLightPoints,
   placeYardLight,
+  yardCamera,
   yardLightPositions,
   yardPointForStore,
   yardPose,
   type LayoutLightPoint,
+  type YardCamera,
   type YardLight,
   type YardPose,
+  type YardView,
 } from "./prop/space.ts";
