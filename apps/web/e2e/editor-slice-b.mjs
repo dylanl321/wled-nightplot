@@ -1,7 +1,7 @@
 /**
  * Slice B at 1440×900 (mouse) and 390×844 (touch): a gap is drawn, Add unlit
  * connector closes it, the wire length is next to the lights, and clicking
- * the far run pans it into view. Feet show spacing in inches.
+ * the far run pans it into view. Spacing stays centimetres on a feet prop.
  */
 import { mkdirSync } from "node:fs";
 import { apiOrigin, ensureStack, launch, stopChildren, webOrigin } from "./stack.mjs";
@@ -63,9 +63,9 @@ try {
     });
     await page.goto(`${webOrigin}/props/${created.prop.id}/edit`, { waitUntil: "domcontentloaded" });
     await page.getByText("The wire has a gap.").waitFor({ timeout: 20000 });
-    await page.getByLabel("Light spacing (in)").waitFor();
-    const spacing = await page.getByLabel("Light spacing (in)").inputValue();
-    if (spacing !== "3.94") throw new Error(`${viewport.name}: spacing is ${spacing}, expected 3.94 in`);
+    await page.getByLabel("Light spacing (cm)").waitFor();
+    const spacing = await page.getByLabel("Light spacing (cm)").inputValue();
+    if (spacing !== "10") throw new Error(`${viewport.name}: spacing is ${spacing}, expected 10 cm`);
     await page.getByText(/of wire/).waitFor();
     const stage = page.getByTestId("layout-canvas");
     const before = await camera(stage);

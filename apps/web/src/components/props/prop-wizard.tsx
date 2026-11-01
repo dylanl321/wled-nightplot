@@ -72,7 +72,7 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  /** Switching units converts every size, the same way spacing is converted. */
+  /** Switching units converts every size. Pixel spacing stays centimetres. */
   function switchUnit(next: PropLengthUnit) {
     if (next === unit) return;
     const factor = next === "m" ? METRES_PER_FOOT : 1 / METRES_PER_FOOT;
@@ -383,12 +383,12 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
             <span className="text-[13px] leading-5 text-muted-foreground">Type the count on your string and it is spread over the sides by length. Leave it empty to count from the spacing below.</span>
           </label>
           <label className="flex flex-col gap-2 text-[15px]">
-            {unit === "ft" ? "Light spacing (inches)" : "Light spacing (cm)"}
+            Light spacing (cm)
             <input
               inputMode="decimal"
-              value={spacingField(spacingCm, unit)}
+              value={spacingCm}
               onChange={(event) => {
-                setSpacingCm(spacingFromField(event.target.value, unit, spacingCm));
+                setSpacingCm(event.target.value);
                 setProductId(null);
               }}
               className="min-h-11 w-full rounded-md border border-input bg-[#07080a] px-3 text-base text-foreground outline-none focus:border-primary"
@@ -619,20 +619,6 @@ function writeLastUnit(unit: PropLengthUnit) {
   } catch {
     /* A private window may refuse storage. The unit still switches. */
   }
-}
-
-function spacingField(cm: string, unit: PropLengthUnit): string {
-  if (unit !== "ft") return cm;
-  const n = Number(cm);
-  if (!Number.isFinite(n)) return cm;
-  return String(Math.round((n / 2.54) * 100) / 100);
-}
-
-function spacingFromField(value: string, unit: PropLengthUnit, previousCm: string): string {
-  if (unit !== "ft") return value;
-  const inches = Number(value);
-  if (!Number.isFinite(inches)) return previousCm;
-  return String(inches * 2.54);
 }
 
 function stepTitle(step: Step, kind: PropKind | null): string {

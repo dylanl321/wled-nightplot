@@ -303,10 +303,10 @@ describe("gaps, wire length, and spacing", () => {
     expect(layoutWireLengthM(joined)).toBeCloseTo(3, 5);
   });
 
-  it("stores inches when the prop is in feet, and centimetres when it is in metres", () => {
+  it("shows spacing in centimetres on a feet prop, still stored as metres", () => {
     expect(formatPitch(0.1, "m")).toBe("10");
-    expect(formatPitch(0.1, "ft")).toBe("3.94");
-    expect(parsePitch("4", "ft")).toBeCloseTo(4 * 0.0254, 6);
+    expect(formatPitch(0.1, "ft")).toBe("10");
+    expect(parsePitch("10", "ft")).toBeCloseTo(0.1, 6);
     expect(parsePitch("10", "m")).toBeCloseTo(0.1, 6);
     expect(parsePitch("0", "ft")).toBeNull();
   });

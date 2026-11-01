@@ -9,11 +9,15 @@ import {
   countLayout,
   deletePoint,
   deleteRun,
+  alongRun,
   edgeLengthM,
   ensureStrings,
   formatLength,
   formatPitch,
+  formatPurchaseLength,
+  layoutStripLengthM,
   layoutWireLengthM,
+  lockRunLights,
   gapLabel,
   gridScaleLabel,
   gridSizeM,
@@ -22,9 +26,12 @@ import {
   layoutStrings,
   mergeShortRuns,
   moveCorner,
+  movePlacedLight,
   parsePitch,
+  placeLight,
   runGaps,
   runsOnSameSpan,
+  removePlacedLight,
   setEdgeLength,
   setEdgeLights,
   setEdgeName,
@@ -33,6 +40,7 @@ import {
   shortRuns,
   snapPoint,
   splitRun,
+  spaceEvenly,
   snapStepM,
   stringById,
   stringEndId,
@@ -46,6 +54,7 @@ import { CLOSE_PPM, EditorStage, boundsOf, toScreen, toWorld, type Camera, type 
 import { Button } from "@/components/ui/button";
 import { RunList } from "./run-list";
 import { labelsOffScreen, placeRunLabels, runBadge, stringColour } from "./run-labels";
+import { RunLightLayer, type LightPick, type LightSlide } from "./run-lights";
 
 /** Trace adds runs from the wire-in. Edit moves corners. Both pan, zoom, and select. */
 export type EditorMode = "trace" | "edit";
@@ -92,6 +101,8 @@ export function PropLayoutEditor({
   const [toast, setToast] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
+  const [litPick, setLitPick] = useState<LightPick | null>(null);
+  const [slide, setSlide] = useState<LightSlide | null>(null);
   const [splitting, setSplitting] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [review, setReview] = useState<string[] | null>(null);
@@ -117,6 +128,7 @@ export function PropLayoutEditor({
   const saveNoteRef = useRef(saveNote);
   saveNoteRef.current = saveNote;
   const runPress = useRef<{ x: number; y: number } | null>(null);
+  const addedAt = useRef(0);
 
   useEffect(() => {
     const previous = document.title;
@@ -224,13 +236,17 @@ export function PropLayoutEditor({
         setGhost(null);
         return;
       }
-      if (picked || selected) {
+      if (picked || selected || litPick) {
         setPicked(null);
         setSelected(null);
+        setLitPick(null);
       }
     } else if (event.key === "Enter") {
       event.preventDefault();
       void askDone();
+    } else if ((event.key === "Delete" || event.key === "Backspace") && litPick) {
+      event.preventDefault();
+      removeLight();
     } else if ((event.key === "Delete" || event.key === "Backspace") && !picked && selected && deletePoint(layoutRef.current, selected) !== layoutRef.current) {
       event.preventDefault();
       removePoint(selected);
@@ -303,8 +319,17 @@ export function PropLayoutEditor({
     if (next !== layoutRef.current) commit(next);
   }
 
+  function edgeCorners(edgeId: string) {
+    const current = layoutRef.current;
+    const edge = layoutStrings(current).flatMap((string) => string.run).find((row) => row.id === edgeId);
+    const from = edge ? current.corners.find((corner) => corner.id === edge.from) : undefined;
+    const to = edge ? current.corners.find((corner) => corner.id === edge.to) : undefined;
+    return edge && from && to ? { edge, from, to } : null;
+  }
+
   function pickRun(edgeId: string) {
     setPicked(edgeId);
+    setLitPick(null);
     const current = layoutRef.current;
     const edge = layoutStrings(current).flatMap((string) => string.run).find((row) => row.id === edgeId);
     const from = edge ? current.corners.find((corner) => corner.id === edge.from) : undefined;
@@ -314,6 +339,63 @@ export function PropLayoutEditor({
     if (handle && typeof handle.centerOn === "function") {
       handle.centerOn({ x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 });
     }
+  }
+
+  function storedLightId(edgeId: string, pick: LightPick): string | null {
+    const locked = lockRunLights(layoutRef.current, edgeId);
+    const edge = layoutStrings(locked).flatMap((string) => string.run).find((row) => row.id === edgeId);
+    const lights = [...(edge?.lights ?? [])].sort((a, b) => a.alongM - b.alongM || (a.id < b.id ? -1 : 1));
+    if (pick.id && lights.some((light) => light.id === pick.id)) return pick.id;
+    return lights[pick.station]?.id ?? null;
+  }
+
+  function dragLight(pick: LightPick, alongM: number, done: boolean) {
+    if (!done) {
+      setSlide({ ...pick, alongM });
+      return;
+    }
+    setSlide(null);
+    const id = storedLightId(pick.edgeId, pick);
+    if (!id) return;
+    const next = movePlacedLight(lockRunLights(layoutRef.current, pick.edgeId), pick.edgeId, id, alongM);
+    setPicked(pick.edgeId);
+    setLitPick({ edgeId: pick.edgeId, id, station: pick.station });
+    setSelected(null);
+    if (next !== layoutRef.current) commit(next);
+  }
+
+  function addLightOn(edgeId: string, world: Point) {
+    const now = Date.now();
+    if (now - addedAt.current < 400) return;
+    const ends = edgeCorners(edgeId);
+    if (!ends || ends.edge.kind !== "lit") return;
+    const along = alongRun(ends.from, ends.to, world);
+    const next = placeLight(layoutRef.current, edgeId, along);
+    if (next === layoutRef.current) return;
+    addedAt.current = now;
+    const lights = layoutStrings(next).flatMap((string) => string.run).find((row) => row.id === edgeId)?.lights ?? [];
+    const id = lights[lights.length - 1]?.id ?? null;
+    setPicked(edgeId);
+    setLitPick(id ? { edgeId, id, station: Math.max(0, lights.length - 1) } : null);
+    setSelected(null);
+    commit(next, "Added a light.");
+  }
+
+  function removeLight() {
+    const pick = litPick;
+    if (!pick) return;
+    const id = storedLightId(pick.edgeId, pick);
+    if (!id) return;
+    const next = removePlacedLight(lockRunLights(layoutRef.current, pick.edgeId), pick.edgeId, id);
+    setLitPick(null);
+    if (next !== layoutRef.current) commit(next, "Removed a light.");
+  }
+
+  function spacePicked(edgeId: string) {
+    const next = spaceEvenly(layoutRef.current, edgeId);
+    if (next === layoutRef.current) return;
+    if (litPick?.edgeId === edgeId) setLitPick(null);
+    commit(next, "Spaced the lights evenly.");
   }
 
   function applyName(edgeId: string, edgeName: string) {
@@ -513,11 +595,11 @@ export function PropLayoutEditor({
   const guideAnchor = guideAnchorOf(drawing, drag?.id, stringEndId(stringById(drawing, activeString)), placing);
   const guide = drag?.guide ? { x: drag.x, y: drag.y } : ghost?.guide ? { x: ghost.x, y: ghost.y } : null;
 
-  const wireLength = formatLength(layoutWireLengthM(layout), layout.units);
-  const wireText = layout.units === "m" ? `${wireLength} m of wire` : `${wireLength} of wire`;
+  const stripText = `${formatPurchaseLength(layoutStripLengthM(layout), layout.units)} of strip`;
+  const wireText = `${formatPurchaseLength(layoutWireLengthM(layout), layout.units)} of wire`;
   const totalText = stringLights == null
-    ? `${counted.total} lights · ${wireText}`
-    : `${counted.total} lights · ${wireText} · string has ${stringLights} · ${short ? `${Math.abs(spare ?? 0)} short` : `${spare} spare`}`;
+    ? `${counted.total} lights · ${stripText} · ${wireText}`
+    : `${counted.total} lights · ${stripText} · ${wireText} · string has ${stringLights} · ${short ? `${Math.abs(spare ?? 0)} short` : `${spare} spare`}`;
   const gaps = runGaps(drawing);
 
   return (
@@ -547,6 +629,7 @@ export function PropLayoutEditor({
               // reaches here, so dragging keeps whatever is selected.
               setPicked(null);
               setSelected(null);
+              setLitPick(null);
               if (splittingRef.current) {
                 setNote("Tap a run to add a point on it.");
                 return;
@@ -643,10 +726,30 @@ export function PropLayoutEditor({
                   const pressRun = (event: Konva.KonvaEventObject<PointerEvent>) => {
                     runPress.current = { x: event.evt.clientX, y: event.evt.clientY };
                   };
-                  const clickRun = (event: Konva.KonvaEventObject<MouseEvent>) => {
+                  const clickRun = (event: Konva.KonvaEventObject<MouseEvent | TouchEvent>, place: boolean) => {
                     const start = runPress.current;
-                    if (start && Math.hypot(event.evt.clientX - start.x, event.evt.clientY - start.y) > 6) return;
-                    pick(event);
+                    const point = "clientX" in event.evt ? event.evt : null;
+                    if (start && point && Math.hypot(point.clientX - start.x, point.clientY - start.y) > 6) return;
+                    if (splittingRef.current) {
+                      pick(event);
+                      return;
+                    }
+                    const group = spans.get(edge.id) ?? [edge.id];
+                    const already = pickedRef.current === edge.id;
+                    if (already && group.length > 1) {
+                      const at = group.indexOf(edge.id);
+                      setPicked(group[(at + 1) % group.length]!);
+                      setLitPick(null);
+                      return;
+                    }
+                    if (already && place && edge.kind === "lit") {
+                      const pointer = event.target.getStage()?.getPointerPosition();
+                      if (!pointer) return;
+                      addLightOn(edge.id, toWorld(pointer, camera));
+                      return;
+                    }
+                    setPicked(edge.id);
+                    setLitPick(null);
                   };
                   return (
                     <Group key={edge.id}>
@@ -660,14 +763,14 @@ export function PropLayoutEditor({
                         dash={edge.kind === "wire" ? [6, 4] : undefined}
                         hitStrokeWidth={28}
                         onPointerDown={pressRun}
-                        onClick={clickRun}
-                        onTap={pick}
+                        onClick={(event) => clickRun(event, true)}
+                        onTap={(event) => clickRun(event, true)}
                         onDblClick={pick}
                       />
                       <Chevron a={a} b={b} colour={edge.kind === "wire" ? WIRE : colour} />
                       {showLabel && spot.badge && spot.caption ? (
                         <>
-                          <Group x={spot.badge.x} y={spot.badge.y} onPointerDown={pressRun} onClick={clickRun} onTap={pick}>
+                          <Group x={spot.badge.x} y={spot.badge.y} onPointerDown={pressRun} onClick={(event) => clickRun(event, false)} onTap={(event) => clickRun(event, false)}>
                             <Circle radius={14} fill={selectedRun ? colour : "#12141a"} stroke={selectedRun ? "#f4efe6" : zero ? WARN : colour} strokeWidth={selectedRun ? 3 : 1.5} />
                             <Text text={runBadge(stringIndex, order)} fontSize={11} fill={selectedRun ? "#0c0d10" : zero ? WARN : INK} width={28} offsetX={14} offsetY={5} align="center" listening={false} />
                             {edge.lockedLengthM ? <LockMark /> : null}
@@ -691,6 +794,20 @@ export function PropLayoutEditor({
                     </Group>
                   );
                 })}
+                <RunLightLayer
+                  layout={drawing}
+                  camera={camera}
+                  size={size}
+                  fits={drawingFits(bounds, camera, size)}
+                  selected={litPick}
+                  slide={slide}
+                  onSelect={(pick) => {
+                    setPicked(pick.edgeId);
+                    setLitPick(pick);
+                    setSelected(null);
+                  }}
+                  onDrag={dragLight}
+                />
                 {corners.map((corner) => {
                   const at = toScreen(corner, camera);
                   const start = starts.has(corner.id);
@@ -775,13 +892,16 @@ export function PropLayoutEditor({
         onLength={applyLength}
         onLights={applyLights}
         onName={applyName}
+        lightEdgeId={litPick?.edgeId ?? null}
+        onSpace={spacePicked}
+        onRemoveLight={removeLight}
       />
       <div className="flex flex-wrap items-center gap-2 border-t border-border bg-background px-2 py-2">
         <div role="group" aria-label="Length unit" className="flex gap-1">
           <ChoiceButton active={layout.units === "ft"} onClick={() => applyUnits("ft")}>Feet</ChoiceButton>
           <ChoiceButton active={layout.units === "m"} onClick={() => applyUnits("m")}>Metres</ChoiceButton>
         </div>
-        <SpacingField pitchM={layout.pitchM} units={layout.units} onPitch={applyPitch} />
+        <SpacingField pitchM={layout.pitchM} onPitch={applyPitch} />
       </div>
       <div className="flex gap-2 bg-background px-2 pb-2">
         <DockButton onClick={undo} disabled={past.length === 0}>Undo</DockButton>
@@ -838,11 +958,17 @@ function runCount(layout: PropLayout): number {
   return layoutStrings(layout).reduce((sum, string) => sum + string.run.length, 0);
 }
 
+function drawingFits(bounds: { minX: number; minY: number; maxX: number; maxY: number }, camera: Camera, size: { w: number; h: number }): boolean {
+  const width = Math.max(bounds.maxX - bounds.minX, 0) * camera.ppm;
+  const height = Math.max(bounds.maxY - bounds.minY, 0) * camera.ppm;
+  return width <= size.w - 96 && height <= size.h - 96;
+}
+
 function editorHint(mode: EditorMode, dark: boolean, placing: boolean, splitting: boolean): string {
   if (placing) return "Tap where the new string's wire comes in.";
   if (dark) return "The next run is dark: the wire jumps and no lights are on it.";
   if (splitting) return "Add point is on. Tap a run to split it there.";
-  if (mode === "edit") return "Edit moves corners. Drag a corner. Add point splits a run. Join welds corners that sit on each other.";
+  if (mode === "edit") return "Edit moves corners. Drag a corner, or zoom in and drag a numbered light along its run. Click the selected run to add a light. Add point splits a run. Join welds corners that sit on each other.";
   return "Trace adds runs from the wire-in. Tap empty space for a new point, or a corner to run there. Edit moves, splits, and joins.";
 }
 
@@ -862,9 +988,8 @@ function ChoiceButton({ active, onClick, children }: { active: boolean; onClick:
   );
 }
 
-function SpacingField({ pitchM, units, onPitch }: { pitchM: number; units: PropLayout["units"]; onPitch: (pitchM: number) => void }) {
-  const shown = formatPitch(pitchM, units);
-  const unitLabel = units === "ft" ? "in" : "cm";
+function SpacingField({ pitchM, onPitch }: { pitchM: number; onPitch: (pitchM: number) => void }) {
+  const shown = formatPitch(pitchM);
   const [value, setValue] = useState(shown);
   const [last, setLast] = useState(shown);
   if (last !== shown) {
@@ -873,7 +998,7 @@ function SpacingField({ pitchM, units, onPitch }: { pitchM: number; units: PropL
   }
   function apply() {
     if (value.trim() === shown) return;
-    const pitch = parsePitch(value, units);
+    const pitch = parsePitch(value);
     if (pitch == null) return setValue(shown);
     if (Math.abs(pitch - pitchM) > 1e-6) onPitch(pitch);
   }
@@ -882,14 +1007,14 @@ function SpacingField({ pitchM, units, onPitch }: { pitchM: number; units: PropL
       <label htmlFor="light-spacing" className="text-[13px] text-muted-foreground">Spacing</label>
       <input
         id="light-spacing"
-        aria-label={units === "ft" ? "Light spacing (in)" : "Light spacing (cm)"}
+        aria-label="Light spacing (cm)"
         value={value}
         inputMode="decimal"
         onChange={(event) => setValue(event.target.value)}
         onBlur={apply}
         className="min-h-11 w-16 rounded-md border border-input bg-background px-2 text-base"
       />
-      <span className="text-[13px] text-muted-foreground">{unitLabel}</span>
+      <span className="text-[13px] text-muted-foreground">cm</span>
     </form>
   );
 }

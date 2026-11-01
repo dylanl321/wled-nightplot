@@ -1,6 +1,6 @@
 # Per-light placement
 
-Plan only. Do not build this until it is accepted. A dot on the drawing is not a lit pixel. Preview is temporary. Apply persists. Not Hardware Done. Nothing in this plan is sent to a controller.
+This is what the editor does. A dot on the drawing is not a lit pixel. Preview is temporary. Apply persists. Not Hardware Done. Nothing here is sent to a controller.
 
 Checked against the path model on main: a run is a `LayoutEdge` with a stable `id`, a length, and either `round(length ÷ pitch)` lights or a typed `lockedLights`. Individual light positions are not stored. Section index ranges come from `pathEdgeIndexRanges`: on each string, the first light is 0, and each run consumes its count in order. A wireframe ledmap is a separate list (`formatLedmapJson`). Looks already say a ledmap is not written for sections.
 

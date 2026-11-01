@@ -175,8 +175,8 @@ async function useCaseUnits(page, viewport) {
   await hydrated(length);
   await waitForValue(length, "4'", "units start");
   expect("scale", (await page.getByTestId("grid-scale").innerText()) === "1 square = 1 ft", await page.getByTestId("grid-scale").innerText());
-  // 10 cm is stored as metres and shown in inches while the prop is in feet.
-  await waitForValue(page.getByLabel("Light spacing (in)"), "3.94", "spacing");
+  // 10 cm stays centimetres on a feet prop. The field shows 10, and the stored pitch stays 0.1 m.
+  await waitForValue(page.getByLabel("Light spacing (cm)"), "10", "spacing");
   const foot = 0.3048;
   const from = await screenOf(frame, { x: 4 * foot, y: 0 });
   const to = await screenOf(frame, { x: 1.3, y: 0.04 });
@@ -189,12 +189,101 @@ async function useCaseUnits(page, viewport) {
   await waitForValue(page.getByLabel("Light spacing (cm)"), "10", "spacing in metres");
   await page.getByRole("button", { name: "Feet" }).click();
   await waitForValue(page.getByLabel("A1 length (ft)"), "4' 3\"", "units back to feet");
-  await waitForValue(page.getByLabel("Light spacing (in)"), "3.94", "spacing back to inches");
+  await waitForValue(page.getByLabel("Light spacing (cm)"), "10", "spacing stays centimetres");
   // The drag saves itself. 4' 3" is 1.2954 m. The spacing stays 10 cm.
   await page.waitForTimeout(700);
   const after = (await api("/api/props")).props.find((row) => row.id === prop.id);
   expect("the snapped corner is saved", Math.abs(after.layout.corners[1].x - 4.25 * foot) < 0.02, after.layout.corners);
   expect("spacing stays 10 cm", Math.abs(after.layout.pitchM - 0.1) < 1e-6, after.layout.pitchM);
+}
+
+/** A 2 m run at 10 cm: 20 lights, evenly spaced until one is dragged. */
+function twoMetres() {
+  const run = [{ id: "e1", from: "c1", to: "c2", kind: "lit" }];
+  return {
+    source: "trace",
+    units: "m",
+    pitchM: 0.1,
+    startOffsetM: 0,
+    corners: [{ id: "c1", x: 0, y: 0 }, { id: "c2", x: 2, y: 0 }],
+    run,
+    strings: [{ id: "s1", startId: "c1", run }],
+  };
+}
+
+async function zoomClose(frame) {
+  for (let step = 0; step < 12; step += 1) {
+    const cam = await camera(frame);
+    if (cam.ppm >= 800) return cam;
+    await frame.getByRole("button", { name: "Zoom in" }).click();
+  }
+  return camera(frame);
+}
+
+async function waitProp(page, id, ready) {
+  let last = null;
+  for (let step = 0; step < 25; step += 1) {
+    last = (await api("/api/props")).props.find((row) => row.id === id);
+    if (last && ready(last)) return last;
+    await page.waitForTimeout(200);
+  }
+  throw new Error(`prop did not update: ${JSON.stringify(last?.layout?.run?.[0] ?? last)}`);
+}
+
+async function useCaseLights(page, viewport) {
+  const created = await api("/api/props", {
+    method: "POST",
+    body: JSON.stringify({ label: `Lights ${viewport.name} ${run}`, kind: "roofline", unit: "m", pitchMm: 100, layout: twoMetres() }),
+  });
+  const prop = created.prop;
+  await page.goto(`${webOrigin}/props/${prop.id}/edit`, { waitUntil: "domcontentloaded" });
+  const frame = page.getByTestId("layout-canvas");
+  await frame.locator("canvas").first().waitFor({ timeout: 20000 });
+  await hydrated(page.getByLabel("A1 length (m)"));
+  await page.getByRole("button", { name: "A1", exact: true }).click();
+  const cam = await zoomClose(frame);
+  expect("zoomed in", cam.ppm >= 800, cam);
+  // The 11th even light sits at 1.05 m. Drag it to 1.40 m.
+  const from = await screenOf(frame, { x: 1.05, y: 0 });
+  const to = await screenOf(frame, { x: 1.4, y: 0 });
+  await drag(page, viewport, from, to, 16);
+  let stored = await waitProp(page, prop.id, (row) => row.layout?.run?.[0]?.manualLights === true);
+  const dragged = stored.layout.run[0].lights ?? [];
+  expect("drag stores 20 lights", dragged.length === 20, dragged.length);
+  expect("dragged light is near 1.4 m", dragged.some((light) => Math.abs(light.alongM - 1.4) < 0.08), dragged.map((light) => light.alongM));
+  expect("pitch stays 10 cm", Math.abs(stored.layout.pitchM - 0.1) < 1e-9, stored.layout.pitchM);
+  await page.getByRole("button", { name: "Undo" }).first().click();
+  stored = await waitProp(page, prop.id, (row) => row.layout?.run?.[0]?.manualLights == null && row.layout?.run?.[0]?.lights == null);
+  expect("undo clears the lock", stored.layout.run[0].lockedLights == null, stored.layout.run[0]);
+  await page.getByRole("button", { name: "Redo" }).first().click();
+  stored = await waitProp(page, prop.id, (row) => row.layout?.run?.[0]?.manualLights === true);
+  // 1.20 m is between the lights at 1.15 m and 1.25 m, and still on screen after the zoom.
+  const addAt = await screenOf(frame, { x: 1.2, y: 0 });
+  await drag(page, viewport, addAt, addAt, 1);
+  await page.getByText("Added a light.").waitFor({ timeout: 8000 });
+  stored = await waitProp(page, prop.id, (row) => (row.layout?.run?.[0]?.lights?.length ?? 0) === 21);
+  expect("added light", stored.layout.run[0].lockedLights === 21, stored.layout.run[0].lockedLights);
+  await page.getByRole("button", { name: "Remove light" }).click();
+  await page.getByText("Removed a light.").waitFor({ timeout: 8000 });
+  stored = await waitProp(page, prop.id, (row) => (row.layout?.run?.[0]?.lights?.length ?? 0) === 20);
+  const kept = stored.layout.run[0].lights.find((light) => Math.abs(light.alongM - 0.05) < 0.02);
+  expect("the first light stayed put", Boolean(kept), stored.layout.run[0].lights.map((light) => light.alongM));
+  const length = page.getByLabel("A1 length (m)");
+  await length.fill("1.2");
+  await length.press("Enter");
+  stored = await waitProp(page, prop.id, (row) => Math.abs((row.layout?.corners?.[1]?.x ?? 0) - 1.2) < 0.02);
+  const shortened = stored.layout.run[0];
+  expect("length change keeps the lock", shortened.manualLights === true && shortened.lights.length === 20, shortened);
+  expect("lights clamp to the shorter run", shortened.lights.every((light) => light.alongM <= 1.21), shortened.lights.map((light) => light.alongM));
+  expect("a light that was inside stays", shortened.lights.some((light) => Math.abs(light.alongM - 0.05) < 0.02), shortened.lights);
+  expect("spacing was not rewritten", Math.abs(stored.layout.pitchM - 0.1) < 1e-9, stored.layout.pitchM);
+  mkdirSync("/opt/cursor/artifacts/screenshots", { recursive: true });
+  await page.screenshot({ path: `/opt/cursor/artifacts/screenshots/per-light-${viewport.name}.png`, fullPage: true });
+  await page.getByRole("button", { name: "Space evenly again" }).click();
+  await page.getByText("Spaced the lights evenly.").waitFor({ timeout: 8000 });
+  stored = await waitProp(page, prop.id, (row) => row.layout?.run?.[0]?.manualLights == null && row.layout?.run?.[0]?.lights == null);
+  await waitForValue(page.getByLabel("A1 lights"), "12", "spaced evenly");
+  expect("the lock is gone", stored.layout.run[0].lockedLights == null, stored.layout.run[0]);
 }
 
 async function useCaseGeometry(page, viewport) {
@@ -446,6 +535,7 @@ try {
     for (const [label, step] of [
       ["1 see the yard", () => useCase1(page, viewport)],
       ["units and snap", () => useCaseUnits(page, viewport)],
+      ["place a light", () => useCaseLights(page, viewport)],
       ["split, join, and typed length", () => useCaseGeometry(page, viewport)],
       ["string headings and phone stage", () => useCaseReadability(page, viewport)],
       ["7 move a corner, 10 set a length", () => useCase7and10(page, viewport, prop)],
