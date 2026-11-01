@@ -104,13 +104,11 @@ export function YardStage({ props }: { props: Prop[] }) {
 
   return (
     <section aria-label="Yard drawing" className="flex flex-col gap-2 lg:h-full lg:min-h-0">
-      <div className="relative h-[46dvh] min-h-[300px] overflow-hidden rounded-[14px] border border-border lg:h-[calc(100dvh-9.5rem)] lg:min-h-0">
-        <div className="pointer-events-none absolute left-2 top-2 z-10">
-          <div role="group" aria-label="Yard view" className="pointer-events-auto flex overflow-hidden rounded-lg border border-border bg-[#07080a]/90">
-            <button type="button" aria-pressed={mode === "2d"} className={modeButton(mode === "2d")} onClick={() => setMode("2d")}>2D</button>
-            <button type="button" aria-pressed={mode === "3d"} className={modeButton(mode === "3d")} onClick={() => setMode("3d")}>3D</button>
-          </div>
-        </div>
+      <div role="group" aria-label="Yard view" className="flex w-fit overflow-hidden rounded-lg border border-border">
+        <button type="button" aria-pressed={mode === "2d"} className={modeButton(mode === "2d")} onClick={() => setMode("2d")}>2D</button>
+        <button type="button" aria-pressed={mode === "3d"} className={modeButton(mode === "3d")} onClick={() => setMode("3d")}>3D</button>
+      </div>
+      <div className="relative h-[46dvh] min-h-[300px] overflow-hidden rounded-[14px] border border-border lg:h-[calc(100dvh-12rem)] lg:min-h-0">
         {mode === "3d" ? (
           <Yard3d props={rows} picked={picked} onPick={setPicked} />
         ) : (
