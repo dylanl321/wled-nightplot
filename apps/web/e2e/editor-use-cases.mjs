@@ -282,8 +282,9 @@ async function useCaseLights(page, viewport) {
   await page.getByRole("button", { name: "Space evenly again" }).click();
   await page.getByText("Spaced the lights evenly.").waitFor({ timeout: 8000 });
   stored = await waitProp(page, prop.id, (row) => row.layout?.run?.[0]?.manualLights == null && row.layout?.run?.[0]?.lights == null);
-  await waitForValue(page.getByLabel("A1 lights"), "12", "spaced evenly");
-  expect("the lock is gone", stored.layout.run[0].lockedLights == null, stored.layout.run[0]);
+  // Spacing evenly keeps every light that was there and only moves them.
+  await waitForValue(page.getByLabel("A1 lights"), "20", "spaced evenly");
+  expect("the count is kept", stored.layout.run[0].lockedLights === 20, stored.layout.run[0]);
 }
 
 async function useCaseGeometry(page, viewport) {

@@ -12,6 +12,7 @@ import {
   removePlacedLight,
   setEdgeLength,
   spaceEvenly,
+  countFromLength,
   splitRun,
   stringLights,
   type PlacedLight,
@@ -171,8 +172,22 @@ describe("placed lights", () => {
     const even = spaceEvenly(removed, "e1");
     expect(even.run[0]?.manualLights).toBeUndefined();
     expect(even.run[0]?.lights).toBeUndefined();
-    expect(even.run[0]?.lockedLights).toBeUndefined();
+    expect(even.run[0]?.lockedLights).toBe(20);
     expect(edgeLightCount(even, even.run[0]!)).toBe(20);
+    expect(countFromLength(even, "e1").run[0]?.lockedLights).toBeUndefined();
+  });
+
+  it("keeps lights added by hand when spacing evenly, and spreads them along the run", () => {
+    // Two lights squeezed in near the start of a 2 m, 20-light run.
+    let layout = placeLight(line(), "e1", 0.12);
+    layout = placeLight(layout, "e1", 0.14);
+    expect(edgeLightCount(layout, layout.run[0]!)).toBe(22);
+    const even = spaceEvenly(layout, "e1");
+    expect(edgeLightCount(even, even.run[0]!)).toBe(22);
+    const marks = stringLights(even);
+    expect(marks).toHaveLength(22);
+    const gaps = marks.slice(1).map((mark, index) => mark.alongM - marks[index]!.alongM);
+    for (const gap of gaps) expect(gap).toBeCloseTo(2 / 22, 6);
   });
 
   it("shows 10 cm as 10 on a feet prop and does not rewrite the stored metres", () => {

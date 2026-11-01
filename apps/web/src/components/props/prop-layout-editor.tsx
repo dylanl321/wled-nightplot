@@ -50,7 +50,7 @@ import {
 import type Konva from "konva";
 import { useEffect, useRef, useState } from "react";
 import { Circle, Group, Line, Text } from "react-konva";
-import { CLOSE_PPM, EditorStage, boundsOf, toScreen, toWorld, type Camera, type EditorStageHandle, type Point } from "@/components/canvas";
+import { CLOSE_PPM, EditorStage, boundsOf, endedByPinch, toScreen, toWorld, type Camera, type EditorStageHandle, type Point } from "@/components/canvas";
 import { Button } from "@/components/ui/button";
 import { RunList } from "./run-list";
 import { labelsOffScreen, placeRunLabels, runBadge, stringColour } from "./run-labels";
@@ -349,7 +349,11 @@ export function PropLayoutEditor({
     return lights[pick.station]?.id ?? null;
   }
 
-  function dragLight(pick: LightPick, alongM: number, done: boolean) {
+  function dragLight(pick: LightPick, alongM: number, done: boolean, cancelled = false) {
+    if (cancelled) {
+      setSlide(null);
+      return;
+    }
     if (!done) {
       setSlide({ ...pick, alongM });
       return;
@@ -559,6 +563,13 @@ export function PropLayoutEditor({
 
   function onCornerDrag(cornerId: string, event: Konva.KonvaEventObject<DragEvent>, camera: Camera, end: boolean) {
     const node = event.target;
+    if (endedByPinch(event)) {
+      if (!end) { node.stopDrag(); return; }
+      const corner = layoutRef.current.corners.find((row) => row.id === cornerId);
+      if (corner) node.position(toScreen(corner, camera));
+      setDrag(null);
+      return;
+    }
     const world = toWorld(node.position(), camera);
     const point = snapped(world.x, world.y, cornerId, event.evt.altKey, event.evt.shiftKey);
     const screen = toScreen(point, camera);
@@ -817,7 +828,7 @@ export function PropLayoutEditor({
                       x={at.x}
                       y={at.y}
                       draggable
-                      onDragStart={() => setGhost(null)}
+                      onDragStart={(event) => { if (endedByPinch(event)) { event.target.stopDrag(); return; } setGhost(null); }}
                       onDragMove={(event) => onCornerDrag(corner.id, event, camera, false)}
                       onDragEnd={(event) => onCornerDrag(corner.id, event, camera, true)}
                       onClick={() => tapCorner(corner.id)}
