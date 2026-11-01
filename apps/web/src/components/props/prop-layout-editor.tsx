@@ -70,6 +70,8 @@ export function PropLayoutEditor({
   const [activeString, setActiveString] = useState(layoutStrings(initial)[0]?.id ?? "s1");
   const [dark, setDark] = useState(false);
   const [placing, setPlacing] = useState(false);
+  const darkRef = useRef(dark);
+  darkRef.current = dark;
   const [gap, setGap] = useState<string | null>(null);
   const stage = useRef<EditorStageHandle>(null);
   const layoutRef = useRef(layout);
@@ -225,7 +227,7 @@ export function PropLayoutEditor({
       setAsk(true);
       setAsked(true);
     }
-    commit(next);
+    finishTrace(next);
   }
 
   function tapCorner(cornerId: string) {
@@ -238,7 +240,14 @@ export function PropLayoutEditor({
       commit(next);
       return;
     }
-    commit(continueToCorner(layoutRef.current, activeString, cornerId, dark ? "wire" : "lit"));
+    finishTrace(continueToCorner(layoutRef.current, activeString, cornerId, dark ? "wire" : "lit"));
+  }
+
+  /** Mark dark arms one run. Tracing that run turns the toggle off. */
+  function finishTrace(next: PropLayout) {
+    const added = runCount(next) > runCount(layoutRef.current);
+    commit(next);
+    if (added && darkRef.current) setDark(false);
   }
 
   function onCornerDrag(cornerId: string, event: Konva.KonvaEventObject<DragEvent>, camera: Camera, end: boolean) {
@@ -447,6 +456,10 @@ export function PropLayoutEditor({
       </aside>
     </div>
   );
+}
+
+function runCount(layout: PropLayout): number {
+  return layoutStrings(layout).reduce((sum, string) => sum + string.run.length, 0);
 }
 
 function editorHint(mode: EditorMode, dark: boolean, placing: boolean): string {

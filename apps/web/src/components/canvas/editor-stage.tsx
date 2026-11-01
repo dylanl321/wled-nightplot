@@ -61,7 +61,7 @@ export type EditorStageProps = {
    * Screen-space content drawn above the world, in stage pixels. Use it for
    * handles, badges, and text that keep one size at every zoom.
    */
-  overlay?: (camera: Camera) => ReactNode;
+  overlay?: (camera: Camera, size: Size) => ReactNode;
   /** A mouse moving with no button down, in world metres. `null` when it leaves. */
   onHover?: (hover: { world: Point; altKey: boolean; shiftKey: boolean } | null) => void;
 };
@@ -326,7 +326,7 @@ export function EditorStage({
           {overlay ? (
             // Undo the stage transform so this layer is in stage pixels.
             <Layer x={-camera.ox / camera.ppm} y={-camera.oy / camera.ppm} scaleX={1 / camera.ppm} scaleY={1 / camera.ppm}>
-              {overlay(camera)}
+              {overlay(camera, size)}
             </Layer>
           ) : null}
         </Stage>
