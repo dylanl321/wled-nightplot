@@ -1,9 +1,7 @@
 "use client";
 
-import { countLayout, layoutStrings, type PropLayout } from "@nightplot/shared";
+import { countLayout, formatLength, layoutStrings, parseLength, type PropLayout } from "@nightplot/shared";
 import { useEffect, useRef, useState } from "react";
-
-const FT = 0.3048;
 
 export type RunRow = {
   edgeId: string;
@@ -33,16 +31,11 @@ export function runRows(layout: PropLayout): RunRow[] {
   );
 }
 
-/** A length in the prop's unit, rounded for a field. */
-export function lengthInUnit(lengthM: number, units: PropLayout["units"]): number {
-  const per = units === "ft" ? FT : 1;
-  return Math.round((lengthM / per) * 100) / 100;
-}
-
 /**
  * Every run with its length and light count, editable in place. Typing a
  * length moves that run's end; typing a count stores it on the run and leaves
- * the drawing alone.
+ * the drawing alone. A typed count overrides round(length ÷ spacing) until
+ * that run's length changes.
  */
 export function RunList({
   layout,
@@ -79,11 +72,16 @@ export function RunList({
 
   return (
     <section aria-label="Runs" className={`overflow-y-auto ${className ?? ""}`}>
-      <div className="sticky top-0 grid grid-cols-[minmax(0,1fr)_5.5rem_4.5rem_2.75rem] items-center gap-2 bg-background px-3 py-1 text-[12px] text-muted-foreground">
-        <span>Run</span>
-        <span>Length ({unit})</span>
-        <span>Lights</span>
-        <span className="sr-only">Delete</span>
+      <div className="sticky top-0 bg-background">
+        <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_4.5rem_2.75rem] items-center gap-2 px-3 py-1 text-[12px] text-muted-foreground">
+          <span>Run</span>
+          <span>Length ({unit})</span>
+          <span>Lights</span>
+          <span className="sr-only">Delete</span>
+        </div>
+        <p id="run-lights-note" className="px-3 pb-1 text-[12px] leading-4 text-muted-foreground">
+          Lights follow round(length ÷ spacing). A number you type here overrides that until the length changes.
+        </p>
       </div>
       <ol ref={list} className="flex flex-col">
         {rows.map((row) => (
@@ -123,7 +121,7 @@ function RunRowItem({
   onLights: (lights: number | null) => void;
   onDelete: () => void;
 }) {
-  const shownLength = String(lengthInUnit(row.lengthM, units));
+  const shownLength = formatLength(row.lengthM, units);
   const shownLights = String(row.lights);
   const [length, setLength] = useState(shownLength);
   const [lights, setLights] = useState(shownLights);
@@ -138,13 +136,12 @@ function RunRowItem({
     setLastLights(shownLights);
     setLights(shownLights);
   }
-  const per = units === "ft" ? FT : 1;
   const lit = row.kind === "lit";
 
   function applyLength() {
-    const typed = Number(length);
-    if (length.trim() === "" || !(typed > 0)) return setLength(shownLength);
-    if (length !== shownLength) onLength(typed * per);
+    const metres = parseLength(length, units);
+    if (metres == null) return setLength(shownLength);
+    if (Math.abs(metres - row.lengthM) > 1e-4) onLength(metres);
   }
 
   function applyLights() {
@@ -158,7 +155,7 @@ function RunRowItem({
     <li
       data-edge={row.edgeId}
       aria-current={selected ? "true" : undefined}
-      className={`grid grid-cols-[minmax(0,1fr)_5.5rem_4.5rem_2.75rem] items-center gap-2 border-t border-border px-3 py-1 ${selected ? "bg-card" : ""}`}
+      className={`grid grid-cols-[minmax(0,1fr)_6.5rem_4.5rem_2.75rem] items-center gap-2 border-t border-border px-3 py-1 ${selected ? "bg-card" : ""}`}
     >
       <button type="button" className="min-h-11 min-w-0 truncate text-left text-[15px]" onClick={onPick}>
         {label}
@@ -190,6 +187,7 @@ function RunRowItem({
       >
         <input
           aria-label={`${label} lights`}
+          aria-describedby="run-lights-note"
           value={lights}
           inputMode="numeric"
           disabled={!lit}

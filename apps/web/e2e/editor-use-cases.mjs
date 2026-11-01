@@ -12,6 +12,7 @@
  * covered or off screen) and checks the document, not a screenshot. Nothing
  * here is sent to a controller. Reuses a stack on :43180, or starts one.
  */
+import { mkdirSync } from "node:fs";
 import { apiOrigin, ensureStack, launch, stopChildren, webOrigin } from "./stack.mjs";
 
 const viewports = [
@@ -131,6 +132,52 @@ async function waitForValue(locator, value, label) {
   }
 }
 
+/** A 4 ft run. Stored corners stay in metres. */
+function fourFeet() {
+  const foot = 0.3048;
+  const run = [{ id: "e1", from: "c1", to: "c2", kind: "lit" }];
+  return {
+    source: "trace",
+    units: "ft",
+    pitchM: 0.1,
+    startOffsetM: 0,
+    corners: [{ id: "c1", x: 0, y: 0 }, { id: "c2", x: 4 * foot, y: 0 }],
+    run,
+    strings: [{ id: "s1", startId: "c1", run }],
+  };
+}
+
+async function useCaseUnits(page, viewport) {
+  const created = await api("/api/props", {
+    method: "POST",
+    body: JSON.stringify({ label: `Wall ${viewport.name} ${run}`, kind: "roofline", unit: "ft", pitchMm: 100, layout: fourFeet() }),
+  });
+  const prop = created.prop;
+  const stored = (await api("/api/props")).props.find((row) => row.id === prop.id);
+  expect("saved prop loads", stored && stored.layout.corners[1].x === fourFeet().corners[1].x && stored.layout.units === "ft", stored?.layout);
+  await page.goto(`${webOrigin}/props/${prop.id}/edit`, { waitUntil: "domcontentloaded" });
+  const frame = page.getByTestId("layout-canvas");
+  await frame.locator("canvas").first().waitFor({ timeout: 20000 });
+  const length = page.getByLabel("Run 1 length (ft)");
+  await hydrated(length);
+  await waitForValue(length, "4'", "units start");
+  expect("scale", (await page.getByTestId("grid-scale").innerText()) === "1 square = 1 ft", await page.getByTestId("grid-scale").innerText());
+  await waitForValue(page.getByLabel("Light spacing (cm)"), "10", "spacing");
+  const foot = 0.3048;
+  const from = await screenOf(frame, { x: 4 * foot, y: 0 });
+  const to = await screenOf(frame, { x: 1.3, y: 0.04 });
+  await drag(page, viewport, from, to, 16);
+  await waitForValue(length, "4' 3\"", "units snap");
+  mkdirSync("/opt/cursor/artifacts", { recursive: true });
+  await page.screenshot({ path: `/opt/cursor/artifacts/editor-units-${viewport.name}.png`, fullPage: true });
+  await page.getByRole("button", { name: "Metres" }).click();
+  await waitForValue(page.getByLabel("Run 1 length (m)"), "1.30", "units metres");
+  await page.getByRole("button", { name: "Feet" }).click();
+  await waitForValue(page.getByLabel("Run 1 length (ft)"), "4' 3\"", "units back to feet");
+  const after = (await api("/api/props")).props.find((row) => row.id === prop.id);
+  expect("unsaved unit change leaves stored corners", after.layout.corners[1].x === fourFeet().corners[1].x, after.layout.corners);
+}
+
 async function useCase1(page, viewport) {
   await page.goto(`${webOrigin}/`, { waitUntil: "domcontentloaded" });
   const frame = page.getByTestId("yard-stage");
@@ -167,23 +214,23 @@ async function useCase7and10(page, viewport, prop) {
   await frame.locator("canvas").first().waitFor({ timeout: 20000 });
   const run2 = page.getByLabel("Run 2 length (m)");
   await hydrated(run2);
-  await waitForValue(run2, "1", "7 start");
+  await waitForValue(run2, "1.00", "7 start");
   // Drag the end corner from (2, 1) to (2, 2). Snap lands it on the grid.
   const from = await screenOf(frame, { x: 2, y: 1 });
   const to = await screenOf(frame, { x: 2, y: 2 });
   await drag(page, viewport, from, to, 16);
-  await waitForValue(run2, "2", "7 drag");
+  await waitForValue(run2, "2.00", "7 drag");
   await page.getByRole("button", { name: "Undo" }).first().click();
-  await waitForValue(run2, "1", "7 undo");
+  await waitForValue(run2, "1.00", "7 undo");
   await page.getByRole("button", { name: "Redo" }).first().click();
-  await waitForValue(run2, "2", "7 redo");
+  await waitForValue(run2, "2.00", "7 redo");
 
   // 10: 3 m on run 1 at 10 cm is 30 lights; run 2 keeps its length.
   const run1 = page.getByLabel("Run 1 length (m)");
   await run1.fill("3");
   await run1.press("Enter");
   await waitForValue(page.getByLabel("Run 1 lights"), "30", "10 count");
-  await waitForValue(run2, "2", "10 later run");
+  await waitForValue(run2, "2.00", "10 later run");
   // Keep the edits for the sections step: the path's Done opens it.
   await page.getByRole("button", { name: "Name sections" }).click();
   await page.getByRole("heading", { name: "Name the sections" }).waitFor();
@@ -265,6 +312,7 @@ try {
     let section = null;
     for (const [label, step] of [
       ["1 see the yard", () => useCase1(page, viewport)],
+      ["units and snap", () => useCaseUnits(page, viewport)],
       ["7 move a corner, 10 set a length", () => useCase7and10(page, viewport, prop)],
       ["12 return to sections", async () => { section = await useCase12(page, prop); }],
       ["13 a Look uses the section", () => (section ? useCase13(page, prop, section) : Promise.reject(new Error("no section from 12")))],

@@ -7,13 +7,23 @@ import {
   continueToPoint,
   countLayout,
   emptyTrace,
+  formatLength,
+  formatPitchCm,
   gapLabel,
+  gridScaleLabel,
+  isPropLayout,
   lengthLabel,
   moveCorner,
+  parseLength,
+  parsePitchCm,
   rooflineLayout,
   scaleAboutStart,
   setEdgeLength,
+  setEdgeLights,
+  setLayoutUnits,
+  setPitchM,
   snapPoint,
+  snapStepM,
   windowLayout,
   type PropLayout,
 } from "./layout.ts";
@@ -177,19 +187,38 @@ describe("snap", () => {
     expect(Math.atan2(snapped.y, snapped.x)).toBeCloseTo(Math.PI / 4, 2);
   });
 
-  it("snaps length to a whole number of lights along the edge", () => {
+  it("holds a point to the snap step even when it is far from a grid line", () => {
     const snapped = snapPoint({
-      point: { x: 0.97, y: 0 },
+      point: { x: 1.2, y: 0.02 },
+      anchor: null,
+      previousAngle: null,
+      corners: [{ id: "c1", x: 0, y: 0 }],
+      pitchM: 0.1,
+      gridM: 0.3048,
+      stepM: 0.3048 / 12,
+      snapOff: false,
+      force45: false,
+    });
+    expect(snapped.guide).toBe("grid");
+    expect(snapped.x).toBeCloseTo(47 * (0.3048 / 12), 5);
+    expect(snapped.y).toBeCloseTo(0.3048 / 12, 5);
+  });
+
+  it("keeps axis lock and holds the length to the step", () => {
+    const snapped = snapPoint({
+      point: { x: 1.3, y: 0.04 },
       anchor: { x: 0, y: 0 },
       previousAngle: null,
       corners: [{ id: "c1", x: 0, y: 0 }],
       pitchM: 0.1,
-      gridM: 1,
+      gridM: 0.3048,
+      stepM: 0.3048 / 12,
       snapOff: false,
       force45: false,
     });
-    expect(snapped.guide).toBe("light");
-    expect(snapped.x).toBeCloseTo(1, 5);
+    expect(snapped.guide).toBe("angle");
+    expect(snapped.y).toBeCloseTo(0, 5);
+    expect(snapped.x).toBeCloseTo(51 * (0.3048 / 12), 5);
   });
 
   it("leaves the point alone when snap is off", () => {
@@ -262,9 +291,82 @@ describe("strings", () => {
 });
 
 describe("length labels", () => {
-  it("shows a whole number of feet and the leftover centimetres", () => {
-    const label = lengthLabel(4.25 * 0.3048, "ft");
-    expect(label.whole).toBe("4 ft");
-    expect(label.extra).toBe("+8 cm");
+  it("shows feet and inches, and the same metres the same way", () => {
+    expect(lengthLabel(1.2, "ft").whole).toBe("3' 11\"");
+    expect(lengthLabel(1.2, "ft").extra).toBeNull();
+    expect(lengthLabel(0.4, "ft").whole).toBe("1' 4\"");
+    expect(lengthLabel(0.8, "ft").whole).toBe("2' 7\"");
+    expect(lengthLabel(2.9, "ft").whole).toBe("9' 6\"");
+    expect(lengthLabel(1, "m").whole).toBe("1.00 m");
+    expect(lengthLabel(2.5, "m").whole).toBe("2.50 m");
+  });
+
+  it("round-trips a feet-and-inches length and a metre length", () => {
+    for (const metres of [1.2, 0.4, 0.8, 2.9, 0.1, 1.2192]) {
+      const shown = formatLength(metres, "ft");
+      const back = parseLength(shown, "ft");
+      expect(back).not.toBeNull();
+      expect(formatLength(back!, "ft")).toBe(shown);
+      expect(Math.abs(back! - metres)).toBeLessThanOrEqual(METRES_PER_INCH / 2 + 1e-9);
+    }
+    expect(parseLength("3' 11\"", "ft")).toBeCloseTo(47 * (0.3048 / 12), 6);
+    expect(parseLength("4", "ft")).toBeCloseTo(1.2192, 6);
+    expect(parseLength("1.20", "m")).toBeCloseTo(1.2, 6);
+    expect(formatLength(parseLength("1.20", "m")!, "m")).toBe("1.20");
+    expect(parseLength("abc", "ft")).toBeNull();
+    expect(parseLength("-1", "m")).toBeNull();
+    expect(parseLength("0", "m")).toBeNull();
+  });
+});
+
+const METRES_PER_INCH = 0.3048 / 12;
+
+describe("unit and spacing", () => {
+  it("uses a 1 ft grid with an inch step, or a 0.5 m grid with a 5 cm step", () => {
+    expect(gridScaleLabel("ft")).toBe("1 square = 1 ft");
+    expect(snapStepM("ft")).toBeCloseTo(0.3048 / 12, 8);
+    expect(gridScaleLabel("m")).toBe("1 square = 0.5 m");
+    expect(snapStepM("m")).toBeCloseTo(0.05, 8);
+  });
+
+  it("keeps a saved prop's corners when the unit changes", () => {
+    const saved = {
+      source: "trace" as const,
+      units: "ft" as const,
+      pitchM: 0.1,
+      startOffsetM: 0,
+      corners: [
+        { id: "c1", x: 0, y: 0 },
+        { id: "c2", x: 1.2, y: 0 },
+        { id: "c3", x: 1.2, y: 0.4 },
+      ],
+      run: [
+        { id: "e1", from: "c1", to: "c2", kind: "lit" as const },
+        { id: "e2", from: "c2", to: "c3", kind: "lit" as const },
+      ],
+    };
+    expect(isPropLayout(saved)).toBe(true);
+    expect(formatLength(1.2, "ft")).toBe("3' 11\"");
+    expect(formatLength(0.4, "ft")).toBe("1' 4\"");
+    const metric = setLayoutUnits(saved, "m");
+    expect(metric.corners).toEqual(saved.corners);
+    expect(metric.units).toBe("m");
+    expect(formatLength(1.2, metric.units)).toBe("1.20");
+    expect(setLayoutUnits(metric, "ft").corners).toEqual(saved.corners);
+  });
+
+  it("changes the light count from the spacing, and leaves a typed count in place", () => {
+    const layout = continueToPoint(emptyTrace("ft", 0.1), "s1", 1.2, 0, "lit");
+    expect(countLayout(layout).total).toBe(12);
+    expect(formatPitchCm(layout.pitchM)).toBe("10");
+    const wider = setPitchM(layout, parsePitchCm("20")!);
+    expect(wider.pitchM).toBeCloseTo(0.2, 6);
+    expect(countLayout(wider).total).toBe(6);
+    expect(wider.corners).toEqual(layout.corners);
+    const typed = setEdgeLights(wider, wider.run[0]!.id, 9);
+    expect(countLayout(setPitchM(typed, 0.1)).total).toBe(9);
+    expect(parsePitchCm("")).toBeNull();
+    expect(parsePitchCm("no")).toBeNull();
+    expect(setPitchM(layout, 0)).toBe(layout);
   });
 });
