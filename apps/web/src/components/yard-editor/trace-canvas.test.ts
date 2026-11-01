@@ -14,8 +14,9 @@ describe("draw-it labels", () => {
     const a1 = placeBesideRun(200, 200, 0, 1, 72, []);
     const captionMid = { x: a1.caption.x + a1.caption.w / 2, y: a1.caption.y + a1.caption.h / 2 };
     expect(Math.hypot(a1.badge.x - captionMid.x, a1.badge.y - captionMid.y)).toBeGreaterThan(a1.badge.r + a1.caption.h / 2);
-    expect(Math.hypot(a1.badge.x - 200, a1.badge.y - 200)).toBeLessThan(32);
-    expect(Math.hypot(captionMid.x - 200, captionMid.y - 200)).toBeLessThan(40);
+    expect(Math.hypot(a1.badge.x - 200, a1.badge.y - 200)).toBeLessThan(28);
+    expect(Math.hypot(captionMid.x - 200, captionMid.y - 200)).toBeGreaterThan(a1.caption.w / 2);
+    expect(boxesOverlap(a1.caption, { x: a1.badge.x - 11, y: a1.badge.y - 11, w: 22, h: 22 }, 6)).toBe(false);
     const button = { x: 150, y: 230, w: 148, h: 44 };
     const clear = placeBesideRun(200, 200, 0, 1, 72, [button]);
     expect(boxesOverlap(clear.caption, button)).toBe(false);

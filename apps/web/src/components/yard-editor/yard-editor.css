@@ -176,8 +176,8 @@
 @media (max-width: 860px) {
 .ye .main.editor { grid-template-columns: 1fr; }
 .ye.editing .modechip, .ye.editing .hint, .ye.editing .zoom { display: none; }
-.ye.editing .tools { top: 8px; left: 8px; right: 8px; justify-content: space-between; }
-.ye.editing .tools button { padding: 0 8px; font-size: 13px; }
+.ye.editing .tools { top: 8px; left: 8px; right: 8px; justify-content: flex-start; gap: 6px; overflow-x: auto; }
+.ye.editing .tools button { flex: 0 0 auto; padding: 0 10px; font-size: 13px; }
 .ye .insp { max-height: 34%; }
 .ye .crumb a, .ye .crumb span, .ye.editing .dirty, .ye.editing #tryBtn, .ye.editing #ye-redo { display: none !important; }
 .ye .crumb b { max-width: 90px; }

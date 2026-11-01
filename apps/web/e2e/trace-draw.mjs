@@ -116,6 +116,14 @@ try {
     const typed = await lengthPage.locator("#ye-length").inputValue();
     expect("length field", typed === "6' 4\"", typed);
     await lengthPage.waitForFunction(() => {
+      const hud = document.getElementById("ye-trace");
+      const text = hud?.textContent ?? "";
+      return /1\.93 m/.test(text) && /19 lights/.test(text);
+    });
+    const empty = await lengthPage.getByText("A clean canvas").count();
+    const startFrom = await lengthPage.getByRole("heading", { name: "Start from" }).count();
+    expect("empty state stays hidden after the wire-in", empty === 0 && startFrom === 0, `${empty} ${startFrom}`);
+    await lengthPage.waitForFunction(() => {
       const guides = window.__yard?.guides ?? [];
       return guides.some((guide) => guide.kind === "align" || guide.kind === "angle");
     });

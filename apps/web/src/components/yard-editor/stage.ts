@@ -105,6 +105,14 @@ export type RubberBand = {
 
 const BADGE_R = 11;
 
+/** The wire-in name sits off the point, so a run leaving it does not cross the words. */
+export function wireInLabelBox(x: number, y: number, textWidth: number, topLimit: number): ScreenBox {
+  const h = 14;
+  const baseline = y - 24 >= topLimit ? y - 24 : y + 28;
+  const left = Math.max(4, x - textWidth / 2);
+  return { x: left, y: baseline - 11, w: textWidth, h };
+}
+
 /**
  * Caption and badge stay on the run, one each side of the midpoint.
  * They may swap sides to miss a neighbour. They do not walk off the run:
@@ -124,8 +132,9 @@ export function placeBesideRun(
   const py = ny / len;
   const capH = 16;
   const r = BADGE_R;
-  const bout = r + 8;
-  const cout = capH / 2 + 10;
+  const gap = 10;
+  const bout = r + gap;
+  const cout = captionW / 2 + gap;
   type Spot = { caption: ScreenBox; badge: { x: number; y: number; r: number }; hits: number; outside: number };
   let best: Spot | null = null;
   for (const badgeSide of [1, -1]) {
@@ -317,9 +326,8 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
     const wire = "Wire in · light 1";
     const tw = ctx.measureText(wire).width;
     const x = sx(p.start.x + p.x), y = sy(p.start.y + p.y);
-    const left = x - tw - 10 > 4;
-    const baseline = y + (left ? 4 : 30);
-    blocked.push({ x: left ? x - tw - 10 : x + 10, y: baseline - 11, w: tw, h: 14 });
+    const spot = wireInLabelBox(x, y, tw, scene.phone ? 120 : 16);
+    blocked.push(spot);
   }
   if (scoped) {
     for (const corner of p.corners) {
@@ -416,8 +424,8 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
       ctx.fillStyle = c.primary;
       ctx.font = "11px var(--font-plex-sans), 'IBM Plex Sans', sans-serif";
       const t = "Wire in · light 1", tw = ctx.measureText(t).width, x = sx(p.start.x + p.x), y = sy(p.start.y + p.y);
-      const left = x - tw - 10 > 4;
-      ctx.fillText(t, left ? x - tw - 10 : x + 10, y + (left ? 4 : 30));
+      const spot = wireInLabelBox(x, y, tw, scene.phone ? 120 : 16);
+      ctx.fillText(t, spot.x, spot.y + 11);
       ctx.font = "11px var(--font-plex-mono), 'IBM Plex Mono', monospace";
     }
     ctx.restore();
@@ -521,6 +529,7 @@ export function drawRubber(ctx: CanvasRenderingContext2D, view: View, band: Rubb
     const x = sx(dot.x), y = sy(dot.y);
     if (Math.hypot(x - ax, y - ay) < 36) continue;
     if (wire && Math.hypot(x - wire.x, y - wire.y) < 48) continue;
+    if (wire && x > wire.x - 80 && x < wire.x + 80 && y > wire.y - 40 && y < wire.y - 8) continue;
     ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI * 2); ctx.fill();
   }
   ctx.beginPath(); ctx.arc(bx, by, 5, 0, Math.PI * 2); ctx.stroke();

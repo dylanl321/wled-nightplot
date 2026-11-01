@@ -1720,6 +1720,7 @@ export function YardEditor(init: YardEditorProps) {
             e.preventDefault();
             s.lengthError = null;
             render();
+            updateBand(s.pointer.px, s.pointer.py, 0, e.altKey, e.shiftKey);
             return;
           }
           if (step.effect.type === "finishChain") {
@@ -1730,6 +1731,7 @@ export function YardEditor(init: YardEditorProps) {
           }
           e.preventDefault();
           render();
+          updateBand(s.pointer.px, s.pointer.py, 0, e.altKey, e.shiftKey);
           return;
         }
         if ((e.key === "s" || e.key === "S") && !mod && tracingAllowed()) {
@@ -2105,7 +2107,7 @@ export function YardEditor(init: YardEditorProps) {
     const rows = d.shape === "draw" ? drawRows(d) : runRows(d).map((row) => ({ ...row, wire: false }));
     const r = rows.find((x) => x.edge.id === s.selRun) ?? null;
     const sec = d.sections.find((x) => x.id === s.activeSection) ?? null;
-    const hasShape = Boolean(d.layout && d.layout.corners.length > 0 && (rows.length > 0 || d.shape !== "draw"));
+    const hasShape = Boolean(d.layout && d.layout.corners.length > 0);
     const unsectioned = rows.filter((x) => !sectionOfEdge(d.sections, x.edge.id));
     const pitch = d.layout?.pitchM ?? s.pitchDefault;
     const taken = s.props.filter((p) => p.id !== d.id).map((p) => p.label);
@@ -2442,7 +2444,8 @@ export function YardEditor(init: YardEditorProps) {
   } else {
     hint = "Click a prop to select it. Drag to move it. Double-click to edit it on its own canvas. Scroll pans; Ctrl/⌘ + scroll zooms.";
   }
-  const shaped = Boolean(d?.layout && d.layout.corners.length > 0 && (d.shape === "draw" ? drawRows(d).length : runRows(d).length + 1) > 0);
+  const wired = Boolean(d?.layout && d.layout.corners.length > 0);
+  const shaped = Boolean(d && wired && (d.shape === "draw" ? drawRows(d).length : runRows(d).length + 1) > 0);
   const toolBtn = (k: Tool, label: string, key: string) => (
     <button key={k} type="button" aria-pressed={s.tool === k} title={key} onClick={() => {
       s.tool = k;
@@ -2603,16 +2606,16 @@ export function YardEditor(init: YardEditorProps) {
               onPick={(hit) => { s.sel = hit?.propId ?? null; if (s.sel && !s.sheet) s.sheet = "half"; setQuery(s.sel ? { prop: s.sel } : {}); render(); }}
             />
           ) : null}
-          {inProp() && d && !shaped ? (
+          {inProp() && d && !wired ? (
             <div className="empty"><div><strong>A clean canvas</strong><span>{s.phone ? "Pick a shape below. Or pick Draw it, then tap where the wire comes in." : "Pick a starting shape in the panel, or choose Draw it and click where the wire comes in."}</span></div></div>
           ) : null}
           {!inProp() ? <div className="phonebar"><button type="button" aria-label="Props and Looks" onClick={() => { s.railOpen = !s.railOpen; render(); }}>☰ Props &amp; Looks</button></div> : null}
           {chip ? <div className={`modechip ${inProp() ? "path" : ""}`}>{chip}</div> : null}
-          {inProp() && shaped ? (
+          {inProp() && wired ? (
             <div className="tools">
-              {toolBtn("move", "Select / move", "V")}
+              {toolBtn("move", s.phone ? "Select" : "Select / move", "V")}
               {toolBtn("trace", "Trace", "T")}
-              {toolBtn("split", "Add point", "A")}
+              {toolBtn("split", s.phone ? "Point" : "Add point", "A")}
               {s.tool === "trace" ? (
                 <button
                   type="button"
@@ -2624,7 +2627,7 @@ export function YardEditor(init: YardEditorProps) {
                     traceRef.current = { ...traceRef.current, nextRun: s.nextRun };
                     render();
                   }}
-                >{s.nextRun === "dark" ? "Next: Dark" : "Next: Lit"}</button>
+                >{s.phone ? (s.nextRun === "dark" ? "Dark" : "Lit") : (s.nextRun === "dark" ? "Next: Dark" : "Next: Lit")}</button>
               ) : null}
               {s.tool === "trace" ? (
                 <button type="button" aria-pressed={s.snapOn} title="Snap. S switches it. Hold Alt to place free." onClick={() => { s.snapOn = !s.snapOn; render(); }}>Snap</button>
@@ -2633,7 +2636,7 @@ export function YardEditor(init: YardEditorProps) {
               <button type="button" onClick={fitDraft}>Fit</button>
             </div>
           ) : null}
-          {inProp() && s.phone && s.tool === "trace" && shaped ? (
+          {inProp() && s.phone && s.tool === "trace" && wired ? (
             <label className="nextlen">Next length
               <input
                 id="ye-nextlen"
@@ -2643,6 +2646,7 @@ export function YardEditor(init: YardEditorProps) {
                   const text = e.target.value;
                   traceRef.current = { ...traceRef.current, gesture: text ? "lengthEntry" : traceRef.current.gesture === "lengthEntry" ? "tracing" : traceRef.current.gesture, lengthDraft: text, entryField: "length" };
                   s.lengthError = null;
+                  updateBand(s.pointer.px, s.pointer.py, 0);
                   render();
                 }}
                 onKeyDown={(e) => {
@@ -2664,7 +2668,7 @@ export function YardEditor(init: YardEditorProps) {
           {inProp() && !s.phone && traceRef.current.gesture === "lengthEntry" ? (
             <label className="lenpop" style={{ left: Math.max(8, Math.min(s.pointer.px + 14, size.current.W - 180)), top: Math.max(56, s.pointer.py + 16) }}>
               Length
-              <input id="ye-length" value={traceRef.current.lengthDraft} aria-invalid={s.lengthError ? true : undefined} onChange={(e) => { traceRef.current = { ...traceRef.current, lengthDraft: e.target.value, gesture: "lengthEntry" }; s.lengthError = null; render(); }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); placeLocked(s.pointer.px, s.pointer.py, e.altKey); } if (e.key === "Escape") { e.preventDefault(); traceRef.current = { ...traceRef.current, gesture: "tracing", lengthDraft: "", angleDraft: "", entryField: "length" }; s.lengthError = null; render(); } if (e.key === "Tab") { e.preventDefault(); traceRef.current = { ...traceRef.current, entryField: "angle" }; render(); } }} />
+              <input id="ye-length" value={traceRef.current.lengthDraft} aria-invalid={s.lengthError ? true : undefined} onChange={(e) => { traceRef.current = { ...traceRef.current, lengthDraft: e.target.value, gesture: "lengthEntry" }; s.lengthError = null; updateBand(s.pointer.px, s.pointer.py, 0); render(); }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); placeLocked(s.pointer.px, s.pointer.py, e.altKey); } if (e.key === "Escape") { e.preventDefault(); traceRef.current = { ...traceRef.current, gesture: "tracing", lengthDraft: "", angleDraft: "", entryField: "length" }; s.lengthError = null; updateBand(s.pointer.px, s.pointer.py, 0); render(); } if (e.key === "Tab") { e.preventDefault(); traceRef.current = { ...traceRef.current, entryField: "angle" }; render(); } }} />
               {traceRef.current.entryField === "angle" || traceRef.current.angleDraft ? (
                 <input id="ye-angle" aria-label="Angle" value={traceRef.current.angleDraft} onChange={(e) => { traceRef.current = { ...traceRef.current, angleDraft: e.target.value, entryField: "angle" }; render(); }} />
               ) : null}
