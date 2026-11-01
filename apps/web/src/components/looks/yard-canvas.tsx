@@ -120,10 +120,12 @@ export function YardCanvas({ drawn, props, look, className, small, labels, selec
             return;
           }
           const [cr, cg, cb] = [c[0]! | 0, c[1]! | 0, c[2]! | 0];
-          const dimmer = at.fade;
-          const halo = Math.min(dot * 2.2, gap * 0.46);
-          if (!small) { g.fillStyle = `rgba(${cr},${cg},${cb},${0.2 * k * dimmer})`; g.beginPath(); g.arc(x, y, halo, 0, 7); g.fill(); }
-          g.fillStyle = `rgba(${cr},${cg},${cb},${k * dimmer})`; g.beginPath(); g.arc(x, y, Math.max(1.1, dot), 0, 7); g.fill();
+          const core = Math.max(1.1, dot);
+          // The flat drawing's halo: 3.2× the dot, alpha 0.16, added with lighter.
+          // A tight row uses a smaller halo so neighbouring dots stay apart.
+          const halo = lightHalo(core, gap);
+          if (!small) { g.fillStyle = `rgba(${cr},${cg},${cb},${0.16 * k * at.fade})`; g.beginPath(); g.arc(x, y, halo, 0, 7); g.fill(); }
+          g.fillStyle = `rgba(${cr},${cg},${cb},${k * at.fade})`; g.beginPath(); g.arc(x, y, core, 0, 7); g.fill();
         });
         g.globalCompositeOperation = "source-over";
         if (!drawnProp.lights.length || small) continue;
@@ -295,6 +297,13 @@ function drawEaveWalls(
     g.closePath();
     g.fill();
   }
+}
+
+/** Wider soft disc around a light. On a tight row it stops short of the next light. */
+function lightHalo(core: number, gap: number): number {
+  const full = core * 3.2;
+  if (!Number.isFinite(gap)) return full;
+  return Math.min(full, Math.max(core * 1.4, gap * 0.48));
 }
 
 function neighbourGap(prop: DrawnProp, place: (x: number, y: number, z?: number) => { x: number; y: number }): number {
