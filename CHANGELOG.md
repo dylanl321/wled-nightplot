@@ -7,6 +7,8 @@ Slice lines (`0.7.x`) are not SemVer marketing numbers.
 
 ## Unreleased
 
+- Editor stage on react-konva (GitHub #98, epic #97): `konva` 10 and `react-konva` 19.2 join the web app, with one client-only stage that the path editor and the yard will share. The world is metres with y up. Drag empty space, Space + drag, or middle-button drag to pan; the wheel and a trackpad pinch zoom toward the pointer; two fingers pinch about their midpoint and carry the pan; Zoom in, Zoom out, and Fit sit in the corner at 44 px. A press that moves less than 6 px on empty space is a tap in world metres, and a second finger cancels it. Presses on a shape belong to the shape. Pointer to world goes through the inverted stage transform. Camera math is pure and unit-tested. Nothing draws on it yet; the prop path moves onto it in #99. Not Hardware Done.
+
 - Layout editor plan: `docs/editor-plan.md` compares canvas libraries and chooses react-konva. It lists the use cases, the desktop and phone interactions, and what the current editor can and cannot do. The rebuild waits until that plan is approved. Not Hardware Done.
 
 - First-run props: a prop is one or more strings. Each string is an ordered run of the wire, counted on its own (round length ÷ spacing, so equal sides match, and adding a run does not change the others). Continue from the end, backtrack over a corner, mark a run dark, or add another string. Sections keep the names and colours you set, and Attach writes those colours. See it previews them on the controller. A well house starts at 4 walls, tops first, then opens in the path editor. New prop stays on the yard. Phone spacing is inches when you are using feet.
