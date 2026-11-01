@@ -16,16 +16,21 @@ import {
   gridSizeM,
   isClosed,
   layoutStrings,
+  mergeShortRuns,
   moveCorner,
   parsePitchCm,
+  runsOnSameSpan,
   setEdgeLength,
   setEdgeLights,
   setLayoutUnits,
   setPitchM,
+  shortRuns,
   snapPoint,
+  splitRun,
   snapStepM,
   stringById,
   stringEndId,
+  weldCorners,
   type PropLayout,
 } from "@nightplot/shared";
 import type Konva from "konva";
@@ -43,6 +48,9 @@ const WIRE = "#8a8478";
 const START = "#7ee0d0";
 const INK = "#e8e2d6";
 const WARN = "#f5c16c";
+/** Join treats corners closer than this on screen as one corner. */
+const WELD_PX = 12;
+const OVERLAP_PX = 10;
 
 type Drag = { id: string; x: number; y: number; screen: Point; guide: string | null };
 type Ghost = { x: number; y: number; guide: string | null };
@@ -72,13 +80,17 @@ export function PropLayoutEditor({
   const [toast, setToast] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
-  const [ask, setAsk] = useState(false);
-  const [asked, setAsked] = useState(false);
+  const [splitting, setSplitting] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   const [activeString, setActiveString] = useState(layoutStrings(initial)[0]?.id ?? "s1");
   const [dark, setDark] = useState(false);
   const [placing, setPlacing] = useState(false);
   const darkRef = useRef(dark);
   darkRef.current = dark;
+  const pickedRef = useRef(picked);
+  pickedRef.current = picked;
+  const splittingRef = useRef(splitting);
+  splittingRef.current = splitting;
   const [gap, setGap] = useState<string | null>(null);
   const stage = useRef<EditorStageHandle>(null);
   const layoutRef = useRef(layout);
@@ -132,6 +144,7 @@ export function PropLayoutEditor({
     layoutRef.current = next;
     setLayout(next);
     setToast(notice ?? null);
+    setNote(null);
     const closing = next.run[next.run.length - 1];
     if (closing?.lockedLengthM && isClosed(next)) {
       const miss = Math.abs(edgeLengthM(next, closing) - closing.lockedLengthM);
@@ -244,13 +257,17 @@ export function PropLayoutEditor({
       commit(next);
       return;
     }
-    const next = continueToPoint(layoutRef.current, activeString, point.x, point.y, dark ? "wire" : "lit");
-    const edge = stringById(next, activeString).run.at(-1);
-    if (edge && edge.kind === "lit" && edgeLengthM(next, edge) < next.pitchM && !asked) {
-      setAsk(true);
-      setAsked(true);
+    finishTrace(continueToPoint(layoutRef.current, activeString, point.x, point.y, dark ? "wire" : "lit"));
+  }
+
+  function joinNearby() {
+    const ppm = stage.current?.camera().ppm ?? 1;
+    const next = weldCorners(layoutRef.current, WELD_PX / Math.max(ppm, 1));
+    if (next === layoutRef.current) {
+      setNote("No corners are close enough to join.");
+      return;
     }
-    finishTrace(next);
+    commit(next, "Joined corners that sat on each other.");
   }
 
   function tapCorner(cornerId: string) {
@@ -294,6 +311,7 @@ export function PropLayoutEditor({
   function switchMode(next: EditorMode) {
     setMode(next);
     setGhost(null);
+    if (next === "trace") setSplitting(false);
     if (next === "edit") setPlacing(false);
   }
 
@@ -323,6 +341,7 @@ export function PropLayoutEditor({
         </header>
         <p className={`shrink-0 bg-background px-4 text-[15px] ${short ? "text-amber-200" : "text-foreground"}`}>{totalText}</p>
         <p className="shrink-0 bg-background px-4 pb-2 text-[14px] leading-5 text-muted-foreground">{editorHint(mode, dark, placing)}</p>
+        {note ? <p className="shrink-0 bg-background px-4 pb-2 text-[14px] text-amber-200">{note}</p> : null}
         {gap ? <p className="bg-background px-4 text-[14px] text-red-400">{gap}</p> : null}
         <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
           <EditorStage
@@ -335,6 +354,10 @@ export function PropLayoutEditor({
             testId="layout-canvas"
             onBackgroundTap={(tap) => {
               setPicked(null);
+              if (splittingRef.current) {
+                setNote("Tap a run to add a point on it.");
+                return;
+              }
               if (mode === "trace") addPoint(tap.world, tap.altKey, tap.shiftKey);
               else setSelected(null);
             }}
@@ -345,6 +368,7 @@ export function PropLayoutEditor({
             }}
             overlay={(camera) => {
               const labels = badgeSpots(runs, corners, camera);
+              const spans = runsOnSameSpan(drawing);
               return (
               <>
                 {guide && guideAnchor ? (
@@ -362,12 +386,39 @@ export function PropLayoutEditor({
                   const from = corners.find((corner) => corner.id === edge.from);
                   const to = corners.find((corner) => corner.id === edge.to);
                   if (!from || !to) return null;
-                  const a = toScreen(from, camera);
-                  const b = toScreen(to, camera);
-                  const label = labels[index]!;
+                  const rawA = toScreen(from, camera);
+                  const rawB = toScreen(to, camera);
+                  const shifted = shiftEnds(rawA, rawB, overlapShift(spans.get(edge.id), edge.id));
+                  const a = shifted.a;
+                  const b = shifted.b;
+                  const label = { x: labels[index]!.x + shifted.nx * shifted.shift, y: labels[index]!.y + shifted.ny * shifted.shift };
                   const row = counted.edges.find((item) => item.id === edge.id);
                   const zero = row?.lights === 0 && edge.kind === "lit";
-                  const pick = () => setPicked(edge.id);
+                  const pick = (event: Konva.KonvaEventObject<Event>) => {
+                    event.cancelBubble = true;
+                    if (splittingRef.current) {
+                      const pointer = event.target.getStage()?.getPointerPosition();
+                      if (!pointer) return;
+                      const world = toWorld(pointer, camera);
+                      const split = splitRun(layoutRef.current, edge.id, world.x, world.y);
+                      if (!split.cornerId) {
+                        setNote("Tap the middle of a run to add a point.");
+                        return;
+                      }
+                      setSplitting(false);
+                      setSelected(split.cornerId);
+                      setPicked(edge.id);
+                      commit(split.layout, "Added a point on the run.");
+                      return;
+                    }
+                    const group = spans.get(edge.id) ?? [edge.id];
+                    if (pickedRef.current === edge.id && group.length > 1) {
+                      const at = group.indexOf(edge.id);
+                      setPicked(group[(at + 1) % group.length]!);
+                      return;
+                    }
+                    setPicked(edge.id);
+                  };
                   return (
                     <Group key={edge.id}>
                       <Line
@@ -443,12 +494,6 @@ export function PropLayoutEditor({
               <button type="button" className="min-h-11 px-3 text-primary" onClick={undo}>Undo</button>
             </div>
           ) : null}
-          {ask ? (
-            <div className="absolute inset-x-4 top-16 rounded-xl border border-amber-500/60 bg-card p-4 text-[15px]" role="dialog" aria-label="Short edge">
-              <p>This edge is shorter than one light, so it has 0 lights.</p>
-              <Button type="button" className="mt-3 min-h-11" onClick={() => setAsk(false)}>OK</Button>
-            </div>
-          ) : null}
         </div>
       </div>
       {/* Phone portrait: under the drawing. Wide window or short landscape phone: a fixed-width column beside it. */}
@@ -456,6 +501,18 @@ export function PropLayoutEditor({
         aria-label="Path tools"
         className="flex min-h-0 shrink-0 flex-col bg-background lg:w-[380px] lg:border-l lg:border-border max-lg:landscape:w-[300px] max-lg:landscape:border-l max-lg:landscape:border-border"
       >
+      {shortRuns(layout).length > 0 ? (
+        <div className="flex items-center gap-2 border-t border-border bg-background px-3 py-2">
+          <p className="min-w-0 flex-1 text-[13px] leading-4 text-amber-200">
+            {shortRuns(layout).length === 1
+              ? "1 run is shorter than the light spacing."
+              : `${shortRuns(layout).length} runs are shorter than the light spacing.`}
+          </p>
+          <button type="button" className="min-h-11 shrink-0 rounded-lg border border-border px-3 text-[14px]" onClick={() => commit(mergeShortRuns(layoutRef.current), "Merged the short runs.")}>
+            Merge short runs
+          </button>
+        </div>
+      ) : null}
       <RunList
         className="max-h-[24dvh] min-h-0 shrink-0 border-t border-border bg-background lg:max-h-none lg:flex-1 lg:border-t-0 max-lg:landscape:max-h-none max-lg:landscape:flex-1 max-lg:landscape:border-t-0"
         layout={layout}
@@ -479,8 +536,12 @@ export function PropLayoutEditor({
         <DockButton onClick={() => picked && removeRun(picked)} disabled={!picked}>Delete</DockButton>
       </div>
       <div className="flex gap-2 bg-background px-2 pb-2">
+        <DockButton onClick={() => { setSplitting((value) => !value); setPlacing(false); setMode("edit"); }} pressed={splitting} solid>Add point</DockButton>
+        <DockButton onClick={joinNearby}>Join</DockButton>
+      </div>
+      <div className="flex gap-2 bg-background px-2 pb-2">
         <DockButton onClick={() => { setDark((value) => !value); setPlacing(false); }} pressed={dark}>Mark dark</DockButton>
-        <DockButton onClick={() => { setPlacing((value) => !value); setMode("trace"); }} pressed={placing}>Add another string</DockButton>
+        <DockButton onClick={() => { setPlacing((value) => !value); setMode("trace"); setSplitting(false); }} pressed={placing}>Add another string</DockButton>
       </div>
       <div className="flex gap-2 border-t border-border bg-background px-3 py-3">
         <Button type="button" variant="outline" className="min-h-12 flex-1 text-base" onClick={onBack}>Back</Button>
@@ -555,6 +616,25 @@ function DockButton({ onClick, disabled, pressed, solid, children }: { onClick: 
       {children}
     </button>
   );
+}
+
+function overlapShift(ids: readonly string[] | undefined, edgeId: string): number {
+  if (!ids || ids.length < 2) return 0;
+  const index = Math.max(0, ids.indexOf(edgeId));
+  return (index - (ids.length - 1) / 2) * OVERLAP_PX;
+}
+
+function shiftEnds(a: Point, b: Point, shift: number): { a: Point; b: Point; nx: number; ny: number; shift: number } {
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const nx = -(b.y - a.y) / len;
+  const ny = (b.x - a.x) / len;
+  return {
+    a: { x: a.x + nx * shift, y: a.y + ny * shift },
+    b: { x: b.x + nx * shift, y: b.y + ny * shift },
+    nx,
+    ny,
+    shift,
+  };
 }
 
 function lengthCaption(lengthM: number, units: PropLayout["units"], lights: number): string {

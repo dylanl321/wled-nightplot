@@ -11,6 +11,7 @@ export type RunRow = {
   lengthM: number;
   lights: number;
   typedCount: boolean;
+  short: boolean;
 };
 
 export function runRows(layout: PropLayout): RunRow[] {
@@ -26,6 +27,7 @@ export function runRows(layout: PropLayout): RunRow[] {
         lengthM: row?.lengthM ?? 0,
         lights: row?.lights ?? 0,
         typedCount: edge.kind === "lit" && edge.lockedLights != null,
+        short: edge.kind === "lit" && (row?.lengthM ?? 0) > 0 && (row?.lengthM ?? 0) < layout.pitchM,
       };
     }),
   );
@@ -79,6 +81,9 @@ export function RunList({
           <span>Lights</span>
           <span className="sr-only">Delete</span>
         </div>
+        <p id="run-length-note" className="px-3 text-[12px] leading-4 text-muted-foreground">
+          A new length moves that run&apos;s end along the run.
+        </p>
         <p id="run-lights-note" className="px-3 pb-1 text-[12px] leading-4 text-muted-foreground">
           Lights follow round(length ÷ spacing). A number you type here overrides that until the length changes.
         </p>
@@ -127,27 +132,43 @@ function RunRowItem({
   const [lights, setLights] = useState(shownLights);
   const [lastLength, setLastLength] = useState(shownLength);
   const [lastLights, setLastLights] = useState(shownLights);
+  const [lengthError, setLengthError] = useState<string | null>(null);
+  const [lightsError, setLightsError] = useState<string | null>(null);
   // Follow the drawing when it changes underneath the field.
   if (lastLength !== shownLength) {
     setLastLength(shownLength);
     setLength(shownLength);
+    setLengthError(null);
   }
   if (lastLights !== shownLights) {
     setLastLights(shownLights);
     setLights(shownLights);
+    setLightsError(null);
   }
   const lit = row.kind === "lit";
 
   function applyLength() {
     const metres = parseLength(length, units);
-    if (metres == null) return setLength(shownLength);
+    if (metres == null) {
+      setLengthError(units === "ft" ? "Enter a length like 3' 11\"." : "Enter a length in metres, greater than zero.");
+      return;
+    }
+    setLengthError(null);
     if (Math.abs(metres - row.lengthM) > 1e-4) onLength(metres);
   }
 
   function applyLights() {
-    if (lights.trim() === "") return onLights(null);
+    if (lights.trim() === "") {
+      setLightsError(null);
+      onLights(null);
+      return;
+    }
+    if (!/^\d+$/.test(lights.trim()) || Number(lights) <= 0) {
+      setLightsError("Enter a whole number of lights, or leave it empty.");
+      return;
+    }
+    setLightsError(null);
     const typed = Number(lights);
-    if (!Number.isInteger(typed) || typed < 0) return setLights(shownLights);
     if (lights !== shownLights || !row.typedCount) onLights(typed);
   }
 
@@ -155,11 +176,13 @@ function RunRowItem({
     <li
       data-edge={row.edgeId}
       aria-current={selected ? "true" : undefined}
-      className={`grid grid-cols-[minmax(0,1fr)_6.5rem_4.5rem_2.75rem] items-center gap-2 border-t border-border px-3 py-1 ${selected ? "bg-card" : ""}`}
+      className={`border-t border-border ${selected ? "bg-card" : ""}`}
     >
+      <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_4.5rem_2.75rem] items-center gap-2 px-3 py-1">
       <button type="button" className="min-h-11 min-w-0 truncate text-left text-[15px]" onClick={onPick}>
         {label}
         {row.kind === "wire" ? <span className="text-muted-foreground"> · dark</span> : null}
+        {row.short ? <span className="text-amber-200"> · short</span> : null}
         {row.typedCount ? <span className="text-muted-foreground"> · typed count</span> : null}
       </button>
       <form
@@ -170,13 +193,15 @@ function RunRowItem({
       >
         <input
           aria-label={`${label} length (${units === "ft" ? "ft" : "m"})`}
+          aria-describedby="run-length-note"
+          aria-invalid={lengthError ? true : undefined}
           value={length}
           inputMode="decimal"
           disabled={!lit}
           onFocus={onPick}
-          onChange={(event) => setLength(event.target.value)}
+          onChange={(event) => { setLength(event.target.value); setLengthError(null); }}
           onBlur={applyLength}
-          className="min-h-11 w-full rounded-md border border-input bg-background px-2 text-base disabled:opacity-50"
+          className={`min-h-11 w-full rounded-md border bg-background px-2 text-base disabled:opacity-50 ${lengthError ? "border-red-400" : "border-input"}`}
         />
       </form>
       <form
@@ -188,20 +213,23 @@ function RunRowItem({
         <input
           aria-label={`${label} lights`}
           aria-describedby="run-lights-note"
+          aria-invalid={lightsError ? true : undefined}
           value={lights}
           inputMode="numeric"
           disabled={!lit}
           onFocus={onPick}
-          onChange={(event) => setLights(event.target.value)}
+          onChange={(event) => { setLights(event.target.value); setLightsError(null); }}
           onBlur={() => {
             if (lights !== shownLights) applyLights();
           }}
-          className={`min-h-11 w-full rounded-md border bg-background px-2 text-base disabled:opacity-50 ${row.typedCount ? "border-primary" : "border-input"}`}
+          className={`min-h-11 w-full rounded-md border bg-background px-2 text-base disabled:opacity-50 ${lightsError ? "border-red-400" : row.typedCount ? "border-primary" : "border-input"}`}
         />
       </form>
       <button type="button" aria-label={`Delete ${label}`} title="Delete run" className="min-h-11 min-w-11 rounded-md text-[18px] text-muted-foreground hover:text-foreground" onClick={onDelete}>
         ×
       </button>
+      </div>
+      {lengthError || lightsError ? <p className="px-3 pb-2 text-[13px] text-red-400">{lengthError ?? lightsError}</p> : null}
     </li>
   );
 }
