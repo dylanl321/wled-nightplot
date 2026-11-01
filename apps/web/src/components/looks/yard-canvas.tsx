@@ -111,7 +111,7 @@ export function YardCanvas({ drawn, props, look, className, small, labels, selec
         drawnProp.lights.forEach((light, index) => {
           const at = place(light.x, light.y, light.z);
           const x = at.x, y = at.y;
-          const dot = Math.min(Math.max(1.15, r * at.scale), gap * 0.34);
+          const dot = Math.min(Math.max(1.15, r * at.scale), Number.isFinite(gap) ? gap * 0.22 : r * at.scale);
           const c = neutral ? [212, 165, 116] : look ? drawnLightColour(look, prop, drawnProp, index, time) : null;
           if (!c || c[0] + c[1] + c[2] < 6) {
             g.globalCompositeOperation = "source-over";
@@ -299,11 +299,14 @@ function drawEaveWalls(
   }
 }
 
-/** Wider soft disc around a light. On a tight row it stops short of the next light. */
+/**
+ * The flat drawing's halo is 3.2× the dot. That disc is used when the lights
+ * have room. On a tight row it shrinks so neighbouring glows do not join into a bar.
+ */
 function lightHalo(core: number, gap: number): number {
   const full = core * 3.2;
-  if (!Number.isFinite(gap)) return full;
-  return Math.min(full, Math.max(core * 1.4, gap * 0.48));
+  if (!Number.isFinite(gap) || full <= gap * 0.72) return full;
+  return Math.min(full, Math.max(core * 2, gap * 0.48));
 }
 
 function neighbourGap(prop: DrawnProp, place: (x: number, y: number, z?: number) => { x: number; y: number }): number {
