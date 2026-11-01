@@ -109,3 +109,59 @@ describe("PropLayoutEditor on the Konva stage", () => {
     expect(done.mock.calls[0]![0].strings).toHaveLength(1);
   });
 });
+
+describe("run list", () => {
+  it("shows every run's length and count without a tap", async () => {
+    render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
+    await screen.findByTestId("layout-canvas");
+    expect(screen.getByLabelText("Run 1 length (m)")).toHaveProperty("value", "1");
+    expect(screen.getByLabelText("Run 1 lights")).toHaveProperty("value", "10");
+  });
+
+  it("typing 3 m gives round(3 ÷ spacing) lights", async () => {
+    render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
+    const field = await screen.findByLabelText("Run 1 length (m)");
+    fireEvent.change(field, { target: { value: "3" } });
+    fireEvent.submit(field.closest("form")!);
+    expect(screen.getByText("30 lights")).toBeTruthy();
+    expect(screen.getByLabelText("Run 1 lights")).toHaveProperty("value", "30");
+  });
+
+  it("typing a count stores it on the run, and a later length edit clears it", async () => {
+    const done = vi.fn();
+    render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="edit" onDone={done} onBack={vi.fn()} />);
+    const count = await screen.findByLabelText("Run 1 lights");
+    fireEvent.change(count, { target: { value: "12" } });
+    fireEvent.submit(count.closest("form")!);
+    expect(screen.getByText("12 lights")).toBeTruthy();
+    expect(screen.getByLabelText("Run 1 length (m)")).toHaveProperty("value", "1");
+    expect(screen.getByText(/typed count/)).toBeTruthy();
+    const length = screen.getByLabelText("Run 1 length (m)");
+    fireEvent.change(length, { target: { value: "2" } });
+    fireEvent.submit(length.closest("form")!);
+    expect(screen.getByText("20 lights")).toBeTruthy();
+    expect(screen.queryByText(/typed count/)).toBeNull();
+  });
+
+  it("feet show feet", async () => {
+    const feet = { ...oneRun(), units: "ft" as const };
+    render(<PropLayoutEditor name="Ridge" initial={feet} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
+    expect(await screen.findByLabelText("Run 1 length (ft)")).toHaveProperty("value", "3.28");
+  });
+
+  it("deletes a run by its button, by Delete, and Undo brings it back", async () => {
+    render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="trace" onDone={vi.fn()} onBack={vi.fn()} />);
+    const at = await stagePoint({ x: 2, y: 0 });
+    tap(at.node, at.x, at.y, { altKey: true });
+    expect(screen.getByText("20 lights")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Delete Run 2" }));
+    expect(screen.getByText("10 lights")).toBeTruthy();
+    expect(screen.queryByLabelText("Run 2 lights")).toBeNull();
+    fireEvent.click(screen.getAllByRole("button", { name: "Undo" })[0]!);
+    expect(screen.getByText("20 lights")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Run 1" }));
+    fireEvent.keyDown(window, { key: "Delete" });
+    expect(screen.getByText("10 lights")).toBeTruthy();
+    expect(screen.getByLabelText("Run 1 length (m)")).toHaveProperty("value", "1");
+  });
+});

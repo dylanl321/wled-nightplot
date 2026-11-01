@@ -27,6 +27,12 @@ export type LayoutEdge = {
   to: string;
   kind: RunKind;
   lockedLengthM?: number;
+  /**
+   * A light count the operator typed for this lit run. It wins over
+   * round(length ÷ pitch) for counts, sections, and Attach. A later length
+   * edit on the same run clears it.
+   */
+  lockedLights?: number;
   hiddenCount?: number;
   /** Present for a later arc. Phase 1 draws the straight chord. */
   arc?: { riseM: number };
@@ -124,6 +130,7 @@ function isEdge(value: unknown, ids: Set<string>): value is LayoutEdge {
   if (!ids.has(row.from) || !ids.has(row.to)) return false;
   if (row.lockedLengthM !== undefined && (!(row.lockedLengthM > 0) || !Number.isFinite(row.lockedLengthM))) return false;
   if (row.hiddenCount !== undefined && (!Number.isInteger(row.hiddenCount) || (row.hiddenCount ?? 0) < 0)) return false;
+  if (row.lockedLights !== undefined && (!Number.isInteger(row.lockedLights) || (row.lockedLights ?? 0) < 0)) return false;
   return true;
 }
 
@@ -167,7 +174,7 @@ export function countLayout(layout: PropLayout): LayoutCount {
   for (const string of layoutStrings(layout)) {
     for (const edge of string.run) {
       const lengthM = edgeLengthM(layout, edge);
-      const lights = edge.kind === "wire" ? 0 : lightsOnLength(lengthM, layout.pitchM);
+      const lights = edgeLightCount(layout, edge);
       edges.push({
         id: edge.id,
         kind: edge.kind,
@@ -179,6 +186,13 @@ export function countLayout(layout: PropLayout): LayoutCount {
     }
   }
   return { total, edges };
+}
+
+/** Lights a run carries (or hides): the typed override on a lit run, else round(length ÷ pitch). A wire has none. */
+export function edgeLightCount(layout: PropLayout, edge: LayoutEdge): number {
+  if (edge.kind === "wire") return 0;
+  if (edge.kind === "lit" && edge.lockedLights != null) return edge.lockedLights;
+  return lightsOnLength(edgeLengthM(layout, edge), layout.pitchM);
 }
 
 /** Round length ÷ pitch. Zero when either measurement is missing. Equal lengths round the same way. */
@@ -196,6 +210,49 @@ export function layoutStrings(layout: PropLayout): LayoutString[] {
 export function ensureStrings(layout: PropLayout): PropLayout {
   const strings = layoutStrings(layout);
   return { ...layout, strings, run: strings[0]?.run ?? [] };
+}
+
+/** Apply `fn` to every edge in every string, keeping `run` in step with the first string. */
+function mapEdges(layout: PropLayout, fn: (edge: LayoutEdge) => LayoutEdge): PropLayout {
+  if (!layout.strings || layout.strings.length === 0) return { ...layout, run: layout.run.map(fn) };
+  return writeStrings(layout, layout.strings.map((string) => ({ ...string, run: string.run.map(fn) })));
+}
+
+/** Set a typed light count on one lit run. The length stays as drawn. */
+export function setEdgeLights(layout: PropLayout, edgeId: string, lights: number): PropLayout {
+  if (!Number.isInteger(lights) || lights < 0) return layout;
+  const edge = layoutStrings(layout).flatMap((string) => string.run).find((row) => row.id === edgeId);
+  if (!edge || edge.kind !== "lit") return layout;
+  return mapEdges(layout, (row) => (row.id === edgeId ? { ...row, lockedLights: lights } : row));
+}
+
+/** Clear a typed light count, so the run counts from its length again. */
+export function clearEdgeLights(layout: PropLayout, edgeId: string): PropLayout {
+  return mapEdges(layout, (row) => {
+    if (row.id !== edgeId || row.lockedLights == null) return row;
+    const { lockedLights: _dropped, ...rest } = row;
+    return rest;
+  });
+}
+
+/**
+ * Remove one run from its string. Later runs stay where they are; the wire
+ * jumps over the gap. A corner nothing uses any more goes with it.
+ */
+export function deleteRun(layout: PropLayout, edgeId: string): PropLayout {
+  const base = ensureStrings(layout);
+  const owner = (base.strings ?? []).find((string) => string.run.some((edge) => edge.id === edgeId));
+  if (!owner) return layout;
+  const strings = (base.strings ?? []).map((string) => (string.id === owner.id ? { ...string, run: string.run.filter((edge) => edge.id !== edgeId) } : string));
+  const used = new Set<string>();
+  for (const string of strings) {
+    used.add(string.startId);
+    for (const edge of string.run) {
+      used.add(edge.from);
+      used.add(edge.to);
+    }
+  }
+  return writeStrings({ ...base, corners: base.corners.filter((corner) => used.has(corner.id)) }, strings);
 }
 
 function writeStrings(layout: PropLayout, strings: LayoutString[]): PropLayout {
@@ -256,14 +313,14 @@ export function layoutLightTotal(layout: PropLayout): number {
 export function scaleAboutStart(layout: PropLayout, factor: number): PropLayout {
   if (!Number.isFinite(factor) || factor <= 0) return layout;
   const start = startCorner(layout);
+  const scaled = mapEdges(layout, (edge) => edge.lockedLengthM == null ? edge : { ...edge, lockedLengthM: edge.lockedLengthM * factor });
   return {
-    ...layout,
+    ...scaled,
     corners: layout.corners.map((corner) => ({
       ...corner,
       x: start.x + (corner.x - start.x) * factor,
       y: start.y + (corner.y - start.y) * factor,
     })),
-    run: layout.run.map((edge) => edge.lockedLengthM == null ? edge : { ...edge, lockedLengthM: edge.lockedLengthM * factor }),
   };
 }
 
@@ -275,10 +332,38 @@ export type LengthEdit = {
 };
 
 export function setEdgeLength(layout: PropLayout, edgeId: string, lengthM: number): LengthEdit {
+  if (!layout.strings || layout.strings.length === 0) return setEdgeLengthOnRun(layout, edgeId, lengthM);
+  const owner = layout.strings.find((string) => string.run.some((edge) => edge.id === edgeId));
+  if (!owner) return { layout, scaledAll: false, gapM: null };
+  // The length math works on one run. Give it this string's run, then write it back.
+  const others = layout.strings.filter((string) => string.id !== owner.id);
+  const view: PropLayout = { ...layout, run: owner.run, strings: undefined };
+  const startId = owner.startId;
+  const edit = setEdgeLengthOnRun({ ...view, corners: startFirst(view.corners, startId) }, edgeId, lengthM, others.some((string) => string.run.some((edge) => edge.lockedLengthM != null)));
+  const corners = layout.corners.map((corner) => edit.layout.corners.find((row) => row.id === corner.id) ?? corner);
+  const factor = edit.scaledAll ? lengthM / Math.max(edgeLengthM(layout, owner.run.find((edge) => edge.id === edgeId)!), 1e-12) : 1;
+  const strings = layout.strings.map((string) => {
+    if (string.id === owner.id) return { ...string, run: edit.layout.run };
+    if (factor === 1) return string;
+    return { ...string, run: string.run.map((edge) => edge.lockedLengthM == null ? edge : { ...edge, lockedLengthM: edge.lockedLengthM * factor }) };
+  });
+  return { ...edit, layout: writeStrings({ ...layout, corners }, strings) };
+}
+
+/** Put the string's wire-in first, so `startCorner` on a one-run view is that string's start. */
+function startFirst(corners: LayoutCorner[], startId: string): LayoutCorner[] {
+  const start = corners.find((corner) => corner.id === startId);
+  return start ? [start, ...corners.filter((corner) => corner.id !== startId)] : corners;
+}
+
+function setEdgeLengthOnRun(layout: PropLayout, edgeId: string, lengthM: number, lockedElsewhere = false): LengthEdit {
   const edge = layout.run.find((row) => row.id === edgeId);
   if (!edge || edge.kind !== "lit" || !(lengthM > 0)) return { layout, scaledAll: false, gapM: null };
   const current = edgeLengthM(layout, edge);
-  const noneLocked = layout.run.every((row) => row.lockedLengthM == null);
+  // A traced drawing has no scale until the first typed length, so that
+  // length scales the whole drawing. A template was drawn from typed
+  // measurements: later runs keep their own lengths.
+  const noneLocked = layout.source === "trace" && !lockedElsewhere && layout.run.every((row) => row.lockedLengthM == null);
   if (noneLocked && current > 0) {
     const scaled = scaleAboutStart(layout, lengthM / current);
     return { layout: lock(scaled, edgeId, lengthM), scaledAll: true, gapM: null };
@@ -311,11 +396,8 @@ export function addCorner(layout: PropLayout, x: number, y: number): PropLayout 
 }
 
 export function moveCorner(layout: PropLayout, id: string, x: number, y: number): PropLayout {
-  return {
-    ...layout,
-    corners: layout.corners.map((corner) => corner.id === id ? { ...corner, x, y } : corner),
-    run: layout.run.map((edge) => edge.from === id || edge.to === id ? { ...edge, lockedLengthM: undefined } : edge),
-  };
+  const moved = mapEdges(layout, (edge) => edge.from === id || edge.to === id ? { ...edge, lockedLengthM: undefined } : edge);
+  return { ...moved, corners: layout.corners.map((corner) => corner.id === id ? { ...corner, x, y } : corner) };
 }
 
 export function closeLoop(layout: PropLayout): PropLayout {
@@ -654,10 +736,15 @@ function isClosingEdge(layout: PropLayout, edge: LayoutEdge): boolean {
   return edge.id === layout.run[layout.run.length - 1]!.id;
 }
 
+/** Lock the typed length. A length edit clears a typed light count on that run. */
 function lock(layout: PropLayout, edgeId: string, lengthM: number): PropLayout {
   return {
     ...layout,
-    run: layout.run.map((edge) => edge.id === edgeId ? { ...edge, lockedLengthM: lengthM } : edge),
+    run: layout.run.map((edge) => {
+      if (edge.id !== edgeId) return edge;
+      const { lockedLights: _cleared, ...rest } = edge;
+      return { ...rest, lockedLengthM: lengthM };
+    }),
   };
 }
 
