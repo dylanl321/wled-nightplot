@@ -73,13 +73,26 @@ describe("PropLayoutEditor on the Konva stage", () => {
     expect(screen.getByText("10 lights")).toBeTruthy();
   });
 
-  it("Mark dark adds a run with no lights", async () => {
+  it("Mark dark arms only the next run, then turns itself off", async () => {
     render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="trace" onDone={vi.fn()} onBack={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Mark dark" }));
+    const mark = screen.getByRole("button", { name: "Mark dark" });
+    expect(mark.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(mark);
+    expect(mark.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("The next run is dark: the wire jumps and no lights are on it.")).toBeTruthy();
     const at = await stagePoint({ x: 2, y: 0 });
     tap(at.node, at.x, at.y, { altKey: true });
     expect(screen.getByText("10 lights")).toBeTruthy();
     expect(screen.getByText(/2 runs/)).toBeTruthy();
+    expect(mark.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByText(/The next run is dark/)).toBeNull();
+    expect(screen.getByText(/Continue from where the wire comes in/)).toBeTruthy();
+    const next = await stagePoint({ x: 2, y: 1 });
+    tap(next.node, next.x, next.y, { altKey: true });
+    expect(screen.getByText("20 lights")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Run 2 · dark/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Run 3 · dark/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Run 3" })).toBeTruthy();
   });
 
   it("Add another string starts a second string at the tap", async () => {

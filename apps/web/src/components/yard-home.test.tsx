@@ -53,10 +53,14 @@ describe("Your yard", () => {
     expect(screen.getByRole("link", { name: "Attach" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "Yard drawing" })).toBeTruthy();
     expect(screen.getByText(/Drag a prop to where it sits in the yard/)).toBeTruthy();
+    const layout = document.querySelector("[data-yard-layout='split']");
+    expect(layout?.className).toContain("lg:grid-cols-[380px_minmax(0,1fr)]");
+    expect(layout?.querySelector("[aria-label='Yard drawing']")).toBeTruthy();
   });
 
   it("has no yard drawing until there is a prop", () => {
     render(<YardHome props={[]} attachments={[]} lights={[]} looksReady={false} yardClear={false} looksKnown yardKnown />);
     expect(screen.queryByRole("region", { name: "Yard drawing" })).toBeNull();
+    expect(document.querySelector("[data-yard-layout='stack']")).toBeTruthy();
   });
 });

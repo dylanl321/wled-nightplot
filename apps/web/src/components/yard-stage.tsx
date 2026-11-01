@@ -5,7 +5,8 @@ import type Konva from "konva";
 import Link from "next/link";
 import { useState } from "react";
 import { Group, Line, Rect, Text } from "react-konva";
-import { EditorStage, toScreen, type Camera } from "@/components/canvas";
+import { EditorStage, toScreen, type Camera, type Size } from "@/components/canvas";
+import { placeYardLabels } from "@/components/yard-labels";
 import { patchJson } from "@/lib/api";
 
 const LIT = "#d4a574";
@@ -23,6 +24,7 @@ export function YardStage({ props }: { props: Prop[] }) {
   const [saved, setSaved] = useState<Record<string, PropYardPoint>>({});
   const [moving, setMoving] = useState<Moving | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
+  const [hoverId, setHoverId] = useState<string | null>(null);
   const [note, setNote] = useState<{ text: string; failed: boolean } | null>(null);
 
   const rows = props.map((prop) => ({ ...prop, yard: saved[prop.id] ?? prop.yard }));
@@ -71,9 +73,27 @@ export function YardStage({ props }: { props: Prop[] }) {
     void arrange(propId, at);
   }
 
+  function propAt(world: { x: number; y: number }): string | null {
+    let best: { id: string; area: number } | null = null;
+    for (const row of placements) {
+      const dx = moving?.propId === row.propId ? moving.at.x - row.at.x : 0;
+      const dy = moving?.propId === row.propId ? moving.at.y - row.at.y : 0;
+      const box = {
+        minX: row.box.minX + dx - 0.2,
+        maxX: row.box.maxX + dx + 0.2,
+        minY: row.box.minY + dy - 0.2,
+        maxY: row.box.maxY + dy + 0.55,
+      };
+      if (world.x < box.minX || world.x > box.maxX || world.y < box.minY || world.y > box.maxY) continue;
+      const area = (box.maxX - box.minX) * (box.maxY - box.minY);
+      if (!best || area < best.area) best = { id: row.propId, area };
+    }
+    return best?.id ?? null;
+  }
+
   return (
-    <section aria-label="Yard drawing" className="flex flex-col gap-2">
-      <div className="relative h-[46dvh] min-h-[300px] overflow-hidden rounded-[14px] border border-border lg:h-[60dvh]">
+    <section aria-label="Yard drawing" className="flex flex-col gap-2 lg:h-full lg:min-h-0">
+      <div className="relative h-[46dvh] min-h-[300px] overflow-hidden rounded-[14px] border border-border lg:h-[calc(100dvh-9.5rem)] lg:min-h-0">
         <EditorStage
           bounds={bounds}
           fitMinSpanM={4}
@@ -82,7 +102,21 @@ export function YardStage({ props }: { props: Prop[] }) {
           label="Yard drawing"
           testId="yard-stage"
           onBackgroundTap={() => setPicked(null)}
-          overlay={(camera) => <Labels props={rows} placements={placements} moving={moving} picked={picked} camera={camera} />}
+          onHover={(hover) => {
+            const next = hover ? propAt(hover.world) : null;
+            setHoverId((current) => (current === next ? current : next));
+          }}
+          overlay={(camera, size) => (
+            <Labels
+              props={rows}
+              placements={placements}
+              moving={moving}
+              picked={picked}
+              expandedId={hoverId ?? picked}
+              camera={camera}
+              stage={size}
+            />
+          )}
         >
           {() =>
             rows.map((prop) => {
@@ -152,36 +186,51 @@ function Labels({
   placements,
   moving,
   picked,
+  expandedId,
   camera,
+  stage,
 }: {
   props: Prop[];
   placements: ReturnType<typeof yardPlacements>;
   moving: Moving | null;
   picked: string | null;
+  expandedId: string | null;
   camera: Camera;
+  stage: Size;
 }) {
+  const anchors = props.map((prop) => {
+    const place = placements.find((row) => row.propId === prop.id)!;
+    const dx = moving?.propId === prop.id ? moving.at.x - place.at.x : 0;
+    const dy = moving?.propId === prop.id ? moving.at.y - place.at.y : 0;
+    const top = toScreen({ x: (place.box.minX + place.box.maxX) / 2 + dx, y: place.box.maxY + dy }, camera);
+    const count = prop.design?.ledCount;
+    return {
+      id: prop.id,
+      x: top.x,
+      y: top.y,
+      text: `${prop.label} · ${count == null ? "count unknown" : `${count} lights`}`,
+    };
+  });
+  const slots = placeYardLabels(anchors, { expandedId, stage: { w: stage.w, h: stage.h } });
+  const expanded = slots.find((slot) => slot.id === expandedId);
+  const ordered = expanded ? [...slots.filter((slot) => slot.id !== expandedId), expanded] : slots;
   return (
     <>
-      {props.map((prop) => {
-        const place = placements.find((row) => row.propId === prop.id)!;
-        const dx = moving?.propId === prop.id ? moving.at.x - place.at.x : 0;
-        const dy = moving?.propId === prop.id ? moving.at.y - place.at.y : 0;
-        const top = toScreen({ x: (place.box.minX + place.box.maxX) / 2 + dx, y: place.box.maxY + dy }, camera);
-        const count = prop.design?.ledCount;
-        return (
-          <Text
-            key={prop.id}
-            text={`${prop.label} · ${count == null ? "count unknown" : `${count} lights`}`}
-            x={top.x - 90}
-            y={top.y - 22}
-            width={180}
-            align="center"
-            fontSize={12}
-            fill={picked === prop.id ? PICKED : "#e8e2d6"}
-            listening={false}
-          />
-        );
-      })}
+      {ordered.map((slot) => (
+        <Text
+          key={slot.id}
+          text={slot.text}
+          x={slot.x}
+          y={slot.y}
+          width={slot.width}
+          align="center"
+          fontSize={12}
+          fill={slot.id === picked || slot.id === expandedId ? PICKED : "#e8e2d6"}
+          listening={false}
+          wrap="none"
+          ellipsis
+        />
+      ))}
     </>
   );
 }

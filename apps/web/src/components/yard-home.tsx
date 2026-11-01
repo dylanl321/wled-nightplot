@@ -41,40 +41,49 @@ export function YardHome({
   });
   const next = steps.find((step) => step.mark === "next");
   const firstLoose = props.find((prop) => !attachments.some((row) => row.propId === prop.id));
+  const split = props.length > 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-[720px] flex-1 flex-col gap-6 px-4 py-6 sm:px-8">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-[26px] font-semibold tracking-[-0.01em]">Your yard</h1>
-        <p className="text-[15px] leading-6 text-muted-foreground">
-          Design the props first. Controllers can wait.
-        </p>
-      </div>
-      <ol className="flex flex-col gap-2" aria-label="Setup">
-        {steps.map((step, index) => (
-          <li key={step.id}>
-            <StepRow
-              index={index + 1}
-              step={step}
-              href={stepHref(step.id, firstLoose?.id)}
-              note={stepNote(step.id, looksKnown, yardKnown)}
-            />
-          </li>
-        ))}
-      </ol>
-      {next && next.id !== "design" ? (
-        <Button asChild size="lg" className="min-h-12 w-full text-base">
-          <Link href={stepHref(next.id, firstLoose?.id)}>{nextAction(next.id)}</Link>
-        </Button>
-      ) : null}
-      <Button asChild size="lg" variant={next?.id === "design" ? "default" : "outline"} className="min-h-12 w-full text-base">
-        <Link href="/props/new">New prop</Link>
-      </Button>
-      {!next ? (
-        <p className="text-[15px] text-muted-foreground">The checklist is done. Look at the lights outside to be sure.</p>
-      ) : null}
-      {props.length > 0 ? <YardStage props={props} /> : null}
-      <section className="flex flex-col gap-3" aria-label="Props">
+    <div
+      data-yard-layout={split ? "split" : "stack"}
+      className={cn(
+        "mx-auto flex w-full max-w-[720px] flex-1 flex-col gap-6 px-4 py-6 sm:px-8",
+        split && "lg:mx-0 lg:grid lg:h-[calc(100dvh-3.5rem)] lg:max-h-[calc(100dvh-3.5rem)] lg:max-w-none lg:min-h-0 lg:flex-none lg:grid-cols-[380px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] lg:gap-0 lg:overflow-hidden lg:px-0 lg:py-0",
+      )}
+    >
+      <div className={cn("contents", split && "lg:col-start-1 lg:row-start-1 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:gap-6 lg:overflow-y-auto lg:border-r lg:border-border lg:px-6 lg:py-6")}>
+        <div className="order-1 flex flex-col gap-6 lg:order-none">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-[26px] font-semibold tracking-[-0.01em]">Your yard</h1>
+            <p className="text-[15px] leading-6 text-muted-foreground">
+              Design the props first. Controllers can wait.
+            </p>
+          </div>
+          <ol className="flex flex-col gap-2" aria-label="Setup">
+            {steps.map((step, index) => (
+              <li key={step.id}>
+                <StepRow
+                  index={index + 1}
+                  step={step}
+                  href={stepHref(step.id, firstLoose?.id)}
+                  note={stepNote(step.id, looksKnown, yardKnown)}
+                />
+              </li>
+            ))}
+          </ol>
+          {next && next.id !== "design" ? (
+            <Button asChild size="lg" className="min-h-12 w-full text-base">
+              <Link href={stepHref(next.id, firstLoose?.id)}>{nextAction(next.id)}</Link>
+            </Button>
+          ) : null}
+          <Button asChild size="lg" variant={next?.id === "design" ? "default" : "outline"} className="min-h-12 w-full text-base">
+            <Link href="/props/new">New prop</Link>
+          </Button>
+          {!next ? (
+            <p className="text-[15px] text-muted-foreground">The checklist is done. Look at the lights outside to be sure.</p>
+          ) : null}
+        </div>
+        <section className="order-3 flex flex-col gap-3 lg:order-none" aria-label="Props">
         <h2 className="text-[20px] font-semibold">Props</h2>
         {props.length === 0 ? (
           <p className="rounded-[14px] border border-border bg-card px-4 py-5 text-[15px] leading-6 text-muted-foreground">
@@ -124,7 +133,13 @@ export function YardHome({
             })}
           </ul>
         )}
-      </section>
+        </section>
+      </div>
+      {split ? (
+        <div className="order-2 flex min-h-0 min-w-0 flex-col lg:order-none lg:col-start-2 lg:row-start-1 lg:h-full lg:overflow-y-auto lg:p-4">
+          <YardStage props={props} />
+        </div>
+      ) : null}
     </div>
   );
 }
