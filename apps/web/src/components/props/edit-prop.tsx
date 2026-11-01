@@ -73,15 +73,10 @@ export function EditProp({ prop, start = "draw" }: { prop: Prop; start?: "draw" 
         mode={prop.kind === "custom" ? "trace" : "edit"}
         doneLabel="Name sections"
         backLabel="Save and back"
+        onAutosave={(next) => saveLayout(next)}
         onBack={async (next) => {
-          const res = await patchJson(`/api/props/${prop.id}`, {
-            layout: next,
-            measurements: prop.design?.measurements ?? { shape: "custom" },
-          });
-          if (!res.ok) {
-            setNotice(res.data.message ?? "The drawing was not saved.");
-            return;
-          }
+          const ok = await saveLayout(next);
+          if (!ok) return;
           router.push("/");
           router.refresh();
         }}
@@ -100,6 +95,25 @@ export function EditProp({ prop, start = "draw" }: { prop: Prop; start?: "draw" 
       />
     </>
   );
+
+  async function saveLayout(next: PropLayout): Promise<boolean> {
+    const res = await fetch(`/api/props/${prop.id}`, {
+      method: "PATCH",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        layout: next,
+        measurements: prop.design?.measurements ?? { shape: "custom" },
+      }),
+      keepalive: true,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({})) as { message?: string };
+      setNotice(data.message ?? "The drawing was not saved.");
+      return false;
+    }
+    setNotice(null);
+    return true;
+  }
 
   async function save(nextLayout: PropLayout, nextSections: PropSection[]) {
     setBusy(true);

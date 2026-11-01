@@ -6,7 +6,7 @@
 
 import type { Element, Light, LightOutput } from "../lights.ts";
 import { legacyOutputId } from "../outputs.ts";
-import { countLayout, layoutFromMeasurements, layoutStrings, wellHouseEdgeLabel, wellHouseEdgeOrder, windowSideNames, type PropLayout } from "./layout.ts";
+import { assignStableRunIds, countLayout, layoutFromMeasurements, layoutStrings, wellHouseEdgeLabel, wellHouseEdgeOrder, windowSideNames, type PropLayout } from "./layout.ts";
 import { defaultSections, isLegacyWellHouseLayout, sectionIndexRanges } from "./sections.ts";
 import { defaultWireframeSpec } from "./wireframe.ts";
 import {
@@ -421,10 +421,12 @@ export function migrateDesignedProp(prop: Prop): Prop {
   if (!prop.layout) {
     return prop.sections ? prop : prop;
   }
-  let layout = prop.layout;
-  let design = prop.design;
+  const stable = assignStableRunIds(prop.layout);
+  const source = stable === prop.layout ? prop : { ...prop, layout: stable };
+  let layout = source.layout ?? prop.layout;
+  let design = source.design;
   let replaced = false;
-  if (prop.kind === "wireframe" && isLegacyWellHouseLayout(layout)) {
+  if (source.kind === "wireframe" && isLegacyWellHouseLayout(layout)) {
     const params = design?.measurements.shape === "wireframe"
       ? { sides: design.measurements.sides, side: design.measurements.side, height: design.measurements.height }
       : layout.template?.params ?? null;
@@ -437,10 +439,10 @@ export function migrateDesignedProp(prop: Prop): Prop {
       if (design) design = designFromLayout(layout, design.ledProductId, design.measurements);
     }
   }
-  if (!replaced && prop.sections) return prop;
-  const sections = replaced || !prop.sections ? defaultSections(layout) : prop.sections;
+  if (!replaced && source.sections) return source;
+  const sections = replaced || !source.sections ? defaultSections(layout) : source.sections;
   return {
-    ...prop,
+    ...source,
     layout,
     sections,
     ...(design ? { design } : {}),

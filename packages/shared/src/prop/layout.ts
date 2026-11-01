@@ -505,7 +505,11 @@ export function addCorner(layout: PropLayout, x: number, y: number): PropLayout 
 
 /**
  * Split one run at the point on it nearest `(x, y)`. The first piece keeps
- * the run's id. Both pieces count from their new lengths.
+ * the run's id, and with it the position name, the typed light count, and
+ * the dark mark. The new piece is a new run: it gets a new id, the same
+ * kind (a dark run stays dark on both halves), and none of the name or the
+ * typed count. Later runs keep their ids, so their data does not move.
+ * A typed length is dropped because both pieces are shorter than it was.
  */
 export function splitRun(layout: PropLayout, edgeId: string, x: number, y: number): { layout: PropLayout; cornerId: string | null } {
   const base = ensureStrings(layout);
@@ -527,13 +531,94 @@ export function splitRun(layout: PropLayout, edgeId: string, x: number, y: numbe
   const strings = (base.strings ?? []).map((string) => {
     if (string.id !== owner.id) return string;
     const index = string.run.findIndex((row) => row.id === edgeId);
-    const { lockedLengthM: _length, lockedLights: _lights, name, ...open } = edge;
-    const first: LayoutEdge = name ? { ...open, to: cornerId, name } : { ...open, to: cornerId };
-    const second: LayoutEdge = { ...open, id: pieceId, from: cornerId };
+    const { lockedLengthM: _length, ...kept } = edge;
+    const first: LayoutEdge = { ...kept, to: cornerId };
+    const { name: _name, lockedLights: _lights, lockedLengthM: _locked, hiddenCount: _hidden, ...opened } = edge;
+    const second: LayoutEdge = { ...opened, id: pieceId, from: cornerId };
     return { ...string, run: [...string.run.slice(0, index), first, second, ...string.run.slice(index + 1)] };
   });
   const corner = { id: cornerId, x: from.x + dx * t, y: from.y + dy * t };
   return { layout: writeStrings({ ...base, corners: [...base.corners, corner] }, strings), cornerId };
+}
+
+/**
+ * Remove a corner that sits between two runs of one string, and make those
+ * two runs one. The earlier run keeps its id, name, typed count, and dark
+ * mark. The later run's id is retired, so a section that named it does not
+ * land on the merged run. A wire-in, or a corner other runs also use, stays.
+ */
+export function deletePoint(layout: PropLayout, cornerId: string): PropLayout {
+  const base = ensureStrings(layout);
+  const strings = base.strings ?? [];
+  let owner: LayoutString | null = null;
+  let index = -1;
+  for (const string of strings) {
+    const at = string.run.findIndex((edge, place) => edge.to === cornerId && string.run[place + 1]?.from === cornerId);
+    if (at < 0) continue;
+    if (owner) return layout;
+    owner = string;
+    index = at;
+  }
+  if (!owner || index < 0) return layout;
+  if (strings.some((string) => string.startId === cornerId)) return layout;
+  let uses = 0;
+  for (const string of strings) {
+    for (const edge of string.run) {
+      if (edge.from === cornerId) uses += 1;
+      if (edge.to === cornerId) uses += 1;
+    }
+  }
+  if (uses !== 2) return layout;
+  const first = owner.run[index]!;
+  const second = owner.run[index + 1]!;
+  const { lockedLengthM: _dropped, ...rest } = first;
+  const merged: LayoutEdge = { ...rest, to: second.to };
+  const run = [...owner.run.slice(0, index), merged, ...owner.run.slice(index + 2)];
+  const nextStrings = strings.map((string) => (string.id === owner.id ? { ...string, run } : string));
+  const used = new Set<string>();
+  for (const string of nextStrings) {
+    used.add(string.startId);
+    for (const edge of string.run) {
+      used.add(edge.from);
+      used.add(edge.to);
+    }
+  }
+  const retiredIds = [...new Set([...(base.retiredIds ?? []), second.id, ...(used.has(cornerId) ? [] : [cornerId])])];
+  return writeStrings(
+    { ...base, retiredIds, corners: base.corners.filter((corner) => used.has(corner.id)) },
+    nextStrings,
+  );
+}
+
+/**
+ * Give every run a unique id. A drawing that already has them is returned
+ * unchanged, so a saved prop is not rewritten for nothing. A repeated id
+ * stays on the first run; the later run gets a new id that is stored on it.
+ */
+export function assignStableRunIds(layout: PropLayout): PropLayout {
+  const strings = layoutStrings(layout);
+  const seen = new Set<string>(layout.retiredIds ?? []);
+  let dirty = false;
+  const next = strings.map((string) => {
+    let runDirty = false;
+    const run = string.run.map((edge) => {
+      if (edge.id && !seen.has(edge.id)) {
+        seen.add(edge.id);
+        return edge;
+      }
+      dirty = true;
+      runDirty = true;
+      let n = 1;
+      while (seen.has(`e${n}`)) n += 1;
+      const id = `e${n}`;
+      seen.add(id);
+      return { ...edge, id };
+    });
+    return runDirty ? { ...string, run } : string;
+  });
+  if (!dirty) return layout;
+  const base = layout.strings && layout.strings.length > 0 ? layout : ensureStrings(layout);
+  return writeStrings(base, next);
 }
 
 /** Runs that travel the same two corners, in either direction. */
