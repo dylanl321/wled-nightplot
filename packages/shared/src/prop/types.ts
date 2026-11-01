@@ -5,8 +5,9 @@
  */
 
 import { isPropLayout, type PropLayout } from "./layout.ts";
+import { SPIRAL_MAX_TURNS, ZIGZAG_MAX_PASSES } from "./wraps.ts";
 
-export const PROP_KINDS = ["roofline", "window", "arch", "tree", "stake-row", "custom", "wireframe"] as const;
+export const PROP_KINDS = ["roofline", "window", "arch", "tree", "stake-row", "custom", "wireframe", "spiral", "zigzag"] as const;
 export type PropKind = (typeof PROP_KINDS)[number];
 
 export const SHARED_POST_RULES = ["half", "left", "right", "own"] as const;
@@ -64,6 +65,14 @@ export type PropMeasurements =
   | { shape: "tree"; height: number; base: number; closed?: boolean }
   | { shape: "stake-row"; stakes: number; height: number }
   | { shape: "wireframe"; sides: number; side: number; height: number }
+  /**
+   * Wrapped around a post, tree, mailbox or plant. `around` is the
+   * circumference at the bottom, `aroundTop` at the top (0 for a point,
+   * absent for the same as the bottom), `gap` the rise from one wrap to the next.
+   */
+  | { shape: "spiral"; height: number; around: number; aroundTop?: number; gap: number }
+  /** Folded back and forth over a bush. `passes` straight runs. */
+  | { shape: "zigzag"; width: number; height: number; passes: number; direction: "vertical" | "horizontal" }
   | { shape: "custom" }
   | { shape: "legacy" };
 
@@ -251,6 +260,21 @@ function isPropMeasurements(value: unknown): value is PropMeasurements {
       const sides = (row as { sides?: unknown }).sides;
       return Number.isInteger(sides) && (sides as number) >= 3 && (sides as number) <= 16 &&
         isPositive((row as { side?: unknown }).side) && isPositive((row as { height?: unknown }).height);
+    }
+    case "spiral": {
+      const top = (row as { aroundTop?: unknown }).aroundTop;
+      const topOk = top === undefined || (typeof top === "number" && Number.isFinite(top) && top >= 0);
+      const height = (row as { height?: unknown }).height;
+      const gap = (row as { gap?: unknown }).gap;
+      return isPositive(height) && isPositive((row as { around?: unknown }).around) && isPositive(gap) && topOk &&
+        height / gap >= 0.5 && height / gap <= SPIRAL_MAX_TURNS;
+    }
+    case "zigzag": {
+      const passes = (row as { passes?: unknown }).passes;
+      const direction = (row as { direction?: unknown }).direction;
+      return isPositive((row as { width?: unknown }).width) && isPositive((row as { height?: unknown }).height) &&
+        Number.isInteger(passes) && (passes as number) >= 1 && (passes as number) <= ZIGZAG_MAX_PASSES &&
+        (direction === "vertical" || direction === "horizontal");
     }
     case "custom":
     case "legacy":

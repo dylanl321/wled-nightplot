@@ -9,6 +9,7 @@ import {
   emptyTrace,
   METRES_PER_FOOT,
   rooflineLayout,
+  spiralGapForLights,
   windowLayout,
   type PropKind,
   type PropLayout,
@@ -34,6 +35,8 @@ const SHAPES: { kind: PropKind; title: string; blurb: string }[] = [
   { kind: "tree", title: "Mini tree", blurb: "Two sloped sides, or a triangle" },
   { kind: "stake-row", title: "Stake row", blurb: "Uprights in a row" },
   { kind: "wireframe", title: "Well house", blurb: "One string around the walls" },
+  { kind: "spiral", title: "Spiral", blurb: "Wrapped around a post, tree or plant" },
+  { kind: "zigzag", title: "Zigzag", blurb: "Back and forth over a bush" },
   { kind: "custom", title: "Draw it", blurb: "Your own line" },
 ];
 
@@ -60,6 +63,12 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
   const [postHeight, setPostHeight] = useState(start.side);
   const [postTouched, setPostTouched] = useState(false);
   const [closedBase, setClosedBase] = useState(false);
+  // Spiral and zigzag. Around and gap are small, so they are typed in inches (or cm).
+  const [around, setAround] = useState(start.unit === "m" ? "35" : "14");
+  const [aroundTop, setAroundTop] = useState("");
+  const [gap, setGap] = useState(start.unit === "m" ? "10" : "4");
+  const [passes, setPasses] = useState("8");
+  const [horizontal, setHorizontal] = useState(false);
   const [lightCount, setLightCount] = useState("");
   const [startCorner, setStartCorner] = useState<0 | 1 | 2 | 3>(0);
   const [clockwise, setClockwise] = useState(true);
@@ -83,21 +92,40 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
     setBase(convert);
     setSide(convert);
     setPostHeight(convert);
+    const small = (value: string) => convertSize(value, next === "m" ? 2.54 : 1 / 2.54, next === "m" ? 1 : 2);
+    setAround(small);
+    setAroundTop(small);
+    setGap(small);
     setUnit(next);
     writeLastUnit(next);
   }
 
   const pitchMm = Number(spacingCm) * 10;
+  const typedCount = lightCount.trim() === "" ? null : Number(lightCount);
+  const countOk = typedCount !== null && Number.isInteger(typedCount) && typedCount >= 1 && typedCount <= 10000;
+  // A pixel string's spacing is fixed, so a typed count on a spiral moves the wraps, not the lights.
+  const smallToUnit = unit === "ft" ? 1 / 12 : 1 / 100;
+  const toMetres = unit === "ft" ? METRES_PER_FOOT : 1;
+  const fitGap = kind === "spiral" && countOk
+    ? spiralGapForLights({
+      heightM: Number(height) * toMetres,
+      aroundM: Number(around) * smallToUnit * toMetres,
+      aroundTopM: aroundTop.trim() === "" ? Number(around) * smallToUnit * toMetres : Number(aroundTop) * smallToUnit * toMetres,
+    }, typedCount, (Number.isFinite(pitchMm) && pitchMm > 0 ? pitchMm : DEFAULT_PITCH_MM) / 1000)
+    : null;
   const measurements = useMemo(() => buildMeasurements({
     kind, length, width, height, base, stakes, sides, side, postHeight, closedBase,
-  }), [kind, length, width, height, base, stakes, sides, side, postHeight, closedBase]);
-  const typedCount = lightCount.trim() === "" ? null : Number(lightCount);
-  const countProblem = typedCount !== null && !(Number.isInteger(typedCount) && typedCount >= 1 && typedCount <= 10000)
+    around, aroundTop, gap: fitGap !== null ? String(fitGap / toMetres / smallToUnit) : gap, passes, horizontal, smallToUnit,
+  }), [kind, length, width, height, base, stakes, sides, side, postHeight, closedBase, around, aroundTop, gap, fitGap, toMetres, passes, horizontal, smallToUnit]);
+  const countProblem = typedCount !== null && !countOk
     ? "Type a whole number of lights, or leave it empty."
-    : null;
+    : kind === "spiral" && countOk && fitGap === null
+      ? `${typedCount} lights cannot make between half a turn and 200 turns here. Check the count and the sizes.`
+      : null;
 
   /** A typed light count is spread over the runs by length; empty keeps length ÷ spacing. */
   function withCount(layout: PropLayout): PropLayout {
+    if (kind === "spiral") return layout;
     return typedCount !== null && !countProblem ? spreadLights(layout, typedCount) : layout;
   }
 
@@ -365,6 +393,27 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
               setPostHeight(value);
             }}
           />
+          {kind === "spiral" ? (
+            <>
+              <Field label={`Around the bottom (${unit === "ft" ? "in" : "cm"})`} value={around} onChange={setAround} />
+              <Field label={`Around the top (${unit === "ft" ? "in" : "cm"}, empty = same, 0 = a point)`} value={aroundTop} onChange={setAroundTop} />
+              {fitGap === null ? (
+                <Field label={`Space between wraps (${unit === "ft" ? "in" : "cm"})`} value={gap} onChange={setGap} />
+              ) : (
+                <p className="text-[15px] leading-6">Wrap every {(fitGap / toMetres / smallToUnit).toFixed(1)} {unit === "ft" ? "in" : "cm"} to use all {typedCount} lights.</p>
+              )}
+              <p className="text-[13px] leading-5 text-muted-foreground">Wrap a tape around the post or the base of the tree for &ldquo;around&rdquo;. A 4×4 post is 14 in.</p>
+            </>
+          ) : null}
+          {kind === "zigzag" ? (
+            <>
+              <Field label="Passes (straight runs)" value={passes} onChange={setPasses} />
+              <div className="flex gap-2">
+                <UnitButton active={!horizontal} onClick={() => setHorizontal(false)}>Up and down</UnitButton>
+                <UnitButton active={horizontal} onClick={() => setHorizontal(true)}>Side to side</UnitButton>
+              </div>
+            </>
+          ) : null}
           {kind === "tree" ? (
             <label className="flex min-h-11 items-center gap-3 text-[15px]">
               <input type="checkbox" className="size-5" checked={closedBase} onChange={(event) => setClosedBase(event.target.checked)} />
@@ -380,7 +429,9 @@ export function PropWizard({ products: _products }: { products: SpacingChoice[] 
               onChange={(event) => setLightCount(event.target.value)}
               className="min-h-11 w-full rounded-md border border-input bg-[#07080a] px-3 text-base text-foreground outline-none focus:border-primary"
             />
-            <span className="text-[13px] leading-5 text-muted-foreground">Type the count on your string and it is spread over the sides by length. Leave it empty to count from the spacing below.</span>
+            <span className="text-[13px] leading-5 text-muted-foreground">{kind === "spiral"
+              ? "Type the count on your string and the wraps are spaced to use all of it. Leave it empty to count from the spacing below."
+              : "Type the count on your string and it is spread over the sides by length. Leave it empty to count from the spacing below."}</span>
           </label>
           <label className="flex flex-col gap-2 text-[15px]">
             Light spacing (cm)
@@ -543,6 +594,14 @@ function SizeFields(props: {
           <Field label={`Height of each (${unit})`} value={props.height} onChange={props.onHeight} />
         </>
       );
+    case "spiral":
+    case "zigzag":
+      return (
+        <>
+          {props.kind === "zigzag" ? <Field label={`Width (${unit})`} value={props.width} onChange={props.onWidth} /> : null}
+          <Field label={`Height (${unit})`} value={props.height} onChange={props.onHeight} />
+        </>
+      );
     case "wireframe":
       return (
         <>
@@ -571,6 +630,13 @@ function buildMeasurements(input: {
   side: string;
   postHeight: string;
   closedBase?: boolean;
+  around: string;
+  aroundTop: string;
+  gap: string;
+  passes: string;
+  horizontal: boolean;
+  /** Prop units in one inch (feet) or one centimetre (metres). */
+  smallToUnit: number;
 }): PropMeasurements | null {
   const num = (value: string) => Number(value);
   switch (input.kind) {
@@ -586,6 +652,16 @@ function buildMeasurements(input: {
       return { shape: "stake-row", stakes: num(input.stakes), height: num(input.height) };
     case "wireframe":
       return { shape: "wireframe", sides: num(input.sides), side: num(input.side), height: num(input.postHeight) };
+    case "spiral":
+      return {
+        shape: "spiral",
+        height: num(input.height),
+        around: num(input.around) * input.smallToUnit,
+        ...(input.aroundTop.trim() === "" ? {} : { aroundTop: num(input.aroundTop) * input.smallToUnit }),
+        gap: num(input.gap) * input.smallToUnit,
+      };
+    case "zigzag":
+      return { shape: "zigzag", width: num(input.width), height: num(input.height), passes: num(input.passes), direction: input.horizontal ? "horizontal" : "vertical" };
     case "custom":
       return { shape: "custom" };
     case null:

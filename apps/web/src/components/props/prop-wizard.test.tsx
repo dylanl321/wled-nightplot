@@ -60,6 +60,22 @@ describe("New prop wizard", () => {
     expect(screen.getByLabelText("Section name")).toHaveProperty("value", "Front");
     expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
   });
+  it("spaces a porch post's wraps to use a whole 100-light string", () => {
+    window.localStorage.clear();
+    render(<PropWizard products={[]} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Porch post" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: /Spiral/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.change(screen.getByLabelText("Height (ft)"), { target: { value: "8" } });
+    expect(screen.getByLabelText("Around the bottom (in)")).toHaveProperty("value", "14");
+    fireEvent.change(screen.getByLabelText(/How many lights/), { target: { value: "100" } });
+    expect(screen.getByText(/Wrap every \d+\.\d in to use all 100 lights/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("heading", { name: "Name the sections" })).toBeTruthy();
+    expect(screen.getByLabelText("Section name")).toHaveProperty("value", "Spiral");
+  });
+
   it("converts the sizes when switching to Metres, and remembers the unit", () => {
     window.localStorage.clear();
     render(<PropWizard products={[]} />);

@@ -95,6 +95,25 @@ export const PROP_TEMPLATES: readonly PropTemplate[] = [
     pairing: "polyline",
     tapRoles: [],
   },
+  {
+    kind: "spiral",
+    label: "Spiral",
+    summary: "Wrapped around a post, tree, mailbox or plant. Mark the bottom and the top of the wrap.",
+    minTaps: 2,
+    maxTaps: 2,
+    pairing: "polyline",
+    tapRoles: ["Bottom of the wrap", "Top of the wrap"],
+  },
+  {
+    kind: "zigzag",
+    label: "Zigzag",
+    summary: "Back and forth over a bush. Mark the start and each turn.",
+    minTaps: 2,
+    maxTaps: null,
+    pairing: "polyline",
+    tapRoles: ["Start", "Next turn or end"],
+    moreRole: "Next turn or end",
+  },
 ];
 
 export function propTemplate(kind: PropKind): PropTemplate {
@@ -105,7 +124,9 @@ export function propTemplate(kind: PropKind): PropTemplate {
     case "tree":
     case "stake-row":
     case "custom":
-    case "wireframe": {
+    case "wireframe":
+    case "spiral":
+    case "zigzag": {
       const found = PROP_TEMPLATES.find((row) => row.kind === kind);
       if (found) return found;
       throw new Error(`Prop template ${kind} is missing`);
@@ -293,7 +314,10 @@ function sideNames(kind: PropKind, count: number): string[] {
     case "roofline":
     case "custom":
     case "wireframe":
+    case "spiral":
       return Array.from({ length: count }, (_, index) => `run ${index + 1}`);
+    case "zigzag":
+      return Array.from({ length: count }, (_, index) => `pass ${index + 1}`);
     default: {
       const _never: never = kind;
       return _never;
