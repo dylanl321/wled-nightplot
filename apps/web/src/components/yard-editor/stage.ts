@@ -69,6 +69,8 @@ export type Scene = {
   selectedPoint?: string | null;
   /** Screen boxes labels must stay off, such as Delete point. */
   obstacles?: ScreenBox[];
+  /** Filled while drawing so a caption can be tapped. */
+  labelHits?: { edgeId: string; box: ScreenBox }[];
   /** Where run labels may sit. The phone tool row is above `top`. */
   labelBounds?: { top: number; bottom: number; left: number; right: number };
 };
@@ -103,10 +105,18 @@ export type RubberBand = {
 
 const BADGE_R = 11;
 
+/** The wire-in name sits off the point, so a run leaving it does not cross the words. */
+export function wireInLabelBox(x: number, y: number, textWidth: number, topLimit: number): ScreenBox {
+  const h = 14;
+  const baseline = y - 24 >= topLimit ? y - 24 : y + 28;
+  const left = Math.max(4, x - textWidth / 2);
+  return { x: left, y: baseline - 11, w: textWidth, h };
+}
+
 /**
- * Caption and badge sit on opposite sides of the run's midpoint.
- * The badge stays beside that run: if the first side covers another badge,
- * a caption, Wire in, or Delete point, it takes the other side or a short step.
+ * Caption and badge stay on the run, one each side of the midpoint.
+ * They may swap sides to miss a neighbour. They do not walk off the run:
+ * a drawing that is too small to hold them should be zoomed in instead.
  */
 export function placeBesideRun(
   mx: number,
@@ -120,21 +130,21 @@ export function placeBesideRun(
   const len = Math.hypot(nx, ny) || 1;
   const px = nx / len;
   const py = ny / len;
-  const tx = py;
-  const ty = -px;
   const capH = 16;
   const r = BADGE_R;
-  type Spot = { caption: ScreenBox; badge: { x: number; y: number; r: number }; hits: number; outside: number; dist: number };
-  const spots: Spot[] = [];
-  const consider = (badgeSide: number, capSide: number, bout: number, along: number, cout: number, calong: number, opposite: boolean) => {
-    const bcx = mx + px * badgeSide * bout + tx * along;
-    const bcy = my + py * badgeSide * bout + ty * along;
+  const gap = 10;
+  const bout = r + gap;
+  const cout = captionW / 2 + gap;
+  type Spot = { caption: ScreenBox; badge: { x: number; y: number; r: number }; hits: number; outside: number };
+  let best: Spot | null = null;
+  for (const badgeSide of [1, -1]) {
+    const bcx = mx + px * badgeSide * bout;
+    const bcy = my + py * badgeSide * bout;
     const badgeBox: ScreenBox = { x: bcx - r, y: bcy - r, w: r * 2, h: r * 2 };
-    const ccx = mx + px * capSide * cout + tx * calong;
-    const ccy = my + py * capSide * cout + ty * calong;
+    const ccx = mx + px * -badgeSide * cout;
+    const ccy = my + py * -badgeSide * cout;
     const caption: ScreenBox = { x: ccx - captionW / 2, y: ccy - capH / 2, w: captionW, h: capH };
-    if (boxesOverlap(badgeBox, caption, 2)) return;
-    const hits = obstacles.reduce((n, box) => n + (boxesOverlap(badgeBox, box, 4) || boxesOverlap(caption, box, 4) ? 1 : 0), 0);
+    const hits = obstacles.reduce((n, box) => n + (boxesOverlap(badgeBox, box, 2) || boxesOverlap(caption, box, 2) ? 1 : 0), 0);
     let outside = 0;
     if (bounds) {
       for (const box of [badgeBox, caption]) {
@@ -144,27 +154,23 @@ export function placeBesideRun(
         if (box.y + box.h > bounds.bottom) outside += box.y + box.h - bounds.bottom;
       }
     }
-    const dist = Math.hypot(bcx - mx, bcy - my) + Math.abs(along) * 0.15 + Math.abs(calong) * 0.1 + (opposite ? 0 : 8);
-    spots.push({ caption, badge: { x: bcx, y: bcy, r }, hits, outside, dist });
-  };
-  for (const badgeSide of [1, -1]) {
-    for (const bout of [r + 10, r + 26, r + 42]) {
-      for (const along of [0, 20, -20, 40, -40]) {
-        for (const cout of [capH / 2 + 12, capH / 2 + 28, capH / 2 + 46]) {
-          for (const calong of [0, 18, -18, 36]) consider(badgeSide, -badgeSide, bout, along, cout, calong, true);
-        }
-        // The other side is blocked (Delete point, another run): both marks share the open side.
-        for (const calong of [0, 22, -22]) consider(badgeSide, badgeSide, bout, along, bout + r + capH / 2 + 8, calong, false);
-      }
-    }
+    const spot = { caption, badge: { x: bcx, y: bcy, r }, hits, outside };
+    if (!best || spot.hits < best.hits || (spot.hits === best.hits && spot.outside < best.outside)) best = spot;
   }
-  spots.sort((a, b) => a.hits - b.hits || a.outside - b.outside || a.dist - b.dist);
-  const best = spots[0];
-  if (best) return { caption: best.caption, badge: best.badge };
-  return {
-    caption: { x: mx - captionW / 2 + px * 20, y: my - capH / 2 + py * 20, w: captionW, h: capH },
-    badge: { x: mx - px * 22, y: my - py * 22, r },
+  return best ?? {
+    caption: { x: mx - captionW / 2 + px * cout, y: my - capH / 2 + py * cout, w: captionW, h: capH },
+    badge: { x: mx - px * bout, y: my - py * bout, r },
   };
+}
+
+/** True when the drawing is too small on screen for a caption to sit on its run. */
+export function needsLabelZoom(
+  box: { minX: number; minY: number; maxX: number; maxY: number },
+  ppm: number,
+  minPx = 170,
+): boolean {
+  const longest = Math.max(box.maxX - box.minX, box.maxY - box.minY);
+  return longest > 0.02 && longest * ppm < minPx;
 }
 
 /** Caption on one side of the run, badge on the other, so they do not stack. */
@@ -270,7 +276,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, view: View, scene: Scen
   ctx.fillStyle = c.quiet;
   const u = uLabel(scene.units);
   // The phone tool row covers the top of the canvas. Leave those numbers off.
-  const toolbarBottom = scene.phone && inProp ? 64 : 0;
+  const toolbarBottom = scene.phone && inProp ? 108 : 0;
   for (let x = Math.ceil(x0 / major) * major; x <= x1; x += major) {
     if (Math.abs(x) < 1e-6 && !inProp) continue;
     const ly = Math.min(H - 60, Math.max(scene.phone ? 90 : 14, sy(0) + (inProp ? 16 : 34)));
@@ -280,7 +286,8 @@ export function drawScene(ctx: CanvasRenderingContext2D, view: View, scene: Scen
   for (let y = Math.ceil(y0 / major) * major; y <= y1; y += major) {
     if (Math.abs(y) < 1e-6 || (y < 0 && !inProp)) continue;
     const ly = sy(y) - 3;
-    if (ly < toolbarBottom) continue;
+    // The scale bar sits just under the tool row. Leave that band unlabelled.
+    if (ly < toolbarBottom + (scene.phone && inProp ? 36 : 0)) continue;
     ctx.fillText(`${+toU(y, scene.units).toFixed(1)} ${u}`, 4, ly);
   }
 
@@ -298,7 +305,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, view: View, scene: Scen
   // Scale bar: what one bar and one square are, in the unit in use.
   const metric = scene.units !== "ft";
   const sb = metric ? (ppm < 25 ? 5 : ppm > 160 ? 0.5 : 1) : METRES_PER_FOOT * (ppm * METRES_PER_FOOT < 12 ? 10 : ppm * METRES_PER_FOOT < 30 ? 5 : 1);
-  const bx = 14, by = scene.phone ? 66 : H - 52, len = sb * ppm;
+  const bx = 14, by = scene.phone && inProp ? 116 : scene.phone ? 66 : H - 52, len = sb * ppm;
   ctx.strokeStyle = c.fg; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + len, by); ctx.moveTo(bx, by - 4); ctx.lineTo(bx, by + 4); ctx.moveTo(bx + len, by - 4); ctx.lineTo(bx + len, by + 4); ctx.stroke();
   ctx.fillStyle = c.fg;
@@ -319,14 +326,13 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
     const wire = "Wire in · light 1";
     const tw = ctx.measureText(wire).width;
     const x = sx(p.start.x + p.x), y = sy(p.start.y + p.y);
-    const left = x - tw - 10 > 4;
-    const baseline = y + (left ? 4 : 30);
-    blocked.push({ x: left ? x - tw - 10 : x + 10, y: baseline - 11, w: tw, h: 14 });
+    const spot = wireInLabelBox(x, y, tw, scene.phone ? 120 : 16);
+    blocked.push(spot);
   }
   if (scoped) {
     for (const corner of p.corners) {
       const x = sx(corner.x + p.x), y = sy(corner.y + p.y);
-      const rad = scene.selectedPoint === corner.id ? 30 : 14;
+      const rad = scene.selectedPoint === corner.id ? 16 : 12;
       blocked.push({ x: x - rad, y: y - rad, w: rad * 2, h: rad * 2 });
     }
   }
@@ -384,6 +390,7 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
       const cap = spots.caption;
       blocked.push(cap);
       labels.push(cap);
+      scene.labelHits?.push({ edgeId: e.id, box: cap });
       ctx.fillStyle = c.card; ctx.globalAlpha = 0.92; ctx.fillRect(cap.x, cap.y, cap.w, cap.h); ctx.globalAlpha = 1;
       ctx.fillStyle = isSel ? c.pick : c.fg; ctx.fillText(t, cap.x + 4, cap.y + 12);
       if (e.badge && (e.wire || scene.badges)) {
@@ -417,8 +424,8 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
       ctx.fillStyle = c.primary;
       ctx.font = "11px var(--font-plex-sans), 'IBM Plex Sans', sans-serif";
       const t = "Wire in · light 1", tw = ctx.measureText(t).width, x = sx(p.start.x + p.x), y = sy(p.start.y + p.y);
-      const left = x - tw - 10 > 4;
-      ctx.fillText(t, left ? x - tw - 10 : x + 10, y + (left ? 4 : 30));
+      const spot = wireInLabelBox(x, y, tw, scene.phone ? 120 : 16);
+      ctx.fillText(t, spot.x, spot.y + 11);
       ctx.font = "11px var(--font-plex-mono), 'IBM Plex Mono', monospace";
     }
     ctx.restore();
@@ -522,6 +529,7 @@ export function drawRubber(ctx: CanvasRenderingContext2D, view: View, band: Rubb
     const x = sx(dot.x), y = sy(dot.y);
     if (Math.hypot(x - ax, y - ay) < 36) continue;
     if (wire && Math.hypot(x - wire.x, y - wire.y) < 48) continue;
+    if (wire && x > wire.x - 80 && x < wire.x + 80 && y > wire.y - 40 && y < wire.y - 8) continue;
     ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI * 2); ctx.fill();
   }
   ctx.beginPath(); ctx.arc(bx, by, 5, 0, Math.PI * 2); ctx.stroke();
@@ -547,6 +555,49 @@ export function drawRubber(ctx: CanvasRenderingContext2D, view: View, band: Rubb
     ctx.fillStyle = colour;
     ctx.fillText(text, lx + 8, ly + 14);
     ctx.fillText(count, lx + 8, ly + 28);
+  }
+  ctx.restore();
+}
+
+export function drawSnapGuides(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  guides: readonly { kind: string; id?: string; x?: number; y?: number; axis?: "x" | "y"; at?: number; degrees?: number }[],
+  tail: { x: number; y: number } | null,
+  colour: string,
+) {
+  const { sx, sy, W, H } = view;
+  ctx.save();
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 4]);
+  for (const guide of guides) {
+    if (guide.kind === "point" && guide.x != null && guide.y != null) {
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(sx(guide.x), sy(guide.y), 16, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([5, 4]);
+    } else if (guide.kind === "align" && guide.at != null) {
+      ctx.beginPath();
+      if (guide.axis === "x") {
+        const x = Math.round(sx(guide.at)) + 0.5;
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, H);
+      } else {
+        const y = Math.round(sy(guide.at)) + 0.5;
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+      }
+      ctx.stroke();
+    } else if (guide.kind === "angle" && tail && guide.degrees != null) {
+      const rad = guide.degrees * Math.PI / 180;
+      const reach = Math.hypot(W, H);
+      ctx.beginPath();
+      ctx.moveTo(sx(tail.x), sy(tail.y));
+      ctx.lineTo(sx(tail.x + Math.cos(rad) * reach), sy(tail.y + Math.sin(rad) * reach));
+      ctx.stroke();
+    }
   }
   ctx.restore();
 }

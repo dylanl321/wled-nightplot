@@ -544,20 +544,20 @@ export type LengthEdit = {
   gapM: number | null;
 };
 
-export function setEdgeLength(layout: PropLayout, edgeId: string, lengthM: number): LengthEdit {
+export function setEdgeLength(layout: PropLayout, edgeId: string, lengthM: number, options?: { onlyPoint?: boolean }): LengthEdit {
   const wrapped = findEdge(layout, edgeId);
   if (wrapped?.kind === "lit" && wrapped.wrapLengthM != null && lengthM > 0 && Number.isFinite(lengthM)) {
     // A wrapped run's drawing is a flat view. Typing its length changes the wrap, not the drawing.
     return { layout: mapEdges(layout, (edge) => edge.id === edgeId ? { ...edge, wrapLengthM: lengthM } : edge), scaledAll: false, gapM: null };
   }
-  if (!layout.strings || layout.strings.length === 0) return setEdgeLengthOnRun(layout, edgeId, lengthM);
+  if (!layout.strings || layout.strings.length === 0) return setEdgeLengthOnRun(layout, edgeId, lengthM, false, options?.onlyPoint === true);
   const owner = layout.strings.find((string) => string.run.some((edge) => edge.id === edgeId));
   if (!owner) return { layout, scaledAll: false, gapM: null };
   // The length math works on one run. Give it this string's run, then write it back.
   const others = layout.strings.filter((string) => string.id !== owner.id);
   const view: PropLayout = { ...layout, run: owner.run, strings: undefined };
   const startId = owner.startId;
-  const edit = setEdgeLengthOnRun({ ...view, corners: startFirst(view.corners, startId) }, edgeId, lengthM, others.some((string) => string.run.some((edge) => edge.lockedLengthM != null)));
+  const edit = setEdgeLengthOnRun({ ...view, corners: startFirst(view.corners, startId) }, edgeId, lengthM, others.some((string) => string.run.some((edge) => edge.lockedLengthM != null)), options?.onlyPoint === true);
   const corners = layout.corners.map((corner) => edit.layout.corners.find((row) => row.id === corner.id) ?? corner);
   const factor = edit.scaledAll ? lengthM / Math.max(edgeLengthM(layout, owner.run.find((edge) => edge.id === edgeId)!), 1e-12) : 1;
   const strings = layout.strings.map((string) => {
@@ -574,9 +574,9 @@ function startFirst(corners: LayoutCorner[], startId: string): LayoutCorner[] {
   return start ? [start, ...corners.filter((corner) => corner.id !== startId)] : corners;
 }
 
-function setEdgeLengthOnRun(layout: PropLayout, edgeId: string, lengthM: number, _lockedElsewhere = false): LengthEdit {
+function setEdgeLengthOnRun(layout: PropLayout, edgeId: string, lengthM: number, _lockedElsewhere = false, onlyPoint = false): LengthEdit {
   const edge = layout.run.find((row) => row.id === edgeId);
-  if (!edge || edge.kind !== "lit" || !(lengthM > 0)) return { layout, scaledAll: false, gapM: null };
+  if (!edge || (edge.kind !== "lit" && edge.kind !== "wire") || !(lengthM > 0)) return { layout, scaledAll: false, gapM: null };
   const closed = isClosed(layout);
   const closing = closed && isClosingEdge(layout, edge);
   if (closing) {
@@ -587,7 +587,7 @@ function setEdgeLengthOnRun(layout: PropLayout, edgeId: string, lengthM: number,
     }
     return { layout: lock(moveClosingEdge(layout, edge, lengthM), edgeId, lengthM), scaledAll: false, gapM: null };
   }
-  const moved = moveEdgeAndTail(layout, edge, lengthM);
+  const moved = moveEdgeAndTail(layout, edge, lengthM, onlyPoint);
   const gap = closed ? gapAfter(moved, edgeId) : null;
   return { layout: lock(moved, edgeId, lengthM), scaledAll: false, gapM: gap };
 }
@@ -1458,7 +1458,7 @@ function lock(layout: PropLayout, edgeId: string, lengthM: number): PropLayout {
   };
 }
 
-function moveEdgeAndTail(layout: PropLayout, edge: LayoutEdge, lengthM: number): PropLayout {
+function moveEdgeAndTail(layout: PropLayout, edge: LayoutEdge, lengthM: number, onlyPoint = false): PropLayout {
   const from = cornerById(layout, edge.from);
   const to = cornerById(layout, edge.to);
   if (!from || !to) return layout;
@@ -1468,7 +1468,7 @@ function moveEdgeAndTail(layout: PropLayout, edge: LayoutEdge, lengthM: number):
   const nextTo = { x: from.x + ux * lengthM, y: from.y + uy * lengthM };
   const dx = nextTo.x - to.x;
   const dy = nextTo.y - to.y;
-  const shift = tailIds(layout, edge.to);
+  const shift = onlyPoint ? new Set<string>() : tailIds(layout, edge.to);
   return {
     ...layout,
     corners: layout.corners.map((corner) => {

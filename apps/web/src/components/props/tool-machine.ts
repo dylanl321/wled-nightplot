@@ -34,6 +34,9 @@ export type ToolState = {
   /** Left click uses this. Right click uses the opposite. */
   nextRun: RunChoice;
   lengthDraft: string;
+  angleDraft: string;
+  /** Which typed field receives the next key. */
+  entryField: "length" | "angle";
   dragId: string | null;
   press: { button: PointerButton; pointerType: PointerKind } | null;
 };
@@ -76,6 +79,7 @@ export type ToolEffect =
   | { type: "removeWireIn" }
   | { type: "finishChain" }
   | { type: "clearLength" }
+  | { type: "commitLength" }
   | { type: "toggleNext" }
   | { type: "endGesture" };
 
@@ -87,6 +91,8 @@ export function initialTool(mode: "trace" | "edit", nextRun: RunChoice = "lit"):
     gesture: mode === "trace" ? "tracing" : "idle",
     nextRun,
     lengthDraft: "",
+    angleDraft: "",
+    entryField: "length",
     dragId: null,
     press: null,
   };
@@ -162,7 +168,8 @@ function tracePointer(state: ToolState, event: ToolPointer): ToolStep {
     return { state, effect: { type: "none" } };
   }
   const next = { ...state, press: null };
-  if (event.moved || state.gesture === "lengthEntry") return { state: next, effect: { type: "none" } };
+  if (state.gesture === "lengthEntry" && !event.moved) return { state: next, effect: { type: "commitLength" } };
+  if (event.moved) return { state: next, effect: { type: "none" } };
   if (event.detail >= 2) return finish(next);
   return click(next, event);
 }
@@ -228,8 +235,8 @@ function onKey(state: ToolState, event: Extract<ToolEvent, { type: "key" }>): To
   }
   if (state.mode !== "trace") return { state, effect: { type: "none" } };
   if (state.gesture === "lengthEntry") return lengthKey(state, event.key);
-  if (isLengthKey(event.key) && state.gesture === "tracing") {
-    return { state: { ...state, gesture: "lengthEntry", lengthDraft: event.key }, effect: { type: "none" } };
+  if (isLengthStart(event.key) && state.gesture === "tracing") {
+    return { state: { ...state, gesture: "lengthEntry", entryField: "length", lengthDraft: event.key, angleDraft: "" }, effect: { type: "none" } };
   }
   if (event.key === "Escape") return state.gesture === "tracing" ? finish(state) : { state, effect: { type: "none" } };
   if (event.key === "Enter") return state.gesture === "tracing" ? finish(state) : { state, effect: { type: "none" } };
@@ -241,20 +248,32 @@ function onKey(state: ToolState, event: Extract<ToolEvent, { type: "key" }>): To
 }
 
 function lengthKey(state: ToolState, key: string): ToolStep {
-  if (key === "Escape") return { state: { ...state, gesture: "tracing", lengthDraft: "" }, effect: { type: "clearLength" } };
-  if (key === "Enter") return { state: { ...state, gesture: "tracing" }, effect: { type: "none" } };
+  if (key === "Escape") return { state: { ...state, gesture: "tracing", lengthDraft: "", angleDraft: "", entryField: "length" }, effect: { type: "clearLength" } };
+  if (key === "Enter") return { state, effect: { type: "commitLength" } };
+  if (key === "Tab") {
+    const entryField = state.entryField === "length" ? "angle" : "length";
+    return { state: { ...state, entryField }, effect: { type: "none" } };
+  }
   if (key === "Backspace") {
+    if (state.entryField === "angle") {
+      const angleDraft = state.angleDraft.slice(0, -1);
+      return { state: { ...state, angleDraft }, effect: { type: "none" } };
+    }
     const lengthDraft = state.lengthDraft.slice(0, -1);
     return lengthDraft
       ? { state: { ...state, lengthDraft }, effect: { type: "none" } }
-      : { state: { ...state, gesture: "tracing", lengthDraft: "" }, effect: { type: "clearLength" } };
+      : { state: { ...state, gesture: "tracing", lengthDraft: "", angleDraft: "", entryField: "length" }, effect: { type: "clearLength" } };
   }
-  if (isLengthKey(key)) return { state: { ...state, lengthDraft: state.lengthDraft + key }, effect: { type: "none" } };
+  if (state.entryField === "angle") {
+    if (!/^[0-9.-]$/.test(key)) return { state, effect: { type: "none" } };
+    return { state: { ...state, angleDraft: state.angleDraft + key }, effect: { type: "none" } };
+  }
+  if (isLengthChar(key)) return { state: { ...state, lengthDraft: state.lengthDraft + key }, effect: { type: "none" } };
   return { state, effect: { type: "none" } };
 }
 
 function finish(state: ToolState): ToolStep {
-  return { state: { ...state, gesture: "idle", lengthDraft: "", press: null, dragId: null }, effect: { type: "finishChain" } };
+  return { state: { ...state, gesture: "idle", lengthDraft: "", angleDraft: "", entryField: "length", press: null, dragId: null }, effect: { type: "finishChain" } };
 }
 
 function act(state: ToolState, effect: ToolEffect, open: boolean): ToolStep {
@@ -265,7 +284,7 @@ function modeOf(state: ToolState, mode: "trace" | "edit"): ToolStep {
   if (mode === "trace") {
     return { state: { ...state, mode, gesture: "tracing", press: null, dragId: null }, effect: { type: "none" } };
   }
-  return { state: { ...state, mode, gesture: "idle", lengthDraft: "", press: null, dragId: null }, effect: { type: "none" } };
+  return { state: { ...state, mode, gesture: "idle", lengthDraft: "", angleDraft: "", entryField: "length", press: null, dragId: null }, effect: { type: "none" } };
 }
 
 /** Left button follows the toggle. Right button is the opposite. Touch is a left button. */
@@ -275,6 +294,10 @@ function kindFor(next: RunChoice, button: PointerButton): "lit" | "wire" {
   return left;
 }
 
-function isLengthKey(key: string): boolean {
-  return /^[0-9.]$/.test(key);
+function isLengthStart(key: string): boolean {
+  return /^[0-9#]$/.test(key);
+}
+
+function isLengthChar(key: string): boolean {
+  return /^[0-9.#"'ftcml ]$/i.test(key);
 }
