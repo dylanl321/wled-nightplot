@@ -107,6 +107,11 @@ export function YardHome({
                       <Link href={`/props/${prop.id}/edit`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg border border-border px-3 text-[15px]">
                         Edit
                       </Link>
+                      {prop.layout ? (
+                        <Link href={`/props/${prop.id}/edit?step=sections`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg border border-border px-3 text-[15px]">
+                          Sections
+                        </Link>
+                      ) : null}
                       {!attachment ? (
                         <Link href={`/props/${prop.id}/attach`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg border border-primary px-3 text-[15px] text-primary">
                           Attach

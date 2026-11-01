@@ -16,11 +16,11 @@ import { PropSectionsStep } from "@/components/props/prop-sections";
 import { Button } from "@/components/ui/button";
 import { patchJson } from "@/lib/api";
 
-export function EditProp({ prop }: { prop: Prop }) {
+export function EditProp({ prop, start = "draw" }: { prop: Prop; start?: "draw" | "sections" }) {
   const router = useRouter();
   const initial = prop.layout && isPropLayout(prop.layout) ? prop.layout : layoutFromDesign(prop);
   const [notice, setNotice] = useState<string | null>(null);
-  const [phase, setPhase] = useState<"draw" | "sections">("draw");
+  const [phase, setPhase] = useState<"draw" | "sections">(start);
   const [layout, setLayout] = useState<PropLayout | null>(initial);
   const [sections, setSections] = useState<PropSection[]>(prop.sections ?? (initial ? defaultSections(initial) : []));
   const [rangeError, setRangeError] = useState<string | null>(null);
@@ -35,9 +35,9 @@ export function EditProp({ prop }: { prop: Prop }) {
   }
   if (phase === "sections") {
     return (
-      <div className="mx-auto flex min-h-dvh w-full max-w-[560px] flex-col overflow-x-hidden">
+      <div className="mx-auto flex min-h-dvh w-full max-w-[560px] flex-col overflow-x-hidden lg:max-w-[1200px]">
         <header className="flex h-14 shrink-0 items-center gap-1 px-1">
-          <button type="button" className="min-h-11 px-3 text-[16px]" onClick={() => setPhase("draw")}>Back</button>
+          <button type="button" className="min-h-11 px-3 text-[16px]" onClick={() => (start === "sections" ? router.push("/") : setPhase("draw"))}>Back</button>
           <p className="min-w-0 flex-1 truncate text-[17px] font-medium">{prop.label}</p>
         </header>
         <div className="flex flex-1 flex-col gap-5 overflow-x-hidden px-4 pb-28">
@@ -52,9 +52,9 @@ export function EditProp({ prop }: { prop: Prop }) {
           />
           {notice ? <p className="text-[15px] text-destructive">{notice}</p> : null}
         </div>
-        <div className="fixed inset-x-0 bottom-0 z-20 mx-auto flex w-full max-w-[560px] gap-2 border-t border-border bg-background px-4 py-3">
-          <Button type="button" variant="outline" className="min-h-11 flex-1 text-base" onClick={() => setPhase("draw")}>Back</Button>
-          <Button type="button" className="min-h-11 flex-1 text-base" disabled={busy || Boolean(rangeError)} onClick={() => void save(layout, sections)}>
+        <div className="fixed inset-x-0 bottom-0 z-20 mx-auto flex w-full max-w-[560px] gap-2 border-t border-border bg-background px-4 py-3 lg:max-w-[1200px] lg:justify-end">
+          <Button type="button" variant="outline" className="min-h-11 flex-1 text-base lg:max-w-[200px]" onClick={() => setPhase("draw")}>Edit path</Button>
+          <Button type="button" className="min-h-11 flex-1 text-base lg:max-w-[200px]" disabled={busy || Boolean(rangeError)} onClick={() => void save(layout, sections)}>
             {busy ? "Saving…" : "Save"}
           </Button>
         </div>

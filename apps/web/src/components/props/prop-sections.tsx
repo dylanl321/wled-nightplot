@@ -17,6 +17,8 @@ import {
   type PropSection,
 } from "@nightplot/shared";
 import { useEffect, useMemo, useState } from "react";
+import { Circle, Group, Line, Text } from "react-konva";
+import { EditorStage, boundsOf as pointBounds, toScreen } from "@/components/canvas";
 
 const COLOURS = ["#ffb000", "#3d8bfd", "#ff5a5a", "#3dd68c", "#c084fc", "#38bdf8", "#fb7185", "#fbbf24"];
 
@@ -113,9 +115,10 @@ export function PropSectionsStep({
   const lightsHere = report ? sectionLightCount(report.ranges) : 0;
 
   return (
-    <div className="flex flex-col gap-4" style={{ overflowAnchor: "none" }}>
+    // Phone: one column. Wide window: the drawing on the left, everything else in a column beside it.
+    <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start lg:gap-x-6 lg:gap-y-4" style={{ overflowAnchor: "none" }}>
       {active ? (
-        <>
+        <div className="flex flex-col gap-4 lg:col-start-2">
           <label className="flex flex-col gap-2 text-[15px]">
             Section name
             <input
@@ -136,11 +139,11 @@ export function PropSectionsStep({
             />
           </label>
           <p className="text-[17px] font-medium">{lightsHere === 1 ? "1 light" : `${lightsHere} lights`}</p>
-        </>
+        </div>
       ) : (
-        <p className="text-[15px] text-muted-foreground">Add a section, then tap the edges that belong to it.</p>
+        <p className="text-[15px] text-muted-foreground lg:col-start-2">Add a section, then tap the edges that belong to it.</p>
       )}
-      <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-2 lg:col-start-2">
         {sections.map((section) => {
           const row = reports.find((item) => item.sectionId === section.id);
           return (
@@ -159,7 +162,7 @@ export function PropSectionsStep({
           );
         })}
       </ul>
-      <PathFigure
+      <SectionFigure
         layout={layout}
         sections={sections}
         activeId={active?.id ?? ""}
@@ -167,7 +170,7 @@ export function PropSectionsStep({
         labels={labels}
         onEdge={toggle}
       />
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 lg:col-start-2">
         {edgeChoices(layout, active).map((edge) => {
           const on = active?.edgeIds.includes(edge.id) ?? false;
           const raw = labels.get(edge.id) ?? wellHouseEdgeLabel(edge.id) ?? edge.id;
@@ -185,7 +188,7 @@ export function PropSectionsStep({
           );
         })}
       </div>
-      <details className="rounded-xl border border-border px-3 py-2">
+      <details className="rounded-xl border border-border px-3 py-2 lg:col-start-2">
         <summary className="flex min-h-11 cursor-pointer items-center text-[15px]">Advanced</summary>
         <div className="flex flex-col gap-3 pb-2">
           <p className="text-[15px] leading-6 text-muted-foreground">
@@ -220,7 +223,7 @@ export function PropSectionsStep({
           )) : null}
         </div>
       </details>
-      <div className="flex gap-2">
+      <div className="flex gap-2 lg:col-start-2">
         <button type="button" className="min-h-11 flex-1 rounded-lg border border-border text-base" onClick={addSection}>New section</button>
         {active ? (
           <button
@@ -248,7 +251,11 @@ function edgeChoices(layout: PropLayout, _active: PropSection | null) {
   return layoutStrings(layout).flatMap((string) => string.run.filter((edge) => edge.kind === "lit"));
 }
 
-function PathFigure({
+/**
+ * The prop's path on the editor stage, each run in its section's colour.
+ * Tap a run to put it in the selected section, or take it out.
+ */
+function SectionFigure({
   layout,
   sections,
   activeId,
@@ -263,7 +270,7 @@ function PathFigure({
   labels: Map<string, string>;
   onEdge: (edgeId: string) => void;
 }) {
-  const bounds = boundsOf(layout);
+  const bounds = pointBounds(layout.corners);
   if (!bounds) return null;
   const colourOf = new Map<string, string>();
   for (const section of sections) {
@@ -272,63 +279,39 @@ function PathFigure({
     }
   }
   const active = sections.find((section) => section.id === activeId);
-  const span = Math.max(bounds.width, bounds.height, layout.pitchM * 4);
-  const hit = span * 0.08;
+  const runs = layoutStrings(layout).flatMap((string) => string.run.map((edge, index) => ({ edge, order: index + 1 })));
   return (
-    <div className="h-[200px] w-full overflow-hidden rounded-xl border border-border bg-[#0e1014]">
-      <svg
-        aria-label="Prop path"
-        viewBox={`${bounds.minX - span * 0.08} ${bounds.minY - span * 0.08} ${bounds.width + span * 0.16} ${bounds.height + span * 0.16}`}
-        className="h-full w-full touch-manipulation"
-      >
-        <g transform={`translate(0 ${bounds.minY + bounds.maxY}) scale(1 -1)`}>
-          {layoutStrings(layout).flatMap((string) => string.run.map((edge, index) => ({ edge, order: index + 1 }))).map(({ edge, order }) => {
+    <div className="h-[240px] w-full overflow-hidden rounded-xl border border-border bg-[#0e1014] lg:sticky lg:top-4 lg:col-start-1 lg:row-[1/span_20] lg:h-[72dvh]">
+      <EditorStage
+        bounds={bounds}
+        fitMinSpanM={layout.pitchM * 4}
+        limits={{ minPpm: 2, maxPpm: 48 / Math.max(layout.pitchM, 0.005) }}
+        label="Prop path"
+        testId="section-figure"
+        overlay={(camera) =>
+          runs.map(({ edge, order }) => {
             const from = layout.corners.find((corner) => corner.id === edge.from);
             const to = layout.corners.find((corner) => corner.id === edge.to);
-            if (!from || !to || edge.kind === "wire") return null;
+            if (!from || !to) return null;
+            const a = toScreen(from, camera);
+            const b = toScreen(to, camera);
+            if (edge.kind === "wire") {
+              return <Line key={edge.id} points={[a.x, a.y, b.x, b.y]} stroke="#8a8478" strokeWidth={1.5} dash={[6, 4]} listening={false} />;
+            }
             const on = active?.edgeIds.includes(edge.id) ?? false;
             const colour = on ? (active?.color ?? "#ffb000") : (colourOf.get(edge.id) ?? "#4a463c");
-            const name = labels.get(edge.id) ?? wellHouseEdgeLabel(edge.id) ?? edge.id;
-            const mx = (from.x + to.x) / 2;
-            const my = (from.y + to.y) / 2;
+            const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+            const tap = () => onEdge(edge.id);
             return (
-              <g key={edge.id} role="button" tabIndex={0} aria-label={`${order}. ${name}`} aria-pressed={on} onClick={() => onEdge(edge.id)} onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  onEdge(edge.id);
-                }
-              }}>
-                <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="transparent" strokeWidth={hit} strokeLinecap="round" />
-                <line
-                  x1={from.x}
-                  y1={from.y}
-                  x2={to.x}
-                  y2={to.y}
-                  stroke={colour}
-                  strokeWidth={edge.id === selectedEdgeId ? span * 0.035 : span * 0.02}
-                  strokeLinecap="round"
-                />
-                <text x={mx} y={my} fill="#e8e2d6" fontSize={span * 0.09} textAnchor="middle" transform={`translate(${mx} ${my}) scale(1 -1) translate(${-mx} ${-my})`}>{order}</text>
-              </g>
+              <Group key={edge.id} name={`run ${labels.get(edge.id) ?? edge.id}`} onClick={tap} onTap={tap}>
+                <Line points={[a.x, a.y, b.x, b.y]} stroke={colour} strokeWidth={edge.id === selectedEdgeId ? 7 : 4} lineCap="round" hitStrokeWidth={28} />
+                <Circle x={mid.x} y={mid.y} radius={10} fill="#12141a" stroke={on ? colour : "#e8e2d6"} listening={false} />
+                <Text text={String(order)} x={mid.x - 10} y={mid.y - 6} width={20} align="center" fontSize={11} fill="#e8e2d6" listening={false} />
+              </Group>
             );
-          })}
-        </g>
-      </svg>
+          })
+        }
+      />
     </div>
   );
-}
-
-function boundsOf(layout: PropLayout): { minX: number; minY: number; maxX: number; maxY: number; width: number; height: number } | null {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const corner of layout.corners) {
-    minX = Math.min(minX, corner.x);
-    minY = Math.min(minY, corner.y);
-    maxX = Math.max(maxX, corner.x);
-    maxY = Math.max(maxY, corner.y);
-  }
-  if (!Number.isFinite(minX)) return null;
-  return { minX, minY, maxX, maxY, width: Math.max(0.01, maxX - minX), height: Math.max(0.01, maxY - minY) };
 }
