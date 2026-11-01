@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  SHARED_POST_RULES,
+  WIREFRAME_GROUPS,
   isLook,
   lookIncludesProp,
   patchStyle,
@@ -15,6 +17,7 @@ import {
   type Look,
   type LookMode,
   type LookStyle,
+  type SharedPostRule,
 } from "@nightplot/shared";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -22,7 +25,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { postJson } from "@/lib/api";
 import { CaptureDialog } from "./dialogs";
 import { EffectPicker, PalettePicker, StyleEditor, effectOf, effectPatch } from "./style-editor";
-import { duplicateLook, kindPlural, readRecent, rememberDeleted, writeRecent } from "./looks-helpers";
+import { duplicateLook, kindPlural, readRecent, rememberDeleted, segmentWarningText, segmentWarnings, writeRecent } from "./looks-helpers";
 import { useLooks, type LightLite, type LooksPayload } from "./use-looks";
 import { StyleStrip, YardCanvas } from "./yard-canvas";
 
@@ -31,10 +34,18 @@ type PreviewState = { on: boolean; rows: { lightId: string; lightName: string; s
 export function LookView({ initial, lights, lookId, startProp }: { initial: LooksPayload; lights: LightLite[]; lookId: string; startProp: string | null }) {
   const router = useRouter();
   const state = useLooks(initial, lights);
-  const { doc, setDoc, flush, saveState, saveError, props, drawn, allPropIds, catalog, now } = state;
+  const { doc, setDoc, flush, saveState, saveError, props, drawn, allPropIds, catalog, now, refreshNow } = state;
+  // Count segments again a moment after an edit saves, for the warning below.
+  useEffect(() => {
+    if (saveState !== "saved") return;
+    const id = setTimeout(() => { void refreshNow(); }, 2500);
+    return () => clearTimeout(id);
+  }, [saveState, doc, refreshNow]);
   const look = doc.looks.find((row) => row.id === lookId) ?? null;
   const [sel, setSel] = useState<string[]>(startProp && props.some((prop) => prop.id === startProp) ? [startProp] : []);
   const [section, setSection] = useState<string | null>(null);
+  /** A wireframe part (face.N, tops, posts…) of the one selected prop. */
+  const [part, setPart] = useState<string | null>(null);
   const [panel, setPanel] = useState<"effects" | "palettes" | null>(null);
   const [fxq, setFxq] = useState("");
   const [clip, setClip] = useState<LookStyle | null>(null);
@@ -91,23 +102,45 @@ export function LookView({ initial, lights, lookId, startProp }: { initial: Look
   const selProps = useMemo(() => sel.map((id) => props.find((prop) => prop.id === id)).filter((prop): prop is NonNullable<typeof prop> => Boolean(prop)), [props, sel]);
   const one = selProps.length === 1 ? selProps[0]! : null;
 
+  const partRow = look && one && part ? look.overrides.find((row) => row.propId === one.id && row.wireframeGroup === part && !row.sectionId) ?? null : null;
+  const activePart = partRow ? part : null;
+
   const editedStyle: LookStyle | null = useMemo(() => {
     if (!look) return null;
+    if (partRow) return partRow.style;
     if (!selProps.length) return look.style;
     if (one && section) return sectionStyle(look, one, section) ?? propStyle(look, one);
     const own = selProps.find((prop) => propMode(look, prop) === "own");
     return propStyle(look, own ?? selProps[0]!);
-  }, [look, one, section, selProps]);
+  }, [look, one, partRow, section, selProps]);
 
   const patch = useCallback((change: Partial<LookStyle>) => {
     setLook((current) => {
+      if (one && activePart) {
+        return { ...current, overrides: current.overrides.map((row) => (row.propId === one.id && row.wireframeGroup === activePart && !row.sectionId ? { ...row, style: { ...row.style, ...change } } : row)) };
+      }
       if (!selProps.length) return patchStyle(current, allPropIds, {}, change);
       if (one && section) return patchStyle(current, allPropIds, { prop: one, sectionId: section }, change);
       return selProps.reduce((acc, prop) => patchStyle(acc, allPropIds, { prop }, change), current);
     });
     const colours = [change.color, change.color2, change.color3].filter((c): c is string => Boolean(c) && c !== "#000000");
     if (colours.length) setRecent((list) => { const next = [...colours.filter((c) => !list.includes(c)), ...list].slice(0, 8); writeRecent(next); return next; });
-  }, [allPropIds, one, section, selProps, setLook]);
+  }, [activePart, allPropIds, one, section, selProps, setLook]);
+
+  const addPart = useCallback((group: string, rule: SharedPostRule) => {
+    if (!one) return;
+    setLook((current) => ({ ...current, overrides: [...current.overrides, { propId: one.id, wireframeGroup: group, sharedPostRule: rule, style: { ...propStyle(current, one) } }] }));
+    setSection(null); setPart(group);
+  }, [one, setLook]);
+  const removePart = useCallback((group: string) => {
+    if (!one) return;
+    setLook((current) => ({ ...current, overrides: current.overrides.filter((row) => !(row.propId === one.id && row.wireframeGroup === group && !row.sectionId)) }));
+    setPart(null);
+  }, [one, setLook]);
+  const setPartRule = useCallback((group: string, rule: SharedPostRule) => {
+    if (!one) return;
+    setLook((current) => ({ ...current, overrides: current.overrides.map((row) => (row.propId === one.id && row.wireframeGroup === group && !row.sectionId ? { ...row, sharedPostRule: rule } : row)) }));
+  }, [one, setLook]);
 
   const setMode = useCallback((mode: LookMode, only?: string) => {
     setLook((current) => {
@@ -119,16 +152,16 @@ export function LookView({ initial, lights, lookId, startProp }: { initial: Look
 
   const pick = useCallback((hit: { propId: string; index: number } | null, event: PointerEvent) => {
     setPanel(null);
-    if (!hit) { setSel([]); setSection(null); return; }
+    if (!hit) { setSel([]); setSection(null); setPart(null); return; }
     if (event.shiftKey || event.metaKey || event.ctrlKey) {
       setSel((list) => (list.includes(hit.propId) ? list.filter((id) => id !== hit.propId) : [...list, hit.propId]));
-      setSection(null);
+      setSection(null); setPart(null);
       return;
     }
     const drawnProp = drawn.find((row) => row.id === hit.propId);
     if (look && sel.length === 1 && sel[0] === hit.propId && drawnProp?.sections.length && lookIncludesProp(look, hit.propId)) {
       setSection(drawnProp.lights[hit.index]?.sectionId ?? null);
-    } else { setSel([hit.propId]); setSection(null); }
+    } else { setSel([hit.propId]); setSection(null); setPart(null); }
     inspector.current?.scrollTo(0, 0);
   }, [drawn, look, sel]);
 
@@ -138,13 +171,14 @@ export function LookView({ initial, lights, lookId, startProp }: { initial: Look
       const tag = (event.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") { (event.target as HTMLElement).blur(); return; }
       if (panel) setPanel(null);
+      else if (part) setPart(null);
       else if (section) setSection(null);
       else if (sel.length) setSel([]);
       else void done();
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [done, panel, section, sel.length]);
+  }, [done, panel, part, section, sel.length]);
 
   if (!look) {
     return (
@@ -196,7 +230,24 @@ export function LookView({ initial, lights, lookId, startProp }: { initial: Look
         {modeSeg(mode)}
         {mode === null ? <p className="note">They&apos;re set differently. Pick one to set them all.</p> : null}
         {mode === "own" || mode === null ? editor(editedStyle ?? look.style, { mixed }) : mode === "follow" ? <p className="note">They use the Look style. Pick Own style to give them their own.</p> : null}
-        <div className="btnrow"><button type="button" className="btn" onClick={() => { setSel([]); setSection(null); }}>Back to the whole Look</button></div>
+        <div className="btnrow"><button type="button" className="btn" onClick={() => { setSel([]); setSection(null); setPart(null); }}>Back to the whole Look</button></div>
+      </>
+    );
+  } else if (one && activePart && partRow) {
+    body = (
+      <>
+        <div className="title"><h1>{one.label} › {partLabel(activePart)}</h1><p className="sub">Wireframe part · in “{look.name}”</p></div>
+        <label className="f">Shared posts
+          <select className="in" value={partRow.sharedPostRule ?? one.wireframe?.sharedPostRule ?? "half"} onChange={(event) => setPartRule(activePart, event.target.value as SharedPostRule)}>
+            {SHARED_POST_RULES.map((rule) => <option key={rule} value={rule}>{POST_RULE_COPY[rule]}</option>)}
+          </select>
+        </label>
+        {editor(partRow.style)}
+        <div className="btnrow">
+          <button type="button" className="btn small danger" onClick={() => removePart(activePart)}>Remove this part&apos;s style</button>
+          <span className="spacer" />
+          <button type="button" className="btn" onClick={() => setPart(null)}>Back to {one.label}</button>
+        </div>
       </>
     );
   } else if (one) {
@@ -217,7 +268,7 @@ export function LookView({ initial, lights, lookId, startProp }: { initial: Look
               {drawnProp.sections.map((row) => {
                 const m = sectionMode(look, one.id, row.id);
                 return (
-                  <button type="button" key={row.id} aria-pressed={section === row.id} onClick={() => setSection(row.id)}>
+                  <button type="button" key={row.id} aria-pressed={section === row.id} onClick={() => { setSection(row.id); setPart(null); }}>
                     <span className="dot" style={{ background: dotFor(sectionStyle(look, one, row.id)) }} />{row.name}{m === "off" ? " · off" : m === "own" ? " · own" : ""}
                   </button>
                 );
@@ -225,6 +276,10 @@ export function LookView({ initial, lights, lookId, startProp }: { initial: Look
             </div>
             <p className="note" style={{ marginTop: 6 }}>{sectionsFollow(look, one.id) ? "Every section follows, so the effect runs along the whole prop." : "Sections are set separately, so each one runs its own effect."}</p>
           </div>
+        ) : null}
+        {one.wireframe && mode !== "off" ? (
+          <WireframeParts look={look} propId={one.id} sides={one.wireframe.sides} defaultRule={one.wireframe.sharedPostRule}
+            active={activePart} onPick={(group) => { setPart(group); setSection(null); }} onAdd={addPart} />
         ) : null}
         {sec
           ? secMode === "own" ? editor(sectionStyle(look, one, sec.id) ?? propStyle(look, one))
@@ -235,13 +290,14 @@ export function LookView({ initial, lights, lookId, startProp }: { initial: Look
               <div className="box"><p className="note">Uses the Look style: <b>{effectOf(look.style.fx, catalog.effects).name}</b>.</p>
                 <StyleStrip style={look.style} /><p className="note">Pick Own style to give {one.label} its own effect and colours.</p></div>
             ) : <p className="note">{one.label} stays dark in this Look.</p>}
-        <div className="btnrow"><button type="button" className="btn" onClick={() => { setSel([]); setSection(null); }}>Back to the whole Look</button></div>
+        <div className="btnrow"><button type="button" className="btn" onClick={() => { setSel([]); setSection(null); setPart(null); }}>Back to the whole Look</button></div>
       </>
     );
   } else {
     body = (
       <>
         <div className="title"><h1>{look.name}</h1><p className="sub">{onCount} of {props.length} props on · {usedIn.length ? `in ${usedIn.map((row) => row.name).join(", ")}` : "not in a playlist"}</p></div>
+        {segmentWarnings(now, [look]).map((row) => <p className="warnnote" key={row.lightId}>{segmentWarningText(row)}</p>)}
         <label className="f">Name
           <input className="in" defaultValue={look.name} key={look.id} maxLength={32} autoFocus={/^Look \d+$/.test(look.name)}
             onFocus={(event) => { if (/^Look \d+$/.test(event.target.value)) event.target.select(); }}
@@ -255,7 +311,7 @@ export function LookView({ initial, lights, lookId, startProp }: { initial: Look
               const mode = propMode(look, prop);
               return (
                 <div className="proprow" key={prop.id}>
-                  <button type="button" onClick={() => { setSel([prop.id]); setSection(null); }}>
+                  <button type="button" onClick={() => { setSel([prop.id]); setSection(null); setPart(null); }}>
                     <span className="dot" style={{ background: mode === "off" ? "transparent" : dotFor(propStyle(look, prop)) }} />{prop.label}
                   </button>
                   <span className="mini3" role="group" aria-label={`${prop.label} in this Look`}>
@@ -270,7 +326,7 @@ export function LookView({ initial, lights, lookId, startProp }: { initial: Look
           <p className="note" style={{ marginTop: 6 }}>Follow uses the Look style below. Own gives the prop its own effect and colours. Click a name to edit it.</p>
           <div className="btnrow" style={{ marginTop: 6 }}>
             {kinds.map((kind) => (
-              <button type="button" key={kind} className="btn small" onClick={() => { setSel(props.filter((prop) => prop.kind === kind).map((prop) => prop.id)); setSection(null); }}>Select all {kindPlural(kind)}</button>
+              <button type="button" key={kind} className="btn small" onClick={() => { setSel(props.filter((prop) => prop.kind === kind).map((prop) => prop.id)); setSection(null); setPart(null); }}>Select all {kindPlural(kind)}</button>
             ))}
             {onCount < props.length ? <button type="button" className="btn small" onClick={() => setLook((current) => props.reduce((acc, prop) => (propMode(acc, prop) === "off" ? setPropMode(acc, allPropIds, prop, "follow") : acc), current))}>Switch every prop on</button> : null}
           </div>
@@ -351,7 +407,7 @@ export function LookView({ initial, lights, lookId, startProp }: { initial: Look
                     <button type="button" className={sel.includes(prop.id) ? "on" : ""} onClick={(event) => {
                       if (event.shiftKey || event.metaKey || event.ctrlKey) setSel((list) => (list.includes(prop.id) ? list.filter((id) => id !== prop.id) : [...list, prop.id]));
                       else setSel([prop.id]);
-                      setSection(null); setPanel(null);
+                      setSection(null); setPart(null); setPanel(null);
                     }}>
                       <span className="dot" style={{ background: mode === "off" ? "transparent" : dotFor(propStyle(look, prop)) }} />{prop.label}
                       <span className="n">{mode === "off" ? "off" : mode === "own" ? "own" : "follows"}</span>
@@ -390,6 +446,48 @@ export function LookView({ initial, lights, lookId, startProp }: { initial: Look
         }} />
       ) : null}
       {toast ? <div className="toast" role="status"><span>{toast}</span></div> : null}
+    </div>
+  );
+}
+
+const POST_RULE_COPY: Record<SharedPostRule, string> = {
+  half: "Split each shared post between its faces",
+  left: "Shared posts take the left face",
+  right: "Shared posts take the right face",
+  own: "Shared posts keep their own style",
+};
+
+function partLabel(group: string): string {
+  const face = /^face\.(\d+)$/.exec(group);
+  if (face) return `Face ${Number(face[1]) + 1}`;
+  return group.charAt(0).toUpperCase() + group.slice(1);
+}
+
+/** A wireframe prop's faces and parts that have their own style in this Look. */
+function WireframeParts({ look, propId, sides, defaultRule, active, onPick, onAdd }: {
+  look: Look; propId: string; sides: number; defaultRule: SharedPostRule; active: string | null;
+  onPick: (group: string) => void; onAdd: (group: string, rule: SharedPostRule) => void;
+}) {
+  const own = look.overrides.filter((row) => row.propId === propId && row.wireframeGroup && !row.sectionId).map((row) => row.wireframeGroup!);
+  const choices = [...WIREFRAME_GROUPS, ...Array.from({ length: sides }, (_, index) => `face.${index}`)].filter((group) => !own.includes(group));
+  const [pick, setPick] = useState<string>("");
+  const chosen = choices.includes(pick) ? pick : choices[0] ?? "";
+  return (
+    <div>
+      <h2 className="cap">Faces and parts</h2>
+      {own.length ? (
+        <div className="secchips">
+          {own.map((group) => <button type="button" key={group} aria-pressed={active === group} onClick={() => onPick(group)}>{partLabel(group)} · own</button>)}
+        </div>
+      ) : <p className="note">Every face and part uses this prop&apos;s style.</p>}
+      {choices.length ? (
+        <div className="btnrow" style={{ marginTop: 6 }}>
+          <select className="in" aria-label="Wireframe part" value={chosen} onChange={(event) => setPick(event.target.value)} style={{ width: "auto" }}>
+            {choices.map((group) => <option key={group} value={group}>{partLabel(group)}</option>)}
+          </select>
+          <button type="button" className="btn small" disabled={!chosen} onClick={() => onAdd(chosen, defaultRule)}>Give it its own style</button>
+        </div>
+      ) : null}
     </div>
   );
 }

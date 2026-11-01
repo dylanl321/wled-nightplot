@@ -33,22 +33,9 @@ describe("Sync", () => {
     await waitFor(() => expect(bodies.at(-1)?.body).toEqual({ sourceLightId: "desk", targetLightIds: ["shelf"], confirmWarnings: true }));
   });
 
-  it("turns on a preset read from the source on the source and targets", async () => {
-    const posts: Record<string, unknown>[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/sync/presets/desk") return new Response(JSON.stringify({
-        presets: [{ id: 1, name: "Amber", kind: "preset" }, { id: 4, name: "Loop", kind: "playlist" }] }));
-      posts.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      return new Response(JSON.stringify({ kind: "preset", sourceLightId: null, rows: [], message: "2 of 2 report the preset on.", caption: "" }));
-    }));
+  it("sends turning on a preset to Looks", () => {
     render(<SyncPanel lights={lights} />);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Porch" }));
-    fireEvent.click(screen.getByRole("button", { name: "Read presets" }));
-    fireEvent.change(await screen.findByRole("combobox", { name: "Preset" }), { target: { value: "4" } });
-    expect(screen.getByText("4 · Loop (playlist)")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Turn on" }));
-    expect(await screen.findByText("2 of 2 report the preset on.")).toBeTruthy();
-    expect(posts).toEqual([{ lightIds: ["desk", "porch"], presetId: 4 }]);
+    expect(screen.getByRole("link", { name: "Looks" }).getAttribute("href")).toBe("/looks");
   });
 
   it("explains that Sync needs two Lights", () => {

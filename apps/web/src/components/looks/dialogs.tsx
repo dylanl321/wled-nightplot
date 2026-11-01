@@ -3,7 +3,8 @@
 import type { Look, LookChange, LookStyle } from "@nightplot/shared";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { postJson } from "@/lib/api";
-import type { LightLite, NowRow, SendRow } from "./use-looks";
+import { segmentWarningText, segmentWarnings } from "./looks-helpers";
+import type { LightLite, NowRow, SendRow, UdpChoice } from "./use-looks";
 
 export function Dialog({ label, onClose, children }: { label: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -114,18 +115,22 @@ export function AddToLooksDialog({ propLabel, looks, isIn, onClose, onAdd }: {
 
 const KIND_COPY: Record<LookChange["kind"], string> = { new: "new", changed: "changed", deleted: "deleted" };
 
-export function SendDialog({ lights, now, changesFor, allChanges, scheduleBlocked, onSend, onUndo, onClose }: {
+export function SendDialog({ lights, now, looks, changesFor, allChanges, scheduleBlocked, onSend, onUndo, onClose }: {
   lights: LightLite[];
+  looks: Look[];
   now: NowRow[] | null;
   changesFor: (lightId: string) => LookChange[];
   allChanges: LookChange[];
   scheduleBlocked: string | null;
-  onSend: (lightIds: string[]) => Promise<{ rows: SendRow[]; message: string }>;
+  onSend: (lightIds: string[], udp: UdpChoice | null) => Promise<{ rows: SendRow[]; message: string }>;
   onUndo: (rows: SendRow[]) => Promise<string>;
   onClose: () => void;
 }) {
   const [picked, setPicked] = useState<Set<string>>(() => new Set(lights.filter((light) => changesFor(light.id).length > 0).map((light) => light.id)));
   const [busy, setBusy] = useState(false);
+  const [udpOn, setUdpOn] = useState(false);
+  const [udpGroup, setUdpGroup] = useState(2);
+  const [udpLeader, setUdpLeader] = useState(lights[0]?.id ?? "");
   const [result, setResult] = useState<{ rows: SendRow[]; message: string } | null>(null);
   const [undo, setUndo] = useState<string | null>(null);
   if (result) {
@@ -177,13 +182,40 @@ export function SendDialog({ lights, now, changesFor, allChanges, scheduleBlocke
         })}
       </div>
       <p className="note">Writes the same preset numbers on every Light, reads them back, and backs up what was there first. Nothing changes what&apos;s on right now.</p>
+      {picked.size > 1 ? (
+        <details className="fold">
+          <summary>Keep effects in step <span className="meta">{udpOn ? `WLED sync group ${udpGroup}` : "off"}</span></summary>
+          <div className="foldbody">
+            <label className="check"><input type="checkbox" checked={udpOn} onChange={(event) => setUdpOn(event.target.checked)} />Also set a WLED UDP sync group, so moving effects line up across Lights</label>
+            {udpOn ? (
+              <div className="grid2">
+                <label className="f">Group
+                  <select className="in" aria-label="UDP sync group" value={udpGroup} onChange={(event) => setUdpGroup(Number(event.target.value))}>
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map((group) => <option key={group} value={group}>{group}</option>)}
+                  </select>
+                </label>
+                <label className="f">Leader
+                  <select className="in" aria-label="UDP sync leader" value={picked.has(udpLeader) ? udpLeader : [...picked][0]} onChange={(event) => setUdpLeader(event.target.value)}>
+                    {lights.filter((light) => picked.has(light.id)).map((light) => <option key={light.id} value={light.id}>{light.name}</option>)}
+                  </select>
+                </label>
+              </div>
+            ) : null}
+            <p className="note">The leader sends its effect timing; the others follow it. Sync stays on each Light after Send, and the Sync page can change it later.</p>
+          </div>
+        </details>
+      ) : null}
+      {segmentWarnings(now, looks).filter((row) => picked.has(row.lightId)).map((row) => (
+        <p className="warnnote" key={`${row.lightId}-${row.lookId}`}>{segmentWarningText(row)}</p>
+      ))}
       {scheduleBlocked ? <p className="warnnote">{scheduleBlocked} Fix it on the Schedule tab first.</p> : null}
       <div className="btnrow">
         <button type="button" className="btn" onClick={onClose}>Cancel</button>
         <span className="spacer" />
         <button type="button" className="btn primary" disabled={busy || picked.size === 0 || scheduleBlocked !== null} onClick={async () => {
           setBusy(true);
-          setResult(await onSend([...picked]));
+          const leader = picked.has(udpLeader) ? udpLeader : [...picked][0]!;
+          setResult(await onSend([...picked], udpOn && picked.size > 1 ? { group: udpGroup, leaderId: leader } : null));
           setBusy(false);
         }}>{busy ? "Sending…" : "Send"}</button>
       </div>

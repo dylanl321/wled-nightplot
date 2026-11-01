@@ -76,3 +76,6 @@ jobs:
 
       - name: Yard at 1440×900 and 390×844
         run: pnpm --filter @nightplot/web test:yard3d
+
+      - name: Looks tasks at 1440×900 and 390×844
+        run: pnpm --filter @nightplot/web test:looks

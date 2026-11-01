@@ -80,8 +80,11 @@ describe("Looks on the lights", () => {
 
   it("says what each Light has not been sent, and falls back to WLED's usual effects when no Light answers", async () => {
     const { app } = await setup();
-    const now = await (await app.request("/api/looks/now")).json() as { rows: { online: boolean; changes: unknown[] }[] };
+    const now = await (await app.request("/api/looks/now")).json() as { rows: { online: boolean; changes: unknown[]; maxSegments: number | null; segments: Record<string, number> }[] };
     expect(now.rows[0]!.online).toBe(true);
+    // Counts what Send would write, and the most this Light holds.
+    expect(now.rows[0]!.maxSegments).toEqual(expect.any(Number));
+    expect(Object.values(now.rows[0]!.segments).every((n) => Number.isInteger(n) && n >= 1)).toBe(true);
     expect(now.rows[0]!.changes.length).toBeGreaterThan(0);
     const effects = await (await app.request("/api/looks/effects")).json() as { source: string; effects: unknown[] };
     expect(effects.source).toBe("built-in");

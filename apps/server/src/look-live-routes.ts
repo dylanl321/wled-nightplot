@@ -13,6 +13,7 @@ import {
   isLook,
   lookChangesFor,
   lookTargetsForLook,
+  mergeFollowingSections,
   parseWledEffects,
   parseWledPalettes,
   type Light,
@@ -225,6 +226,9 @@ export function registerLookLiveRoutes(app: Hono, deps: LookLiveDeps) {
     return c.json({ rows, message: ok === rows.length ? `${name} is on now.` : `${name} is on ${ok} of ${rows.length} Lights.` });
   });
 
+  /** Last `leds.maxseg` each Light reported, for rows read while it previews. */
+  const maxSegmentsSeen = new Map<string, number>();
+
   app.get("/api/looks/now", async (c) => {
     const document = readLooks(deps);
     const lights = deps.store.load();
@@ -233,6 +237,10 @@ export function registerLookLiveRoutes(app: Hono, deps: LookLiveDeps) {
       const { light, live } = previewing ? { light: stored, live: null } : await deps.refreshOne(stored);
       const preset = live?.preset;
       const playlist = live?.playlist;
+      if (typeof live?.maxSegments === "number") maxSegmentsSeen.set(light.id, live.maxSegments);
+      // Segments each Look needs here, counted the way Send counts them.
+      const geometry = { ledCount: light.ledCount, elements: deps.store.elementsFor(light.id), props: deps.store.propsFor(light.id) };
+      const segments = Object.fromEntries(document.looks.map((look) => [look.id, mergeFollowingSections(look, lookTargetsForLook(look, geometry)).length]));
       return {
         lightId: light.id,
         lightName: light.name,
@@ -245,6 +253,8 @@ export function registerLookLiveRoutes(app: Hono, deps: LookLiveDeps) {
         playlist: playlist ?? null,
         changes: lookChangesFor(document, light.lastLookPush),
         lastSentAt: light.lastLookPush?.at ?? null,
+        maxSegments: maxSegmentsSeen.get(light.id) ?? null,
+        segments,
       };
     });
     return c.json({ rows, at: new Date().toISOString() });

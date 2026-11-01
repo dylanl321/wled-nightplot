@@ -29,7 +29,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AddToLooksDialog, NewLookDialog, SendDialog } from "./dialogs";
-import { duplicateLook, newId, newLook, newPlaylist, playlistMinutes, takeDeleted, type DeletedLook } from "./looks-helpers";
+import { duplicateLook, newId, newLook, newPlaylist, playlistMinutes, segmentWarningText, segmentWarnings, takeDeleted, type DeletedLook } from "./looks-helpers";
+import { PresetFold } from "./preset-fold";
 import { effectOf } from "./style-editor";
 import { useLooks, type LightLite, type LooksPayload, type LooksState, type NowRow } from "./use-looks";
 import { StyleStrip, YardCanvas } from "./yard-canvas";
@@ -78,6 +79,12 @@ export function LooksPage({ initial, lights }: { initial: LooksPayload; lights: 
     router.replace(next === "looks" ? "/looks" : `/looks?tab=${next}`, { scroll: false });
   }, [router]);
 
+  // Save first, then count again, so the warnings are about what Send will write.
+  const openSend = useCallback(() => {
+    setSendOpen(true);
+    void flush().then(() => state.refreshNow());
+  }, [flush, state]);
+
   const openLook = useCallback(async (id: string, propId?: string) => {
     await flush();
     router.push(`/looks/${id}${propId ? `?prop=${encodeURIComponent(propId)}` : ""}`);
@@ -97,11 +104,11 @@ export function LooksPage({ initial, lights }: { initial: LooksPayload; lights: 
   const pill = (() => {
     const behind = lights.filter((light) => changesFor(light.id).length > 0);
     const n = allChanges.length;
-    if (!n) return <button type="button" className="sendpill ok" onClick={() => setSendOpen(true)}>Lights up to date</button>;
+    if (!n) return <button type="button" className="sendpill ok" onClick={openSend}>Lights up to date</button>;
     if (behind.length < lights.length) {
-      return <button type="button" className="sendpill" onClick={() => setSendOpen(true)}><span className="long">{behind.map((light) => light.name).join(", ")}: </span>{n} not sent · Send</button>;
+      return <button type="button" className="sendpill" onClick={openSend}><span className="long">{behind.map((light) => light.name).join(", ")}: </span>{n} not sent · Send</button>;
     }
-    return <button type="button" className="sendpill" onClick={() => setSendOpen(true)}>{n} change{n === 1 ? "" : "s"}<span className="long"> not on the lights</span> · Send</button>;
+    return <button type="button" className="sendpill" onClick={openSend}>{n} change{n === 1 ? "" : "s"}<span className="long"> not on the lights</span> · Send</button>;
   })();
 
   const lonely = props.filter((prop) => doc.looks.length > 0 && doc.looks.every((look) => !lookIncludesProp(look, prop.id)));
@@ -143,7 +150,7 @@ export function LooksPage({ initial, lights }: { initial: LooksPayload; lights: 
         </div>
       </div>
       {sendOpen ? (
-        <SendDialog lights={lights} now={now} changesFor={changesFor} allChanges={allChanges}
+        <SendDialog lights={lights} now={now} looks={doc.looks} changesFor={changesFor} allChanges={allChanges}
           scheduleBlocked={doc.schedule?.enabled && plan?.error ? plan.error : null}
           onSend={state.send} onUndo={state.undoSend} onClose={() => setSendOpen(false)} />
       ) : null}
@@ -169,7 +176,7 @@ export function LooksPage({ initial, lights }: { initial: LooksPayload; lights: 
           {toast.action ? <button type="button" onClick={() => {
             const action = toast.action!;
             setToast(null);
-            if (action.kind === "send") { setSendOpen(true); return; }
+            if (action.kind === "send") { openSend(); return; }
             const stash = action.stash;
             setDoc((current) => ({
               ...current,
@@ -254,6 +261,7 @@ function LooksTab({ state, lights, onOpen, onNew, onTurnOn, onDuplicate }: {
   onDuplicate: (look: Look) => void;
 }) {
   const { doc, props, drawn, now, changesFor } = state;
+  const tooMany = segmentWarnings(now, doc.looks);
   return (
     <>
       <div className="cards">
@@ -271,7 +279,7 @@ function LooksTab({ state, lights, onOpen, onNew, onTurnOn, onDuplicate }: {
                 <YardCanvas drawn={drawn} props={props} look={look} small ariaLabel={`${look.name} drawn on the yard`} className="thumb" />
               </button>
               <div className="body">
-                <div className="row"><h3>{look.name}</h3>{live ? <span className="tag live">On now</span> : null}{isNew ? <span className="tag new">Not sent</span> : pending ? <span className="tag new">Changed</span> : null}</div>
+                <div className="row"><h3>{look.name}</h3>{live ? <span className="tag live">On now</span> : null}{tooMany.some((row) => row.lookId === look.id) ? <span className="tag warn" title={tooMany.filter((row) => row.lookId === look.id).map(segmentWarningText).join(" ")}>Too many segments</span> : null}{isNew ? <span className="tag new">Not sent</span> : pending ? <span className="tag new">Changed</span> : null}</div>
                 <div className="note">{on} of {props.length} props{used.length ? ` · in ${used.join(", ")}` : ""}</div>
                 <div className="row">
                   <button type="button" className="btn small" onClick={() => onOpen(look.id)}>Edit</button>
@@ -286,6 +294,7 @@ function LooksTab({ state, lights, onOpen, onNew, onTurnOn, onDuplicate }: {
         <button type="button" className="card add" onClick={onNew}><b style={{ fontSize: 28 }}>+</b>New Look</button>
       </div>
       <p className="note">A Look is one WLED preset with the same number on every Light. Changes save in Nightplot as you make them, and reach the lights when you Send.</p>
+      <PresetFold lights={lights} />
     </>
   );
 }

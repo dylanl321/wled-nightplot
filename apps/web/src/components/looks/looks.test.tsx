@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_LOOKS, DEFAULT_PLAYLIST, LOOK_CAPTION, type Look } from "@nightplot/shared";
 import { LooksPage } from "./looks-page";
 import { LookView } from "./look-view";
+import { PresetFold } from "./preset-fold";
+import { segmentWarnings } from "./looks-helpers";
 import type { LooksPayload } from "./use-looks";
 
 const push = vi.fn();
@@ -76,5 +78,45 @@ describe("Look editor", () => {
     await waitFor(() => expect(puts.length).toBeGreaterThan(0), { timeout: 2000 });
     const saved = puts.at(-1)!.looks.find((row) => row.id === look.id)!;
     expect(saved.propIds ?? []).not.toContain("prop-window");
+  });
+});
+
+describe("Looks follow-ups", () => {
+  it("warns when a Look needs more segments than a Light holds", () => {
+    const now = [{ lightId: "porch", lightName: "Porch", online: true, previewing: false, on: true, lookId: null, playlistId: null, preset: null, playlist: null, changes: [], lastSentAt: null, maxSegments: 4, segments: { [DEFAULT_LOOKS[0]!.id]: 6, [DEFAULT_LOOKS[1]!.id]: 2 } }];
+    const warnings = segmentWarnings(now, DEFAULT_LOOKS);
+    expect(warnings).toEqual([expect.objectContaining({ lookId: DEFAULT_LOOKS[0]!.id, need: 6, max: 4, lightName: "Porch" })]);
+    expect(segmentWarnings([{ ...now[0]!, maxSegments: null }], DEFAULT_LOOKS)).toEqual([]);
+  });
+
+  it("turns on a WLED preset read from one Light on the ticked Lights", async () => {
+    const posts: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/sync/presets/porch") return new Response(JSON.stringify({ presets: [{ id: 1, name: "Amber", kind: "preset" }, { id: 4, name: "Loop", kind: "playlist" }] }));
+      posts.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify({ kind: "preset", sourceLightId: null, rows: [], message: "2 of 2 report the preset on.", caption: "" }));
+    }));
+    const two = [...lights, { id: "eave", name: "Eave", firmware: "0.15.0", lastLookPush: null }];
+    render(<PresetFold lights={two} />);
+    fireEvent.click(screen.getByRole("button", { name: "Read presets" }));
+    fireEvent.change(await screen.findByRole("combobox", { name: "Preset" }), { target: { value: "4" } });
+    fireEvent.click(screen.getByRole("button", { name: "Turn on" }));
+    expect(await screen.findByText(/2 of 2 report the preset on/)).toBeTruthy();
+    expect(posts).toEqual([{ lightIds: ["porch", "eave"], presetId: 4 }]);
+  });
+
+  it("gives a wireframe face its own style", async () => {
+    const puts = stubFetch() as { looks: Look[] }[];
+    const box = { ...window, id: "prop-box", label: "Well house", kind: "wireframe" as const,
+      wireframe: { template: "polygon-prism-box-x", sides: 4, pitchMm: 100, path: null, locks: [], hidden: [], sharedPostRule: "half" } };
+    const doc = payload([{ ...DEFAULT_LOOKS[0]!, propIds: ["prop-box"] }]);
+    doc.yard.props = [box] as unknown as LooksPayload["yard"]["props"];
+    render(<LookView initial={doc} lights={lights} lookId={DEFAULT_LOOKS[0]!.id} startProp="prop-box" />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Wireframe part" }), { target: { value: "face.1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Give it its own style" }));
+    expect(screen.getByRole("heading", { name: "Well house › Face 2" })).toBeTruthy();
+    await waitFor(() => expect(puts.length).toBeGreaterThan(0), { timeout: 2000 });
+    const saved = puts.at(-1)!.looks[0]!.overrides.find((row) => row.wireframeGroup === "face.1");
+    expect(saved).toMatchObject({ propId: "prop-box", sharedPostRule: "half" });
   });
 });
