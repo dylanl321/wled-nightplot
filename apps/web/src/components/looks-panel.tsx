@@ -450,18 +450,19 @@ function PropRows({
     onPropIds(on ? [...current.filter((row) => row !== id), id] : current.filter((row) => row !== id));
   }
   return (
-    <fieldset className="flex flex-col gap-1">
+    // A fieldset is min-content wide by default; min-w-0 lets long names truncate on a phone.
+    <fieldset className="flex min-w-0 flex-col gap-1">
       <legend className="text-[13px] font-medium">Props in this Look</legend>
       <p className="text-[12px] text-quiet">A prop left out is off while this Look runs. A prop you add later starts left out.</p>
       <ul className="flex flex-col">
         {props.map((prop) => (
           <li key={prop.id}>
-            <label className="flex min-h-11 items-center gap-3 text-[14px]">
-              <input type="checkbox" className="size-5" aria-label={`${prop.label} in this Look`}
+            <label className="flex min-h-11 min-w-0 items-center gap-3 text-[14px]">
+              <input type="checkbox" className="size-5 shrink-0" aria-label={`${prop.label} in this Look`}
                 checked={lookIncludesProp(look, prop.id)}
                 onChange={(event) => toggle(prop.id, event.target.checked)} />
               <span className="min-w-0 truncate">{prop.label}</span>
-              <span className="text-[12px] text-quiet">{prop.lightName}</span>
+              <span className="min-w-0 shrink truncate text-[12px] text-quiet">{prop.lightName}</span>
             </label>
           </li>
         ))}
