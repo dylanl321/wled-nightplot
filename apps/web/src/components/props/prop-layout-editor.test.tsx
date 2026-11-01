@@ -57,7 +57,7 @@ describe("PropLayoutEditor on the Konva stage", () => {
     const at = await stagePoint({ x: 1, y: 0.5 });
     tap(at.node, at.x, at.y, { altKey: true });
     expect(screen.getByText("15 lights")).toBeTruthy();
-    expect(screen.getByText(/String 1: Wire in, 2 runs/)).toBeTruthy();
+    expect(screen.getByText(/String A: Wire in, 2 runs/)).toBeTruthy();
   });
 
   it("Undo and Redo, by button and by Ctrl+Z", async () => {
@@ -86,13 +86,13 @@ describe("PropLayoutEditor on the Konva stage", () => {
     expect(screen.getByText(/2 runs/)).toBeTruthy();
     expect(mark.getAttribute("aria-pressed")).toBe("false");
     expect(screen.queryByText(/The next run is dark/)).toBeNull();
-    expect(screen.getByText(/Continue from where the wire comes in/)).toBeTruthy();
+    expect(screen.getByText(/Trace adds runs/)).toBeTruthy();
     const next = await stagePoint({ x: 2, y: 1 });
     tap(next.node, next.x, next.y, { altKey: true });
     expect(screen.getByText("20 lights")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Run 2 · dark/ })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Run 3 · dark/ })).toBeNull();
-    expect(screen.getByRole("button", { name: "Run 3" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /A2 · dark/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /A3 · dark/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "A3" })).toBeTruthy();
   });
 
   it("Add another string starts a second string at the tap", async () => {
@@ -100,10 +100,10 @@ describe("PropLayoutEditor on the Konva stage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add another string" }));
     const at = await stagePoint({ x: 0, y: 1 });
     tap(at.node, at.x, at.y, { altKey: true });
-    expect(screen.getByText(/String 2: Wire in, 0 runs/)).toBeTruthy();
+    expect(screen.getByText(/String B: Wire in, 0 runs/)).toBeTruthy();
     const next = await stagePoint({ x: 1, y: 1 });
     tap(next.node, next.x, next.y, { altKey: true });
-    expect(screen.getByText(/String 2: Wire in, 1 run/)).toBeTruthy();
+    expect(screen.getByText(/String B: Wire in, 1 run/)).toBeTruthy();
     expect(screen.getByText("20 lights")).toBeTruthy();
   });
 
@@ -112,7 +112,7 @@ describe("PropLayoutEditor on the Konva stage", () => {
     const at = await stagePoint({ x: 2, y: 2 });
     tap(at.node, at.x, at.y);
     expect(screen.getByText("10 lights")).toBeTruthy();
-    expect(screen.getByText(/String 1: Wire in, 1 run/)).toBeTruthy();
+    expect(screen.getByText(/String A: Wire in, 1 run/)).toBeTruthy();
   });
 
   it("Done hands back the drawing with strings", async () => {
@@ -127,29 +127,29 @@ describe("run list", () => {
   it("shows every run's length and count without a tap", async () => {
     render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
     await screen.findByTestId("layout-canvas");
-    expect(screen.getByLabelText("Run 1 length (m)")).toHaveProperty("value", "1.00");
-    expect(screen.getByLabelText("Run 1 lights")).toHaveProperty("value", "10");
+    expect(screen.getByLabelText("A1 length (m)")).toHaveProperty("value", "1.00");
+    expect(screen.getByLabelText("A1 lights")).toHaveProperty("value", "10");
   });
 
   it("typing 3 m gives round(3 ÷ spacing) lights", async () => {
     render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
-    const field = await screen.findByLabelText("Run 1 length (m)");
+    const field = await screen.findByLabelText("A1 length (m)");
     fireEvent.change(field, { target: { value: "3" } });
     fireEvent.submit(field.closest("form")!);
     expect(screen.getByText("30 lights")).toBeTruthy();
-    expect(screen.getByLabelText("Run 1 lights")).toHaveProperty("value", "30");
+    expect(screen.getByLabelText("A1 lights")).toHaveProperty("value", "30");
   });
 
   it("typing a count stores it on the run, and a later length edit clears it", async () => {
     const done = vi.fn();
     render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="edit" onDone={done} onBack={vi.fn()} />);
-    const count = await screen.findByLabelText("Run 1 lights");
+    const count = await screen.findByLabelText("A1 lights");
     fireEvent.change(count, { target: { value: "12" } });
     fireEvent.submit(count.closest("form")!);
     expect(screen.getByText("12 lights")).toBeTruthy();
-    expect(screen.getByLabelText("Run 1 length (m)")).toHaveProperty("value", "1.00");
+    expect(screen.getByLabelText("A1 length (m)")).toHaveProperty("value", "1.00");
     expect(screen.getByText(/typed count/)).toBeTruthy();
-    const length = screen.getByLabelText("Run 1 length (m)");
+    const length = screen.getByLabelText("A1 length (m)");
     fireEvent.change(length, { target: { value: "2" } });
     fireEvent.submit(length.closest("form")!);
     expect(screen.getByText("20 lights")).toBeTruthy();
@@ -159,7 +159,7 @@ describe("run list", () => {
   it("feet show feet", async () => {
     const feet = { ...oneRun(), units: "ft" as const };
     render(<PropLayoutEditor name="Ridge" initial={feet} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
-    expect(await screen.findByLabelText("Run 1 length (ft)")).toHaveProperty("value", "3' 3\"");
+    expect(await screen.findByLabelText("A1 length (ft)")).toHaveProperty("value", "3' 3\"");
   });
 
   it("deletes a run by its button, by Delete, and Undo brings it back", async () => {
@@ -167,15 +167,16 @@ describe("run list", () => {
     const at = await stagePoint({ x: 2, y: 0 });
     tap(at.node, at.x, at.y, { altKey: true });
     expect(screen.getByText("20 lights")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Delete Run 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "A2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete A2" }));
     expect(screen.getByText("10 lights")).toBeTruthy();
-    expect(screen.queryByLabelText("Run 2 lights")).toBeNull();
+    expect(screen.queryByLabelText("A2 lights")).toBeNull();
     fireEvent.click(screen.getAllByRole("button", { name: "Undo" })[0]!);
     expect(screen.getByText("20 lights")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Run 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "A1" }));
     fireEvent.keyDown(window, { key: "Delete" });
     expect(screen.getByText("10 lights")).toBeTruthy();
-    expect(screen.getByLabelText("Run 1 length (m)")).toHaveProperty("value", "1.00");
+    expect(screen.getByLabelText("A1 length (m)")).toHaveProperty("value", "1.00");
   });
 
   it("shows the grid scale, a filled Snap control, and editable spacing", async () => {
@@ -184,7 +185,7 @@ describe("run list", () => {
     expect(screen.getByRole("button", { name: "Snap" }).className).toContain("bg-primary");
     expect(screen.getByRole("button", { name: "Metres" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByLabelText("Light spacing (cm)")).toHaveProperty("value", "10");
-    expect(screen.getByText(/overrides that until the length changes/)).toBeTruthy();
+    expect(screen.getByText(/worked out from the length and spacing/)).toBeTruthy();
   });
 
   it("switching to feet keeps the corners and shows feet and inches", async () => {
@@ -192,7 +193,7 @@ describe("run list", () => {
     render(<PropLayoutEditor name="Wall" initial={oneRun()} mode="edit" onDone={done} onBack={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Feet" }));
     expect(screen.getByTestId("grid-scale")).toHaveProperty("textContent", "1 square = 1 ft");
-    expect(screen.getByLabelText("Run 1 length (ft)")).toHaveProperty("value", "3' 3\"");
+    expect(screen.getByLabelText("A1 length (ft)")).toHaveProperty("value", "3' 3\"");
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     const layout = done.mock.calls[0]![0];
     expect(layout.units).toBe("ft");
@@ -214,7 +215,7 @@ describe("run list", () => {
 
   it("rejects a length that is not a measurement and leaves the drawing", async () => {
     render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
-    const field = await screen.findByLabelText("Run 1 length (m)");
+    const field = await screen.findByLabelText("A1 length (m)");
     fireEvent.change(field, { target: { value: "abc" } });
     fireEvent.submit(field.closest("form")!);
     expect(screen.getByText("Enter a length in metres, greater than zero.")).toBeTruthy();
@@ -224,7 +225,7 @@ describe("run list", () => {
 
   it("rejects zero lights and an empty length", async () => {
     render(<PropLayoutEditor name="Ridge" initial={oneRun()} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
-    const lights = await screen.findByLabelText("Run 1 lights");
+    const lights = await screen.findByLabelText("A1 lights");
     fireEvent.change(lights, { target: { value: "0" } });
     fireEvent.submit(lights.closest("form")!);
     expect(screen.getByText("Enter a whole number of lights, or leave it empty.")).toBeTruthy();
@@ -245,11 +246,11 @@ describe("run list", () => {
     render(<PropLayoutEditor name="Wall" initial={layout} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
     expect(await screen.findByText(/moves that run's end along the run/)).toBeTruthy();
     expect(screen.getByText(/1 run is shorter than the light spacing/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /^Run 2/ }).textContent).toMatch(/short/);
+    expect(screen.getByRole("button", { name: /^A2/ }).textContent).toMatch(/short/);
     fireEvent.click(screen.getByRole("button", { name: "Merge short runs" }));
     expect(screen.queryByText(/shorter than the light spacing/)).toBeNull();
     expect(screen.getByText("10 lights")).toBeTruthy();
-    expect(screen.queryByLabelText("Run 2 lights")).toBeNull();
+    expect(screen.queryByLabelText("A2 lights")).toBeNull();
   });
 
   it("a traced point holds to the inch grid", async () => {
@@ -257,6 +258,43 @@ describe("run list", () => {
     render(<PropLayoutEditor name="Wall" initial={feet} mode="trace" onDone={vi.fn()} onBack={vi.fn()} />);
     const at = await stagePoint({ x: 1, y: 0.5 });
     tap(at.node, at.x, at.y);
-    expect(await screen.findByLabelText("Run 2 length (ft)")).toHaveProperty("value", "1' 8\"");
+    expect(await screen.findByLabelText("A2 length (ft)")).toHaveProperty("value", "1' 8\"");
+  });
+
+  it("uses the prop name as the tab title and shows the keys", async () => {
+    render(<PropLayoutEditor name="Wall" initial={oneRun()} mode="edit" onDone={vi.fn()} onBack={vi.fn()} />);
+    expect(document.title).toBe("Wall");
+    expect(screen.getByText(/Arrow keys nudge the selected corner/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Edit" }).className).toContain("bg-primary");
+    expect(screen.getAllByRole("button", { name: "Back" })).toHaveLength(1);
+  });
+
+  it("names a run and warns before Name sections when runs overlap", async () => {
+    const run = [
+      { id: "e1", from: "c1", to: "c2", kind: "lit" as const },
+      { id: "e2", from: "c2", to: "c1", kind: "lit" as const },
+    ];
+    const layout = {
+      ...oneRun(),
+      corners: [{ id: "c1", x: 0, y: 0 }, { id: "c2", x: 1, y: 0 }],
+      run,
+      strings: [{ id: "s1", startId: "c1", run }],
+    };
+    const done = vi.fn();
+    render(<PropLayoutEditor name="Wall" initial={layout} mode="edit" doneLabel="Name sections" onDone={done} onBack={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "A1" }));
+    const position = screen.getByLabelText("A1 position name");
+    fireEvent.change(position, { target: { value: "top" } });
+    fireEvent.submit(position.closest("form")!);
+    expect(screen.getByRole("button", { name: /A1 · top/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Name sections" }));
+    expect(screen.getByRole("dialog", { name: "Check the drawing" })).toBeTruthy();
+    expect(screen.getByText(/lies on top of another/)).toBeTruthy();
+    expect(done).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Stay" }));
+    expect(done).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Name sections" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(done).toHaveBeenCalledTimes(1);
   });
 });

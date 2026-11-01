@@ -9,12 +9,14 @@ import {
   edgeLengthM,
   emptyTrace,
   isPropLayout,
+  layoutReview,
   layoutStrings,
   mergeShortRuns,
   moveCorner,
   runsOnSameSpan,
   setEdgeLength,
   setEdgeLights,
+  setEdgeName,
   shortRuns,
   splitRun,
   weldCorners,
@@ -163,6 +165,26 @@ describe("split, weld, and short runs", () => {
     const edited = setEdgeLength(layout, "e1", 2).layout;
     expect(edited.corners.find((corner) => corner.id === "c2")).toMatchObject({ x: 0, y: 2 });
     expect(edited.corners.find((corner) => corner.id === "c3")).toMatchObject({ x: 1, y: 2 });
+  });
+});
+
+describe("names and the check before sections", () => {
+  it("stores a position name and still loads a drawing that has none", () => {
+    const named = setEdgeName(three(), "e2", "top");
+    expect(named.run[1]?.name).toBe("top");
+    expect(isPropLayout(named)).toBe(true);
+    expect(isPropLayout(three())).toBe(true);
+    expect(setEdgeName(named, "e2", "  ").run[1]?.name).toBeUndefined();
+  });
+
+  it("warns on an overlap, a short run, and corners that do not meet", () => {
+    let layout = continueToPoint(emptyTrace("m", 0.1), "s1", 1, 0);
+    layout = continueToCorner(layout, "s1", "c1");
+    expect(layoutReview(layout)).toEqual(["1 run lies on top of another."]);
+    const close = moveCorner(three(), "c3", 1.03, 0);
+    expect(layoutReview(close).some((line) => line.includes("shorter"))).toBe(true);
+    expect(layoutReview(close).some((line) => line.includes("does not meet"))).toBe(true);
+    expect(layoutReview(three())).toEqual([]);
   });
 });
 

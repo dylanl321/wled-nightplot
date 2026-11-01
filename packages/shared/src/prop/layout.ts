@@ -35,6 +35,8 @@ export type LayoutEdge = {
    * edit on the same run clears it.
    */
   lockedLights?: number;
+  /** Optional position, such as "top" or "left side". Absent on older drawings. */
+  name?: string;
   hiddenCount?: number;
   /** Present for a later arc. Phase 1 draws the straight chord. */
   arc?: { riseM: number };
@@ -133,6 +135,7 @@ function isEdge(value: unknown, ids: Set<string>): value is LayoutEdge {
   if (row.lockedLengthM !== undefined && (!(row.lockedLengthM > 0) || !Number.isFinite(row.lockedLengthM))) return false;
   if (row.hiddenCount !== undefined && (!Number.isInteger(row.hiddenCount) || (row.hiddenCount ?? 0) < 0)) return false;
   if (row.lockedLights !== undefined && (!Number.isInteger(row.lockedLights) || (row.lockedLights ?? 0) < 0)) return false;
+  if (row.name !== undefined && (typeof row.name !== "string" || row.name.trim().length === 0 || row.name.length > 40)) return false;
   return true;
 }
 
@@ -315,6 +318,21 @@ export function setEdgeLights(layout: PropLayout, edgeId: string, lights: number
   const edge = layoutStrings(layout).flatMap((string) => string.run).find((row) => row.id === edgeId);
   if (!edge || edge.kind !== "lit") return layout;
   return mapEdges(layout, (row) => (row.id === edgeId ? { ...row, lockedLights: lights } : row));
+}
+
+/** A short position name on one run. Blank clears it. The drawing does not move. */
+export function setEdgeName(layout: PropLayout, edgeId: string, name: string): PropLayout {
+  const trimmed = name.trim().slice(0, 40);
+  return mapEdges(layout, (edge) => {
+    if (edge.id !== edgeId) return edge;
+    if (!trimmed) {
+      if (edge.name == null) return edge;
+      const { name: _dropped, ...rest } = edge;
+      return rest;
+    }
+    if (edge.name === trimmed) return edge;
+    return { ...edge, name: trimmed };
+  });
 }
 
 /** Clear a typed light count, so the run counts from its length again. */
@@ -501,8 +519,8 @@ export function splitRun(layout: PropLayout, edgeId: string, x: number, y: numbe
   const strings = (base.strings ?? []).map((string) => {
     if (string.id !== owner.id) return string;
     const index = string.run.findIndex((row) => row.id === edgeId);
-    const { lockedLengthM: _length, lockedLights: _lights, ...open } = edge;
-    const first: LayoutEdge = { ...open, to: cornerId };
+    const { lockedLengthM: _length, lockedLights: _lights, name, ...open } = edge;
+    const first: LayoutEdge = name ? { ...open, to: cornerId, name } : { ...open, to: cornerId };
     const second: LayoutEdge = { ...open, id: pieceId, from: cornerId };
     return { ...string, run: [...string.run.slice(0, index), first, second, ...string.run.slice(index + 1)] };
   });
@@ -526,6 +544,46 @@ export function runsOnSameSpan(layout: PropLayout): Map<string, string[]> {
     for (const id of ids) byEdge.set(id, ids);
   }
   return byEdge;
+}
+
+/**
+ * What to say before naming sections. Overlapping runs, runs shorter than
+ * the spacing, and corners that sit close without meeting.
+ */
+export function layoutReview(layout: PropLayout): string[] {
+  const notes: string[] = [];
+  const seen = new Set<string>();
+  let overlaps = 0;
+  for (const ids of runsOnSameSpan(layout).values()) {
+    if (ids.length < 2) continue;
+    const key = [...ids].sort().join("\0");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    overlaps += 1;
+  }
+  if (overlaps === 1) notes.push("1 run lies on top of another.");
+  else if (overlaps > 1) notes.push(`${overlaps} runs lie on top of another.`);
+  const shorts = shortRuns(layout).length;
+  if (shorts === 1) notes.push("1 run is shorter than the light spacing.");
+  else if (shorts > 1) notes.push(`${shorts} runs are shorter than the light spacing.`);
+  const near = nearCorners(layout);
+  if (near === 1) notes.push("1 pair of corners sits close but does not meet.");
+  else if (near > 1) notes.push(`${near} pairs of corners sit close but do not meet.`);
+  return notes;
+}
+
+/** Pairs of corners with a small gap between them, not the same point. */
+export function nearCorners(layout: PropLayout): number {
+  const tolerance = Math.min(0.05, Math.max(layout.pitchM * 0.5, 0.02));
+  let count = 0;
+  const corners = layout.corners;
+  for (let i = 0; i < corners.length; i += 1) {
+    for (let j = i + 1; j < corners.length; j += 1) {
+      const dist = Math.hypot(corners[i]!.x - corners[j]!.x, corners[i]!.y - corners[j]!.y);
+      if (dist > 0.005 && dist <= tolerance) count += 1;
+    }
+  }
+  return count;
 }
 
 /** Lit runs shorter than one light spacing. They still round up to one light. */
