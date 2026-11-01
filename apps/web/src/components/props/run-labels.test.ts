@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { placeRunLabels, runBadge, stringColour, stringLetter } from "./run-labels";
+import { CAPTION_HALF_W, placeRunLabels, runBadge, stringColour, stringLetter } from "./run-labels";
 
 describe("string badges", () => {
   it("prefixes the run with the string letter", () => {
@@ -29,6 +29,27 @@ describe("placeRunLabels", () => {
     expect(gap).toBeGreaterThanOrEqual(28);
     const captions = Math.hypot(spots[0]!.caption.x - spots[1]!.caption.x, spots[0]!.caption.y - spots[1]!.caption.y);
     expect(captions).toBeGreaterThanOrEqual(28);
+  });
+
+  it("nudges a caption that would leave the stage back inside", () => {
+    const frame = { w: 390, h: 380 };
+    const spots = placeRunLabels(
+      [
+        { ax: 8, ay: 180, bx: 200, by: 180 },
+        { ax: 360, ay: 190, bx: 384, by: 190 },
+      ],
+      [],
+      28,
+      frame,
+    );
+    for (const spot of spots) {
+      expect(spot.caption.x).toBeGreaterThanOrEqual(8 + CAPTION_HALF_W);
+      expect(spot.caption.x).toBeLessThanOrEqual(frame.w - 8 - CAPTION_HALF_W);
+      expect(spot.caption.y).toBeGreaterThanOrEqual(8);
+      expect(spot.caption.y).toBeLessThanOrEqual(frame.h - 8);
+      expect(spot.badge.x).toBeGreaterThanOrEqual(8);
+      expect(spot.badge.x).toBeLessThanOrEqual(frame.w - 8);
+    }
   });
 
   it("stays off a Wire in label", () => {

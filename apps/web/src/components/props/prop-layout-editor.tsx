@@ -443,6 +443,8 @@ export function PropLayoutEditor({
               const spots = placeRunLabels(
                 drawn.map((run) => ({ ax: run.a.x, ay: run.a.y, bx: run.b.x, by: run.b.y })),
                 [...wireIns, { x: size.w - 28, y: 22 }, { x: size.w - 28, y: 72 }],
+                28,
+                { w: size.w, h: size.h },
               );
               return (
               <>
