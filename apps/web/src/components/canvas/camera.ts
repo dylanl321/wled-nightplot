@@ -24,7 +24,12 @@ export const BACKGROUND_NAME = "background";
 export const TAP_SLOP_PX = 6;
 /** One press of Zoom in or Zoom out. */
 export const ZOOM_STEP = 1.25;
-export const DEFAULT_LIMITS: ZoomLimits = { minPpm: 2, maxPpm: 800 };
+/**
+ * Close enough to work on one 10 cm light: at this scale that light is 400 px.
+ * Every Konva stage uses it as the maximum.
+ */
+export const CLOSE_PPM = 4000;
+export const DEFAULT_LIMITS: ZoomLimits = { minPpm: 2, maxPpm: CLOSE_PPM };
 export const FIT_MARGIN: Point = { x: 28, y: 28 };
 /** Screen px the zoom buttons take on the right edge (8 px gap + a 44 px button + 4). */
 export const CONTROLS_INSET_PX = 56;
@@ -108,6 +113,35 @@ export function fitCamera(
   const centerX = left + margin.x + roomW / 2;
   const centerY = top + margin.y + roomH / 2;
   return { ppm, ox: centerX - cx * ppm, oy: centerY + cy * ppm };
+}
+
+/**
+ * A mouse wheel zooms, as in xLights. A trackpad scroll pans. Pinch, and
+ * Ctrl or ⌘ with the wheel, zoom toward the pointer.
+ *
+ * A trackpad pinch arrives as a wheel with `ctrlKey`. A trackpad scroll is a
+ * stream of small pixel deltas, often with some `deltaX`. A mouse notch is a
+ * large `deltaY` (about 100) with no `deltaX`, or a line or page delta.
+ */
+export function wheelGesture(input: {
+  deltaX: number;
+  deltaY: number;
+  deltaMode: number;
+  ctrlKey: boolean;
+  metaKey: boolean;
+}): "zoom" | "pan" {
+  if (input.ctrlKey || input.metaKey) return "zoom";
+  if (input.deltaMode !== 0) return "zoom";
+  if (Math.abs(input.deltaX) < 1 && Math.abs(input.deltaY) >= 50) return "zoom";
+  return "pan";
+}
+
+/** `in` or `out` when this zoom would pass the limit the camera is already on. */
+export function zoomLimited(ppm: number, factor: number, limits: ZoomLimits): "in" | "out" | null {
+  const wanted = ppm * factor;
+  if (wanted > limits.maxPpm + 1e-9 && ppm >= limits.maxPpm - 1e-6) return "in";
+  if (wanted < limits.minPpm - 1e-9 && ppm <= limits.minPpm + 1e-6) return "out";
+  return null;
 }
 
 /**

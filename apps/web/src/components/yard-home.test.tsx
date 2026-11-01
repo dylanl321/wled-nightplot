@@ -1,7 +1,11 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { deleteRun, layoutFromMeasurements, layoutStrings } from "@nightplot/shared";
 import { YardHome } from "./yard-home";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+}));
 
 describe("Your yard", () => {
   it("shows one next step and New prop when nothing is designed", () => {

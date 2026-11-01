@@ -18,9 +18,9 @@ import {
   type PropMeasurements,
   type PropSection,
 } from "@nightplot/shared";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Circle, Group, Line, Text } from "react-konva";
-import { EditorStage, boundsOf as pointBounds, toScreen } from "@/components/canvas";
+import { CLOSE_PPM, EditorStage, boundsOf as pointBounds, toScreen } from "@/components/canvas";
 import { ColourField } from "@/components/ui/colour-field";
 
 const COLOURS = ["#ffb000", "#3d8bfd", "#ff5a5a", "#3dd68c", "#c084fc", "#38bdf8", "#fb7185", "#fbbf24"];
@@ -295,6 +295,7 @@ function SectionFigure({
   onEdge: (edgeId: string) => void;
 }) {
   const bounds = pointBounds(layout.corners);
+  const lastTap = useRef(0);
   if (!bounds) return null;
   const colourOf = new Map<string, string>();
   for (const section of sections) {
@@ -309,7 +310,7 @@ function SectionFigure({
       <EditorStage
         bounds={bounds}
         fitMinSpanM={layout.pitchM * 4}
-        limits={{ minPpm: 2, maxPpm: 48 / Math.max(layout.pitchM, 0.005) }}
+        limits={{ minPpm: 2, maxPpm: CLOSE_PPM }}
         label="Prop path"
         testId="section-figure"
         overlay={(camera) =>
@@ -325,7 +326,12 @@ function SectionFigure({
             const on = active?.edgeIds.includes(edge.id) ?? false;
             const colour = on ? (active?.color ?? "#ffb000") : (colourOf.get(edge.id) ?? "#4a463c");
             const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-            const tap = () => onEdge(edge.id);
+            const tap = () => {
+              const now = Date.now();
+              if (now - lastTap.current < 300) return;
+              lastTap.current = now;
+              onEdge(edge.id);
+            };
             return (
               <Group key={edge.id} name={`run ${labels.get(edge.id) ?? edge.id}`} onClick={tap} onTap={tap}>
                 <Line points={[a.x, a.y, b.x, b.y]} stroke={colour} strokeWidth={edge.id === selectedEdgeId ? 7 : 4} lineCap="round" hitStrokeWidth={28} />

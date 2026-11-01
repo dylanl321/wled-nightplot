@@ -42,7 +42,7 @@ import {
 import type Konva from "konva";
 import { useEffect, useRef, useState } from "react";
 import { Circle, Group, Line, Text } from "react-konva";
-import { EditorStage, boundsOf, toScreen, toWorld, type Camera, type EditorStageHandle, type Point } from "@/components/canvas";
+import { CLOSE_PPM, EditorStage, boundsOf, toScreen, toWorld, type Camera, type EditorStageHandle, type Point } from "@/components/canvas";
 import { Button } from "@/components/ui/button";
 import { RunList } from "./run-list";
 import { labelsOffScreen, placeRunLabels, runBadge, stringColour } from "./run-labels";
@@ -536,7 +536,7 @@ export function PropLayoutEditor({
           <EditorStage
             ref={stage}
             bounds={bounds}
-            limits={{ minPpm: 2, maxPpm: 48 / Math.max(layout.pitchM, 0.005) }}
+            limits={{ minPpm: 2, maxPpm: CLOSE_PPM }}
             fitMinSpanM={layout.corners.length < 2 ? 2 : layout.pitchM * 2}
             fitPad={{ top: 52, left: 40, bottom: 36, right: 12 }}
             gridM={gridSizeM(layout.units)}
@@ -662,6 +662,7 @@ export function PropLayoutEditor({
                         onPointerDown={pressRun}
                         onClick={clickRun}
                         onTap={pick}
+                        onDblClick={pick}
                       />
                       <Chevron a={a} b={b} colour={edge.kind === "wire" ? WIRE : colour} />
                       {showLabel && spot.badge && spot.caption ? (

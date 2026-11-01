@@ -68,6 +68,19 @@ async function screenOf(frame, world) {
   return { x: box.x + cam.ox + world.x * cam.ppm, y: box.y + cam.oy - world.y * cam.ppm };
 }
 
+/** A tap with no movement, so it is a click and not a pan. */
+async function tapAt(page, viewport, at) {
+  if (!viewport.touch) {
+    await page.mouse.click(at.x, at.y);
+    return;
+  }
+  const cdp = await page.context().newCDPSession(page);
+  const point = [{ x: at.x, y: at.y, id: 1, radiusX: 4, radiusY: 4, force: 1 }];
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: point });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await cdp.detach();
+}
+
 /** One pointer from `from` to `to`: a mouse, or a finger through Chromium's touch input. */
 async function drag(page, viewport, from, to, steps = 12) {
   if (!viewport.touch) {
@@ -239,10 +252,11 @@ async function useCaseGeometry(page, viewport) {
   expect("cycle select", first !== second, { first, second });
   mkdirSync("/opt/cursor/artifacts", { recursive: true });
   await page.screenshot({ path: `/opt/cursor/artifacts/editor-geometry-${viewport.name}.png`, fullPage: true });
+  await page.getByRole("button", { name: "A1", exact: true }).click();
   await page.getByRole("button", { name: "Add point" }).click();
-  await page.getByText(/4 runs/).waitFor();
+  await page.waitForFunction(() => document.body.textContent?.includes("4 runs"));
   await page.getByRole("button", { name: "Join" }).click();
-  await page.getByText("Joined corners that sat on each other.").waitFor();
+  await page.waitForFunction(() => document.body.textContent?.includes("Joined corners that sat on each other."));
 }
 
 async function useCaseReadability(page, viewport) {
@@ -298,19 +312,17 @@ async function useCase1(page, viewport) {
   await drag(page, viewport, from, { x: from.x + 80, y: from.y + 40 });
   const panned = await camera(frame);
   expect("1 pan", Math.abs(panned.ox - fitted.ox - 80) < 4 && Math.abs(panned.oy - fitted.oy - 40) < 4, { fitted, panned });
-  // Zoom: Ctrl + wheel on a mouse (the plain wheel scrolls the page past
-  // the yard), two fingers on a phone.
+  // A mouse wheel zooms, as in xLights. A small trackpad scroll pans.
+  // Two fingers pinch on a phone.
   const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   if (viewport.touch) await pinchOut(page, centre);
   else {
     await page.mouse.move(centre.x, centre.y);
-    await page.mouse.wheel(0, -240);
+    await page.mouse.wheel(-30, -8);
     await page.waitForTimeout(150);
-    const still = await camera(frame);
-    expect("1 plain wheel scrolls, not zooms", Math.abs(still.ppm - panned.ppm) < 0.01, { panned, still });
-    await page.keyboard.down("Control");
+    const scrolled = await camera(frame);
+    expect("1 trackpad scroll pans", Math.abs(scrolled.ppm - panned.ppm) < 0.01 && (Math.abs(scrolled.ox - panned.ox) > 5 || Math.abs(scrolled.oy - panned.oy) > 5), { panned, scrolled });
     await page.mouse.wheel(0, -240);
-    await page.keyboard.up("Control");
   }
   await page.waitForTimeout(150);
   const zoomed = await camera(frame);

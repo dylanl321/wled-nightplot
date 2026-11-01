@@ -14,7 +14,9 @@ import {
   panBy,
   pinchStep,
   wheelFactor,
+  wheelGesture,
   zoomAt,
+  zoomLimited,
   zoomStep,
   type Bounds,
   type Camera,
@@ -67,12 +69,6 @@ export type EditorStageProps = {
    * handles, badges, and text that keep one size at every zoom.
    */
   overlay?: (camera: Camera, size: Size) => ReactNode;
-  /**
-   * `zoom` (default): the wheel always zooms. `modifier`: the plain wheel
-   * scrolls the page, and Ctrl / ⌘ + wheel or a trackpad pinch zooms. Use it
-   * when the drawing sits inside a page that scrolls.
-   */
-  wheel?: "zoom" | "modifier";
   /** Mark the origin and label the grid lines in metres along the edges. */
   axes?: boolean;
   /** A mouse moving with no button down, in world metres. `null` when it leaves. */
@@ -88,10 +84,10 @@ type Press =
   | { kind: "shape"; pointerId: number };
 
 /**
- * One Konva stage for both the path editor and the yard: wheel and trackpad
- * zoom toward the pointer, background / space / middle-button pan, two-finger
- * pinch, and Zoom in, Zoom out, Fit. The camera lives here; the drawing is the
- * caller’s.
+ * One Konva stage for the path editor, Name sections, and the yard. A mouse
+ * wheel zooms toward the pointer. A trackpad scroll pans. Pinch, or Ctrl / ⌘
+ * with the wheel, zooms. Background, space, and middle-button drag pan.
+ * Zoom in, Zoom out, and Fit sit in the corner. The camera lives here.
  */
 export function EditorStage({
   bounds,
@@ -109,7 +105,6 @@ export function EditorStage({
   children,
   overlay,
   onHover,
-  wheel = "zoom",
   axes = false,
 }: EditorStageProps) {
   const frame = useRef<HTMLDivElement>(null);
@@ -117,6 +112,8 @@ export function EditorStage({
   const [size, setSize] = useState<Size>({ w: 0, h: 0 });
   const [camera, setCamera] = useState<Camera>({ ppm: 50, ox: 0, oy: 0 });
   const [grabbing, setGrabbing] = useState(false);
+  const [limitNote, setLimitNote] = useState<string | null>(null);
+  const limitTimer = useRef<number | null>(null);
   const cameraRef = useRef(camera);
   const sizeRef = useRef(size);
   const boundsRef = useRef(bounds);
@@ -156,8 +153,22 @@ export function EditorStage({
     moveCamera(fitCamera(boundsRef.current, current, limitsRef.current, { minSpanM: spanRef.current, rightInset: insetRef.current, pad: padRef.current }));
   }, [moveCamera]);
 
-  const zoomIn = useCallback(() => moveCamera((current) => zoomStep(current, 1, sizeRef.current, limitsRef.current)), [moveCamera]);
-  const zoomOut = useCallback(() => moveCamera((current) => zoomStep(current, -1, sizeRef.current, limitsRef.current)), [moveCamera]);
+  const sayLimit = useCallback((kind: "in" | "out" | null) => {
+    if (!kind) return;
+    setLimitNote(kind === "in" ? "That's as close as it goes." : "That's as far as it goes.");
+    if (limitTimer.current != null) window.clearTimeout(limitTimer.current);
+    limitTimer.current = window.setTimeout(() => setLimitNote(null), 1200);
+  }, []);
+  const zoomIn = useCallback(() => moveCamera((current) => {
+    const next = zoomStep(current, 1, sizeRef.current, limitsRef.current);
+    if (next.ppm <= current.ppm + 1e-6) sayLimit("in");
+    return next;
+  }), [moveCamera, sayLimit]);
+  const zoomOut = useCallback(() => moveCamera((current) => {
+    const next = zoomStep(current, -1, sizeRef.current, limitsRef.current);
+    if (next.ppm >= current.ppm - 1e-6) sayLimit("out");
+    return next;
+  }), [moveCamera, sayLimit]);
   const centerOn = useCallback((world: Point) => {
     const size = sizeRef.current;
     moveCamera((current) => ({
@@ -199,20 +210,31 @@ export function EditorStage({
   }, [moveCamera]);
 
   // React’s onWheel is passive, so the page would scroll. Listen directly.
+  // A mouse wheel zooms. A trackpad scroll pans. Pinch or Ctrl zooms.
   useEffect(() => {
     const node = frame.current;
     if (!node) return;
     const onWheel = (event: WheelEvent) => {
-      // A trackpad pinch arrives as a wheel with ctrlKey set.
-      if (wheel === "modifier" && !event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
+      const gesture = wheelGesture({
+        deltaX: event.deltaX,
+        deltaY: event.deltaY,
+        deltaMode: event.deltaMode,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+      });
+      if (gesture === "pan") {
+        moveCamera((current) => panBy(current, -event.deltaX, -event.deltaY));
+        return;
+      }
       const at = localPoint(node, event);
       const factor = wheelFactor(event.deltaY, event.deltaMode, event.ctrlKey);
+      sayLimit(zoomLimited(cameraRef.current.ppm, factor, limitsRef.current));
       moveCamera((current) => zoomAt(current, factor, at, limitsRef.current));
     };
     node.addEventListener("wheel", onWheel, { passive: false });
     return () => node.removeEventListener("wheel", onWheel);
-  }, [moveCamera, wheel]);
+  }, [moveCamera, sayLimit]);
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
@@ -359,6 +381,11 @@ export function EditorStage({
             </Layer>
           ) : null}
         </Stage>
+      ) : null}
+      {limitNote ? (
+        <p role="status" className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-md bg-card/90 px-2 py-1 text-[12px] text-muted-foreground">
+          {limitNote}
+        </p>
       ) : null}
       {controls ? (
         <div data-stage-control className="absolute right-2 top-2 flex flex-col gap-2">
