@@ -16,6 +16,29 @@ const viewports = [
 
 const shots = process.env.NIGHTPLOT_SHOTS ?? "/opt/cursor/artifacts/screenshots";
 
+function windowShape() {
+  const run = [
+    { id: "e1", from: "c1", to: "c2", kind: "lit" },
+    { id: "e2", from: "c2", to: "c3", kind: "lit" },
+    { id: "e3", from: "c3", to: "c4", kind: "lit" },
+    { id: "e4", from: "c4", to: "c1", kind: "lit" },
+  ];
+  return {
+    source: "template",
+    units: "m",
+    pitchM: 0.1,
+    startOffsetM: 0,
+    corners: [
+      { id: "c1", x: 0, y: 0 },
+      { id: "c2", x: 2, y: 0 },
+      { id: "c3", x: 2, y: 1.2 },
+      { id: "c4", x: 0, y: 1.2 },
+    ],
+    run,
+    strings: [{ id: "s1", startId: "c1", run }],
+  };
+}
+
 function line() {
   const run = [{ id: "e1", from: "c1", to: "c2", kind: "lit" }];
   return {
@@ -94,6 +117,12 @@ try {
     throw new Error(`move dropped the rest ${JSON.stringify(nudged.prop.yard)}`);
   }
 
+  await api(`/api/props/${id}`, { method: "PATCH", body: JSON.stringify({ layout: windowShape() }) });
+  await api(`/api/props/${id}/yard`, {
+    method: "PATCH",
+    body: JSON.stringify({ yard: { x: 0, y: 0.8, depth: 0, facing: 0, mount: "upright", heightM: 0 } }),
+  });
+
   const browser = await launch();
   const written = [];
   try {
@@ -108,10 +137,31 @@ try {
       await page.getByRole("heading", { name: "Your yard" }).waitFor();
       await page.getByText(label, { exact: true }).waitFor();
       await page.getByRole("region", { name: "Yard drawing" }).waitFor();
+      await page.getByRole("button", { name: "3D" }).click();
+      const canvas = page.locator("[data-yard-3d=view] canvas");
+      const fallback = page.locator("[data-yard-3d=fallback]");
+      await Promise.race([
+        canvas.waitFor({ state: "visible", timeout: 20000 }),
+        fallback.waitFor({ state: "visible", timeout: 20000 }),
+      ]);
+      if (await canvas.count()) {
+        await page.locator("[data-yard-ready=yes]").waitFor({ timeout: 15000 });
+        await page.getByRole("button", { name: "Street", pressed: true }).waitFor();
+        await page.getByRole("button", { name: "Overhead" }).click();
+        await page.getByRole("button", { name: "Overhead", pressed: true }).waitFor();
+        await page.getByRole("button", { name: "This prop" }).click();
+        await page.getByRole("button", { name: "This prop", pressed: true }).waitFor();
+        await page.getByRole("button", { name: "Street" }).click();
+        await page.getByRole("button", { name: "Street", pressed: true }).waitFor();
+        await page.waitForTimeout(250);
+      }
+      await page.getByRole("region", { name: "Yard drawing" }).evaluate((node) => node.scrollIntoView({ block: "start" }));
       await fits(page);
-      const path = join(shots, `yard-data-${viewport.name}.png`);
-      await page.screenshot({ path, fullPage: true });
+      const path = join(shots, `yard-3d-${viewport.name}.png`);
+      await page.screenshot({ path, fullPage: false });
       written.push(path);
+      await page.getByRole("button", { name: "2D" }).click();
+      await page.getByTestId("yard-stage").waitFor();
       await context.close();
       console.log(`ok ${viewport.name} ${path}`);
     }
