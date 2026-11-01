@@ -358,5 +358,5 @@ function isMeasurements(value: unknown): value is PropMeasurements {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const shape = (value as { shape?: unknown }).shape;
   return shape === "roofline" || shape === "window" || shape === "arch" || shape === "tree" ||
-    shape === "stake-row" || shape === "wireframe" || shape === "custom" || shape === "legacy";
+    shape === "stake-row" || shape === "wireframe" || shape === "spiral" || shape === "zigzag" || shape === "custom" || shape === "legacy";
 }

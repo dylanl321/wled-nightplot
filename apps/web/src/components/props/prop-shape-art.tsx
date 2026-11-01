@@ -37,6 +37,10 @@ function Shape({ kind }: { kind: PropKind }) {
           <path d="M36 10 L64 38" />
         </g>
       );
+    case "spiral":
+      return <path d="M30 42 L50 37 L30 32 L50 27 L30 22 L50 17 L30 12 L50 7" fill="none" stroke="currentColor" strokeWidth="3" strokeLinejoin="round" />;
+    case "zigzag":
+      return <path d="M10 40 L22 10 L34 40 L46 10 L58 40 L70 10" fill="none" stroke="currentColor" strokeWidth="3" strokeLinejoin="round" />;
     case "custom":
       return <path d="M8 36 C20 8 36 40 48 16 S70 12 74 28" fill="none" stroke="currentColor" strokeWidth="3" />;
     default: {

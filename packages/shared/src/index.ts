@@ -475,6 +475,7 @@ export {
   layoutStrings,
   windowSideNames,
   edgeLengthM,
+  drawnLengthM,
   emptyTrace,
   formatLength,
   addUnlitConnector,
@@ -536,6 +537,23 @@ export {
   type PropLayout,
   type SnapGuide,
 } from "./prop/layout.ts";
+export {
+  SPIRAL_MAX_TURNS,
+  ZIGZAG_MAX_PASSES,
+  installGuide,
+  spiralLayout,
+  spiralGapForLights,
+  spiralLengthM,
+  spiralTurns,
+  zigzagLayout,
+  type GuideHeight,
+  type GuideLight,
+  type GuideTurn,
+  type InstallGuide,
+  type SpiralInput,
+  type ZigzagDirection,
+  type ZigzagInput,
+} from "./prop/wraps.ts";
 export {
   defaultSections,
   describeIndexRange,

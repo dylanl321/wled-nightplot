@@ -281,6 +281,10 @@ function shapeTitle(kind: PropKind): string {
       return "Stake row";
     case "wireframe":
       return "Well house";
+    case "spiral":
+      return "Spiral";
+    case "zigzag":
+      return "Zigzag";
     case "custom":
       return "Custom draw";
     default: {
