@@ -42,6 +42,9 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Deployment tests
+        run: python3 -W error::ResourceWarning -m unittest scripts/deploy_truenas_test.py
+
   mobile:
     runs-on: ubuntu-latest
     steps:
@@ -70,3 +73,9 @@ jobs:
 
       - name: Editor use cases at 1440×900 and 390×844
         run: pnpm --filter @nightplot/web test:editor
+
+      - name: Yard at 1440×900 and 390×844
+        run: pnpm --filter @nightplot/web test:yard3d
+
+      - name: Looks tasks at 1440×900 and 390×844
+        run: pnpm --filter @nightplot/web test:looks

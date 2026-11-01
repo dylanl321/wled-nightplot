@@ -6,6 +6,7 @@ import {
   isPropDesign,
   isPropLayout,
   isPropYardPoint,
+  yardPointForStore,
   parsePropKind,
   parsePropSections,
   pinLookProps,
@@ -229,10 +230,10 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     if (!isPropYardPoint(yard)) {
       return c.json({ error: "invalid", message: "Send where the prop sits, in metres. Nothing was saved." }, 400);
     }
-    const at = { x: Math.round(yard.x * 1000) / 1000, y: Math.round(yard.y * 1000) / 1000 };
+    const at = yardPointForStore(yard, existing.yard);
     deps.store.saveDesignedProp({ ...existing, yard: at });
     const saved = deps.store.loadProps().find((prop) => prop.id === id);
-    if (!saved?.yard || saved.yard.x !== at.x || saved.yard.y !== at.y) {
+    if (!saved?.yard || !sameStoredPoint(saved.yard, at)) {
       return c.json({ error: "readback-mismatch", message: "The yard did not keep that spot. Nothing moved." }, 500);
     }
     return c.json({ prop: saved, message: "Moved on the yard drawing. Nothing was sent to a controller." });
@@ -382,6 +383,10 @@ function statusOf(status: number): 200 | 409 | 422 | 503 {
   return 422;
 }
 
+function sameStoredPoint(a: NonNullable<Prop["yard"]>, b: NonNullable<Prop["yard"]>): boolean {
+  return a.x === b.x && a.y === b.y && a.depth === b.depth && a.facing === b.facing && a.mount === b.mount && a.heightM === b.heightM;
+}
+
 function isHex(value: string | undefined): value is string {
   return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
 }
@@ -401,5 +406,5 @@ function isMeasurements(value: unknown): value is PropMeasurements {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const shape = (value as { shape?: unknown }).shape;
   return shape === "roofline" || shape === "window" || shape === "arch" || shape === "tree" ||
-    shape === "stake-row" || shape === "wireframe" || shape === "custom" || shape === "legacy";
+    shape === "stake-row" || shape === "wireframe" || shape === "spiral" || shape === "zigzag" || shape === "custom" || shape === "legacy";
 }

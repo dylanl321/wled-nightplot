@@ -62,6 +62,9 @@ import {
   sectionRangeText,
   setAllOn,
   setCount,
+  setZigzagDirection,
+  guideFor,
+  isSpiral,
   setLookStyle,
   setPropOn,
   setRunLength,
@@ -95,6 +98,7 @@ import {
   zoomAt,
   type Camera,
   type DrawEdge,
+  type DrawGuide,
   type DrawProp,
 } from "./stage";
 import "./yard-editor.css";
@@ -161,6 +165,10 @@ export function YardEditor(init: YardEditorProps) {
     draftDirty: false,
     askDiscard: false,
     showTiles: false,
+    /** Install marks on the prop canvas. Null: on for a spiral or zigzag, off otherwise. */
+    guideOn: null as boolean | null,
+    guideEvery: 20,
+    allRuns: false,
     tool: "move" as Tool,
     selRun: null as string | null,
     activeSection: null as string | null,
@@ -230,7 +238,11 @@ export function YardEditor(init: YardEditorProps) {
           used.add(b.id);
           const n = counted.get(edge.id)?.lights ?? 0;
           lights += n;
-          edges.push({ id: edge.id, ax: a.x, ay: a.y, bx: b.x, by: b.y, lights: n, color: edge.kind === "wire" ? null : colour(edge.id), wire: edge.kind !== "lit", typed: typed && edge.lockedLights != null });
+          edges.push({
+            id: edge.id, ax: a.x, ay: a.y, bx: b.x, by: b.y, lights: n,
+            color: edge.kind === "wire" ? null : colour(edge.id), wire: edge.kind !== "lit", typed: typed && edge.lockedLights != null,
+            ...(edge.wrapLengthM != null ? { lengthM: counted.get(edge.id)?.lengthM ?? edge.wrapLengthM } : {}),
+          });
         }
       });
       for (const corner of layout.corners) if (used.has(corner.id)) corners.push(corner);
@@ -290,9 +302,29 @@ export function YardEditor(init: YardEditorProps) {
       selectedRun: s.selRun,
       sectionRuns: section,
       fmtLen,
+      guide: inProp() ? drawGuideFor(s.draft) : null,
     }, coloursRef.current, size.current.dpr);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function guideShown(d: Draft | null): boolean {
+    if (!d) return false;
+    return s.guideOn ?? (isSpiral(d.shape) || d.shape === "zigzag");
+  }
+
+  function heightLabel(m: number): string {
+    return s.units === "ft" ? `${Math.round(m / METRES_PER_FOOT)} ft` : `${+m.toFixed(2)} m`;
+  }
+
+  function drawGuideFor(d: Draft | null): DrawGuide | null {
+    if (!d || !guideShown(d)) return null;
+    const g = guideFor(d, s.guideEvery);
+    if (!g) return null;
+    return {
+      lights: g.counts.map((m) => ({ x: m.x, y: m.y, label: String(m.number) })),
+      heights: g.heights.map((h) => ({ x: h.x, y: h.y, label: `${heightLabel(h.heightM)} · light ${h.number}` })),
+    };
+  }
 
   function sheetFrac(): number {
     if (s.sheet === "full") return 0.88;
@@ -1517,21 +1549,40 @@ export function YardEditor(init: YardEditorProps) {
               </p>
             ) : (
               <div className="grid2">
-                {SIZE_FIELDS[d.shape].map((field) => (
-                  <NumRow
-                    key={field.key}
-                    id={`ye-size-${field.key}`}
-                    label={`${field.label} (${uLabel()})`}
-                    value={String(+(d.sizes[field.key] ?? 0).toFixed(2))}
-                    onCommit={(v) => {
-                      if (!(v > 0)) return;
-                      edit((x) => setSize(x, field.key as SizeKey, v));
-                      requestAnimationFrame(fitDraft);
-                    }}
-                  />
-                ))}
+                {SIZE_FIELDS[d.shape].map((field) => {
+                  // Small sizes read the way a tape does: inches, or centimetres.
+                  const k = field.small ? (s.units === "ft" ? 12 : 100) : 1;
+                  const unit = field.plain ? "" : ` (${field.small ? (s.units === "ft" ? "in" : "cm") : uLabel()})`;
+                  const fallback = field.key === "aroundTop" ? d.sizes.around ?? 0 : 0;
+                  return (
+                    <NumRow
+                      key={field.key}
+                      id={`ye-size-${field.key}`}
+                      label={`${field.label}${unit}`}
+                      value={String(+((d.sizes[field.key] ?? fallback) * k).toFixed(field.plain ? 0 : field.small ? 1 : 2))}
+                      onCommit={(v) => {
+                        // Only a spiral's top may be 0: a tree's tip.
+                        if (!(v > 0) && !(field.key === "aroundTop" && v === 0)) return;
+                        edit((x) => setSize(x, field.key as SizeKey, field.plain ? Math.round(v) : v / k));
+                        requestAnimationFrame(fitDraft);
+                      }}
+                    />
+                  );
+                })}
               </div>
             )}
+            {d.shape === "zigzag" && !d.drawn ? (
+              <span className="seg" role="group" aria-label="Zigzag direction" style={{ marginTop: 8 }}>
+                {([[0, "Up and down"], [1, "Side to side"]] as const).map(([v, text]) => (
+                  <button key={v} type="button" aria-pressed={(d.sizes.horizontal ?? 0) === v} onClick={() => { edit((x) => setZigzagDirection(x, v === 1)); requestAnimationFrame(fitDraft); }}>{text}</button>
+                ))}
+              </span>
+            ) : null}
+            {isSpiral(d.shape) && !d.drawn && d.sizes.height && d.sizes.gap ? (
+              <p className="note">{+(d.sizes.height / d.sizes.gap).toFixed(1)} turns. {d.shape === "spiral"
+                ? "Measure “around” with a tape: a 4×4 post is 14 in. Set the top to 0 for a tree that comes to a point."
+                : "Measure “around” with a tape at the bottom of the tree. The top is 0 for a point; type more for a flat top."}</p>
+            ) : null}
           </div>
         ) : null}
         {rows.length > 0 ? (
@@ -1547,8 +1598,11 @@ export function YardEditor(init: YardEditorProps) {
                   onCommit={(v) => { if (v > 0) edit((x) => setSpacing(x, s.units === "ft" ? v * 0.0254 : v / 100)); }}
                 />
               </div>
-              <p className="note">{d.count != null ? `Fixed at ${d.count}, spread over the runs by length.` : "Counted from length and spacing."} Light 1 is at the wire-in.</p>
+              <p className="note">{isSpiral(d.shape) && !d.drawn
+                ? "Type the count on your string and the wraps are spaced to use all of it."
+                : d.count != null ? `Fixed at ${d.count}, spread over the runs by length.` : "Counted from length and spacing."} Light 1 is at the wire-in.</p>
             </div>
+            {installPanel(d)}
             {nameField}
             <div>
               <h2>Sections</h2>
@@ -1578,7 +1632,7 @@ export function YardEditor(init: YardEditorProps) {
             <div>
               <h2>Runs, from the wire-in · {s.phone ? "tap" : "click"} one {sec ? `to add it to ${sec.name} or take it out` : "to change it"}</h2>
               <div className="sectionrows">
-                {rows.map((x) => (
+                {(rows.length > 12 && !s.allRuns ? rows.slice(0, 6) : rows).map((x) => (
                   <div key={x.edge.id} className="secrow">
                     <span className="sw" style={{ background: sectionOfEdge(d.sections, x.edge.id)?.color ?? "var(--y-lit)" }} />
                     <button type="button" className="nm" data-run={x.edge.id} aria-pressed={sec ? sec.edgeIds.includes(x.edge.id) : undefined} onClick={() => {
@@ -1596,6 +1650,9 @@ export function YardEditor(init: YardEditorProps) {
                   </div>
                 ))}
               </div>
+              {rows.length > 12 ? (
+                <button type="button" className="btn link" onClick={() => { s.allRuns = !s.allRuns; render(); }}>{s.allRuns ? "Show fewer runs" : `Show all ${rows.length} runs`}</button>
+              ) : null}
             </div>
           </>
         ) : null}
@@ -1606,6 +1663,32 @@ export function YardEditor(init: YardEditorProps) {
         </div>
         <p className="note keys">Keys: V select, T trace, A add point, Delete removes the selected run, ⌘/Ctrl+S saves, Esc leaves.</p>
       </>
+    );
+  }
+
+  /** Where lights go when putting the string up, so the spacing matches the drawing. */
+  function installPanel(d: Draft) {
+    const shown = guideShown(d);
+    const g = guideFor(d, s.guideEvery);
+    if (!g) return null;
+    const spiral = isSpiral(d.shape);
+    return (
+      <div>
+        <div className="hrow">
+          <h2>Install guide</h2>
+          <button type="button" className="btn link" aria-pressed={shown} onClick={() => { s.guideOn = !shown; render(); draw(); }}>{shown ? "Hide on drawing" : "Show on drawing"}</button>
+        </div>
+        <div className="grid2">
+          <NumRow id="ye-guide-every" label="Number every … lights" value={String(s.guideEvery)} onCommit={(v) => { if (v >= 1) { s.guideEvery = Math.round(v); render(); draw(); } }} />
+        </div>
+        {spiral && g.heights.length ? (
+          <p className="note" id="ye-guide-heights">At each {s.units === "ft" ? "foot" : "25 cm"} up: {g.heights.map((h) => `${heightLabel(h.heightM)} light ${h.number}`).join(" · ")}.</p>
+        ) : null}
+        {d.shape === "zigzag" && g.turns.length ? (
+          <p className="note" id="ye-guide-turns">Turn after light {g.turns.map((t) => t.number - 1).join(", ")}. {g.turns.map((t) => `${t.runName ?? "Next run"} starts at light ${t.number}`).slice(0, 3).join(" · ")}{g.turns.length > 3 ? "…" : ""}</p>
+        ) : null}
+        <p className="note">Count from light 1 at the wire-in. {g.counts.length ? `Lights ${g.counts.slice(0, 4).map((m) => m.number).join(", ")}${g.counts.length > 4 ? "…" : ""} are ringed on the drawing.` : `This prop has fewer than ${s.guideEvery} lights.`}{spiral ? " Height lines show which light sits at each mark going up." : ""}</p>
+      </div>
     );
   }
 

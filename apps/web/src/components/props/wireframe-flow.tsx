@@ -38,7 +38,7 @@ import { ELEMENT_HUES, LOCATE_LIT } from "@/components/elements-editor/ops";
 import { Button } from "@/components/ui/button";
 import { LedLoader } from "@/components/ui/led-loader";
 import { fetchJson, patchJson, postJson, putJson } from "@/lib/api";
-import type { LooksPayload } from "@/components/looks-panel";
+import type { LooksPayload } from "@/components/looks/use-looks";
 import { WireframeNet } from "@/components/props/wireframe-net";
 
 const TAP = "min-h-11 min-w-11 touch-manipulation";

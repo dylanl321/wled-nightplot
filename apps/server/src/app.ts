@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   CURRENT_SLICE,
+  isYardHouse,
   allOffNoAnswerReason,
   allOffSummary,
   APPLY_UNKNOWN_PREVIOUS_SEGMENTS_MESSAGE,
@@ -153,8 +154,10 @@ import { FileSettingsStore } from "./store/settings-store.ts";
 import { StoreUnreadableError } from "./store/store-error.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
 import { FileLooksStore } from "./store/looks-store.ts";
+import { FileYardSceneStore } from "./store/yard-scene-store.ts";
 import { FileSetupProfilesStore } from "./store/setup-profiles-store.ts";
 import { registerLookRoutes } from "./look-routes.ts";
+import { registerLookLiveRoutes } from "./look-live-routes.ts";
 import { registerPropSetupRoutes } from "./prop-setup-routes.ts";
 import { registerSeasonRoutes } from "./season-routes.ts";
 import { registerYardRoutes } from "./yard-routes.ts";
@@ -179,7 +182,7 @@ import {
 } from "./wled/native-backup.ts";
 import { persistWireframeOnLight, specFromBody, writeAndVerifyLedmap } from "./wireframe-persist.ts";
 import { registerSyncRoutes } from "./sync-routes.ts";
-import { applyRangesWrite, type ReadLiveFn, type WriteStateFn } from "./wled/live.ts";
+import { applyRangesWrite, createWledJsonReader, type ReadLiveFn, type ReadWledJsonFn, type WriteStateFn } from "./wled/live.ts";
 
 export type AppDeps = {
   store: FileLightsStore;
@@ -189,6 +192,7 @@ export type AppDeps = {
   products?: FileLedProductsStore;
   profiles?: FileSetupProfilesStore;
   looks?: FileLooksStore;
+  yardScene?: FileYardSceneStore;
   probe: ProbeFn;
   collect: CollectFn;
   write: WriteStateFn;
@@ -202,6 +206,10 @@ export type AppDeps = {
   readLedmap?: ReadWledLedmap;
   writeLedmap?: WriteWledLedmap;
   writeCfg: WriteCfgFn;
+  /** WLED JSON GETs for the effect list. Defaults to a fetch reader. */
+  readJson?: ReadWledJsonFn;
+  /** Wait between Turn on rereads (ms). */
+  lookSettleMs?: number;
   now?: () => Date;
 };
 
@@ -218,6 +226,9 @@ export function createApp(deps: AppDeps) {
   const looks =
     deps.looks ??
     new FileLooksStore(join(tmpdir(), `nightplot-looks-${randomUUID()}.json`));
+  const yardScene =
+    deps.yardScene ??
+    new FileYardSceneStore(join(tmpdir(), `nightplot-yard-scene-${randomUUID()}.json`));
   const backups = deps.backups ?? new FileBackupStore(join(tmpdir(), `nightplot-backups-${randomUUID()}`), () => settings.read().backupRetention);
   const readNativeFiles = deps.readNativeFiles ?? createWledNativeFilesReader();
   const writeNativeFiles = deps.writeNativeFiles ?? createWledNativeFilesWriter();
@@ -548,6 +559,8 @@ export function createApp(deps: AppDeps) {
         return c.json({ error: "wled-restore-failed",
           message: `WLED did not accept the uploaded files. Nightplot data is unchanged. Safety backup ${safety.id} is kept. ${error instanceof Error ? error.message : ""}` }, 502);
       }
+      // The Light no longer holds what Nightplot last sent; say so rather than guess.
+      if (light.lastLookPush) deps.store.replace({ ...light, lastLookPush: null });
       return c.json({
         restored: true,
         kind: "wled-native",
@@ -587,6 +600,8 @@ export function createApp(deps: AppDeps) {
     record,
   };
   registerLookRoutes(app, lookDeps);
+  registerLookLiveRoutes(app, { ...lookDeps, write: deps.write, readJson: deps.readJson ?? createWledJsonReader(),
+    ...(deps.lookSettleMs !== undefined ? { settleMs: deps.lookSettleMs } : {}) });
   registerPropSetupRoutes(app, {
     store: deps.store,
     palette: () => settings.read().palette,
@@ -759,6 +774,36 @@ export function createApp(deps: AppDeps) {
   app.get("/api/lights", async (c) => {
     const payload = await listLights();
     return c.json(payload);
+  });
+
+  // Colours the controllers are showing now. A missing read is null.
+  // This does not write, and it is not the Look preview.
+  app.get("/api/yard-scene", (c) => c.json(yardScene.read()));
+
+  app.put("/api/yard-scene", async (c) => {
+    const body = await c.req.json().catch(() => null) as { house?: unknown } | null;
+    if (!body || (body.house != null && !isYardHouse(body.house))) {
+      return c.json({ error: "invalid", message: "Send the house, or none. Nothing was saved." }, 400);
+    }
+    const saved = yardScene.save(body.house ?? null);
+    if ((saved.house == null) !== (body.house == null)) {
+      return c.json({ error: "readback-mismatch", message: "The yard did not keep the house." }, 500);
+    }
+    return c.json({ ...saved, message: saved.house ? "House saved. Nothing was sent to a controller." : "House removed. Nothing was sent to a controller." });
+  });
+
+  app.get("/api/yard/live", async (c) => {
+    const ids = [...new Set(deps.store.loadAttachments().map((row) => row.lightId))];
+    const lights = await Promise.all(ids.map(async (lightId) => {
+      const light = deps.store.findById(lightId);
+      if (!light) return { lightId, leds: null };
+      const live = await deps.readLive({ hostname: light.hostname, port: light.port }, light.ledCount);
+      return { lightId, leds: live?.leds ?? null };
+    }));
+    return c.json({
+      lights,
+      caption: "Live colours are what each controller reported just now. A missing read is not the preview.",
+    });
   });
 
   app.get("/api/discover", (c) =>

@@ -1,0 +1,1083 @@
+<title>Nightplot Looks Prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Looks prototype. Same tokens and shell as the one-page yard prototype (PR #142).
+   Yard (home) · Looks page (library, playlists, schedule, by prop) · Look view (scoped, the yard in one Look). */
+:root {
+  --bg: #f6f4ef; --fg: #252931; --card: #ffffff; --rail: #efede7; --muted: #525963; --quiet: #6f747c;
+  --border: #cbd0d4; --input: #adb5bc; --secondary: #e8e9eb;
+  --primary: #85552c; --primary-fg: #ffffff; --lit: #c08a4c; --pick: #1f8f80; --danger: #af3333; --ok: #2f7d4a; --warn: #9a6a00;
+  --night: #0b0d12; --nightfg: #c9c4b8;
+  --serif: "Fraunces", Georgia, serif; --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0c0d10; --fg: #ece7dc; --card: #0f1115; --rail: #0a0b0e; --muted: #a39d91; --quiet: #8a857c;
+  --border: #1d2129; --input: #2c3340; --secondary: #151820;
+  --primary: #d4a574; --primary-fg: #0c0d10; --lit: #d4a574; --pick: #7ee0d0; --danger: #e07070; --ok: #7ee0a0; --warn: #e6c068;
+  --night: #07080b; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0c0d10; --fg: #ece7dc; --card: #0f1115; --rail: #0a0b0e; --muted: #a39d91; --quiet: #8a857c;
+  --border: #1d2129; --input: #2c3340; --secondary: #151820;
+  --primary: #d4a574; --primary-fg: #0c0d10; --lit: #d4a574; --pick: #7ee0d0; --danger: #e07070; --ok: #7ee0a0; --warn: #e6c068;
+  --night: #07080b; color-scheme: dark; }
+
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; overflow: hidden; }
+* { box-sizing: border-box; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--pick); outline-offset: 2px; }
+h1, h2, h3, p { margin: 0; }
+
+.app { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; }
+#body > * { min-height: 0; }
+.top { display: flex; align-items: center; gap: 14px; min-height: 52px; border-bottom: 1px solid var(--border); background: var(--rail); padding: 0 16px; min-width: 0; }
+.brand { display: flex; align-items: center; gap: 8px; font-family: var(--serif); font-size: 17px; color: var(--primary); white-space: nowrap; }
+.brand i { width: 30px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--lit) 0 20%, transparent 20% 27%, var(--lit) 27% 47%, transparent 47% 54%, var(--lit) 54% 74%, transparent 74% 81%, var(--lit) 81%); }
+.nav { display: flex; gap: 2px; }
+.nav a { padding: 6px 11px; border-radius: 6px; color: var(--muted); text-decoration: none; }
+.nav a.on { background: var(--secondary); color: var(--fg); font-weight: 500; }
+.spacer { flex: 1; }
+.crumb { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 14px; }
+.crumb a { color: var(--muted); text-decoration: none; }
+.crumb select { font-weight: 600; border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 4px 4px; max-width: 220px; }
+.crumb select:hover { border-color: var(--border); }
+.sendpill { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; border: 1px solid var(--primary); color: var(--primary); background: var(--card); border-radius: 999px; padding: 0 12px; font-size: 13px; white-space: nowrap; }
+.sendpill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+.sendpill.ok { border-color: var(--border); color: var(--muted); }
+.sendpill.ok::before { background: var(--ok); }
+.iconbtn { min-height: 34px; border: 1px solid var(--border); background: transparent; border-radius: 6px; padding: 0 10px; font-size: 13px; white-space: nowrap; }
+.toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--card); font-size: 13px; white-space: nowrap; }
+.toggle .sw { width: 30px; height: 18px; border-radius: 9px; background: var(--input); position: relative; flex: none; }
+.toggle .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s; }
+.toggle[aria-pressed="true"] { border-color: var(--pick); color: var(--pick); }
+.toggle[aria-pressed="true"] .sw { background: var(--pick); }
+.toggle[aria-pressed="true"] .sw::after { left: 14px; }
+
+.main { display: grid; grid-template-columns: 220px minmax(0,1fr) 360px; min-height: 0; }
+.rail { border-right: 1px solid var(--border); background: var(--rail); overflow-y: auto; padding: 14px 12px; display: flex; flex-direction: column; gap: 18px; }
+.cap { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--quiet); font-weight: 500; margin: 0 0 8px; }
+.plist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.plist button { width: 100%; display: flex; align-items: center; gap: 8px; text-align: left; min-height: 36px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; }
+.plist button.on { background: var(--secondary); font-weight: 500; }
+.plist .n { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--quiet); }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: none; border: 1px solid color-mix(in srgb, var(--fg) 20%, transparent); }
+.stagewrap { position: relative; min-width: 0; min-height: 0; background: var(--night); }
+canvas.stage { display: block; width: 100%; height: 100%; touch-action: none; }
+.chip { position: absolute; left: 12px; top: 12px; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; background: rgba(15,17,21,.85); color: #ece7dc; border: 1px solid #2a2f39; font-size: 12px; max-width: calc(100% - 24px); }
+.chip.preview { border-color: #7ee0d0; }
+.stagehint { position: absolute; left: 12px; bottom: 12px; font-size: 12px; color: #a39d91; background: rgba(7,8,11,.7); padding: 4px 8px; border-radius: 6px; max-width: calc(100% - 24px); }
+
+.insp { border-left: 1px solid var(--border); background: var(--bg); overflow-y: auto; padding: 16px 16px 40px; display: flex; flex-direction: column; gap: 16px; }
+.insp > *, .box > *, .dialog > *, .item > * { flex-shrink: 0; }
+.title h1 { font-family: var(--serif); font-weight: 500; font-size: 22px; overflow-wrap: anywhere; }
+.sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.note { font-size: 12px; color: var(--quiet); line-height: 1.45; }
+.warnnote { font-size: 12px; color: var(--warn); line-height: 1.45; }
+.proto { font-size: 11px; color: var(--quiet); border: 1px dashed var(--border); border-radius: 6px; padding: 6px 8px; line-height: 1.4; }
+label.f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); min-width: 0; }
+label.f input:not([type=checkbox]):not([type=range]):not([type=color]), label.f select, .in { min-height: 38px; width: 100%; border: 1px solid var(--input); border-radius: 6px; background: var(--card); padding: 0 8px; font-size: 15px; color: var(--fg); }
+.in.num { font-family: var(--mono); font-size: 14px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.btnrow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.btn { min-height: 38px; padding: 0 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); font-size: 13px; }
+.btn.primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+.btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+.btn.link { border: 0; background: transparent; color: var(--primary); padding: 0 4px; min-height: 30px; }
+.btn.small { min-height: 30px; padding: 0 8px; font-size: 12px; }
+.btn:disabled { opacity: .45; cursor: default; }
+.seg3 { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--input); border-radius: 8px; overflow: hidden; }
+.seg3 button { border: 0; border-right: 1px solid var(--input); background: var(--card); min-height: 40px; font-size: 13px; }
+.seg3 button:last-child { border-right: 0; }
+.seg3 button[aria-pressed="true"] { background: var(--secondary); font-weight: 600; box-shadow: inset 0 -3px 0 var(--pick); }
+.seg3 button small { display: block; font-size: 11px; color: var(--quiet); font-weight: 400; }
+.box { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--card); display: flex; flex-direction: column; gap: 12px; }
+.box.mixed { border-style: dashed; }
+.effrow { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; border: 1px solid var(--input); border-radius: 8px; background: var(--card); padding: 6px 10px; text-align: left; }
+.effrow b { font-weight: 600; white-space: nowrap; }
+.effrow .meta { font-size: 11px; color: var(--quiet); }
+.effrow canvas, canvas.strip { width: 100%; height: 12px; border-radius: 6px; background: #000; display: block; }
+.effrow .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.effrow.on { border-color: var(--pick); box-shadow: inset 0 0 0 1px var(--pick); }
+.colours { display: flex; flex-direction: column; gap: 8px; }
+.colourrow { display: grid; grid-template-columns: 74px 40px 1fr; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.colourrow input[type=color] { width: 40px; height: 38px; padding: 0; border: 1px solid var(--input); border-radius: 6px; background: transparent; }
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.swatches button { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--card); box-shadow: 0 0 0 1px var(--input); }
+.slider { display: grid; grid-template-columns: 96px 1fr 40px; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.slider input { width: 100%; accent-color: var(--pick); min-height: 32px; }
+.slider output { font-family: var(--mono); font-size: 12px; text-align: right; }
+.pals { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.pals button { border: 1px solid var(--input); background: var(--card); border-radius: 8px; padding: 6px; text-align: left; font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
+.pals button.on { border-color: var(--pick); box-shadow: inset 0 0 0 1px var(--pick); }
+.pals i { display: block; height: 10px; border-radius: 5px; }
+details.fold { border-top: 1px solid var(--border); padding-top: 8px; }
+details.fold > summary { list-style: none; display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 34px; font-weight: 500; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::before { content: "▸"; color: var(--quiet); transition: transform .15s; }
+details.fold[open] > summary::before { transform: rotate(90deg); }
+details.fold > summary .meta { margin-left: auto; font-size: 12px; color: var(--quiet); font-weight: 400; }
+.foldbody { display: flex; flex-direction: column; gap: 10px; padding: 8px 0 4px; }
+.proprow { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; min-height: 40px; }
+.proprow > button { display: flex; align-items: center; gap: 8px; border: 0; background: transparent; text-align: left; padding: 0; min-height: 40px; min-width: 0; }
+.mini3 { display: inline-flex; border: 1px solid var(--input); border-radius: 6px; overflow: hidden; }
+.mini3 button { border: 0; border-right: 1px solid var(--input); background: var(--card); padding: 0 8px; min-height: 30px; font-size: 12px; }
+.mini3 button:last-child { border-right: 0; }
+.mini3 button[aria-pressed="true"] { background: var(--secondary); font-weight: 600; color: var(--pick); }
+.secchips { display: flex; gap: 6px; flex-wrap: wrap; }
+.secchips button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; border: 1px solid var(--border); border-radius: 999px; background: var(--card); padding: 0 12px; font-size: 13px; }
+.secchips button[aria-pressed="true"] { border-color: var(--pick); color: var(--pick); font-weight: 600; }
+.banner { border: 1px solid var(--pick); background: color-mix(in srgb, var(--pick) 8%, var(--card)); border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.45; display: flex; flex-direction: column; gap: 8px; }
+.banner.warn { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--card)); }
+
+/* Looks page */
+.page { overflow-y: auto; padding: 20px 24px 140px; }
+.pagein { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+.pagehead { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.pagehead h1 { font-family: var(--serif); font-weight: 500; font-size: 28px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.tabs button { border: 0; background: transparent; padding: 10px 12px; font-size: 14px; color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap; }
+.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--primary); font-weight: 500; }
+.nowbar { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; border: 1px solid var(--border); border-radius: 12px; background: var(--card); padding: 14px 16px; }
+.nowbar .big { font-family: var(--serif); font-size: 20px; }
+.lightsrow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.lightpill { font-size: 12px; border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; color: var(--muted); }
+.lightpill.bad { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+.lightpill.behind { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, var(--border)); }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.card { border: 1px solid var(--border); border-radius: 12px; background: var(--card); overflow: hidden; display: flex; flex-direction: column; }
+.card canvas { width: 100%; aspect-ratio: 16/8; display: block; background: var(--night); cursor: pointer; }
+.card .body { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.card .row { display: flex; align-items: center; gap: 8px; }
+.card h3 { font-size: 15px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--quiet); white-space: nowrap; }
+.tag.new { color: var(--primary); border-color: var(--primary); }
+.tag.live { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--border)); }
+.card.add { align-items: center; justify-content: center; min-height: 180px; border-style: dashed; color: var(--muted); font-size: 14px; gap: 8px; cursor: pointer; background: transparent; }
+.list { display: flex; flex-direction: column; gap: 10px; }
+.item { border: 1px solid var(--border); border-radius: 12px; background: var(--card); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.item.open { border-color: var(--pick); }
+.itemhead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.itemhead h3 { font-size: 15px; font-weight: 600; }
+.itemhead .sub { margin: 0; }
+.plrow { display: grid; grid-template-columns: 22px minmax(0,1fr) 92px auto; gap: 8px; align-items: center; }
+.plrow .ix { font-family: var(--mono); color: var(--quiet); font-size: 12px; }
+.yearbar { position: relative; height: 54px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); overflow: hidden; }
+.yearbar .m { position: absolute; top: 0; bottom: 0; border-left: 1px dashed var(--border); font-size: 10px; color: var(--quiet); padding: 2px 3px; }
+.yearbar .r { position: absolute; height: 14px; border-radius: 3px; font-size: 10px; color: #fff; padding: 0 4px; overflow: hidden; white-space: nowrap; line-height: 14px; }
+.yearbar .today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--danger); }
+.days { display: flex; gap: 4px; flex-wrap: wrap; }
+.days button { min-width: 38px; min-height: 34px; border: 1px solid var(--input); border-radius: 6px; background: var(--card); font-size: 12px; }
+.days button[aria-pressed="true"] { background: var(--pick); color: var(--bg); border-color: var(--pick); }
+.budget { display: flex; gap: 3px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.budget i { width: 18px; height: 10px; border-radius: 2px; background: var(--secondary); border: 1px solid var(--border); }
+.budget i.u { background: var(--pick); border-color: var(--pick); }
+.budget i.x { background: var(--danger); border-color: var(--danger); }
+table.matrix { border-collapse: separate; border-spacing: 0; font-size: 13px; min-width: 100%; }
+.matrixwrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+table.matrix th, table.matrix td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+table.matrix th { font-weight: 500; color: var(--muted); font-size: 12px; position: sticky; top: 0; background: var(--card); }
+table.matrix td:first-child, table.matrix th:first-child { position: sticky; left: 0; background: var(--card); font-weight: 500; z-index: 1; }
+.cell { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; padding: 0; min-height: 30px; font-size: 12px; color: var(--muted); }
+.cell canvas { width: 54px; height: 10px; border-radius: 5px; background: #000; }
+.cell.off { color: var(--quiet); }
+
+/* Dialog */
+.scrim { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: grid; place-items: center; z-index: 50; padding: 16px; }
+.dialog { width: min(520px, 100%); max-height: calc(100% - 32px); overflow-y: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+.dialog h2 { font-family: var(--serif); font-weight: 500; font-size: 22px; }
+.dialog h2.cap { font-family: var(--sans); font-size: 11px; }
+.resrow { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+.resrow .why { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+.st { font-size: 12px; font-weight: 600; }
+.st.ok { color: var(--ok); } .st.bad { color: var(--danger); } .st.wait { color: var(--quiet); }
+.check { display: flex; gap: 10px; align-items: center; min-height: 40px; font-size: 14px; }
+.check input { width: 18px; height: 18px; accent-color: var(--pick); }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--fg); color: var(--bg); border-radius: 10px; padding: 10px 14px; font-size: 13px; z-index: 60; display: flex; gap: 12px; align-items: center; max-width: calc(100% - 32px); box-shadow: 0 10px 30px rgba(0,0,0,.3); }
+.toast button { border: 0; background: transparent; color: var(--bg); font-weight: 600; text-decoration: underline; min-height: 30px; }
+
+/* Tasks */
+.tasks { position: fixed; left: 16px; bottom: 16px; width: min(380px, calc(100vw - 32px)); max-height: 60%; overflow-y: auto; background: var(--card); border: 1px solid var(--primary); border-radius: 12px; padding: 14px; z-index: 40; box-shadow: 0 14px 40px rgba(0,0,0,.3); }
+.tasks.mini { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.tasks h3 { font-family: var(--serif); font-weight: 500; font-size: 18px; }
+.tasks ol { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 9px; }
+.tasks li { display: grid; grid-template-columns: 22px 1fr; gap: 6px; font-size: 13px; line-height: 1.4; }
+.tasks .tick { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--input); display: grid; place-items: center; font-size: 11px; margin-top: 1px; }
+.tasks .tick.ok { background: var(--ok); border-color: var(--ok); color: var(--bg); }
+.tasks .sim { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+
+.phonenav { display: none; }
+.backbtn { display: none; }
+
+@media (max-width: 860px) {
+  .nav, .hidephone { display: none !important; }
+  .top { gap: 8px; padding: 0 12px; }
+  .main { grid-template-columns: 1fr; grid-template-rows: minmax(200px, 40%) 1fr; }
+  .main.yard { grid-template-rows: minmax(200px, 46%) 1fr; }
+  .rail { display: none; }
+  .insp { border-left: 0; border-top: 1px solid var(--border); padding: 14px 16px 150px; }
+  .page { padding: 14px 16px 30px; }
+  .pagehead h1 { font-size: 24px; }
+  .phonenav { display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid var(--border); background: var(--rail); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .phonenav a { text-align: center; padding: 10px 0 12px; font-size: 12px; color: var(--muted); text-decoration: none; }
+  .phonenav a.on { color: var(--primary); font-weight: 600; }
+  .app.scoped .phonenav { display: none; }
+  .nowbar { grid-template-columns: 1fr; }
+  .cards { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .card .body { padding: 8px 10px; }
+  .card .row .btn { min-height: 34px; padding: 0 8px; }
+  .plrow { grid-template-columns: 18px minmax(0,1fr) 72px auto; }
+  .crumb select { max-width: 140px; }
+  .backbtn { display: inline-flex; }
+  .toggle .lbl { display: none; }
+  .sendpill { padding: 0 10px; font-size: 12px; max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+  .sendpill .long { display: none; }
+  .brand { font-size: 0; gap: 0; }
+  .tasks { left: 8px; right: 8px; width: auto; bottom: 56px; max-height: 55%; }
+  .tasks.mini p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .app.scoped ~ #layer .tasks { bottom: 8px; }
+}
+@media (max-width: 400px) { .cards { grid-template-columns: 1fr; } }
+</style>
+
+<div class="app" id="app">
+  <header class="top" id="top"></header>
+  <div id="body" style="min-height:0;display:grid"></div>
+  <nav class="phonenav" id="phonenav" aria-label="Nightplot"></nav>
+</div>
+<div id="layer"></div>
+
+<script>
+(() => {
+"use strict";
+// ---------------------------------------------------------------- helpers
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const clone = (o) => JSON.parse(JSON.stringify(o));
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const hex2rgb = (h) => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+const rgb2hex = (c) => "#" + c.map((v) => Math.round(clamp(v, 0, 255)).toString(16).padStart(2, "0")).join("");
+const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const scale = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const fract = (x) => x - Math.floor(x);
+const hash = (i) => fract(Math.sin(i * 127.1 + 311.7) * 43758.5453);
+const hsv = (h, s = 1, v = 1) => { const f = (n) => { const k = (n + h * 6) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); }; return [f(5) * 255, f(3) * 255, f(1) * 255]; };
+const isPhone = () => matchMedia("(max-width: 860px)").matches;
+const tap = () => (matchMedia("(pointer: coarse)").matches ? "Tap" : "Click");
+
+// ---------------------------------------------------------------- catalog (from the Lights' fxdata in the build)
+const PAL = {
+  0: { name: "Effect default" }, 2: { name: "Colour 1" }, 3: { name: "Colours 1 & 2" }, 4: { name: "Colour gradient" }, 5: { name: "Colours only" },
+  11: { name: "Rainbow", stops: ["#ff0000", "#ffff00", "#00ff00", "#00ffff", "#0000ff", "#ff00ff", "#ff0000"] },
+  6: { name: "Party", stops: ["#5500ab", "#84007c", "#b5004b", "#e5001b", "#e81700", "#b84700", "#ab7700", "#abab00", "#ab5500", "#dd2200", "#f2000e", "#c2003e", "#8f0071", "#5f00a1", "#2f00d0", "#0007f9"] },
+  35: { name: "Fire", stops: ["#000000", "#460000", "#a80000", "#ff2a00", "#ff8800", "#ffdd33", "#ffffff"] },
+  9: { name: "Ocean", stops: ["#191970", "#00008b", "#000080", "#0000ff", "#008b8b", "#5f9ea0", "#7fffd4", "#008080", "#87ceeb"] },
+  10: { name: "Forest", stops: ["#006400", "#556b2f", "#008000", "#2e8b57", "#6b8e23", "#32cd32", "#9acd32", "#90ee90", "#7cfc00", "#66cdaa"] },
+  31: { name: "Jul (red & green)", stops: ["#e2000f", "#e2000f", "#1d5a12", "#1d5a12", "#e2000f"] },
+  48: { name: "C9 (old bulbs)", stops: ["#b80400", "#b80400", "#902c02", "#902c02", "#046002", "#046002", "#070758", "#070758", "#d4a20b"] },
+  36: { name: "Icefire", stops: ["#000000", "#003366", "#0099ff", "#ffffff", "#ff9900", "#ff3300", "#000000"] },
+  13: { name: "Sunset", stops: ["#780000", "#b31600", "#ff6800", "#a71601", "#640067", "#100082", "#000082"] },
+  39: { name: "Autumn", stops: ["#5a0e05", "#8b290d", "#64681f", "#899852", "#77300d", "#8b290d", "#e2b05e"] },
+  57: { name: "Candy", stops: ["#f3f200", "#ff0b00", "#f3f200", "#ff0b00", "#ff00aa", "#f3f200"] },
+  50: { name: "Aurora", stops: ["#011232", "#00ff3c", "#0063ff", "#aa00ff", "#00ff14", "#011232"] },
+  20: { name: "Pastel", stops: ["#3d87b1", "#77c6ff", "#ffffe7", "#ffbbc6", "#c69bff", "#3d87b1"] },
+  8: { name: "Lava", stops: ["#000000", "#120000", "#710000", "#8e0300", "#af1100", "#d52c00", "#ff5200", "#ff7300", "#ff9c00", "#ffcb00", "#fff631", "#ffffff"] },
+};
+const PAL_ORDER = [0, 2, 3, 4, 5, 31, 48, 11, 6, 35, 8, 36, 9, 10, 13, 39, 57, 50, 20];
+const CATS = ["Still", "Glow & fade", "Chase", "Twinkle & sparkle", "Colour cycle", "Fire & weather"];
+// cols: labels for colour slots the effect uses. sl: slider labels [speed, intensity] (null = hidden). pal: uses a palette.
+const FX = [
+  { id: 0, name: "Solid", cat: "Still", cols: ["Colour"], sl: [null, null], pal: false },
+  { id: 2, name: "Breathe", cat: "Glow & fade", cols: ["Colour", "Background"], sl: ["Speed", null], pal: false },
+  { id: 12, name: "Fade", cat: "Glow & fade", cols: ["From", "To"], sl: ["Speed", null], pal: false },
+  { id: 88, name: "Candle", cat: "Glow & fade", cols: ["Flame", "Background"], sl: ["Flicker speed", "Flicker amount"], pal: false },
+  { id: 1, name: "Blink", cat: "Chase", cols: ["On", "Off"], sl: ["Speed", "On time"], pal: false },
+  { id: 13, name: "Theater chase", cat: "Chase", cols: ["Stripe", "Gap"], sl: ["Speed", "Stripe width"], pal: false },
+  { id: 15, name: "Running lights", cat: "Chase", cols: ["Wave", "Background"], sl: ["Speed", "Wave width"], pal: false },
+  { id: 3, name: "Wipe", cat: "Chase", cols: ["Wipe", "Background"], sl: ["Speed", null], pal: false },
+  { id: 10, name: "Scan", cat: "Chase", cols: ["Dot", "Background"], sl: ["Speed", "Dot size"], pal: false },
+  { id: 76, name: "Meteor", cat: "Chase", cols: ["Meteor"], sl: ["Speed", "Trail"], pal: true },
+  { id: 17, name: "Twinkle", cat: "Twinkle & sparkle", cols: ["Twinkle", "Background"], sl: ["Speed", "How many"], pal: true },
+  { id: 80, name: "Twinklefox", cat: "Twinkle & sparkle", cols: [null, "Background"], sl: ["Speed", "Twinkle rate"], pal: true, defPal: 31 },
+  { id: 20, name: "Sparkle", cat: "Twinkle & sparkle", cols: ["Sparkle", "Background"], sl: ["Speed", "How many"], pal: false },
+  { id: 43, name: "Rain", cat: "Fire & weather", cols: ["Drop", "Background"], sl: ["Speed", "Drops"], pal: true },
+  { id: 66, name: "Fire", cat: "Fire & weather", cols: [], sl: ["Cooling", "Sparking"], pal: true, defPal: 35 },
+  { id: 9, name: "Rainbow", cat: "Colour cycle", cols: [], sl: ["Speed", "Band size"], pal: true, defPal: 11 },
+  { id: 67, name: "Colorwaves", cat: "Colour cycle", cols: [], sl: ["Speed", "Hue spread"], pal: true, defPal: 6 },
+];
+const fxOf = (id) => FX.find((f) => f.id === id) || FX[0];
+
+function palAt(st, x) {
+  x = fract(x);
+  const c1 = hex2rgb(st.c[0]), c2 = hex2rgb(st.c[1]), c3 = hex2rgb(st.c[2]);
+  let p = st.pal;
+  if (p === 0) p = fxOf(st.fx).defPal ?? (fxOf(st.fx).pal ? 11 : 2);
+  if (p === 2) return c1;
+  if (p === 3) return x < 0.5 ? c1 : c2;
+  if (p === 4) return x < 0.5 ? mix(c1, c2, x * 2) : mix(c2, c3, (x - 0.5) * 2);
+  if (p === 5) return [c1, c2, c3][Math.floor(x * 3) % 3];
+  const s = PAL[p]?.stops || PAL[11].stops; const f = x * (s.length - 1); const i = Math.floor(f);
+  return mix(hex2rgb(s[i]), hex2rgb(s[Math.min(i + 1, s.length - 1)]), f - i);
+}
+function palGradient(st, p) { const s2 = { ...st, pal: p }; const st0 = []; for (let i = 0; i <= 10; i++) st0.push(rgb2hex(palAt(s2, i / 10.001)) + " " + i * 10 + "%"); return `linear-gradient(90deg, ${st0.join(",")})`; }
+
+// Approximate effect drawing. The build samples fxdata names; the drawing says it is approximate.
+function sample(st, i, n, t) {
+  let u = n > 1 ? i / (n - 1) : 0;
+  if (st.dir === "rev") { u = 1 - u; i = n - 1 - i; }
+  if (st.dir === "mirror") { u = u < 0.5 ? u * 2 : (1 - u) * 2; i = Math.round(u * (n - 1) / 2); }
+  const c1 = hex2rgb(st.c[0]), c2 = hex2rgb(st.c[1]);
+  const sp = 0.15 + (st.sx / 255) * 2.4, k = st.ix / 255;
+  switch (st.fx) {
+    case 0: return c1;
+    case 2: return mix(c2, c1, 0.15 + 0.85 * (0.5 + 0.5 * Math.sin(t * sp * 2)));
+    case 12: return mix(c1, c2, 0.5 + 0.5 * Math.sin(t * sp * 1.5));
+    case 88: { const fl = 0.55 + 0.45 * k * Math.sin(t * sp * 9 + hash(i) * 30) * Math.sin(t * sp * 5.3 + i * 0.7); return mix(c2, c1, clamp(0.45 + fl * 0.6, 0, 1)); }
+    case 1: return fract(t * sp) < 0.15 + 0.7 * k ? c1 : c2;
+    case 13: { const w = 1 + Math.round(k * 6); return ((i + Math.floor(t * sp * 8)) % (2 * w)) < w ? c1 : c2; }
+    case 15: { const w = 3 + (1 - k) * 25; const v = 0.5 + 0.5 * Math.sin(((i / w) - t * sp) * Math.PI * 2); return mix(c2, c1, v * v); }
+    case 3: { const p = fract(t * sp * 0.25); const odd = Math.floor(t * sp * 0.25) % 2; const a = odd ? c2 : c1, b = odd ? c1 : c2; return u < p ? a : b; }
+    case 10: { const p = 1 - Math.abs(fract(t * sp * 0.3) * 2 - 1); const d = Math.abs(u - p) * n; return d < 1 + k * 6 ? c1 : c2; }
+    case 76: { const p = fract(t * sp * 0.3); let d = p - u; if (d < 0) d += 1; const tr = 0.03 + k * 0.4; return d < tr ? scale(st.pal === 0 ? c1 : palAt(st, u), Math.pow(1 - d / tr, 2)) : [0, 0, 0]; }
+    case 17: { const h = hash(i); if (h > 0.15 + k * 0.85) return c2; const v = Math.pow(Math.max(0, Math.sin(t * sp * 1.6 + h * 40)), 3); return mix(c2, st.pal === 0 ? c1 : palAt(st, h * 3), v); }
+    case 80: { const h = hash(i + 7); const v = Math.pow(Math.max(0, Math.sin(t * sp * (0.6 + k) + h * 50)), 2); return mix(c2, palAt(st, h * 2.7), v); }
+    case 20: { const v = hash(i * 13 + Math.floor(t * sp * 12)) > 1 - (0.02 + k * 0.15) ? 1 : 0; return v ? c1 : c2; }
+    case 43: { const p = fract(t * sp * 0.35 + hash(Math.floor(i / 12)) ); const d = Math.abs(fract(u * 4) - p); return d < 0.05 * (0.5 + k) ? (st.pal === 0 ? c1 : palAt(st, u)) : c2; }
+    case 66: { const heat = clamp(0.25 + 0.75 * Math.abs(Math.sin(i * 0.37 + t * sp * 3.1) * Math.sin(i * 0.11 - t * sp * 1.7)) * (0.6 + k * 0.6), 0, 1); return palAt(st, heat * 0.85); }
+    case 9: return palAt(st, u * (0.3 + k * 2) - t * sp * 0.2);
+    case 67: { const v = 0.6 + 0.4 * Math.sin(u * 9 + t * sp * 2); return scale(palAt(st, u * (0.5 + k) + Math.sin(t * sp * 0.3) * 0.5), v); }
+    default: return c1;
+  }
+}
+
+// ---------------------------------------------------------------- the yard
+// Metres; y up. Each prop: path, light count, sections (0-based inclusive ranges), Light (controller).
+const LIGHTS = [
+  { id: "garage", name: "Garage Light" },
+  { id: "porch", name: "Porch Light" },
+  { id: "yardbox", name: "Yard Light" },
+];
+function arc(cx, cy, r, a0, a1, steps = 24) { const o = []; for (let s = 0; s <= steps; s++) { const a = a0 + (a1 - a0) * s / steps; o.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]); } return o; }
+function spiral(cx, base, h, r, turns) { const o = []; const N = turns * 2; for (let s = 0; s <= N; s++) { const f = s / N; o.push([cx + (s % 2 ? 1 : -1) * r * (1 - f), base + f * h]); } return o; }
+function zig(x0, x1, y0, h, k) { const o = []; for (let s = 0; s <= k; s++) o.push([x0 + (x1 - x0) * s / k, y0 + (s % 2 ? h : h * 0.35)]); return o; }
+const PROPS = [
+  { id: "roof", name: "Roofline", kind: "Line", n: 150, light: "garage", path: [[0, 4], [5, 6.3], [10, 4]], sections: [{ id: "left", name: "Left", a: 0, b: 74 }, { id: "right", name: "Right", a: 75, b: 149 }] },
+  { id: "winl", name: "Window left", kind: "Window", n: 80, light: "garage", path: [[1.4, 1.3], [1.4, 2.9], [3.2, 2.9], [3.2, 1.3], [1.4, 1.3]], sections: [{ id: "top", name: "Top", a: 0, b: 39 }, { id: "bottom", name: "Bottom", a: 40, b: 79 }] },
+  { id: "winr", name: "Window right", kind: "Window", n: 80, light: "garage", path: [[6.8, 1.3], [6.8, 2.9], [8.6, 2.9], [8.6, 1.3], [6.8, 1.3]], sections: [{ id: "top", name: "Top", a: 0, b: 39 }, { id: "bottom", name: "Bottom", a: 40, b: 79 }] },
+  { id: "arch", name: "Door arch", kind: "Arch", n: 100, light: "porch", path: [[4.1, 0], [4.1, 1.9], ...arc(5, 1.9, 0.9, Math.PI, 0, 18).slice(1), [5.9, 0]], sections: [] },
+  { id: "wreath", name: "Wreath", kind: "Circle", n: 40, light: "porch", path: arc(5, 4.75, 0.42, -Math.PI / 2, Math.PI * 1.5, 30), sections: [] },
+  { id: "bushl", name: "Bush left", kind: "Zigzag", n: 60, light: "porch", path: zig(-2.6, -0.6, 0, 1.1, 8), sections: [] },
+  { id: "tree", name: "Tree", kind: "Spiral", n: 120, light: "yardbox", path: spiral(13.2, 0, 3.6, 1.15, 6), sections: [] },
+  { id: "bushr", name: "Bush right", kind: "Zigzag", n: 60, light: "yardbox", path: zig(10.6, 12.0, 0, 1.0, 7), sections: [] },
+];
+const propOf = (id) => PROPS.find((p) => p.id === id);
+for (const p of PROPS) {
+  const segs = []; let L = 0;
+  for (let i = 1; i < p.path.length; i++) { const d = Math.hypot(p.path[i][0] - p.path[i - 1][0], p.path[i][1] - p.path[i - 1][1]); segs.push(d); L += d; }
+  p.pts = [];
+  for (let k = 0; k < p.n; k++) {
+    let target = (k + 0.5) / p.n * L, j = 0;
+    while (j < segs.length - 1 && target > segs[j]) { target -= segs[j]; j++; }
+    const f = segs[j] ? target / segs[j] : 0; const a = p.path[j], b = p.path[j + 1];
+    p.pts.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]);
+  }
+}
+
+// ---------------------------------------------------------------- state
+const ST = (fx, c1, c2, extra = {}) => ({ fx, c: [c1, c2 || "#000000", "#000000"], pal: 0, sx: 128, ix: 128, bri: 255, dir: "fwd", ...extra });
+const ALL_BUT_WREATH = PROPS.filter((p) => p.id !== "wreath").map((p) => p.id);
+const followAll = (ids = ALL_BUT_WREATH) => Object.fromEntries(ids.map((id) => [id, { mode: "follow" }]));
+const LOOKS0 = [
+  { id: "warm", name: "Warm white", slot: 1, bri: 180, base: ST(0, "#ffa040"), props: followAll() },
+  { id: "cool", name: "Cool white", slot: 2, bri: 200, base: ST(0, "#e8f0ff"), props: followAll() },
+  { id: "candy", name: "Candy cane", slot: 3, bri: 180, base: ST(13, "#ff0000", "#ffffff", { sx: 90, ix: 120 }), props: { ...followAll(), tree: { mode: "own", style: ST(80, "#000000", "#000000", { pal: 31 }) } } },
+  { id: "twinkle", name: "Red green twinkle", slot: 4, bri: 170, base: ST(80, "#ff0000", "#000000", { pal: 31, sx: 140, ix: 160 }), props: followAll() },
+  { id: "snow", name: "Snowfall", slot: 5, bri: 160, base: ST(43, "#e8f4ff", "#05070f", { sx: 80, ix: 150 }), props: followAll() },
+  { id: "rainbow", name: "Slow rainbow", slot: 6, bri: 160, base: ST(9, "#ff0000", "#000000", { sx: 40, ix: 60, pal: 11 }), props: followAll() },
+  { id: "spooky", name: "Spooky", slot: 7, bri: 170, base: ST(88, "#ff6a00", "#2a0040", { sx: 120, ix: 200 }), props: { ...followAll(), tree: { mode: "own", style: ST(17, "#7a00ff", "#120018", { ix: 120 }) }, winl: { mode: "off" }, winr: { mode: "off" } } },
+];
+const S = {
+  route: "looks", tab: "looks", lookId: null, sel: [], section: null, panel: null, multi: false,
+  looks: clone(LOOKS0),
+  playlists: [{ id: "nightly", name: "Nightly", slot: 16, items: [{ look: "warm", min: 30 }, { look: "candy", min: 10 }, { look: "twinkle", min: 10 }], transition: 0.7, repeat: true }],
+  schedule: [{ id: "row-nightly", runs: "pl:nightly", dates: null, days: 127, on: { kind: "sunset", off: 0 }, offAt: { kind: "time", h: 23, m: 0 } }],
+  sent: null, now: {}, previewOn: false, previewLights: [], garageDown: false, sendOpen: false, sendResult: null,
+  addTo: null, openPl: null, openRow: null, clip: null, recent: ["#ff0000", "#ffffff", "#ffa040", "#00a020", "#ffc000", "#7a00ff"],
+  toast: null, tasksOpen: true, tasksFull: false, ticks: {}, flags: {}, selProp: null,
+};
+const digestOf = () => ({ looks: Object.fromEntries(S.looks.map((l) => [l.id, JSON.stringify(l)])), pls: Object.fromEntries(S.playlists.map((p) => [p.id, JSON.stringify(p)])), schedule: JSON.stringify(S.schedule) });
+S.sent = Object.fromEntries(LIGHTS.map((l) => [l.id, digestOf()]));
+for (const l of LIGHTS) S.now[l.id] = { what: "pl:nightly", item: "warm", hold: null };
+const look = () => S.looks.find((l) => l.id === S.lookId) || null;
+const runName = (r) => r.startsWith("pl:") ? (S.playlists.find((p) => "pl:" + p.id === r)?.name ?? "?") + " playlist" : (S.looks.find((l) => l.id === r.slice(5))?.name ?? "?");
+
+function changesFor(lightId) {
+  const was = S.sent[lightId], cur = digestOf(), out = [];
+  for (const l of S.looks) if (was.looks[l.id] !== cur.looks[l.id]) out.push({ name: l.name, kind: was.looks[l.id] ? "changed" : "new Look" });
+  for (const id of Object.keys(was.looks)) if (!cur.looks[id]) out.push({ name: JSON.parse(was.looks[id]).name, kind: "deleted" });
+  for (const p of S.playlists) if (was.pls[p.id] !== cur.pls[p.id]) out.push({ name: p.name + " playlist", kind: was.pls[p.id] ? "changed" : "new" });
+  if (was.schedule !== cur.schedule) out.push({ name: "Schedule", kind: "changed" });
+  return out;
+}
+const allChanges = () => { const m = new Map(); for (const l of LIGHTS) for (const c of changesFor(l.id)) m.set(c.name, c); return [...m.values()]; };
+const lookPending = (id) => LIGHTS.some((l) => S.sent[l.id].looks[id] !== digestOf().looks[id]);
+
+// Style resolution: Look style → prop (Follow / Own / Off) → section (Follow / Own / Off).
+function entry(L, pid) { return L.props[pid] || { mode: "off" }; }
+function resolve(L, pid, sid) {
+  const e = entry(L, pid); if (e.mode === "off") return null;
+  let st = e.mode === "own" ? e.style : L.base;
+  if (sid) { const s = e.sections?.[sid]; if (s?.mode === "off") return null; if (s?.mode === "own") st = s.style; }
+  return st;
+}
+const sectionsFollow = (L, p) => !p.sections.some((s) => { const m = entry(L, p.id).sections?.[s.id]?.mode; return m && m !== "follow"; });
+function lightColour(L, p, i, t) {
+  if (!L) return null;
+  if (!p.sections.length || sectionsFollow(L, p)) { const st = resolve(L, p.id); return st ? scale(sample(st, i, p.n, t), (st.bri / 255) * (0.35 + 0.65 * L.bri / 255)) : null; }
+  const s = p.sections.find((x) => i >= x.a && i <= x.b); if (!s) return null;
+  const st = resolve(L, p.id, s.id); return st ? scale(sample(st, i - s.a, s.b - s.a + 1, t), (st.bri / 255) * (0.35 + 0.65 * L.bri / 255)) : null;
+}
+const dotOf = (st) => { if (!st) return "transparent"; if (fxOf(st.fx).cols[0]) return st.c[0]; let best = [0, 0, 0]; for (let i = 0; i < 12; i++) { const c = sample(st, i, 12, 0.7); if (c[0] + c[1] + c[2] > best[0] + best[1] + best[2]) best = c; } return rgb2hex(best); };
+function lookOnCount(L) { return PROPS.filter((p) => entry(L, p.id).mode !== "off").length; }
+function segmentsOn(L, lightId) { let n = 0; for (const p of PROPS.filter((x) => x.light === lightId)) { if (entry(L, p.id).mode === "off") continue; n += p.sections.length && !sectionsFollow(L, p) ? p.sections.length : 1; } return n; }
+
+// ---------------------------------------------------------------- drawing
+const world = { x0: -3.2, x1: 14.8, y0: -0.3, y1: 6.9 };
+function fit(w, h, pad = 18) { const sx = (w - pad * 2) / (world.x1 - world.x0), sy = (h - pad * 2) / (world.y1 - world.y0); const s = Math.min(sx, sy); const ox = (w - s * (world.x1 - world.x0)) / 2 - world.x0 * s; const oy = h - pad - Math.max(0, (h - pad * 2 - s * (world.y1 - world.y0)) * 0.25) + world.y0 * s; return { s, ox, oy }; }
+const toScreen = (v, pt) => [v.ox + pt[0] * v.s, v.oy - pt[1] * v.s];
+function drawYard(cv, L, t, opts = {}) {
+  const dpr = Math.min(devicePixelRatio || 1, 2); const w = cv.clientWidth, h = cv.clientHeight; if (!w || !h) return null;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = "#07080b"; g.fillRect(0, 0, w, h);
+  const v = fit(w, h, opts.small ? 6 : 26);
+  // ground
+  const gy = toScreen(v, [0, 0])[1]; g.fillStyle = "#0e1117"; g.fillRect(0, gy, w, h - gy); g.strokeStyle = "#1e232c"; g.beginPath(); g.moveTo(0, gy); g.lineTo(w, gy); g.stroke();
+  const r = Math.max(1.1, v.s * 0.045);
+  for (const p of PROPS) {
+    const selected = opts.sel?.includes(p.id); const dimOthers = opts.sel?.length && !selected && opts.dim;
+    g.globalCompositeOperation = "lighter";
+    for (let i = 0; i < p.n; i++) {
+      const [x, y] = toScreen(v, p.pts[i]);
+      const c = opts.neutral ? hex2rgb("#c08a4c") : lightColour(L, p, i, t);
+      if (!c || (c[0] + c[1] + c[2] < 6)) { g.globalCompositeOperation = "source-over"; g.fillStyle = "#262a33"; g.beginPath(); g.arc(x, y, r * 0.7, 0, 7); g.fill(); g.globalCompositeOperation = "lighter"; continue; }
+      const k = dimOthers ? 0.35 : 1;
+      if (!opts.small) { g.fillStyle = `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${0.16 * k})`; g.beginPath(); g.arc(x, y, r * 3.2, 0, 7); g.fill(); }
+      g.fillStyle = `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${k})`; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+    }
+    g.globalCompositeOperation = "source-over";
+    if (selected && !opts.small) {
+      g.strokeStyle = "#7ee0d0"; g.lineWidth = 1.5; g.setLineDash([5, 4]);
+      const xs = p.pts.map((q) => toScreen(v, q)); const bx0 = Math.min(...xs.map((a) => a[0])) - 9, bx1 = Math.max(...xs.map((a) => a[0])) + 9, by0 = Math.min(...xs.map((a) => a[1])) - 9, by1 = Math.max(...xs.map((a) => a[1])) + 9;
+      g.strokeRect(bx0, by0, bx1 - bx0, by1 - by0); g.setLineDash([]);
+      if (opts.section) { const s = p.sections.find((q) => q.id === opts.section); if (s) { g.strokeStyle = "#7ee0d0"; g.lineWidth = 3; g.beginPath(); for (let i = s.a; i <= s.b; i++) { const [x, y] = toScreen(v, p.pts[i]); const yy = y + 7; i === s.a ? g.moveTo(x, yy) : g.lineTo(x, yy); } g.stroke(); } }
+      g.fillStyle = "#7ee0d0"; g.font = "600 12px IBM Plex Sans, sans-serif"; g.fillText(p.name, bx0, by0 - 5);
+    } else if (opts.labels && !opts.small && w >= 640) {
+      const xs = p.pts.map((q) => toScreen(v, q)); const top = Math.min(...xs.map((a) => a[1])); const cx = xs.reduce((a, b) => a + b[0], 0) / xs.length;
+      g.fillStyle = entry(L || { props: {} }, p.id).mode === "off" && !opts.neutral ? "#5a5f69" : "#a39d91"; g.font = "11px IBM Plex Sans, sans-serif"; g.textAlign = "center"; g.fillText(p.name, cx, top - 10); g.textAlign = "start";
+    }
+  }
+  return v;
+}
+function hitProp(v, x, y) {
+  let best = null, bd = 22;
+  for (const p of PROPS) for (let i = 0; i < p.n; i += 2) { const [px, py] = toScreen(v, p.pts[i]); const d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = { p, i }; } }
+  return best;
+}
+function drawStrip(cv, st, n = 40, t = 0) {
+  const dpr = Math.min(devicePixelRatio || 1, 2); const w = cv.clientWidth, h = cv.clientHeight; if (!w) return;
+  if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.fillStyle = "#000"; g.fillRect(0, 0, w, h);
+  if (!st) { g.fillStyle = "#333"; for (let i = 0; i < n; i++) { g.beginPath(); g.arc((i + 0.5) * w / n, h / 2, 1, 0, 7); g.fill(); } return; }
+  for (let i = 0; i < n; i++) { const c = sample(st, i, n, t); g.fillStyle = `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`; g.beginPath(); g.arc((i + 0.5) * w / n, h / 2, Math.min(h / 2 - 1, w / n / 2.2), 0, 7); g.fill(); }
+}
+
+// ---------------------------------------------------------------- schedule maths (example location; WLED computes its own)
+const LAT = 39.96, LON = -83.0;
+function sunsetMin(doy) { // local minutes after midnight, America/New_York with DST, year 2026
+  const rad = Math.PI / 180, g = 2 * Math.PI / 365 * (doy - 1);
+  const eq = 229.18 * (0.000075 + 0.001868 * Math.cos(g) - 0.032077 * Math.sin(g) - 0.014615 * Math.cos(2 * g) - 0.040849 * Math.sin(2 * g));
+  const dec = 0.006918 - 0.399912 * Math.cos(g) + 0.070257 * Math.sin(g) - 0.006758 * Math.cos(2 * g) + 0.000907 * Math.sin(2 * g) - 0.002697 * Math.cos(3 * g) + 0.00148 * Math.sin(3 * g);
+  const ha = Math.acos(Math.cos(90.833 * rad) / (Math.cos(LAT * rad) * Math.cos(dec)) - Math.tan(LAT * rad) * Math.tan(dec)) / rad;
+  const utc = 720 - 4 * (LON - ha) - eq; const dst = doy >= 67 && doy < 305; return utc + (dst ? -240 : -300);
+}
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+const doyOf = (m, d) => MDAYS.slice(0, m - 1).reduce((a, b) => a + b, 0) + d;
+const dateOf = (doy) => { let m = 0; while (doy > MDAYS[m]) { doy -= MDAYS[m]; m++; } return [m + 1, doy]; };
+const fmtDate = (m, d) => `${MONTHS[m - 1]} ${d}`;
+const fmtTime = (mins) => { mins = Math.round(mins); const h = Math.floor(mins / 60) % 24, m = mins % 60; return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
+function rangeDays(dates) { if (!dates) return Array.from({ length: 365 }, (_, i) => i + 1); const a = doyOf(...dates.from), b = doyOf(...dates.to); const o = []; if (a <= b) for (let d = a; d <= b; d++) o.push(d); else { for (let d = a; d <= 365; d++) o.push(d); for (let d = 1; d <= b; d++) o.push(d); } return o; }
+// Plan WLED timers for the schedule rows. 8 clock timers take dates; the sunset timer cannot.
+function planTimers() {
+  const rows = S.schedule; const notes = {}; let clock = 0; let sunsetRow = null; const steps = {};
+  const allYearSunset = rows.filter((r) => !r.dates && r.on.kind === "sunset");
+  if (allYearSunset.length) sunsetRow = allYearSunset[allYearSunset.length - 1].id;
+  for (const r of rows) {
+    notes[r.id] = [];
+    if (r.on.kind === "time") { clock += 1; continue; }
+    if (r.id === sunsetRow) { notes[r.id].push("Uses WLED's sunset timer."); continue; }
+    // Follow sunset with clock times, at most 10 minutes after real sunset, never before it.
+    const days = rangeDays(r.dates); const st = []; let cur = null;
+    for (const d of days) { const v = sunsetMin(d) + r.on.off; if (cur && Math.max(cur.hi, v) - Math.min(cur.lo, v) <= 10) { cur.to = d; cur.hi = Math.max(cur.hi, v); cur.lo = Math.min(cur.lo, v); } else { cur = { from: d, to: d, lo: v, hi: v }; st.push(cur); } }
+    for (const x of st) x.at = Math.ceil(x.hi + 1);
+    steps[r.id] = st; clock += st.length;
+    const late = Math.max(...st.map((x) => x.at - x.lo));
+    notes[r.id].push(`Follows sunset with ${st.length} clock time${st.length > 1 ? "s" : ""}: ${st.map((x) => `${fmtTime(x.at)} from ${fmtDate(...dateOf(x.from))}`).join(", ")}. Starts at most ${Math.round(late)} minutes after sunset.`);
+    if (sunsetRow) notes[r.id].push(`${runName(rows.find((q) => q.id === sunsetRow).runs)} starts at sunset on these days too, then this row takes over.`);
+  }
+  // Off timers: rows with the same off time and days share one.
+  const offKeys = new Set(); let sunriseUsed = false;
+  for (const r of rows) { if (r.offAt.kind === "none") continue; if (r.offAt.kind === "sunrise") { sunriseUsed = true; continue; } offKeys.add(`${r.offAt.h}:${r.offAt.m}:${r.days}:${r.dates ? "d" + r.id : "all"}`); }
+  // a dated row whose off matches an all-year row's off can share it
+  const allOff = rows.filter((r) => !r.dates && r.offAt.kind === "time").map((r) => `${r.offAt.h}:${r.offAt.m}:${r.days}`);
+  let offCount = 0; for (const k of offKeys) { const [h, m, d, w] = k.split(":"); if (w !== "all" && allOff.includes(`${h}:${m}:${d}`)) continue; offCount++; }
+  clock += offCount;
+  return { clock, sunsetRow, sunriseUsed, notes, steps };
+}
+
+// ---------------------------------------------------------------- tasks
+const TASKS = [
+  { k: "t1", t: "Make a new Look called “Christmas Eve”: roofline in a red and white chase, both windows warm white, the tree twinkling green. Everything else off." },
+  { k: "t2", t: "Watch it on the real lights, and slow the roofline chase down while it runs." },
+  { k: "t3", t: "Make the right half of the roofline gold instead." },
+  { k: "t4", t: "The wreath is new. Put it in Christmas Eve and in Warm white." },
+  { k: "t5", t: "Make a playlist “Christmas”: Christmas Eve for 10 minutes, then Snowfall for 5, over and over." },
+  { k: "t6", t: "Run Christmas from Nov 25 to Jan 6, on at sunset, off at 11 PM. Keep Nightly for the rest of the year." },
+  { k: "t7", t: "Garage Light is unplugged (switch below). Send everything to the lights, and find out what didn't get there." },
+  { k: "t8", t: "Party tonight: put every light on Warm white now, until the schedule turns them off." },
+  { k: "t9", t: "Which Looks is the door arch in, and in what colour?" },
+];
+const near = (h, rgb, tol = 90) => { const a = hex2rgb(h); return Math.abs(a[0] - rgb[0]) + Math.abs(a[1] - rgb[1]) + Math.abs(a[2] - rgb[2]) < tol * 1.6; };
+function checkTasks() {
+  const T = S.ticks, ce = S.looks.find((l) => /christmas eve/i.test(l.name));
+  if (ce) {
+    const roof = resolve(ce, "roof"), tree = resolve(ce, "tree"), wl = resolve(ce, "winl"), wr = resolve(ce, "winr");
+    const redwhite = (st) => st && [13, 15, 1, 3].includes(st.fx) && st.c.slice(0, 2).some((c) => near(c, [255, 0, 0])) && st.c.slice(0, 2).some((c) => near(c, [255, 255, 255]));
+    const warm = (st) => st && st.fx === 0 && near(st.c[0], [255, 160, 64], 120);
+    const green = (st) => st && [17, 80, 20, 2].includes(st.fx) && (near(st.c[0], [0, 170, 0], 140) || st.pal === 10);
+    const othersOff = ["arch", "bushl", "bushr"].every((id) => entry(ce, id).mode === "off");
+    const roofOk = redwhite(roof) || (resolve(ce, "roof", "left") && redwhite(resolve(ce, "roof", "left")));
+    if (roofOk && warm(wl) && warm(wr) && green(tree) && othersOff) T.t1 = true;
+    const rr = resolve(ce, "roof", "right"); if (rr && near(rr.c[0], [255, 192, 0], 110) && entry(ce, "roof").sections?.right?.mode === "own") T.t3 = true;
+    if (entry(ce, "wreath").mode !== "off" && entry(S.looks.find((l) => l.id === "warm"), "wreath").mode !== "off") T.t4 = true;
+  }
+  if (S.flags.slowedLive) T.t2 = true;
+  const pl = S.playlists.find((p) => /christmas/i.test(p.name));
+  if (pl && pl.repeat && pl.items.length === 2 && ce && pl.items[0].look === ce.id && pl.items[0].min === 10 && pl.items[1].look === "snow" && pl.items[1].min === 5) T.t5 = true;
+  if (pl) { const r = S.schedule.find((x) => x.runs === "pl:" + pl.id); if (r && r.dates && r.dates.from[0] === 11 && r.dates.from[1] === 25 && r.dates.to[0] === 1 && r.dates.to[1] === 6 && r.on.kind === "sunset" && r.offAt.kind === "time" && r.offAt.h === 23 && r.offAt.m === 0 && S.schedule.some((x) => x.runs === "pl:nightly")) T.t6 = true; }
+  if (S.flags.sentWithGarageDown) T.t7 = true;
+  if (S.flags.partyOn) T.t8 = true;
+  if (S.flags.archLooks) T.t9 = true;
+}
+
+// ---------------------------------------------------------------- editing helpers
+function curLook() { return look(); }
+function targets() { // style holders the panel edits
+  const L = curLook(); if (!L) return [];
+  if (!S.sel.length) return [{ get: () => L.base, set: (st) => { L.base = st; } }];
+  if (S.section && S.sel.length === 1) {
+    const e = L.props[S.sel[0]]; const sid = S.section;
+    return [{ get: () => resolve(L, S.sel[0], sid) || (e?.mode === "own" ? e.style : L.base), set: (st) => { e.sections = e.sections || {}; e.sections[sid] = { mode: "own", style: st }; } }];
+  }
+  return S.sel.map((pid) => ({ get: () => (L.props[pid]?.mode === "own" ? L.props[pid].style : L.base), set: (st) => { L.props[pid] = { ...(L.props[pid] || {}), mode: "own", style: st }; } }));
+}
+function patch(p) {
+  const L = curLook(); for (const t of targets()) { const st = { ...clone(t.get()), ...p }; t.set(st); }
+  if (S.previewOn && S.sel.includes("roof") && "sx" in p) S.flags.slowedLive = S.flags.slowedLive || p.sx < (S.flags.roofSxAtPreview ?? 999);
+  if (p.c) { for (const c of p.c) if (!S.recent.includes(c) && c !== "#000000") S.recent = [c, ...S.recent].slice(0, 8); }
+  checkTasks(); return L;
+}
+function setMode(mode) {
+  const L = curLook(); if (!L) return;
+  if (S.section && S.sel.length === 1) {
+    const pid = S.sel[0], e = L.props[pid] || (L.props[pid] = { mode: "follow" }); if (e.mode === "off") e.mode = "follow";
+    e.sections = e.sections || {};
+    if (mode === "own") e.sections[S.section] = { mode: "own", style: clone(resolve(L, pid, S.section) || (e.mode === "own" ? e.style : L.base)) };
+    else e.sections[S.section] = { mode };
+  } else {
+    for (const pid of S.sel) {
+      const e = L.props[pid];
+      if (mode === "own") L.props[pid] = { ...(e || {}), mode: "own", style: clone(e?.mode === "own" ? e.style : L.base) };
+      else L.props[pid] = { ...(e || {}), mode };
+    }
+  }
+  checkTasks();
+}
+
+// ---------------------------------------------------------------- routing
+function go(route, extra = {}) { Object.assign(S, { route, panel: null }, extra); if (route !== "look") { if (S.previewOn) endPreview(true); } render(); }
+function openLook(id, pid = null) { S.lookId = id; S.sel = pid ? [pid] : []; S.section = null; S.multi = false; go("look"); }
+
+// ---------------------------------------------------------------- preview and send (simulated)
+const answering = () => LIGHTS.filter((l) => !(l.id === "garage" && S.garageDown));
+function startPreview() { S.previewOn = true; S.previewLights = answering().map((l) => l.id); const L = curLook(); const r = resolve(L, "roof"); S.flags.roofSxAtPreview = r ? r.sx : 999; }
+function endPreview(silent) { S.previewOn = false; if (!silent) toast("Preview ended. The lights went back to what they were showing."); }
+function toast(text, action) { S.toast = { text, action }; clearTimeout(toast.t); toast.t = setTimeout(() => { S.toast = null; renderLayer(); }, 6000); renderLayer(); }
+function doSend(lightIds) {
+  const res = []; const cur = digestOf();
+  for (const l of LIGHTS) {
+    if (!lightIds.includes(l.id)) { res.push({ l, st: "skip" }); continue; }
+    const n = changesFor(l.id).length;
+    if (l.id === "garage" && S.garageDown) { res.push({ l, st: "bad", why: "Didn't answer. Nothing was sent. It keeps its old presets until you send again." }); continue; }
+    S.sent[l.id] = clone(cur); res.push({ l, st: "ok", why: `${n} change${n === 1 ? "" : "s"} written and read back. Presets ${S.looks.map((x) => x.slot).sort((a, b) => a - b).slice(0, 3).join(", ")}… match.` });
+  }
+  if (S.garageDown && lightIds.includes("garage")) S.flags.sentWithGarageDown = true;
+  S.sendResult = res; checkTasks();
+}
+function turnOn(run) {
+  const isPl = run.startsWith("pl:"); const res = [];
+  for (const l of LIGHTS) {
+    if (l.id === "garage" && S.garageDown) { res.push(l.name + " didn't answer"); continue; }
+    S.now[l.id] = { what: run, item: isPl ? S.playlists.find((p) => "pl:" + p.id === run).items[0].look : run.slice(5), hold: "until the next scheduled step" };
+  }
+  if (run === "look:warm" && answering().every((l) => S.now[l.id].what === "look:warm")) S.flags.partyOn = true;
+  checkTasks();
+  toast(`${runName(run)} is on now${res.length ? ". " + res.join(", ") : ""}. The Schedule takes over at its next step (Off at 11:00 PM).`);
+}
+
+// ---------------------------------------------------------------- render: top bar and nav
+function render() {
+  checkTasks();
+  const app = $("#app"); app.classList.toggle("scoped", S.route === "look");
+  renderTop(); renderNav();
+  const body = $("#body");
+  if (S.route === "look") body.innerHTML = lookView();
+  else if (S.route === "yard") body.innerHTML = yardView();
+  else body.innerHTML = looksPage();
+  renderLayer(); bindCanvas();
+}
+function sendPill() { const n = allChanges().length; const behind = LIGHTS.filter((l) => changesFor(l.id).length); if (n && behind.length < LIGHTS.length) return `<button class="sendpill" data-act="openSend"><span class="long">${behind.map((l) => l.name).join(", ")}: </span>${n} not sent · Send</button>`; return n ? `<button class="sendpill" data-act="openSend">${n} change${n === 1 ? "" : "s"}<span class="long"> not on the lights</span> · Send</button>` : `<button class="sendpill ok" data-act="openSend">Lights up to date</button>`; }
+function renderTop() {
+  const top = $("#top");
+  if (S.route === "look") {
+    const L = look();
+    top.innerHTML = `<span class="brand hidephone"><i></i>Nightplot</span>
+      <div class="crumb"><a href="#" data-act="toLooks" class="hidephone">Looks ›</a>
+      <select aria-label="Look" data-act="switchLook">${S.looks.map((l) => `<option value="${l.id}" ${l.id === L.id ? "selected" : ""}>${esc(l.name)}</option>`).join("")}</select></div>
+      <span class="spacer"></span>
+      <span class="note hidephone">Saved</span>
+      <button class="toggle" data-act="togglePreview" aria-pressed="${S.previewOn}"><span class="sw"></span><span class="lbl">Preview on lights</span><span class="lblshort" ${isPhone() ? "" : "hidden"}>Lights</span></button>
+      <button class="btn primary" data-act="done">Done</button>
+      <button class="iconbtn" data-act="tasks">Tasks</button>`;
+  } else {
+    top.innerHTML = `<span class="brand"><i></i>Nightplot</span>
+      <nav class="nav"><a href="#" data-act="toYard" class="${S.route === "yard" ? "on" : ""}">Yard</a><a href="#" data-act="toLooks" class="${S.route === "looks" ? "on" : ""}">Looks</a><a href="#" data-soon>Lights</a><a href="#" data-soon>Check</a><a href="#" data-soon>More</a></nav>
+      <span class="spacer"></span>${sendPill()}<button class="iconbtn" data-act="tasks">Tasks</button>`;
+  }
+}
+function renderNav() { $("#phonenav").innerHTML = `<a href="#" data-act="toYard" class="${S.route === "yard" ? "on" : ""}">Yard</a><a href="#" data-act="toLooks" class="${S.route === "looks" ? "on" : ""}">Looks</a><a href="#" data-soon>Lights</a><a href="#" data-soon>Check</a><a href="#" data-soon>More</a>`; }
+
+// ---------------------------------------------------------------- Yard (home, from #142) — only the Looks parts are new
+function yardView() {
+  const p = S.selProp ? propOf(S.selProp) : null;
+  const nowL = S.looks.find((l) => l.id === S.now.porch?.item) || S.looks[0];
+  let panel;
+  if (!p) panel = `<div class="title"><h1>Yard</h1><p class="sub">${PROPS.length} props on ${LIGHTS.length} Lights</p></div>
+    <p class="note">${tap()} a prop to select it. Its Looks are in its panel.</p>
+    <div class="banner"><b>Wreath is new.</b><span>It's off in every Look until you add it.</span><div><button class="btn primary" data-act="addToLooks" data-prop="wreath">Add Wreath to Looks…</button></div></div>
+    <p class="proto">The rest of the yard (placing, editing shapes, the Controller fold) is the approved one-page yard design in PR #142. This prototype only adds the Looks parts.</p>`;
+  else {
+    const inLooks = S.looks.filter((l) => entry(l, p.id).mode !== "off");
+    panel = `<div class="title"><h1>${esc(p.name)}</h1><p class="sub">${p.kind} · ${p.n} lights · ${LIGHTS.find((l) => l.id === p.light).name}</p></div>
+    <p class="proto">Name, position, Edit shape and Controller are as in PR #142.</p>
+    <details class="fold" open data-fold="looks"><summary>Looks <span class="meta">in ${inLooks.length} of ${S.looks.length}</span></summary><div class="foldbody">
+      ${S.looks.map((l) => { const e = entry(l, p.id); const st = resolve(l, p.id); return `<div class="proprow"><button data-act="openLook" data-look="${l.id}" data-prop="${p.id}"><span style="width:64px;flex:none"><canvas class="strip" data-strip="look:${l.id}:${p.id}"></canvas></span><span>${esc(l.name)}</span></button><span class="note">${e.mode === "off" ? "Off" : e.mode === "own" ? fxOf(st.fx).name : "Follows Look"}${p.sections.length && e.mode !== "off" && !sectionsFollow(l, p) ? " · by section" : ""}</span></div>`; }).join("")}
+      ${inLooks.length < S.looks.length ? `<button class="btn" data-act="addToLooks" data-prop="${p.id}">Add to Looks…</button>` : ""}
+    </div></details>`;
+  }
+  return `<div class="main yard">
+    <aside class="rail"><section><h2 class="cap">Props</h2><ul class="plist">${PROPS.map((q) => `<li><button class="${q.id === S.selProp ? "on" : ""}" data-act="selYard" data-prop="${q.id}"><span class="dot" style="background:#c08a4c"></span>${esc(q.name)}<span class="n">${q.n}</span></button></li>`).join("")}</ul></section>
+      <section><h2 class="cap">Looks</h2><ul class="plist">${S.looks.map((l) => `<li><button data-act="openLook" data-look="${l.id}"><span class="dot" style="background:${dotOf(l.base)}"></span>${esc(l.name)}<span class="n">${lookOnCount(l)}/${PROPS.length}</span></button></li>`).join("")}</ul></section></aside>
+    <div class="stagewrap"><canvas class="stage" id="cv" data-mode="yard"></canvas><div class="chip">Now on the lights: ${esc(nowL.name)}</div></div>
+    <aside class="insp">${panel}</aside></div>`;
+}
+
+// ---------------------------------------------------------------- Looks page
+function looksPage() {
+  const tabs = [["looks", "Looks"], ["playlists", "Playlists"], ["schedule", "Schedule"], ["byprop", "By prop"]];
+  let inner = "";
+  if (S.tab === "looks") inner = looksTab();
+  if (S.tab === "playlists") inner = playlistsTab();
+  if (S.tab === "schedule") inner = scheduleTab();
+  if (S.tab === "byprop") inner = bypropTab();
+  return `<div class="page"><div class="pagein">
+    <div class="pagehead"><h1>Looks</h1><span class="spacer"></span></div>
+    ${nowBar()}
+    <div class="tabs" role="tablist">${tabs.map(([k, n]) => `<button role="tab" aria-selected="${S.tab === k}" data-act="tab" data-tab="${k}">${n}</button>`).join("")}</div>
+    ${inner}
+  </div></div>`;
+}
+function nowBar() {
+  const groups = {}; for (const l of LIGHTS) { const k = S.garageDown && l.id === "garage" ? "__down" : S.now[l.id].what + "|" + S.now[l.id].item; (groups[k] = groups[k] || []).push(l); }
+  const main = Object.entries(groups).filter(([k]) => k !== "__down").sort((a, b) => b[1].length - a[1].length)[0];
+  const [what, item] = main[0].split("|"); const itemName = S.looks.find((x) => x.id === item)?.name;
+  const pl = what.startsWith("pl:");
+  return `<div class="nowbar"><div><div class="note">Now on the lights · Fri 7:40 PM</div>
+    <div class="big">${esc(pl ? itemName + " · from " + runName(what) : runName(what))}</div>
+    <div class="lightsrow">${LIGHTS.map((l) => { const down = S.garageDown && l.id === "garage"; const behind = changesFor(l.id).length; return `<span class="lightpill ${down ? "bad" : behind ? "behind" : ""}">${l.name}: ${down ? "didn't answer" : behind ? behind + " not sent" : "up to date"}</span>`; }).join("")}</div>
+    <div class="note" style="margin-top:6px">Next: Off at 11:00 PM (Schedule). ${S.now.porch.hold ? "Turned on by hand; the Schedule takes over at its next step." : ""}</div></div>
+    <div class="btnrow"><button class="btn" data-act="tab" data-tab="schedule">Schedule</button></div></div>`;
+}
+function looksTab() {
+  return `<div class="cards">${S.looks.map((l) => {
+    const pending = lookPending(l.id); const isNew = !Object.values(S.sent).some((d) => d.looks[l.id]);
+    const live = LIGHTS.some((x) => S.now[x.id].item === l.id && !(S.garageDown && x.id === "garage"));
+    const used = S.playlists.filter((p) => p.items.some((i) => i.look === l.id)).map((p) => p.name);
+    return `<div class="card"><canvas data-thumb="${l.id}" data-act="openLook" data-look="${l.id}" aria-label="${esc(l.name)} drawn on the yard"></canvas><div class="body">
+      <div class="row"><h3>${esc(l.name)}</h3>${live ? `<span class="tag live">On now</span>` : ""}${isNew ? `<span class="tag new">Not sent</span>` : pending ? `<span class="tag new">Changed</span>` : ""}</div>
+      <div class="note">${lookOnCount(l)} of ${PROPS.length} props${used.length ? " · in " + used.map(esc).join(", ") : ""}</div>
+      <div class="row"><button class="btn small" data-act="openLook" data-look="${l.id}">Edit</button><button class="btn small" data-act="turnOn" data-run="look:${l.id}">${pending ? "Send and turn on" : "Turn on now"}</button><span class="spacer"></span><button class="btn small link" data-act="dupLook" data-look="${l.id}" title="Duplicate">Duplicate</button></div>
+    </div></div>`;
+  }).join("")}<button class="card add" data-act="newLook"><b style="font-size:28px">+</b>New Look</button></div>
+  <p class="note">A Look is one WLED preset with the same number on every Light. Changes save in Nightplot as you make them, and reach the lights when you Send.</p>`;
+}
+function playlistsTab() {
+  return `<div class="list">${S.playlists.map((p) => {
+    const open = S.openPl === p.id; const total = p.items.reduce((a, b) => a + b.min, 0);
+    return `<div class="item ${open ? "open" : ""}"><div class="itemhead"><h3>${esc(p.name)}</h3><span class="sub">${p.items.length} Looks · ${total} min ${p.repeat ? "· repeats" : "· then off"}</span><span class="spacer"></span>
+      ${lookPending("x") ? "" : ""}<button class="btn small" data-act="turnOn" data-run="pl:${p.id}">Turn on now</button><button class="btn small" data-act="openPl" data-pl="${p.id}">${open ? "Close" : "Edit"}</button></div>
+      <div style="display:flex;gap:3px;height:12px">${p.items.map((it) => `<span title="${esc(S.looks.find((l) => l.id === it.look)?.name)}" style="flex:${it.min};border-radius:3px;background:${dotOf(S.looks.find((l) => l.id === it.look)?.base)}"></span>`).join("")}</div>
+      ${open ? `<label class="f">Name<input class="in" data-act="plName" data-pl="${p.id}" value="${esc(p.name)}"></label>
+      <div class="list" style="gap:6px">${p.items.map((it, i) => `<div class="plrow"><span class="ix">${i + 1}</span>
+        <select class="in" aria-label="Look ${i + 1}" data-act="plLook" data-pl="${p.id}" data-i="${i}">${S.looks.map((l) => `<option value="${l.id}" ${l.id === it.look ? "selected" : ""}>${esc(l.name)}</option>`).join("")}</select>
+        <label class="f" style="flex-direction:row;align-items:center;gap:4px"><input class="in num" type="number" min="1" max="600" aria-label="Minutes for Look ${i + 1}" data-act="plMin" data-pl="${p.id}" data-i="${i}" value="${it.min}" style="width:56px">min</label>
+        <span class="btnrow" style="flex-wrap:nowrap"><button class="btn small" data-act="plUp" data-pl="${p.id}" data-i="${i}" ${i ? "" : "disabled"} aria-label="Move up">↑</button><button class="btn small" data-act="plDel" data-pl="${p.id}" data-i="${i}" aria-label="Remove">✕</button></span></div>`).join("")}</div>
+      <div class="btnrow"><button class="btn" data-act="plAdd" data-pl="${p.id}">+ Add a Look</button></div>
+      <div class="grid2"><label class="f">Fade between Looks (seconds)<input class="in num" type="number" min="0" step="0.1" value="${p.transition}" data-act="plTr" data-pl="${p.id}"></label>
+      <label class="f">After the last Look<select class="in" data-act="plRep" data-pl="${p.id}"><option value="1" ${p.repeat ? "selected" : ""}>Start again</option><option value="0" ${p.repeat ? "" : "selected"}>Turn off</option></select></label></div>
+      <div class="btnrow"><span class="spacer"></span><button class="btn small danger" data-act="plDelete" data-pl="${p.id}">Delete playlist</button></div>` : ""}
+    </div>`;
+  }).join("")}<button class="btn" data-act="newPl" style="align-self:flex-start">+ New playlist</button></div>
+  <p class="note">A playlist is a WLED preset too. It runs on each Light by itself, so Nightplot can be closed.</p>`;
+}
+function scheduleTab() {
+  const plan = planTimers(); const over = plan.clock > 8;
+  const yb = `<div class="yearbar">${MONTHS.map((m, i) => `<span class="m" style="left:${doyOf(i + 1, 1) / 365 * 100}%">${m}</span>`).join("")}
+    ${S.schedule.map((r, ri) => { const days = rangeDays(r.dates); const cover = []; let cur = null; for (const d of days) { if (cur && d === cur.b + 1) cur.b = d; else { cur = { a: d, b: d }; cover.push(cur); } } const col = ri === 0 ? "#1f8f80" : ri === 1 ? "#85552c" : "#6a4caf";
+      return cover.map((c) => `<span class="r" style="top:${18 + (ri % 2) * 17}px;left:${(c.a - 1) / 365 * 100}%;width:${(c.b - c.a + 1) / 365 * 100}%;background:${col}">${esc(runName(r.runs))}</span>`).join(""); }).join("")}
+    <span class="today" style="left:${(doyOf(11, 27) - 1) / 365 * 100}%" title="Today"></span></div>`;
+  return `<div class="list">${yb}
+    <p class="note">When two rows cover the same day, the higher row wins. Move a row up with ↑.</p>
+    ${S.schedule.map((r, i) => schedRow(r, i, plan)).join("")}
+    <button class="btn" data-act="newRow" style="align-self:flex-start">+ Add to the schedule</button>
+    <div class="item"><div class="itemhead"><h3>WLED timers</h3><span class="sub">The Schedule runs on each Light with Nightplot closed.</span></div>
+      <div class="budget">${Array.from({ length: 8 }, (_, i) => `<i class="${i < plan.clock ? (over ? "x" : "u") : ""}"></i>`).join("")}<span style="margin-left:6px">${plan.clock} of 8 clock timers</span>
+      <span style="margin-left:12px">Sunset timer: ${plan.sunsetRow ? esc(runName(S.schedule.find((x) => x.id === plan.sunsetRow).runs)) : "free"}</span><span style="margin-left:12px">Sunrise timer: ${plan.sunriseUsed ? "used" : "free"}</span></div>
+      ${over ? `<p class="warnnote">This needs ${plan.clock} clock timers and WLED has 8. Use a clock time instead of sunset on a dated row, or fewer rows. Send is blocked until it fits.</p>` : ""}
+      <p class="note">Sunset times are for the location in Settings (example: Columbus, OH). Each Light works out its own sunset from the same place.</p></div>
+  </div>`;
+}
+function schedRow(r, i, plan) {
+  const open = S.openRow === r.id;
+  const when = r.on.kind === "sunset" ? `at sunset${r.on.off ? (r.on.off > 0 ? " +" : " ") + r.on.off + " min" : ""}` : `at ${fmtTime(r.on.h * 60 + r.on.m)}`;
+  const off = r.offAt.kind === "time" ? `off at ${fmtTime(r.offAt.h * 60 + r.offAt.m)}` : r.offAt.kind === "sunrise" ? "off at sunrise" : "stays on";
+  const dates = r.dates ? `${fmtDate(...r.dates.from)} – ${fmtDate(...r.dates.to)}` : "All year";
+  const runs = [...S.playlists.map((p) => ["pl:" + p.id, p.name + " playlist"]), ...S.looks.map((l) => ["look:" + l.id, l.name])];
+  const daysTxt = r.days === 127 ? "every day" : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].filter((_, k) => r.days & (1 << k)).join(", ");
+  return `<div class="item ${open ? "open" : ""}"><div class="itemhead"><h3>${esc(runName(r.runs))}</h3><span class="sub">${dates} · ${daysTxt} · on ${when} · ${off}</span><span class="spacer"></span>
+    <button class="btn small" data-act="rowUp" data-row="${r.id}" ${i ? "" : "disabled"} aria-label="Move up">↑</button><button class="btn small" data-act="openRow" data-row="${r.id}">${open ? "Close" : "Edit"}</button></div>
+    ${plan.notes[r.id].map((n) => `<p class="note">${esc(n)}</p>`).join("")}
+    ${open ? `<label class="f">Runs<select class="in" data-act="rowRuns" data-row="${r.id}">${runs.map(([k, n]) => `<option value="${k}" ${k === r.runs ? "selected" : ""}>${esc(n)}</option>`).join("")}</select></label>
+    <div class="f" style="font-size:12px;color:var(--muted)">Dates<div class="seg3" style="grid-template-columns:1fr 1fr"><button aria-pressed="${!r.dates}" data-act="rowAllYear" data-row="${r.id}">All year</button><button aria-pressed="${!!r.dates}" data-act="rowDated" data-row="${r.id}">From – to</button></div></div>
+    ${r.dates ? `<div class="grid2">${["from", "to"].map((k) => `<label class="f">${k === "from" ? "From" : "To"}<span style="display:flex;gap:6px"><select class="in" data-act="rowMon" data-k="${k}" data-row="${r.id}">${MONTHS.map((m, mi) => `<option value="${mi + 1}" ${r.dates[k][0] === mi + 1 ? "selected" : ""}>${m}</option>`).join("")}</select><input class="in num" type="number" min="1" max="31" style="width:64px" data-act="rowDay" data-k="${k}" data-row="${r.id}" value="${r.dates[k][1]}" aria-label="${k} day"></span></label>`).join("")}</div>` : ""}
+    <div class="f" style="font-size:12px;color:var(--muted)">Days<div class="days">${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d, k) => `<button aria-pressed="${!!(r.days & (1 << k))}" data-act="rowDay7" data-k="${k}" data-row="${r.id}">${d}</button>`).join("")}</div></div>
+    <div class="grid2"><label class="f">Turn on<select class="in" data-act="rowOnKind" data-row="${r.id}"><option value="sunset" ${r.on.kind === "sunset" ? "selected" : ""}>At sunset</option><option value="time" ${r.on.kind === "time" ? "selected" : ""}>At a time</option></select></label>
+      ${r.on.kind === "sunset" ? `<label class="f">Minutes after sunset (− before)<input class="in num" type="number" min="-120" max="120" value="${r.on.off}" data-act="rowOnOff" data-row="${r.id}"></label>` : `<label class="f">Time<input class="in num" type="time" value="${String(r.on.h).padStart(2, "0")}:${String(r.on.m).padStart(2, "0")}" data-act="rowOnTime" data-row="${r.id}"></label>`}</div>
+    <div class="grid2"><label class="f">Turn off<select class="in" data-act="rowOffKind" data-row="${r.id}"><option value="time" ${r.offAt.kind === "time" ? "selected" : ""}>At a time</option><option value="sunrise" ${r.offAt.kind === "sunrise" ? "selected" : ""}>At sunrise</option><option value="none" ${r.offAt.kind === "none" ? "selected" : ""}>Leave on</option></select></label>
+      ${r.offAt.kind === "time" ? `<label class="f">Time<input class="in num" type="time" value="${String(r.offAt.h).padStart(2, "0")}:${String(r.offAt.m).padStart(2, "0")}" data-act="rowOffTime" data-row="${r.id}"></label>` : "<span></span>"}</div>
+    ${r.dates && r.on.kind === "sunset" ? `<p class="note">WLED's sunset timer can't be limited to dates, so this row follows sunset with clock times (listed above). <button class="btn link" data-act="rowUseTime" data-row="${r.id}">Use one clock time instead</button></p>` : ""}
+    <div class="btnrow"><span class="spacer"></span><button class="btn small danger" data-act="rowDelete" data-row="${r.id}">Remove from schedule</button></div>` : ""}
+  </div>`;
+}
+function bypropTab() {
+  return `<div class="matrixwrap"><table class="matrix"><thead><tr><th>Prop</th>${S.looks.map((l) => `<th>${esc(l.name)}</th>`).join("")}</tr></thead><tbody>
+    ${PROPS.map((p) => `<tr><td>${esc(p.name)}${S.looks.every((l) => entry(l, p.id).mode === "off") ? ` <button class="btn small" data-act="addToLooks" data-prop="${p.id}">Add to Looks…</button>` : ""}</td>${S.looks.map((l) => { const e = entry(l, p.id); const st = resolve(l, p.id); return `<td><button class="cell ${e.mode === "off" ? "off" : ""}" data-act="openLook" data-look="${l.id}" data-prop="${p.id}" data-from="byprop">${e.mode === "off" ? "Off" : `<canvas data-strip="look:${l.id}:${p.id}"></canvas>${e.mode === "own" ? esc(fxOf(st.fx).name) : "Follows"}${p.sections.length && !sectionsFollow(l, p) ? " · sections" : ""}`}</button></td>`; }).join("")}</tr>`).join("")}
+  </tbody></table></div><p class="note">${tap()} a cell to open that Look with the prop selected.</p>`;
+}
+
+// ---------------------------------------------------------------- Look view (scoped)
+function lookView() {
+  const L = look();
+  const panel = S.panel === "effects" ? effectPicker() : S.panel === "palettes" ? palettePicker() : S.sel.length ? propPanel(L) : lookPanel(L);
+  const selNames = S.sel.map((id) => propOf(id).name);
+  return `<div class="main">
+    <aside class="rail"><section><h2 class="cap">Props in ${esc(L.name)}</h2><ul class="plist">${PROPS.map((p) => { const e = entry(L, p.id); const st = resolve(L, p.id); return `<li><button class="${S.sel.includes(p.id) ? "on" : ""}" data-act="selProp" data-prop="${p.id}"><span class="dot" style="background:${dotOf(st)}"></span>${esc(p.name)}<span class="n">${e.mode === "off" ? "off" : e.mode === "own" ? "own" : "follows"}</span></button></li>`; }).join("")}</ul>
+      <p class="note" style="margin-top:8px">Shift-${tap().toLowerCase()} to select several.</p></section>
+      <p class="proto">Prototype. Nothing is saved or sent. The drawing approximates WLED's effects; Preview on lights shows the real thing.</p></aside>
+    <div class="stagewrap"><canvas class="stage" id="cv" data-mode="look"></canvas>
+      <div class="chip ${S.previewOn ? "preview" : ""}">${S.previewOn ? `● Previewing on ${S.previewLights.length} of ${LIGHTS.length} Lights${S.previewLights.length < LIGHTS.length ? " · Garage Light didn't answer" : ""}` : selNames.length ? esc(selNames.join(", ")) + (S.section ? " › " + esc(propOf(S.sel[0]).sections.find((s) => s.id === S.section).name) : "") : "Drawing only · not on the lights"}</div>
+      <div class="stagehint hidephone">${tap()} a prop to select it, ${tap().toLowerCase()} again for a section. Esc goes back.</div></div>
+    <aside class="insp" id="insp">${panel}</aside></div>`;
+}
+function modeSeg(cur, forSection) {
+  const a = forSection ? ["Follow prop", "Own style", "Off"] : ["Follow Look", "Own style", "Off"]; const k = ["follow", "own", "off"];
+  return `<div class="seg3" role="group" aria-label="How it lights">${k.map((m, i) => `<button aria-pressed="${cur === m}" data-act="mode" data-mode="${m}">${a[i]}</button>`).join("")}</div>`;
+}
+function styleEditor(st, mixed, label) {
+  const f = fxOf(st.fx);
+  const cols = f.cols.map((lab, i) => lab ? `<div class="colourrow"><span>${lab}</span><input type="color" value="${st.c[i]}" data-act="col" data-i="${i}" aria-label="${lab} colour"><input class="in num" value="${st.c[i]}" data-act="hex" data-i="${i}" aria-label="${lab} hex" maxlength="7"></div>` : "").join("");
+  const sliders = [["sx", f.sl[0]], ["ix", f.sl[1]]].filter(([, l]) => l).map(([k, l]) => `<div class="slider"><span>${l}</span><input type="range" min="0" max="255" value="${st[k]}" data-act="slide" data-k="${k}" aria-label="${l}"><output>${Math.round(st[k] / 2.55)}</output></div>`).join("");
+  return `<div class="box ${mixed ? "mixed" : ""}">
+    ${mixed ? `<p class="warnnote">These props have different styles. A change sets that one thing on all of them.</p>` : ""}
+    <button class="effrow" data-act="panel" data-panel="effects"><span class="grow"><span><b>${f.name}</b> <span class="meta">${f.cat}</span></span><canvas class="strip" data-strip="cur"></canvas></span><span class="meta">Change ›</span></button>
+    ${f.cols.some(Boolean) ? `<div class="colours">${cols}<div class="swatches" aria-label="Recent colours">${S.recent.map((c) => `<button style="background:${c}" data-act="swatch" data-c="${c}" title="${c}" aria-label="Use ${c}"></button>`).join("")}</div><p class="note">A swatch sets ${esc(f.cols.find(Boolean))}.</p></div>` : `<p class="note">${f.name} takes its colours from the palette.</p>`}
+    ${f.pal ? `<button class="effrow" data-act="panel" data-panel="palettes"><span class="grow"><span><b>Palette</b> <span class="meta">${esc(PAL[st.pal]?.name ?? "")}</span></span><i style="display:block;height:10px;border-radius:5px;background:${palGradient(st, st.pal)}"></i></span><span class="meta">Change ›</span></button>` : ""}
+    ${sliders}
+    <div class="slider"><span>${label === "look" ? "Look brightness" : "Brightness"}</span><input type="range" min="1" max="255" value="${label === "look" ? look().bri : st.bri}" data-act="slide" data-k="${label === "look" ? "lookbri" : "bri"}" aria-label="Brightness"><output>${Math.round((label === "look" ? look().bri : st.bri) / 2.55)}</output></div>
+    <details class="fold"><summary>Direction and more</summary><div class="foldbody">
+      <div class="seg3"><button aria-pressed="${st.dir === "fwd"}" data-act="dir" data-dir="fwd">→ From light 1</button><button aria-pressed="${st.dir === "rev"}" data-act="dir" data-dir="rev">← From the end</button><button aria-pressed="${st.dir === "mirror"}" data-act="dir" data-dir="mirror">↔ Mirror</button></div>
+      <div class="btnrow"><button class="btn small" data-act="copyStyle">Copy style</button><button class="btn small" data-act="pasteStyle" ${S.clip ? "" : "disabled"}>Paste style</button></div>
+    </div></details></div>`;
+}
+function lookPanel(L) {
+  const on = lookOnCount(L);
+  const used = S.playlists.filter((p) => p.items.some((i) => i.look === L.id));
+  const segWarn = LIGHTS.map((l) => [l, segmentsOn(L, l.id)]).filter(([, n]) => n > 16);
+  return `<div class="title"><h1>${esc(L.name)}</h1><p class="sub">${on} of ${PROPS.length} props on · ${used.length ? "in " + used.map((p) => esc(p.name)).join(", ") : "not in a playlist"}</p></div>
+    <label class="f">Name<input class="in" data-act="lookName" value="${esc(L.name)}" maxlength="32" ${/^Look \d+$/.test(L.name) ? 'data-selectall="1"' : ""}></label>
+    <div><h2 class="cap">Props</h2><div>${PROPS.map((p) => { const e = entry(L, p.id); return `<div class="proprow"><button data-act="selProp" data-prop="${p.id}"><span class="dot" style="background:${dotOf(resolve(L, p.id))}"></span>${esc(p.name)}</button>
+      <span class="mini3">${["follow", "own", "off"].map((m) => `<button aria-pressed="${e.mode === m}" data-act="rowMode" data-prop="${p.id}" data-mode="${m}">${m === "follow" ? "Follow" : m === "own" ? "Own" : "Off"}</button>`).join("")}</span></div>`; }).join("")}</div>
+      <p class="note" style="margin-top:6px">Follow uses the Look style below. Own gives the prop its own effect and colours. ${tap()} a name to edit it.</p>
+      <div class="btnrow" style="margin-top:6px"><button class="btn small" data-act="selKind" data-kind="Window">Select all windows</button><button class="btn small" data-act="selKind" data-kind="Zigzag">Select all bushes</button><button class="btn small" data-act="allFollow">Switch every prop on</button></div></div>
+    <div><h2 class="cap">Look style · for props set to Follow</h2>${styleEditor(L.base, false, "look")}</div>
+    ${segWarn.map(([l, n]) => `<p class="warnnote">${l.name} needs ${n} WLED segments for this Look and allows 16.</p>`).join("")}
+    <details class="fold"><summary>More <span class="meta">WLED preset ${L.slot}</span></summary><div class="foldbody">
+      <p class="note">This Look is WLED preset ${L.slot} on every Light.</p>
+      <div class="btnrow"><button class="btn small" data-act="dupLook" data-look="${L.id}">Duplicate</button><button class="btn small" data-act="captureLight">Start from what a Light shows…</button><button class="btn small danger" data-act="delLook">Delete Look</button></div></div></details>`;
+}
+function propPanel(L) {
+  const ids = S.sel; const ps = ids.map(propOf);
+  if (ids.length > 1) {
+    const modes = new Set(ids.map((id) => entry(L, id).mode)); const mode = modes.size === 1 ? [...modes][0] : null;
+    const styles = ids.map((id) => JSON.stringify(resolve(L, id))); const mixed = new Set(styles).size > 1;
+    return `<div class="title"><h1>${ids.length} props</h1><p class="sub">${ps.map((p) => esc(p.name)).join(", ")}</p></div>
+      ${modeSeg(mode)}${mode === null ? `<p class="note">They're set differently. Pick one to set them all.</p>` : ""}
+      ${mode === "own" || mode === null ? styleEditor(resolve(L, ids.find((id) => entry(L, id).mode === "own") || ids[0]) || L.base, mixed) : mode === "follow" ? `<p class="note">They use the Look style. Pick Own style to give them their own.</p>` : ""}
+      <div class="btnrow"><button class="btn" data-act="clearSel">Back to the whole Look</button></div>`;
+  }
+  const p = ps[0]; const e = entry(L, p.id);
+  const secMode = S.section ? (e.sections?.[S.section]?.mode || "follow") : null;
+  const st = S.section ? (resolve(L, p.id, S.section) || resolve(L, p.id) || L.base) : (e.mode === "own" ? e.style : L.base);
+  const chips = p.sections.length && e.mode !== "off" ? `<div><h2 class="cap">Sections</h2><div class="secchips"><button aria-pressed="${!S.section}" data-act="section" data-sec="">Whole prop</button>${p.sections.map((s) => { const m = e.sections?.[s.id]?.mode || "follow"; const c = resolve(L, p.id, s.id); return `<button aria-pressed="${S.section === s.id}" data-act="section" data-sec="${s.id}"><span class="dot" style="background:${dotOf(c)}"></span>${esc(s.name)}${m === "off" ? " · off" : m === "own" ? " · own" : ""}</button>`; }).join("")}</div>
+    <p class="note" style="margin-top:6px">${sectionsFollow(L, p) ? "Every section follows, so the effect runs along the whole prop." : "Sections are set separately, so each one runs its own effect."}</p></div>` : "";
+  const sec = S.section ? p.sections.find((s) => s.id === S.section) : null;
+  return `<div class="title"><h1>${esc(p.name)}${sec ? " › " + esc(sec.name) : ""}</h1><p class="sub">${sec ? `Lights ${sec.a + 1}–${sec.b + 1}` : `${p.kind} · ${p.n} lights`} · in “${esc(L.name)}”</p></div>
+    ${sec ? modeSeg(secMode, true) : modeSeg(e.mode)}
+    ${chips}
+    ${sec ? (secMode === "own" ? styleEditor(st) : secMode === "follow" ? `<p class="note">Uses ${esc(p.name)}'s style. Pick Own style to change just ${esc(sec.name)}.</p>` : `<p class="note">${esc(sec.name)} stays dark in this Look.</p>`)
+      : e.mode === "own" ? styleEditor(st) : e.mode === "follow" ? `<div class="box"><p class="note">Uses the Look style: <b>${fxOf(L.base.fx).name}</b>.</p><canvas class="strip" data-strip="cur"></canvas><p class="note">Pick Own style to give ${esc(p.name)} its own effect and colours.</p></div>` : `<p class="note">${esc(p.name)} stays dark in this Look.</p>`}
+    <div class="btnrow"><button class="btn" data-act="clearSel">Back to the whole Look</button></div>`;
+}
+function effectPicker() {
+  const st = targets()[0]?.get() || look().base;
+  return `<div class="btnrow"><button class="btn" data-act="panel" data-panel="">‹ Back</button><b style="margin-left:4px">Effect</b></div>
+    <input class="in" placeholder="Search effects" data-act="fxSearch" value="${esc(S.fxq || "")}" aria-label="Search effects">
+    ${CATS.map((cat) => { const list = FX.filter((f) => f.cat === cat && (!S.fxq || f.name.toLowerCase().includes(S.fxq.toLowerCase()))); return list.length ? `<div><h2 class="cap">${cat}</h2><div class="list" style="gap:6px">${list.map((f) => `<button class="effrow ${f.id === st.fx ? "on" : ""}" data-act="pickFx" data-fx="${f.id}"><span class="grow"><b>${f.name}</b><canvas class="strip" data-strip="fx:${f.id}"></canvas></span></button>`).join("")}</div></div>` : ""; }).join("")}
+    <p class="note">This list comes from the Lights' firmware. Effects that need a 2D matrix or a microphone are hidden. An effect missing on one Light is marked here.</p>`;
+}
+function palettePicker() {
+  const st = targets()[0]?.get() || look().base;
+  return `<div class="btnrow"><button class="btn" data-act="panel" data-panel="">‹ Back</button><b style="margin-left:4px">Palette</b></div>
+    <div class="pals">${PAL_ORDER.map((id) => `<button class="${st.pal === id ? "on" : ""}" data-act="pickPal" data-pal="${id}">${esc(PAL[id].name)}<i style="background:${palGradient(st, id)}"></i></button>`).join("")}</div>
+    <p class="note">Colour 1, Colours 1 & 2 and Colour gradient use the colours you picked. The rest are WLED's built-in palettes.</p>`;
+}
+
+// ---------------------------------------------------------------- layer: dialogs, toast, tasks
+function renderLayer() {
+  let h = "";
+  if (S.sendOpen) h += sendDialog();
+  if (S.addTo) h += addDialog();
+  if (S.capture) h += captureDialog();
+  if (S.newDlg) h += `<div class="scrim"><div class="dialog" role="dialog" aria-label="New Look"><h2>New Look</h2><p class="note">Start from</p>
+    <label class="check"><input type="radio" name="start" value="on" checked>Every prop on, warm white</label>
+    <label class="check"><input type="radio" name="start" value="off">Every prop off</label>
+    <label class="check"><input type="radio" name="start" value="copy">A copy of <select class="in" data-act="startCopy" style="width:auto;margin-left:6px">${S.looks.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join("")}</select></label>
+    <div class="btnrow"><span class="spacer"></span><button class="btn" data-act="closeNew">Cancel</button><button class="btn primary" data-act="makeLook">Make it</button></div></div></div>`;
+  if (S.tasksOpen) { checkTasks(); const done = TASKS.filter((t) => S.ticks[t.k]).length; const next = TASKS.findIndex((t) => !S.ticks[t.k]);
+    h += S.tasksFull ? `<div class="tasks" role="dialog" aria-label="Test tasks"><div class="btnrow"><h3>Try these tasks</h3><span class="spacer"></span><button class="btn small" data-act="tasksFull">Smaller</button><button class="btn small" data-act="tasks">Hide</button></div>
+    <ol>${TASKS.map((t, i) => `<li><span class="tick ${S.ticks[t.k] ? "ok" : ""}">${S.ticks[t.k] ? "✓" : i + 1}</span><span>${esc(t.t)}</span></li>`).join("")}</ol>
+    <div class="sim"><label class="check"><input type="checkbox" data-act="garage" ${S.garageDown ? "checked" : ""}> Garage Light is unplugged</label><span class="note">Prototype. Nothing is saved or sent anywhere.</span></div></div>`
+    : `<div class="tasks mini" role="dialog" aria-label="Test tasks"><div class="btnrow"><b>${next < 0 ? "All done" : "Task " + (next + 1)} · ${done} of ${TASKS.length}</b><span class="spacer"></span><button class="btn small" data-act="tasksFull">All tasks</button><button class="btn small" data-act="tasks">Hide</button></div>
+    <p style="font-size:13px;line-height:1.4">${next < 0 ? "Every task is done." : esc(TASKS[next].t)}</p>
+    ${next === 6 ? `<label class="check"><input type="checkbox" data-act="garage" ${S.garageDown ? "checked" : ""}> Garage Light is unplugged</label>` : ""}</div>`; }
+  if (S.toast) h += `<div class="toast" role="status"><span>${esc(S.toast.text)}</span>${S.toast.action ? `<button data-act="${S.toast.action[1]}">${esc(S.toast.action[0])}</button>` : ""}</div>`;
+  $("#layer").innerHTML = h;
+}
+function sendDialog() {
+  const ch = allChanges(); const plan = planTimers();
+  if (S.sendResult) return `<div class="scrim"><div class="dialog" role="dialog" aria-label="Send results"><h2>Sent</h2>
+    ${S.sendResult.filter((r) => r.st !== "skip").map((r) => `<div class="resrow"><b>${r.l.name}</b><span class="st ${r.st}">${r.st === "ok" ? "Up to date" : "Not sent"}</span><span class="why">${esc(r.why)}</span></div>`).join("")}
+    ${S.sendResult.some((r) => r.st === "bad") ? `<p class="note">A Light that didn't get it shows “not sent” on the Looks page. Send again when it's back.</p>` : ""}
+    <p class="note">Each Light's previous presets were backed up first.</p>
+    <div class="btnrow"><button class="btn" data-act="undoSend">Undo send</button><span class="spacer"></span><button class="btn primary" data-act="closeSend">Close</button></div></div></div>`;
+  return `<div class="scrim"><div class="dialog" role="dialog" aria-label="Send to lights"><h2>Send to the lights</h2>
+    ${ch.length ? `<div><h2 class="cap">What changes</h2>${ch.map((c) => `<div class="resrow"><span>${esc(c.name)}</span><span class="note">${c.kind}</span></div>`).join("")}</div>` : `<p class="note">Every Light already has these Looks, playlists and the Schedule.</p>`}
+    <div><h2 class="cap">Lights</h2>${LIGHTS.map((l) => { const n = changesFor(l.id).length; return `<label class="check"><input type="checkbox" data-light="${l.id}" ${n ? "checked" : ""}>${l.name}<span class="note" style="margin-left:auto">${n ? n + " to send" : "up to date"}</span></label>`; }).join("")}</div>
+    <p class="note">Writes the same preset numbers on every Light, reads them back, and backs up what was there first. Nothing changes what's on right now.</p>
+    ${plan.clock > 8 ? `<p class="warnnote">The Schedule needs ${plan.clock} of 8 WLED timers. Fix it on the Schedule tab first.</p>` : ""}
+    <div class="btnrow"><button class="btn" data-act="closeSend">Cancel</button><span class="spacer"></span><button class="btn primary" data-act="doSend" ${ch.length && plan.clock <= 8 ? "" : "disabled"}>Send</button></div></div></div>`;
+}
+function addDialog() {
+  const p = propOf(S.addTo);
+  return `<div class="scrim"><div class="dialog" role="dialog" aria-label="Add to Looks"><h2>Add ${esc(p.name)} to Looks</h2>
+    <p class="note">${esc(p.name)} will follow each Look's style. You can give it its own colours in the Look afterwards.</p>
+    <div>${S.looks.map((l) => { const on = entry(l, p.id).mode !== "off"; return `<label class="check"><input type="checkbox" data-addlook="${l.id}" ${on ? "checked disabled" : ""}>${esc(l.name)}${on ? `<span class="note" style="margin-left:auto">already in</span>` : ""}</label>`; }).join("")}</div>
+    <div class="btnrow"><button class="btn small" data-act="addAll">Tick all</button><span class="spacer"></span><button class="btn" data-act="closeAdd">Cancel</button><button class="btn primary" data-act="doAdd">Add</button></div></div></div>`;
+}
+function captureDialog() {
+  return `<div class="scrim"><div class="dialog" role="dialog" aria-label="Start from a Light"><h2>Start from what a Light shows</h2>
+    <p class="note">If you set a Light up in the WLED app, Nightplot can read its segments and copy each prop's effect and colours into this Look.</p>
+    ${LIGHTS.map((l) => `<label class="check"><input type="radio" name="cap" ${l.id === "porch" ? "checked" : ""}>${l.name}<span class="note" style="margin-left:auto">${l.id === "garage" && S.garageDown ? "didn't answer" : "Running " + (S.looks.find((x) => x.id === S.now[l.id].item)?.name || "a preset")}</span></label>`).join("")}
+    <div class="btnrow"><span class="spacer"></span><button class="btn" data-act="closeCapture">Cancel</button><button class="btn primary" data-act="closeCapture">Copy into this Look</button></div></div></div>`;
+}
+
+// ---------------------------------------------------------------- canvas + animation
+let view = null;
+function bindCanvas() {
+  const cv = $("#cv"); if (!cv) return;
+  cv.onpointerdown = (ev) => {
+    if (!view) return; const r = cv.getBoundingClientRect(); const hit = hitProp(view, ev.clientX - r.left, ev.clientY - r.top);
+    if (cv.dataset.mode === "yard") { S.selProp = hit ? hit.p.id : null; if (S.selProp === "arch") S.flags.archLooks = true; render(); return; }
+    if (!hit) { S.sel = []; S.section = null; S.panel = null; render(); return; }
+    const pid = hit.p.id;
+    if (ev.shiftKey || S.multi) { S.sel = S.sel.includes(pid) ? S.sel.filter((x) => x !== pid) : [...S.sel, pid]; S.section = null; }
+    else if (S.sel.length === 1 && S.sel[0] === pid && hit.p.sections.length && entry(look(), pid).mode !== "off") { const s = hit.p.sections.find((x) => hit.i >= x.a && hit.i <= x.b); S.section = s ? s.id : null; }
+    else { S.sel = [pid]; S.section = null; }
+    S.panel = null; render(); $("#insp")?.scrollTo(0, 0);
+  };
+}
+const t0 = performance.now();
+function frame() {
+  const t = (performance.now() - t0) / 1000;
+  const cv = $("#cv");
+  if (cv) {
+    if (cv.dataset.mode === "yard") { const L = S.looks.find((l) => l.id === S.now.porch.item); view = drawYard(cv, L, t, { labels: true, sel: S.selProp ? [S.selProp] : [] }); }
+    else { const L = look(); if (L) view = drawYard(cv, L, t, { labels: true, sel: S.sel, section: S.section, dim: true }); }
+  }
+  document.querySelectorAll("canvas[data-thumb]").forEach((c) => { const L = S.looks.find((l) => l.id === c.dataset.thumb); if (L) drawYard(c, L, t, { small: true }); });
+  document.querySelectorAll("canvas[data-strip]").forEach((c) => {
+    const k = c.dataset.strip; let st = null, n = 40;
+    if (k === "cur") st = (S.section || S.sel.length) ? (S.section ? resolve(look(), S.sel[0], S.section) : resolve(look(), S.sel[0])) || targets()[0]?.get() : look()?.base;
+    else if (k.startsWith("fx:")) { const base = targets()[0]?.get() || look().base; const f = fxOf(+k.slice(3)); st = { ...base, fx: f.id, pal: f.pal ? (base.pal || f.defPal || 0) : base.pal }; }
+    else if (k.startsWith("look:")) { const [, lid, pid] = k.split(":"); const L = S.looks.find((l) => l.id === lid); st = L ? resolve(L, pid) : null; n = 24; }
+    drawStrip(c, st, n, t);
+  });
+  requestAnimationFrame(frame);
+}
+
+// ---------------------------------------------------------------- events
+document.addEventListener("click", (ev) => {
+  const el = ev.target.closest("[data-act],[data-soon]"); if (!el) return;
+  if (el.hasAttribute("data-soon")) { ev.preventDefault(); toast("Not in this prototype."); return; }
+  const a = el.dataset.act; const L = look();
+  if (el.tagName === "A") ev.preventDefault();
+  if (["switchLook", "lookName", "hex", "col", "slide", "plName", "plMin", "plLook", "plTr", "plRep", "rowRuns", "rowMon", "rowDay", "rowOnKind", "rowOnOff", "rowOnTime", "rowOffKind", "rowOffTime", "fxSearch", "garage", "startCopy"].includes(a)) return;
+  const pl = el.dataset.pl ? S.playlists.find((p) => p.id === el.dataset.pl) : null;
+  const row = el.dataset.row ? S.schedule.find((r) => r.id === el.dataset.row) : null;
+  switch (a) {
+    case "toYard": go("yard"); break;
+    case "toLooks": go("looks"); break;
+    case "tab": S.tab = el.dataset.tab; if (S.tab === "byprop") S.flags.archLooks = S.flags.archLooks; go("looks"); break;
+    case "tasks": S.tasksOpen = !S.tasksOpen; renderLayer(); break;
+    case "tasksFull": S.tasksFull = !S.tasksFull; renderLayer(); break;
+    case "openLook": if (el.dataset.prop === "arch") S.flags.archLooks = true; openLook(el.dataset.look, el.dataset.prop || null); break;
+    case "selYard": S.selProp = el.dataset.prop; if (S.selProp === "arch") S.flags.archLooks = true; render(); break;
+    case "done": if (S.previewOn) endPreview(true); go("looks"); if (lookPending(L.id)) toast(`${L.name} is saved. Send it to put it on the lights.`, ["Send", "openSend"]); break;
+    case "togglePreview": if (S.previewOn) endPreview(); else startPreview(); render(); break;
+    case "selProp": S.sel = [el.dataset.prop]; S.section = null; S.panel = null; render(); $("#insp")?.scrollTo(0, 0); break;
+    case "clearSel": S.sel = []; S.section = null; S.panel = null; render(); break;
+    case "selKind": S.sel = PROPS.filter((p) => p.kind === el.dataset.kind).map((p) => p.id); S.section = null; render(); break;
+    case "allFollow": for (const p of PROPS) if (entry(L, p.id).mode === "off") L.props[p.id] = { mode: "follow" }; render(); break;
+    case "rowMode": { const keep = S.sel; S.sel = [el.dataset.prop]; S.section = null; setMode(el.dataset.mode); S.sel = keep; render(); break; }
+    case "mode": setMode(el.dataset.mode); render(); break;
+    case "section": S.section = el.dataset.sec || null; render(); break;
+    case "panel": S.panel = el.dataset.panel || null; render(); $("#insp")?.scrollTo(0, 0); break;
+    case "pickFx": { const f = fxOf(+el.dataset.fx); const cur = targets()[0]?.get(); patch({ fx: f.id, ...(f.pal && cur && [0, 2, 3, 4, 5].includes(cur.pal) && f.defPal ? { pal: f.defPal } : {}) }); S.panel = null; render(); break; }
+    case "pickPal": patch({ pal: +el.dataset.pal }); S.panel = null; render(); break;
+    case "swatch": { const i = fxOf((targets()[0]?.get() || L.base).fx).cols.findIndex(Boolean); const c = [...(targets()[0]?.get() || L.base).c]; c[i] = el.dataset.c; patch({ c }); render(); break; }
+    case "dir": patch({ dir: el.dataset.dir }); render(); break;
+    case "copyStyle": S.clip = clone(targets()[0].get()); toast("Style copied."); render(); break;
+    case "pasteStyle": if (S.clip) { patch(clone(S.clip)); render(); } break;
+    case "newLook": S.newDlg = true; renderLayer(); break;
+    case "closeNew": S.newDlg = false; renderLayer(); break;
+    case "makeLook": { const used = S.looks.map((l) => l.slot); let slot = 1; while (used.includes(slot) || [16, 250].includes(slot)) slot++; let n = S.looks.length + 1; while (S.looks.some((l) => l.name === "Look " + n)) n++; const id = "look-" + Date.now().toString(36); const how = document.querySelector("[name=start]:checked")?.value || "on"; const src = S.looks.find((l) => l.id === document.querySelector("[data-act=startCopy]")?.value);
+      const made = how === "copy" && src ? { ...clone(src), id, name: "Look " + n, slot } : { id, name: "Look " + n, slot, bri: 180, base: ST(0, "#ffa040"), props: how === "on" ? followAll(PROPS.map((p) => p.id)) : {} };
+      S.looks.push(made); S.newDlg = false; openLook(id); setTimeout(() => { const i = document.querySelector('[data-act="lookName"]'); i?.focus(); i?.select(); }, 30); break; }
+    case "dupLook": { const src = S.looks.find((l) => l.id === el.dataset.look); const used = S.looks.map((l) => l.slot); let slot = 1; while (used.includes(slot) || [16, 250].includes(slot)) slot++; const c = clone(src); c.id = "look-" + Date.now().toString(36); c.name = (src.name + " copy").slice(0, 32); c.slot = slot; S.looks.push(c); openLook(c.id); break; }
+    case "delLook": if (confirm(`Delete ${L.name}? It's removed from playlists too. Undo is on the Looks page.`)) { S.looks = S.looks.filter((l) => l.id !== L.id); S.playlists.forEach((p) => p.items = p.items.filter((i) => i.look !== L.id)); go("looks"); } break;
+    case "captureLight": S.capture = true; renderLayer(); break;
+    case "closeCapture": S.capture = false; renderLayer(); break;
+    case "turnOn": { const run = el.dataset.run; if (run.startsWith("look:") && lookPending(run.slice(5))) doSend(LIGHTS.map((l) => l.id)), S.sendResult = null; turnOn(run); render(); break; }
+    case "openSend": S.sendOpen = true; S.sendResult = null; renderLayer(); break;
+    case "closeSend": S.sendOpen = false; S.sendResult = null; render(); break;
+    case "doSend": { const ids = [...document.querySelectorAll("[data-light]")].filter((c) => c.checked).map((c) => c.dataset.light); doSend(ids); render(); break; }
+    case "undoSend": toast("Undo puts back each Light's backed-up presets. (Not simulated.)"); break;
+    case "addToLooks": S.addTo = el.dataset.prop; renderLayer(); break;
+    case "closeAdd": S.addTo = null; renderLayer(); break;
+    case "addAll": document.querySelectorAll("[data-addlook]").forEach((c) => (c.checked = true)); break;
+    case "doAdd": { const ids = [...document.querySelectorAll("[data-addlook]")].filter((c) => c.checked && !c.disabled).map((c) => c.dataset.addlook); for (const id of ids) S.looks.find((l) => l.id === id).props[S.addTo] = { mode: "follow" }; toast(`${propOf(S.addTo).name} added to ${ids.length} Look${ids.length === 1 ? "" : "s"}.`); S.addTo = null; render(); break; }
+    case "newPl": { const id = "pl-" + Date.now().toString(36); S.playlists.push({ id, name: "Playlist " + (S.playlists.length + 1), slot: 17 + S.playlists.length, items: [{ look: S.looks[0].id, min: 10 }], transition: 0.7, repeat: true }); S.openPl = id; render(); setTimeout(() => { const i = document.querySelector(`[data-act="plName"][data-pl="${id}"]`); i?.focus(); i?.select(); }, 30); break; }
+    case "openPl": S.openPl = S.openPl === pl.id ? null : pl.id; render(); break;
+    case "plAdd": pl.items.push({ look: S.looks[0].id, min: 10 }); render(); break;
+    case "plUp": { const i = +el.dataset.i; [pl.items[i - 1], pl.items[i]] = [pl.items[i], pl.items[i - 1]]; render(); break; }
+    case "plDel": pl.items.splice(+el.dataset.i, 1); if (!pl.items.length) pl.items.push({ look: S.looks[0].id, min: 10 }); render(); break;
+    case "plDelete": if (S.schedule.some((r) => r.runs === "pl:" + pl.id)) { toast("The Schedule runs this playlist. Change that row first."); break; } S.playlists = S.playlists.filter((p) => p !== pl); render(); break;
+    case "newRow": { const id = "row-" + Date.now().toString(36); S.schedule.unshift({ id, runs: "pl:" + S.playlists[S.playlists.length - 1].id, dates: { from: [11, 25], to: [1, 6] }, days: 127, on: { kind: "sunset", off: 0 }, offAt: { kind: "time", h: 23, m: 0 } }); S.openRow = id; render(); break; }
+    case "openRow": S.openRow = S.openRow === row.id ? null : row.id; render(); break;
+    case "rowUp": { const i = S.schedule.indexOf(row); [S.schedule[i - 1], S.schedule[i]] = [S.schedule[i], S.schedule[i - 1]]; render(); break; }
+    case "rowAllYear": row.dates = null; render(); break;
+    case "rowDated": row.dates = row.dates || { from: [11, 25], to: [1, 6] }; render(); break;
+    case "rowDay7": row.days ^= 1 << +el.dataset.k; if (!row.days) row.days = 1 << +el.dataset.k; render(); break;
+    case "rowUseTime": row.on = { kind: "time", h: 17, m: 0 }; render(); break;
+    case "rowDelete": S.schedule = S.schedule.filter((r) => r !== row); render(); break;
+  }
+  checkTasks(); renderLayer();
+});
+document.addEventListener("input", (ev) => {
+  const el = ev.target; const a = el.dataset.act; const L = look();
+  if (a === "slide") { const v = +el.value; if (el.dataset.k === "lookbri") L.bri = v; else patch({ [el.dataset.k]: v }); el.nextElementSibling.textContent = Math.round(v / 2.55); renderLayer(); }
+  if (a === "col") { const c = [...targets()[0].get().c]; c[+el.dataset.i] = el.value; patch({ c }); const h = el.nextElementSibling; if (h) h.value = el.value; }
+  if (a === "fxSearch") { S.fxq = el.value; const pos = el.selectionStart; render(); const i = document.querySelector('[data-act="fxSearch"]'); i.focus(); i.setSelectionRange(pos, pos); }
+});
+document.addEventListener("change", (ev) => {
+  const el = ev.target; const a = el.dataset.act; const L = look();
+  const pl = el.dataset.pl ? S.playlists.find((p) => p.id === el.dataset.pl) : null;
+  const row = el.dataset.row ? S.schedule.find((r) => r.id === el.dataset.row) : null;
+  switch (a) {
+    case "switchLook": openLook(el.value); return;
+    case "lookName": if (el.value.trim()) L.name = el.value.trim().slice(0, 32); break;
+    case "hex": { const v = el.value.trim().replace(/^#?/, "#"); if (/^#[0-9a-f]{6}$/i.test(v)) { const c = [...targets()[0].get().c]; c[+el.dataset.i] = v.toLowerCase(); patch({ c }); } break; }
+    case "col": case "slide": break;
+    case "plName": pl.name = el.value.trim() || pl.name; break;
+    case "plMin": pl.items[+el.dataset.i].min = clamp(Math.round(+el.value) || 1, 1, 600); break;
+    case "plLook": pl.items[+el.dataset.i].look = el.value; break;
+    case "plTr": pl.transition = Math.max(0, +el.value || 0); break;
+    case "plRep": pl.repeat = el.value === "1"; break;
+    case "rowRuns": row.runs = el.value; break;
+    case "rowMon": row.dates[el.dataset.k][0] = +el.value; break;
+    case "rowDay": row.dates[el.dataset.k][1] = clamp(+el.value || 1, 1, MDAYS[row.dates[el.dataset.k][0] - 1]); break;
+    case "rowOnKind": row.on = el.value === "sunset" ? { kind: "sunset", off: 0 } : { kind: "time", h: 17, m: 0 }; break;
+    case "rowOnOff": row.on.off = clamp(Math.round(+el.value) || 0, -120, 120); break;
+    case "rowOnTime": { const [h, m] = el.value.split(":").map(Number); row.on.h = h; row.on.m = m; break; }
+    case "rowOffKind": row.offAt = el.value === "time" ? { kind: "time", h: 23, m: 0 } : { kind: el.value }; break;
+    case "rowOffTime": { const [h, m] = el.value.split(":").map(Number); row.offAt.h = h; row.offAt.m = m; break; }
+    case "garage": S.garageDown = el.checked; if (S.previewOn) S.previewLights = answering().map((l) => l.id); break;
+    default: return;
+  }
+  render();
+});
+document.addEventListener("focusin", (ev) => { const el = ev.target; if (el.matches("input.num, input[data-selectall], input[data-act=hex]")) setTimeout(() => el.select?.(), 0); });
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Escape" || S.route !== "look") return;
+  if (document.querySelector(".scrim")) { S.sendOpen = false; S.addTo = null; S.capture = false; S.newDlg = false; renderLayer(); return; }
+  if (S.panel) S.panel = null; else if (S.section) S.section = null; else if (S.sel.length) S.sel = []; else { $('[data-act="done"]').click(); return; }
+  render();
+});
+addEventListener("resize", () => render());
+render(); requestAnimationFrame(frame);
+})();
+</script>

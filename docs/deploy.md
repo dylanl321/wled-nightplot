@@ -92,6 +92,9 @@ Override the process: `docker run … nightplot-configure api`.
 - Triggers: `workflow_dispatch`, push to `main`, `v*` tags.
 - How to run by hand: GitHub → Actions → Docker → Run workflow.
 - Push to `ghcr.io/<owner>/<repo>` only on `main` / tags, and only when GHCR login succeeds (`GITHUB_TOKEN`, `packages: write`). A skipped or failed login still builds; it does not push.
+- After a successful `main` build, the `deploy` job runs on the LAN runner labeled `nightplot-deploy`, updates the TrueNAS `nightplot` custom app to the immutable `sha-<commit>` image, waits for the middleware job and app startup, then verifies `/health` and WLED discovery.
+
+The LAN runner reads `TRUENAS_URL` and `TRUENAS_API_KEY` from its own `~/.hermes/.env`; these credentials are never stored in GitHub or in this repository. The production compose template is [`.deploy/truenas-compose.yml`](../.deploy/truenas-compose.yml), and [`scripts/deploy_truenas.py`](../scripts/deploy_truenas.py) performs the API update and verification.
 
 The workflow packages a local/LAN image. It does not add authentication or TLS.
 
@@ -109,7 +112,6 @@ Do not run host `pnpm dev` against a container-only install.
 
 - Authentication
 - TLS / reverse-proxy recipe
-- Health-checked multi-host deploy
 - k8s / helm
 
 Binding `0.0.0.0` in a container is so the published port works on a LAN. It is not a public-internet deploy. See [SECURITY.md](../SECURITY.md).

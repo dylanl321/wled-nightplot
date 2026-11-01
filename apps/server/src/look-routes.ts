@@ -1,12 +1,17 @@
 import {
   LOOK_CAPTION,
   buildManagedPresets,
-  buildScheduleWrite,
+  planSchedule,
+  scheduleWriteFor,
   lookPushDigest,
   lookPushSummaryFor,
   lookSectionNotes,
   lookTargets,
   lookTargetsForLook,
+  mergeFollowingSections,
+  lookItemDigests,
+  lookItemNames,
+  migrateSectionColours,
   managedLookSlots,
   managedPresetSlotsMatch,
   mergeWledPresets,
@@ -16,6 +21,7 @@ import {
   pinLookProps,
   runPresetSlot,
   scheduleMatches,
+  wledTimerDialect,
   validateLooksLibrary,
   validateSchedule,
   buildUdpSyncWrite,
@@ -121,9 +127,20 @@ function yardFrom(store: FileLightsStore): {
   };
 }
 
+/**
+ * The Looks library, with section colours copied into the Looks once. Older
+ * Looks fell back to a colour stored on the section; that is now each Look's
+ * own section style, so the lights look the same after the change.
+ */
+export function readLooks(deps: Pick<LookRouteDeps, "looks" | "store">): LooksDocument {
+  const document = deps.looks.read();
+  if (document.sectionColoursMigrated) return document;
+  return deps.looks.save(migrateSectionColours(document, deps.store.loadProps()));
+}
+
 export function registerLookRoutes(app: Hono, deps: LookRouteDeps) {
   app.get("/api/looks", (c) => {
-    const document = deps.looks.read();
+    const document = readLooks(deps);
     return c.json({
       ...document,
       yard: yardFrom(deps.store),
@@ -151,7 +168,11 @@ export function registerLookRoutes(app: Hono, deps: LookRouteDeps) {
     }
     // A Look saved without a prop list gets the props that exist now.
     const pinned = pinLookProps(looks, deps.store.loadProps().map((prop) => prop.id)).looks;
-    const saved = deps.looks.save({ version: 1, looks: pinned, playlists, schedule });
+    // A client that read the library got it migrated; one that did not is migrated here.
+    const migrated = readLooks(deps).sectionColoursMigrated || body?.sectionColoursMigrated === true
+      ? { version: 1 as const, looks: pinned, playlists, schedule, sectionColoursMigrated: true as const }
+      : migrateSectionColours({ version: 1, looks: pinned, playlists, schedule }, deps.store.loadProps());
+    const saved = deps.looks.save(migrated);
     return c.json({ ...saved, yard: yardFrom(deps.store), caption: LOOK_CAPTION });
   });
 
@@ -161,7 +182,7 @@ export function registerLookRoutes(app: Hono, deps: LookRouteDeps) {
     if (!lightIds?.length) {
       return c.json({ error: "targets-required", message: "Choose at least one Light. Nothing was sent." }, 400);
     }
-    const document = deps.looks.read();
+    const document = readLooks(deps);
     const libraryError = validateLooksLibrary(document.looks, document.playlists);
     if (libraryError) return c.json({ error: "invalid-looks", message: libraryError }, 400);
     const includeSchedule = body?.includeSchedule === true;
@@ -172,6 +193,8 @@ export function registerLookRoutes(app: Hono, deps: LookRouteDeps) {
       }
       const scheduleError = validateSchedule(document.schedule, document.looks, document.playlists);
       if (scheduleError) return c.json({ error: "invalid-schedule", message: `${scheduleError} Nothing was sent.` }, 400);
+      const plan = planSchedule(document.schedule, document, "slots");
+      if (plan.error) return c.json({ error: "invalid-schedule", message: `${plan.error} Nothing was sent.` }, 400);
       runSlot = runPresetSlot(document.schedule, document.looks, document.playlists);
       if (runSlot === null) {
         return c.json({ error: "invalid-schedule", message: "The Schedule does not name a Look or playlist in the library. Nothing was sent." }, 400);
@@ -244,7 +267,8 @@ export async function pushLooksToLight(
     reason?: BackupReason;
   },
 ): Promise<SyncRow> {
-  const { light, snap, document } = input;
+  const { light, snap } = input;
+  const document = migrateSectionColours(input.document, deps.store.propsFor(light.id));
   let safety: BackupDocument;
   try {
     safety = await deps.captureDevice(input.reason ?? "pre-sync", light, snap);
@@ -287,7 +311,10 @@ export async function pushLooksToLight(
   if (targets.length === 0) {
     return row(light, "refused", "This Light has no LEDs to address. Find the strip length first. Nothing was sent.", safety.id);
   }
-  const most = Math.max(...document.looks.map((look) => lookTargetsForLook(look, geometry).length), targets.length);
+  const most = Math.max(
+    ...document.looks.map((look) => mergeFollowingSections(look, lookTargetsForLook(look, geometry)).length),
+    0,
+  );
   if (typeof snap.maxSegments === "number" && most > snap.maxSegments) {
     return row(
       light,
@@ -327,7 +354,10 @@ export async function pushLooksToLight(
   const notes: string[] = [`Reports the ${document.looks.length} Looks as the same preset numbers.`, ...sectionNotes];
 
   if (input.includeSchedule && document.schedule && input.runSlot !== null) {
-    const planned = buildScheduleWrite(document.schedule, input.runSlot);
+    // Every Schedule, rows or not, goes through the planner, with this Light's sunrise / sunset layout.
+    const plan = planSchedule(document.schedule, document, wledTimerDialect(snap.firmware));
+    if (plan.error) return row(light, "refused", `Looks matched. ${plan.error} The Schedule was not sent.`, safety.id);
+    const planned = scheduleWriteFor(document.schedule, plan.timers);
     if (!(await deps.writeCfg(targetOf(light), planned.body))) {
       return row(light, "failed", "Looks matched. WLED did not accept the Schedule (NTP / timers).", safety.id);
     }
@@ -375,6 +405,13 @@ export async function pushLooksToLight(
     udp: input.udp && udpRole ? { group: input.udp.group, role: udpRole } : null,
   });
   const pushedAt = new Date().toISOString();
+  // What this Light now holds: every Look and playlist; the Schedule only when it went too.
+  const items = lookItemDigests(document);
+  const previous = light.lastLookPush?.items?.schedule;
+  if (!input.includeSchedule) {
+    if (previous === undefined) delete items.schedule;
+    else items.schedule = previous;
+  }
   deps.store.replace({
     ...light,
     lastLookPush: {
@@ -382,6 +419,8 @@ export async function pushLooksToLight(
       includeSchedule: input.includeSchedule,
       ...(input.udp && udpRole ? { udp: { group: input.udp.group, role: udpRole } } : {}),
       digest,
+      items,
+      names: { ...light.lastLookPush?.names, ...lookItemNames(document) },
     },
     ...(ledmap.digest ? { lastLedmap: { digest: ledmap.digest, at: pushedAt } } : {}),
   });

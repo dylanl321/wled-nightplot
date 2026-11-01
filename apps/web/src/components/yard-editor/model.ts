@@ -22,7 +22,9 @@ import {
   nextLookSlot,
   propShapeChanged,
   sectionIndexRanges,
+  installGuide,
   setEdgeLength,
+  spiralGapForLights,
   setEdgeLights,
   setPitchM,
   splitRun,
@@ -38,10 +40,11 @@ import {
   type PropLayout,
   type PropMeasurements,
   type PropSection,
+  type InstallGuide,
 } from "@nightplot/shared";
 
 /** The tiles in "Start from". `draw` traces a path by hand. */
-export type ShapeId = "line" | "window" | "triangle" | "tree" | "arch" | "draw";
+export type ShapeId = "line" | "window" | "triangle" | "tree" | "arch" | "spiral" | "spiralTree" | "zigzag" | "draw";
 
 export const SHAPES: readonly { id: ShapeId; title: string; svg: string }[] = [
   { id: "line", title: "Line", svg: "M3 16 L31 8" },
@@ -49,11 +52,21 @@ export const SHAPES: readonly { id: ShapeId; title: string; svg: string }[] = [
   { id: "triangle", title: "Triangle", svg: "M5 21 L17 3 L29 21 Z" },
   { id: "tree", title: "Mini tree", svg: "M7 21 L17 3 L27 21 M17 21v-2" },
   { id: "arch", title: "Arch", svg: "M4 21 C4 2, 30 2, 30 21" },
+  { id: "spiral", title: "Post wrap", svg: "M12 22 L22 19 L12 16 L22 13 L12 10 L22 7 L12 4 M12 22 V2 M22 22 V2" },
+  { id: "spiralTree", title: "Spiral tree", svg: "M6 21 L28 18 L9 15 L25 12 L12 9 L22 6 L17 3" },
+  { id: "zigzag", title: "Zigzag", svg: "M4 21 L9 5 L14 21 L19 5 L24 21 L29 5" },
   { id: "draw", title: "Draw it", svg: "M4 19 L12 9 L20 15 L30 5" },
 ];
 
-/** A size field on a template shape, in the order the panel shows them. */
-export type SizeKey = "length" | "width" | "height" | "base";
+/**
+ * A size field on a template shape, in the order the panel shows them.
+ * `passes` and `horizontal` are counts, not lengths: units do not convert them.
+ */
+export type SizeKey = "length" | "width" | "height" | "base" | "around" | "aroundTop" | "gap" | "passes" | "horizontal";
+
+/** Sizes that are not lengths. */
+export const PLAIN_SIZES: ReadonlySet<SizeKey> = new Set<SizeKey>(["passes", "horizontal"]);
+const SIZE_KEYS: readonly SizeKey[] = ["length", "width", "height", "base", "around", "aroundTop", "gap", "passes", "horizontal"];
 
 /** Starting sizes, in the unit named. Round numbers in each unit. */
 const DEFAULT_SIZES: Record<Exclude<ShapeId, "draw">, Record<LayoutUnits, Partial<Record<SizeKey, number>>>> = {
@@ -62,16 +75,48 @@ const DEFAULT_SIZES: Record<Exclude<ShapeId, "draw">, Record<LayoutUnits, Partia
   triangle: { m: { base: 2, height: 2 }, ft: { base: 6, height: 6 } },
   tree: { m: { base: 1, height: 1.5 }, ft: { base: 3, height: 5 } },
   arch: { m: { width: 3, height: 2 }, ft: { width: 10, height: 6 } },
+  // A 4×4 post is 3.5 in a side: 14 in around. Wraps 4 in apart.
+  spiral: { m: { height: 2.4, around: 0.35, aroundTop: 0.35, gap: 0.1 }, ft: { height: 8, around: 14 / 12, aroundTop: 14 / 12, gap: 4 / 12 } },
+  // A 6 ft tree about 3 ft wide at the bottom, to a point. Wraps 6 in apart.
+  spiralTree: { m: { height: 1.8, around: 2.8, aroundTop: 0, gap: 0.15 }, ft: { height: 6, around: 9.5, aroundTop: 0, gap: 0.5 } },
+  zigzag: { m: { width: 1.2, height: 1, passes: 8 }, ft: { width: 4, height: 3, passes: 8 } },
 };
 
-/** Field order and label for each template shape. */
-export const SIZE_FIELDS: Record<Exclude<ShapeId, "draw">, { key: SizeKey; label: string }[]> = {
+/**
+ * Field order and label for each template shape. `small` sizes are typed in
+ * inches (or cm), the way a tape round a post reads. `plain` is a count.
+ */
+export const SIZE_FIELDS: Record<Exclude<ShapeId, "draw">, { key: SizeKey; label: string; small?: true; plain?: true }[]> = {
   line: [{ key: "length", label: "Length" }],
   window: [{ key: "width", label: "Width" }, { key: "height", label: "Height" }],
   triangle: [{ key: "base", label: "Width" }, { key: "height", label: "Height" }],
   tree: [{ key: "base", label: "Width" }, { key: "height", label: "Height" }],
   arch: [{ key: "width", label: "Width" }, { key: "height", label: "Height" }],
+  spiral: [
+    { key: "height", label: "Height" },
+    { key: "gap", label: "Wrap every", small: true },
+    { key: "around", label: "Around, bottom", small: true },
+    { key: "aroundTop", label: "Around, top", small: true },
+  ],
+  spiralTree: [
+    { key: "height", label: "Height" },
+    { key: "gap", label: "Wrap every", small: true },
+    { key: "around", label: "Around, bottom" },
+    { key: "aroundTop", label: "Around, top" },
+  ],
+  zigzag: [{ key: "width", label: "Width" }, { key: "height", label: "Height" }, { key: "passes", label: "Passes", plain: true }],
 };
+
+/** Zigzag up and down (false) or side to side (true). */
+export function setZigzagDirection(draft: Draft, horizontal: boolean): Draft {
+  if (draft.shape !== "zigzag") return draft;
+  return setSize({ ...draft, sizes: { ...draft.sizes, horizontal: horizontal ? 1 : 0 } }, "passes", draft.sizes.passes ?? 8);
+}
+
+/** Spirals: a pixel string's spacing is fixed, so a typed count moves the wraps. */
+export function isSpiral(shape: ShapeId | null | undefined): shape is "spiral" | "spiralTree" {
+  return shape === "spiral" || shape === "spiralTree";
+}
 
 export const SHAPE_TITLES: Record<ShapeId, string> = Object.fromEntries(SHAPES.map((row) => [row.id, row.title])) as Record<ShapeId, string>;
 
@@ -106,6 +151,12 @@ export function shapeOfProp(prop: Pick<Prop, "kind" | "design" | "layout">): Sha
       return "arch";
     case "tree":
       return m?.shape === "tree" && m.closed ? "triangle" : prop.layout?.template?.params.closed === 1 ? "triangle" : "tree";
+    case "spiral": {
+      const top = m?.shape === "spiral" ? m.aroundTop : prop.layout?.template?.params.aroundTop;
+      return top === 0 ? "spiralTree" : "spiral";
+    }
+    case "zigzag":
+      return "zigzag";
     default:
       return "draw";
   }
@@ -122,6 +173,11 @@ export function kindOfShape(shape: ShapeId): PropKind {
     case "triangle":
     case "tree":
       return "tree";
+    case "spiral":
+    case "spiralTree":
+      return "spiral";
+    case "zigzag":
+      return "zigzag";
     case "draw":
       return "custom";
   }
@@ -140,11 +196,16 @@ function templateParams(shape: Exclude<ShapeId, "draw">, sizes: Partial<Record<S
       return { base: sizes.base ?? 0, height: sizes.height ?? 0, closed: 1 };
     case "tree":
       return { base: sizes.base ?? 0, height: sizes.height ?? 0 };
+    case "spiral":
+    case "spiralTree":
+      return { height: sizes.height ?? 0, around: sizes.around ?? 0, aroundTop: sizes.aroundTop ?? sizes.around ?? 0, gap: sizes.gap ?? 0 };
+    case "zigzag":
+      return { width: sizes.width ?? 0, height: sizes.height ?? 0, passes: Math.round(sizes.passes ?? 0), horizontal: sizes.horizontal === 1 ? 1 : 0 };
   }
 }
 
-function templateShape(shape: Exclude<ShapeId, "draw">): "roofline" | "window" | "arch" | "tree" {
-  return shape === "line" ? "roofline" : shape === "triangle" ? "tree" : shape;
+function templateShape(shape: Exclude<ShapeId, "draw">): "roofline" | "window" | "arch" | "tree" | "spiral" | "zigzag" {
+  return shape === "line" ? "roofline" : shape === "triangle" ? "tree" : shape === "spiralTree" ? "spiral" : shape;
 }
 
 export function measurementsOf(draft: Draft): PropMeasurements {
@@ -161,6 +222,11 @@ export function measurementsOf(draft: Draft): PropMeasurements {
       return { shape: "tree", base: s.base ?? 0, height: s.height ?? 0, closed: true };
     case "tree":
       return { shape: "tree", base: s.base ?? 0, height: s.height ?? 0 };
+    case "spiral":
+    case "spiralTree":
+      return { shape: "spiral", height: s.height ?? 0, around: s.around ?? 0, aroundTop: s.aroundTop ?? s.around ?? 0, gap: s.gap ?? 0 };
+    case "zigzag":
+      return { shape: "zigzag", width: s.width ?? 0, height: s.height ?? 0, passes: Math.round(s.passes ?? 0), direction: s.horizontal === 1 ? "horizontal" : "vertical" };
   }
 }
 
@@ -175,7 +241,7 @@ export function draftFromProp(prop: Prop, units: LayoutUnits, pitchM: number): D
   const layout = prop.layout ?? emptyTrace(units, pitchM);
   const params = layout.template?.params ?? {};
   const sizes: Partial<Record<SizeKey, number>> = {};
-  for (const key of ["length", "width", "height", "base"] as const) if (typeof params[key] === "number") sizes[key] = params[key];
+  for (const key of SIZE_KEYS) if (typeof params[key] === "number") sizes[key] = params[key];
   const offered = prop.kind !== "stake-row" && prop.kind !== "wireframe";
   const drawn = shape === "draw" || !layout.template || (prop.design?.measurements ? propShapeChanged(prop) : false) || cornersMoved(layout, shape, sizes);
   return {
@@ -236,8 +302,11 @@ export function startFrom(draft: Draft, shape: ShapeId, units: LayoutUnits, pitc
     const w = roundSize(had.w, unit);
     const h = roundSize(had.h, unit);
     if (shape === "line") sizes.length = Math.max(w, h) || sizes.length;
-    else {
-      const wideKey: SizeKey = shape === "window" || shape === "arch" ? "width" : "base";
+    else if (isSpiral(shape)) {
+      // A spiral's width is the post, not the last shape's: keep only the height.
+      if (h > 0) sizes.height = h;
+    } else {
+      const wideKey: SizeKey = shape === "window" || shape === "arch" || shape === "zigzag" ? "width" : "base";
       if (w > 0) sizes[wideKey] = w;
       if (h > 0) sizes.height = h;
     }
@@ -287,7 +356,7 @@ export function setUnits(draft: Draft, units: LayoutUnits): Draft {
   if (!draft.layout || draft.layout.units === units) return draft;
   const factor = units === "ft" ? 1 / METRES_PER_FOOT : METRES_PER_FOOT;
   const sizes: Partial<Record<SizeKey, number>> = {};
-  for (const [key, value] of Object.entries(draft.sizes) as [SizeKey, number][]) sizes[key] = roundSize(value * factor, units);
+  for (const [key, value] of Object.entries(draft.sizes) as [SizeKey, number][]) sizes[key] = PLAIN_SIZES.has(key) ? value : roundSize(value * factor, units);
   const params = draft.layout.template ? { ...draft.layout.template.params, ...sizes } : undefined;
   const layout: PropLayout = { ...draft.layout, units, ...(params && draft.layout.template ? { template: { ...draft.layout.template, params } } : {}) };
   return { ...draft, sizes, layout };
@@ -296,7 +365,33 @@ export function setUnits(draft: Draft, units: LayoutUnits): Draft {
 /** Type how many lights the whole prop has. Spacing follows. */
 export function setCount(draft: Draft, total: number): Draft {
   if (!draft.layout || !Number.isInteger(total) || total < 1) return draft;
+  if (isSpiral(draft.shape) && !draft.drawn) return fitSpiral(draft, total) ?? draft;
   return withCount({ ...draft, count: total });
+}
+
+/**
+ * Space a spiral's wraps so it uses exactly `total` lights at the spacing it
+ * has. Null when that many lights cannot make between half a turn and 200
+ * turns on this post or tree.
+ */
+export function fitSpiral(draft: Draft, total: number): Draft | null {
+  if (!draft.layout || !isSpiral(draft.shape)) return null;
+  const toM = draft.layout.units === "ft" ? METRES_PER_FOOT : 1;
+  const s = draft.sizes;
+  const gapM = spiralGapForLights({
+    heightM: (s.height ?? 0) * toM,
+    aroundM: (s.around ?? 0) * toM,
+    aroundTopM: (s.aroundTop ?? s.around ?? 0) * toM,
+  }, total, draft.layout.pitchM);
+  if (gapM == null) return null;
+  return setSize({ ...draft, count: null }, "gap", gapM / toM);
+}
+
+/** Install marks: every `every`th light, and the light at each foot (or 25 cm) of height on a spiral. */
+export function guideFor(draft: Draft, every: number): InstallGuide | null {
+  if (!draft.layout) return null;
+  const step = draft.layout.units === "ft" ? METRES_PER_FOOT : 0.25;
+  return installGuide(draft.layout, { everyLights: every, everyHeightM: isSpiral(draft.shape) ? step : undefined });
 }
 
 /** Type the spacing. Counts come from length again. */
@@ -494,7 +589,7 @@ export function sectionRangeText(layout: PropLayout | null, sections: readonly P
 
 // ---------- naming ----------
 
-const AUTO_NAME = /^(New prop|Line|Window|Triangle|Mini tree|Arch|Drawing) \d+$/;
+const AUTO_NAME = /^(New prop|Line|Window|Triangle|Mini tree|Arch|Post wrap|Spiral tree|Zigzag|Drawing) \d+$/;
 
 export function isAutoName(label: string): boolean {
   return AUTO_NAME.test(label);

@@ -1,10 +1,11 @@
 "use client";
 
-import type { LightView, SyncResult, SyncWarning, WledPresetSummary } from "@nightplot/shared";
+import type { LightView, SyncResult, SyncWarning } from "@nightplot/shared";
+import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { UdpSyncSection } from "@/components/udp-sync-section";
-import { fetchJson, postJson } from "@/lib/api";
+import { postJson } from "@/lib/api";
 
 type Action = "presets" | "look";
 type Pending = { action: Action; warnings: SyncWarning[] };
@@ -17,12 +18,10 @@ const STATUS_COPY: Record<SyncResult["rows"][number]["status"], string> = {
   refused: "Not sent",
 };
 
-/** Push presets, colours and effects, or one preset across Lights. Each run rereads; nothing stays in step afterwards. */
+/** Copy presets, or colours and effects, from one Light to others. Each run rereads; nothing stays in step afterwards. */
 export function SyncPanel({ lights }: { lights: LightView[] }) {
   const [sourceId, setSourceId] = useState(lights[0]?.id ?? "");
   const [targetIds, setTargetIds] = useState<string[]>([]);
-  const [presets, setPresets] = useState<WledPresetSummary[] | null>(null);
-  const [presetId, setPresetId] = useState<number | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [result, setResult] = useState<SyncResult | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -35,8 +34,6 @@ export function SyncPanel({ lights }: { lights: LightView[] }) {
   function chooseSource(id: string) {
     setSourceId(id);
     setTargetIds((current) => current.filter((entry) => entry !== id));
-    setPresets(null);
-    setPresetId(null);
     setPending(null);
   }
 
@@ -67,23 +64,6 @@ export function SyncPanel({ lights }: { lights: LightView[] }) {
     });
   }
 
-  async function loadPresets() {
-    await run("Reading presets…", async () => {
-      const data = await fetchJson<{ presets: WledPresetSummary[] }>(`/api/sync/presets/${sourceId}`);
-      setPresets(data.presets);
-      setPresetId(data.presets[0]?.id ?? null);
-    });
-  }
-
-  async function turnOn() {
-    if (presetId === null) return;
-    await run(`Turning on preset ${presetId}…`, async () => {
-      const res = await postJson<SyncResult>("/api/sync/preset", { lightIds: [sourceId, ...targets], presetId });
-      if (!res.ok) throw new Error(res.data.message ?? "Preset was not sent.");
-      setResult(res.data);
-    });
-  }
-
   if (lights.length < 2) {
     return <section className="flex flex-1 flex-col gap-3 px-5 py-10 sm:px-8">
       <h1 className="text-[26px] font-semibold tracking-[-0.01em]">Sync</h1>
@@ -95,7 +75,7 @@ export function SyncPanel({ lights }: { lights: LightView[] }) {
   return <section className="flex flex-1 flex-col gap-6 px-5 py-8 sm:px-8">
     <div className="flex flex-col gap-1">
       <h1 className="text-[26px] font-semibold tracking-[-0.01em]">Sync</h1>
-      <p className="text-[14px] text-muted-foreground">Push WLED presets, colours and effects, or one preset from one Light to others. Each Light is reread afterwards. Nightplot does not keep them in step after the push.</p>
+      <p className="text-[14px] text-muted-foreground">Copy WLED presets, or colours and effects, from one Light to others. Each Light is reread afterwards. Nightplot does not keep them in step after the push.</p>
     </div>
 
     <div className="grid gap-6 lg:grid-cols-2">
@@ -133,18 +113,9 @@ export function SyncPanel({ lights }: { lights: LightView[] }) {
       </div>
     </div> : null}
 
-    <div className="flex flex-col gap-3 border-t border-border pt-5">
-      <h2 className="text-[16px] font-medium">Turn on a preset</h2>
-      <p className="text-[13px] text-muted-foreground">Turns on the same WLED preset number on {source?.name ?? "the source"}{targets.length ? ` and ${targets.length} more` : ""}. A Light without that preset is skipped and listed.</p>
-      <div className="flex flex-wrap items-center gap-3">
-        <Button variant="outline" disabled={disabled} onClick={loadPresets}>{presets ? "Reload presets" : "Read presets"}</Button>
-        {presets ? (presets.length ? <select aria-label="Preset" className="h-10 rounded-md border border-border bg-background px-3"
-          value={presetId ?? ""} onChange={(event) => setPresetId(Number(event.target.value))}>
-          {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.id} · {preset.name}{preset.kind === "playlist" ? " (playlist)" : ""}</option>)}
-        </select> : <span className="text-[13px] text-quiet">{source?.name} has no saved presets.</span>) : null}
-        <Button disabled={disabled || presetId === null} onClick={turnOn}>Turn on</Button>
-      </div>
-    </div>
+    <p className="border-t border-border pt-5 text-[13px] text-muted-foreground">
+      To turn on a Look, a playlist or another WLED preset, use <Link href="/looks" className="text-primary underline-offset-2 hover:underline">Looks</Link>.
+    </p>
 
     {busy ? <p className="text-[13px] text-muted-foreground">{busy}</p> : null}
     {error ? <p role="alert" className="text-[13px] text-[#f0a3a3]">{error}</p> : null}

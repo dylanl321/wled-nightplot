@@ -43,7 +43,15 @@ export type LookStyle = {
   color: string;
   /** Optional second colour for two-colour effects / palettes. */
   color2?: string;
+  /** Optional third colour (WLED `col[2]`). */
+  color3?: string;
+  /** Which way the effect runs. Absent is from light 1 (`rev` and `mi` off). */
+  dir?: LookDirection;
+  /** Segment brightness 1–255 (WLED `seg.bri`). Absent is full. */
+  opacity?: number;
 };
+
+export type LookDirection = "fwd" | "rev" | "mirror";
 
 export type LookOverride = {
   style: LookStyle;
@@ -76,6 +84,8 @@ export type Look = {
    * Looks saved before this list existed: every prop is in.
    */
   propIds?: string[];
+  /** Fade into this Look, WLED tenths of a second. Absent leaves WLED's own. */
+  transitionTenths?: number;
 };
 
 export type LookPlaylist = {
@@ -86,6 +96,10 @@ export type LookPlaylist = {
   /** Time each Look is kept, WLED tenths of a second. */
   durationTenths: number;
   transitionTenths: number;
+  /** Time for each Look in order, tenths. Absent: every Look gets `durationTenths`. */
+  durationsTenths?: number[];
+  /** False plays once, then turns off. Absent: repeats forever. */
+  repeat?: boolean;
 };
 
 export type LooksDocument = {
@@ -93,6 +107,11 @@ export type LooksDocument = {
   looks: Look[];
   playlists: LookPlaylist[];
   schedule: NightlySchedule | null;
+  /**
+   * Set once section colours stored on props were copied into each Look as
+   * section styles. After that a section with no style of its own follows its prop.
+   */
+  sectionColoursMigrated?: true;
 };
 
 export type LookEffect = { fx: number; label: string };
@@ -152,6 +171,9 @@ export function isLookStyle(value: unknown): value is LookStyle {
   if (!isByte(row.bri) || row.bri < 1) return false;
   if (!parseHexColor(row.color ?? "")) return false;
   if (row.color2 !== undefined && !parseHexColor(row.color2)) return false;
+  if (row.color3 !== undefined && !parseHexColor(row.color3)) return false;
+  if (row.dir !== undefined && row.dir !== "fwd" && row.dir !== "rev" && row.dir !== "mirror") return false;
+  if (row.opacity !== undefined && (!isByte(row.opacity) || row.opacity < 1)) return false;
   return true;
 }
 
@@ -182,8 +204,13 @@ export function isLook(value: unknown): value is Look {
     isLookStyle(row.style) &&
     Array.isArray(row.overrides) &&
     row.overrides.every(isLookOverride) &&
-    (row.propIds === undefined || (Array.isArray(row.propIds) && row.propIds.every((id) => typeof id === "string" && id.length > 0)))
+    (row.propIds === undefined || (Array.isArray(row.propIds) && row.propIds.every((id) => typeof id === "string" && id.length > 0))) &&
+    (row.transitionTenths === undefined || isTenths(row.transitionTenths, 0))
   );
+}
+
+function isTenths(value: unknown, min: number): boolean {
+  return typeof value === "number" && Number.isInteger(value) && value >= min && value <= 36000;
 }
 
 export function isLookPlaylist(value: unknown): value is LookPlaylist {
@@ -206,13 +233,17 @@ export function isLookPlaylist(value: unknown): value is LookPlaylist {
     typeof row.transitionTenths === "number" &&
     Number.isInteger(row.transitionTenths) &&
     row.transitionTenths >= 0 &&
-    row.transitionTenths <= 36000
+    row.transitionTenths <= 36000 &&
+    (row.durationsTenths === undefined ||
+      (Array.isArray(row.durationsTenths) && row.durationsTenths.length === row.lookIds.length && row.durationsTenths.every((value) => isTenths(value, 1)))) &&
+    (row.repeat === undefined || typeof row.repeat === "boolean")
   );
 }
 
 export function normalizeLookStyle(style: LookStyle): LookStyle {
   const color = parseHexColor(style.color) ?? "#ffa000";
   const color2 = style.color2 ? parseHexColor(style.color2) : undefined;
+  const color3 = style.color3 ? parseHexColor(style.color3) : undefined;
   return {
     fx: style.fx,
     pal: style.pal,
@@ -221,6 +252,9 @@ export function normalizeLookStyle(style: LookStyle): LookStyle {
     bri: style.bri,
     color,
     ...(color2 ? { color2 } : {}),
+    ...(color3 ? { color3 } : {}),
+    ...(style.dir && style.dir !== "fwd" ? { dir: style.dir } : {}),
+    ...(style.opacity !== undefined && style.opacity < 255 ? { opacity: style.opacity } : {}),
   };
 }
 
@@ -241,6 +275,7 @@ export function normalizeLook(row: Look): Look {
       ...(entry.off ? { off: true as const } : {}),
     })),
     ...(row.propIds ? { propIds: [...new Set(row.propIds)] } : {}),
+    ...(row.transitionTenths !== undefined ? { transitionTenths: row.transitionTenths } : {}),
   };
 }
 
@@ -271,6 +306,8 @@ export function normalizePlaylist(row: LookPlaylist): LookPlaylist {
     lookIds: [...row.lookIds],
     durationTenths: row.durationTenths,
     transitionTenths: row.transitionTenths,
+    ...(row.durationsTenths ? { durationsTenths: [...row.durationsTenths] } : {}),
+    ...(row.repeat === false ? { repeat: false } : {}),
   };
 }
 
@@ -459,8 +496,9 @@ function plainTarget(element: Element, prop: Prop | null): LookTarget {
 
 /**
  * A section override wins, then a wireframe group, then propId, then propKind,
- * then elementId. A section with none of those uses the Look's style in the
- * colour stored on the section. Otherwise the whole-yard default.
+ * then elementId. A section with none of those follows its prop. Otherwise the
+ * Look's own style. (Section colours stored on props were copied into Looks
+ * once by `migrateSectionColours`.)
  */
 export function resolveLookStyle(look: Look, target: LookTarget): LookStyle {
   return resolveLookTarget(look, target).style;
@@ -498,7 +536,6 @@ function resolveWithoutSection(look: Look, target: LookTarget): LookStyle {
     ? look.overrides.find((row) => row.elementId && row.elementId === target.elementId)
     : undefined;
   if (byElement) return byElement.style;
-  if (target.sectionColor) return { ...look.style, color: target.sectionColor };
   return look.style;
 }
 
@@ -535,8 +572,9 @@ export function lookTargetsForLook(look: Look, input: {
 export function styleColours(style: LookStyle, rgbw: boolean): number[][] {
   const primary = hexToRgb(style.color) ?? [255, 160, 0];
   const secondary = style.color2 ? hexToRgb(style.color2) ?? [0, 0, 0] : [0, 0, 0];
+  const tertiary = style.color3 ? hexToRgb(style.color3) ?? [0, 0, 0] : [0, 0, 0];
   const pad = (rgb: [number, number, number]) => (rgbw ? [...rgb, 0] : [...rgb]);
-  return [pad(primary), pad(secondary as [number, number, number]), pad([0, 0, 0])];
+  return [pad(primary), pad(secondary as [number, number, number]), pad(tertiary as [number, number, number])];
 }
 
 export function buildLookPreset(look: Look, targets: readonly LookTarget[], rgbw: boolean): Record<string, unknown> {
@@ -544,22 +582,47 @@ export function buildLookPreset(look: Look, targets: readonly LookTarget[], rgbw
     n: look.name.slice(0, LOOK_NAME_MAX),
     on: true,
     bri: look.style.bri,
+    ...(look.transitionTenths !== undefined ? { transition: look.transitionTenths } : {}),
     mainseg: 0,
-    seg: targets.map((target, index) => {
+    seg: mergeFollowingSections(look, targets).map((target, index) => {
       const { style, off } = resolveLookTarget(look, target);
       return {
         id: index,
         start: target.start,
         stop: target.stop,
         on: !off,
+        bri: style.opacity ?? 255,
         col: styleColours(style, rgbw),
         fx: style.fx,
         sx: style.sx,
         ix: style.ix,
         pal: style.pal,
+        rev: style.dir === "rev",
+        mi: style.dir === "mirror",
       };
     }),
   };
+}
+
+/**
+ * While every section of a prop follows the prop, its touching section
+ * ranges are sent as one segment, so an effect runs along the whole prop.
+ * Once one section has its own style or is off, each stays its own segment.
+ */
+export function mergeFollowingSections(look: Look, targets: readonly LookTarget[]): LookTarget[] {
+  const ownSections = new Set(look.overrides.filter((row) => row.sectionId && row.propId).map((row) => row.propId!));
+  const out: LookTarget[] = [];
+  for (const target of targets) {
+    const last = out[out.length - 1];
+    const mergeable = (row: LookTarget | undefined) =>
+      row?.prop && row.sectionId && !row.wireframeGroup && !ownSections.has(row.prop.id);
+    if (last && mergeable(last) && mergeable(target) && last.prop!.id === target.prop!.id && last.stop === target.start) {
+      out[out.length - 1] = { ...last, stop: target.stop };
+      continue;
+    }
+    out.push(target);
+  }
+  return out;
 }
 
 export function buildOffPreset(): Record<string, unknown> {
@@ -567,19 +630,20 @@ export function buildOffPreset(): Record<string, unknown> {
 }
 
 export function buildPlaylistPreset(playlist: LookPlaylist, looks: readonly Look[]): Record<string, unknown> | null {
-  const slots = playlist.lookIds
-    .map((id) => looks.find((look) => look.id === id)?.slot)
-    .filter((slot): slot is number => typeof slot === "number");
-  if (slots.length === 0) return null;
+  const entries = playlist.lookIds
+    .map((id, index) => ({ slot: looks.find((look) => look.id === id)?.slot, dur: playlist.durationsTenths?.[index] ?? playlist.durationTenths }))
+    .filter((row): row is { slot: number; dur: number } => typeof row.slot === "number");
+  if (entries.length === 0) return null;
+  const once = playlist.repeat === false;
   return {
     n: playlist.name.slice(0, LOOK_NAME_MAX),
     on: true,
     playlist: {
-      ps: slots,
-      dur: slots.map(() => playlist.durationTenths),
-      transition: slots.map(() => playlist.transitionTenths),
-      repeat: 0,
-      end: 0,
+      ps: entries.map((row) => row.slot),
+      dur: entries.map((row) => row.dur),
+      transition: entries.map(() => playlist.transitionTenths),
+      repeat: once ? 1 : 0,
+      end: once ? LOOK_OFF_SLOT : 0,
     },
   };
 }
@@ -651,6 +715,10 @@ export type LastLookPush = {
   includeSchedule: boolean;
   udp?: { group: number; role: UdpSyncRole };
   digest: string;
+  /** Digest of each Look, playlist and the Schedule as sent (`look:<id>`, `playlist:<id>`, `schedule`). */
+  items?: Record<string, string>;
+  /** Names at the time of sending, so a deleted Look can still be named. */
+  names?: Record<string, string>;
 };
 
 export function isLastLookPush(value: unknown): value is LastLookPush {
@@ -659,6 +727,11 @@ export function isLastLookPush(value: unknown): value is LastLookPush {
   if (typeof row.at !== "string" || !row.at) return false;
   if (typeof row.includeSchedule !== "boolean") return false;
   if (typeof row.digest !== "string" || !row.digest) return false;
+  for (const map of [row.items, row.names]) {
+    if (map === undefined) continue;
+    if (!map || typeof map !== "object" || Array.isArray(map)) return false;
+    if (!Object.values(map).every((value) => typeof value === "string")) return false;
+  }
   if (row.udp !== undefined) {
     if (!row.udp || typeof row.udp !== "object") return false;
     if (!isUdpSyncGroup(row.udp.group)) return false;

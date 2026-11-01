@@ -32,6 +32,7 @@ export class FileLooksStore {
       looks: document.looks.map(normalizeLook),
       playlists: document.playlists.map(normalizePlaylist),
       schedule: document.schedule,
+      ...(document.sectionColoursMigrated ? { sectionColoursMigrated: true as const } : {}),
     };
     this.write(next);
     return next;
@@ -75,6 +76,7 @@ export class FileLooksStore {
       looks: parsed.looks.map(normalizeLook),
       playlists: parsed.playlists.map(normalizePlaylist),
       schedule: parsed.schedule ?? null,
+      ...(parsed.sectionColoursMigrated ? { sectionColoursMigrated: true as const } : {}),
     };
   }
 

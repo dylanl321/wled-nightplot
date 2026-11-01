@@ -19,6 +19,16 @@ export type DrawEdge = {
   color: string | null;
   wire?: boolean;
   typed?: boolean;
+  /** Real length when it is not the drawn line (half a turn of a spiral). */
+  lengthM?: number;
+};
+
+/** Install marks on a prop's own canvas, in the prop's frame. */
+export type DrawGuide = {
+  /** A numbered light: every 20th, say. */
+  lights: { x: number; y: number; label: string }[];
+  /** A height line with the light that should sit on it. */
+  heights: { y: number; x: number; label: string }[];
 };
 
 export type DrawProp = {
@@ -47,6 +57,8 @@ export type Scene = {
   selectedRun: string | null;
   sectionRuns: string[] | null;
   fmtLen: (m: number) => string;
+  /** Prop canvas only: where lights go when putting the string up. */
+  guide?: DrawGuide | null;
 };
 
 export type Colours = Record<"canvas" | "grid" | "gridStrong" | "pick" | "quiet" | "fg" | "card" | "input" | "lit" | "primary", string>;
@@ -136,6 +148,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, view: View, scene: Scen
   const labels: LabelBox[] = [];
   if (inProp) {
     for (const p of scene.props) drawProp(ctx, view, scene, c, p, 1, true, false, labels);
+    if (scene.guide) for (const p of scene.props) drawGuide(ctx, view, c, p, scene.guide);
   } else {
     const ordered = [...scene.props].sort((a, b) => Number(a.id === scene.selectedId) - Number(b.id === scene.selectedId));
     for (const p of ordered) drawProp(ctx, view, scene, c, p, 1, false, false, labels);
@@ -158,6 +171,8 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
   ctx.save();
   ctx.globalAlpha = alpha;
   const selected = scoped || p.id === scene.selectedId;
+  // A spiral has dozens of half-turn runs: label only the picked one, and draw corners as dots.
+  const crowded = p.edges.length > 16;
   for (const e of p.edges) {
     const ax = sx(e.ax + p.x), ay = sy(e.ay + p.y), bx = sx(e.bx + p.x), by = sy(e.by + p.y);
     const col = ghost ? c.pick : e.color;
@@ -188,9 +203,9 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
       }
       ctx.shadowBlur = 0;
     }
-    if (scoped && !e.wire) {
+    if (scoped && !e.wire && (!crowded || isSel)) {
       const mx = (ax + bx) / 2, my = (ay + by) / 2;
-      const t = `${scene.fmtLen(Math.hypot(e.bx - e.ax, e.by - e.ay))} · ${n}${e.typed ? "*" : ""}`;
+      const t = `${scene.fmtLen(e.lengthM ?? Math.hypot(e.bx - e.ax, e.by - e.ay))} · ${n}${e.typed ? "*" : ""}`;
       const w = ctx.measureText(t).width + 8;
       // Off the outside of the run, then away from labels already placed.
       const nx = -(by - ay) / segLen, ny = (bx - ax) / segLen;
@@ -209,7 +224,8 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
       const x = sx(corner.x + p.x), y = sy(corner.y + p.y);
       const isStart = p.start && Math.abs(p.start.x - corner.x) < 1e-9 && Math.abs(p.start.y - corner.y) < 1e-9;
       ctx.fillStyle = c.card; ctx.strokeStyle = isStart ? c.primary : c.pick; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.rect(x - 5, y - 5, 10, 10); ctx.fill(); ctx.stroke();
+      const r = crowded && !isStart ? 2.5 : 5;
+      ctx.beginPath(); ctx.rect(x - r, y - r, r * 2, r * 2); ctx.fill(); ctx.stroke();
     }
     if (p.start) {
       ctx.fillStyle = c.primary;
@@ -240,6 +256,43 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
   if (ly == null && (selected || ghost)) ly = tries[0];
   if (ly != null) { labels.push({ x: lx, y: ly, w: lw }); ctx.fillText(label, lx, ly); }
   ctx.font = "11px var(--font-plex-mono), 'IBM Plex Mono', monospace";
+  ctx.restore();
+}
+
+/**
+ * Install marks over a prop. Height lines run across the prop with the light
+ * that belongs on them; numbered lights get a ring and their number.
+ */
+function drawGuide(ctx: CanvasRenderingContext2D, view: View, c: Colours, p: DrawProp, guide: DrawGuide) {
+  const { sx, sy, W } = view;
+  ctx.save();
+  ctx.font = "11px var(--font-plex-mono), 'IBM Plex Mono', monospace";
+  const left = sx(p.box.minX + p.x) - 14;
+  const right = sx(p.box.maxX + p.x) + 14;
+  let lastY = Infinity;
+  for (const h of guide.heights) {
+    const y = sy(h.y + p.y);
+    ctx.strokeStyle = c.primary; ctx.globalAlpha = 0.7; ctx.lineWidth = 1; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(left, y + 0.5); ctx.lineTo(right, y + 0.5); ctx.stroke(); ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = c.primary; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(sx(h.x + p.x), sy(h.y + p.y), 6, 0, Math.PI * 2); ctx.stroke();
+    // Skip a label that would sit on the one below it; the line still shows.
+    if (Math.abs(lastY - y) < 14) continue;
+    lastY = y;
+    const w = ctx.measureText(h.label).width + 8;
+    const lx = Math.min(W - w - 4, right + 4);
+    ctx.fillStyle = c.card; ctx.globalAlpha = 0.92; ctx.fillRect(lx, y - 8, w, 16); ctx.globalAlpha = 1;
+    ctx.fillStyle = c.primary; ctx.fillText(h.label, lx + 4, y + 4);
+  }
+  for (const m of guide.lights) {
+    const x = sx(m.x + p.x), y = sy(m.y + p.y);
+    ctx.strokeStyle = c.pick; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.stroke();
+    const w = ctx.measureText(m.label).width + 6;
+    ctx.fillStyle = c.card; ctx.globalAlpha = 0.92; ctx.fillRect(x + 9, y - 19, w, 14); ctx.globalAlpha = 1;
+    ctx.fillStyle = c.pick; ctx.fillText(m.label, x + 12, y - 8);
+  }
   ctx.restore();
 }
 

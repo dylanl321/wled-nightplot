@@ -1,19 +1,28 @@
 import { describe, expect, it } from "vitest";
 import {
   addStringAt,
+  addUnlitConnector,
+  assignStableRunIds,
   clearEdgeLights,
   continueToCorner,
   continueToPoint,
   countLayout,
+  deletePoint,
   deleteRun,
   edgeLengthM,
   emptyTrace,
+  formatPitch,
   isPropLayout,
+  layoutFromMeasurements,
   layoutReview,
+  layoutWireLengthM,
+  parsePitch,
   layoutStrings,
   mergeShortRuns,
   moveCorner,
+  runGaps,
   runsOnSameSpan,
+  stampEdgeNames,
   setEdgeLength,
   setEdgeLights,
   setEdgeName,
@@ -22,7 +31,8 @@ import {
   weldCorners,
   type PropLayout,
 } from "./layout.ts";
-import { pathEdgeIndexRanges } from "./sections.ts";
+import { pathEdgeIndexRanges, reconcileSections } from "./sections.ts";
+import type { PropSection } from "./types.ts";
 
 /** Three 1 m runs along x, as one string, 10 cm spacing: 10 + 10 + 10. */
 function three(): PropLayout {
@@ -129,6 +139,72 @@ describe("split, weld, and short runs", () => {
     expect(split.layout.corners.find((corner) => corner.id === "c4")).toEqual({ id: "c4", x: 3, y: 0 });
   });
 
+  it("keeps a run's name, count, and dark mark on that run when a point is added", () => {
+    let layout = setEdgeLights(setEdgeName(three(), "e2", "top"), "e2", 14);
+    layout = setEdgeName(setEdgeLights(layout, "e3", 8), "e3", "far");
+    const dark = layoutStrings(layout)[0]!.run.map((edge) => edge.id === "e1" ? { ...edge, kind: "wire" as const } : edge);
+    layout = { ...layout, run: dark, strings: [{ id: "s1", startId: "c1", run: dark }] };
+    const sections: PropSection[] = [
+      { id: "s-top", name: "Top", edgeIds: ["e2"], pinnedRanges: [] },
+      { id: "s-far", name: "Far", edgeIds: ["e3"], pinnedRanges: [] },
+    ];
+    const split = splitRun(layout, "e2", 1.5, 0);
+    const runs = layoutStrings(split.layout)[0]!.run;
+    expect(runs.map((edge) => edge.id)).toEqual(["e1", "e2", runs[2]!.id, "e3"]);
+    expect(runs[2]!.id).not.toBe("e2");
+    expect(runs[2]!.id).not.toBe("e3");
+    expect(runs[0]).toMatchObject({ id: "e1", kind: "wire" });
+    expect(runs[1]).toMatchObject({ id: "e2", name: "top", lockedLights: 14, kind: "lit" });
+    expect(runs[2]?.name).toBeUndefined();
+    expect(runs[2]?.lockedLights).toBeUndefined();
+    expect(runs[2]?.kind).toBe("lit");
+    expect(runs[3]).toMatchObject({ id: "e3", name: "far", lockedLights: 8 });
+    const fixed = reconcileSections(split.layout, sections, layout);
+    expect(fixed.sections.find((section) => section.id === "s-top")?.edgeIds).toEqual(["e2"]);
+    expect(fixed.sections.find((section) => section.id === "s-far")?.edgeIds).toEqual(["e3"]);
+    expect(fixed.dropped).toEqual([]);
+  });
+
+  it("adding a point at the end does not move data onto another run", () => {
+    const layout = setEdgeName(setEdgeLights(three(), "e3", 8), "e3", "far");
+    const next = continueToPoint(layout, "s1", 4, 0);
+    const runs = layoutStrings(next)[0]!.run;
+    expect(runs[2]).toMatchObject({ id: "e3", name: "far", lockedLights: 8 });
+    expect(runs[3]?.id).not.toBe("e3");
+    expect(runs[3]?.name).toBeUndefined();
+  });
+
+  it("deletes a corner and merges the two runs, keeping the earlier run's data", () => {
+    let layout = setEdgeName(setEdgeLights(three(), "e1", 12), "e1", "near");
+    layout = setEdgeName(setEdgeLights(layout, "e2", 9), "e2", "top");
+    const merged = deletePoint(layout, "c2");
+    const runs = layoutStrings(merged)[0]!.run;
+    expect(runs.map((edge) => edge.id)).toEqual(["e1", "e3"]);
+    expect(runs[0]).toMatchObject({ id: "e1", from: "c1", to: "c3", name: "near", lockedLights: 12, kind: "lit" });
+    expect(runs[0]?.name).not.toBe("top");
+    expect(merged.corners.map((corner) => corner.id)).toEqual(["c1", "c3", "c4"]);
+    expect(merged.retiredIds).toEqual(expect.arrayContaining(["e2", "c2"]));
+    expect(deletePoint(layout, "c1")).toBe(layout);
+    expect(isPropLayout(merged)).toBe(true);
+  });
+
+  it("leaves a saved drawing alone when every run id is already unique", () => {
+    const layout = three();
+    expect(assignStableRunIds(layout)).toBe(layout);
+  });
+
+  it("gives a repeated run id a new one and leaves the first run's id", () => {
+    const layout = three();
+    const run = layoutStrings(layout)[0]!.run.map((edge) => edge.id === "e3" ? { ...edge, id: "e2", name: "far" } : edge);
+    const duplicated = { ...layout, run, strings: [{ id: "s1", startId: "c1", run }] };
+    const stable = assignStableRunIds(duplicated);
+    const runs = layoutStrings(stable)[0]!.run;
+    expect(runs[1]).toMatchObject({ id: "e2" });
+    expect(runs[2]?.id).not.toBe("e2");
+    expect(runs[2]?.name).toBe("far");
+    expect(isPropLayout(stable)).toBe(true);
+  });
+
   it("welds corners inside the tolerance and leaves a corner outside it", () => {
     const close = moveCorner(three(), "c3", 1.01, 0);
     const welded = weldCorners(close, 0.02);
@@ -206,5 +282,49 @@ describe("delete a run", () => {
   it("an unknown run changes nothing", () => {
     const layout = three();
     expect(deleteRun(layout, "nope")).toBe(layout);
+  });
+});
+
+describe("gaps, wire length, and spacing", () => {
+  it("draws a gap when one run does not meet the next, and a connector closes it", () => {
+    const open = deleteRun(three(), "e2");
+    const gaps = runGaps(open);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]?.lengthM).toBeCloseTo(1, 5);
+    expect(layoutWireLengthM(open)).toBeCloseTo(3, 5);
+    const joined = addUnlitConnector(open, gaps[0]!.afterId);
+    expect(runGaps(joined)).toEqual([]);
+    const wire = layoutStrings(joined)[0]!.run[1]!;
+    expect(wire.kind).toBe("wire");
+    expect(wire.from).toBe("c2");
+    expect(wire.to).toBe("c3");
+    expect(layoutStrings(joined)[0]!.run.map((edge) => edge.id)).toEqual(["e1", wire.id, "e3"]);
+    expect(countLayout(joined).total).toBe(20);
+    expect(layoutWireLengthM(joined)).toBeCloseTo(3, 5);
+  });
+
+  it("shows spacing in centimetres on a feet prop, still stored as metres", () => {
+    expect(formatPitch(0.1, "m")).toBe("10");
+    expect(formatPitch(0.1, "ft")).toBe("10");
+    expect(parsePitch("10", "ft")).toBeCloseTo(0.1, 6);
+    expect(parsePitch("10", "m")).toBeCloseTo(0.1, 6);
+    expect(parsePitch("0", "ft")).toBeNull();
+  });
+
+  it("writes the template description onto the run, and a split does not move it", () => {
+    const window = layoutFromMeasurements({
+      units: "ft",
+      pitchM: 0.1,
+      shape: "window",
+      params: { width: 4, height: 3 },
+    });
+    expect(window?.run.map((edge) => edge.name)).toEqual(["Bottom", "Right", "Top", "Left"]);
+    const named = window!;
+    const split = splitRun(named, named.run[0]!.id, (named.corners[0]!.x + named.corners[1]!.x) / 2, 0);
+    const runs = layoutStrings(split.layout)[0]!.run;
+    expect(runs[0]?.name).toBe("Bottom");
+    expect(runs[1]?.name).toBeUndefined();
+    expect(runs[2]?.name).toBe("Right");
+    expect(stampEdgeNames(named)).toBe(named);
   });
 });

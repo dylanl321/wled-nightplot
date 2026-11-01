@@ -6,7 +6,7 @@
 
 import type { Element, Light, LightOutput } from "../lights.ts";
 import { legacyOutputId } from "../outputs.ts";
-import { countLayout, layoutFromMeasurements, layoutStrings, wellHouseEdgeLabel, wellHouseEdgeOrder, windowSideNames, type PropLayout } from "./layout.ts";
+import { assignStableRunIds, countLayout, layoutFromMeasurements, layoutStrings, migratePlacedLights, stampEdgeNames, wellHouseEdgeLabel, wellHouseEdgeOrder, windowSideNames, type PropLayout } from "./layout.ts";
 import { defaultSections, isLegacyWellHouseLayout, sectionIndexRanges } from "./sections.ts";
 import { defaultWireframeSpec } from "./wireframe.ts";
 import {
@@ -127,9 +127,11 @@ export function designFromLayout(
 ): PropDesign {
   const counted = countLayout(layout);
   const names = edgeNames(measurements, layout);
+  const stored = new Map(layoutStrings(layout).flatMap((string) => string.run).map((edge) => [edge.id, edge.name]));
+  const anyNamed = [...stored.values()].some((name) => name);
   const edges = counted.edges.filter((edge) => edge.kind === "lit").map((edge, index) => ({
     id: edge.id,
-    label: names[index] ?? `Side ${index + 1}`,
+    label: stored.get(edge.id) || (anyNamed ? null : names[index]) || wellHouseEdgeLabel(edge.id) || `Side ${index + 1}`,
     lengthMm: Math.round(edge.lengthM * 1000),
     ledCount: edge.lights,
   }));
@@ -157,6 +159,20 @@ function measurementParams(measurements: PropMeasurements): Record<string, numbe
       return { stakes: measurements.stakes, height: measurements.height };
     case "wireframe":
       return { sides: measurements.sides, side: measurements.side, height: measurements.height };
+    case "spiral":
+      return {
+        height: measurements.height,
+        around: measurements.around,
+        ...(measurements.aroundTop != null ? { aroundTop: measurements.aroundTop } : {}),
+        gap: measurements.gap,
+      };
+    case "zigzag":
+      return {
+        width: measurements.width,
+        height: measurements.height,
+        passes: measurements.passes,
+        ...(measurements.direction === "horizontal" ? { horizontal: 1 } : {}),
+      };
     case "custom":
     case "legacy":
       return null;
@@ -181,6 +197,9 @@ function edgeNames(measurements: PropMeasurements, layout: PropLayout): string[]
       return Array.from({ length: measurements.stakes }, (_, index) => `Stake ${index + 1}`);
     case "wireframe":
       return layout.run.filter((edge) => edge.kind === "lit").map((edge) => wellHouseEdgeLabel(edge.id) ?? edge.id);
+    case "spiral":
+    case "zigzag":
+      return layout.run.filter((edge) => edge.kind === "lit").map((edge, index) => edge.name ?? `Run ${index + 1}`);
     case "custom":
     case "legacy":
       return [];
@@ -209,6 +228,9 @@ function edgesFor(
       return stakeEdges(measurements.stakes, measurements.height, unit, pitchMm);
     case "wireframe":
       return wellHouseEdges(measurements.sides, measurements.side, measurements.height, unit, pitchMm);
+    case "spiral":
+    case "zigzag":
+      return { ok: false, message: "Spirals and zigzags are counted from their drawing." };
     case "custom":
       return { ok: false, message: "Custom draw is not ready yet. Pick a template shape." };
     case "legacy":
@@ -421,10 +443,12 @@ export function migrateDesignedProp(prop: Prop): Prop {
   if (!prop.layout) {
     return prop.sections ? prop : prop;
   }
-  let layout = prop.layout;
-  let design = prop.design;
+  const stable = migratePlacedLights(stampEdgeNames(assignStableRunIds(prop.layout)));
+  const source = stable === prop.layout ? prop : { ...prop, layout: stable };
+  let layout = source.layout ?? prop.layout;
+  let design = source.design;
   let replaced = false;
-  if (prop.kind === "wireframe" && isLegacyWellHouseLayout(layout)) {
+  if (source.kind === "wireframe" && isLegacyWellHouseLayout(layout)) {
     const params = design?.measurements.shape === "wireframe"
       ? { sides: design.measurements.sides, side: design.measurements.side, height: design.measurements.height }
       : layout.template?.params ?? null;
@@ -437,10 +461,10 @@ export function migrateDesignedProp(prop: Prop): Prop {
       if (design) design = designFromLayout(layout, design.ledProductId, design.measurements);
     }
   }
-  if (!replaced && prop.sections) return prop;
-  const sections = replaced || !prop.sections ? defaultSections(layout) : prop.sections;
+  if (!replaced && source.sections) return source;
+  const sections = replaced || !source.sections ? defaultSections(layout) : source.sections;
   return {
-    ...prop,
+    ...source,
     layout,
     sections,
     ...(design ? { design } : {}),
@@ -557,6 +581,22 @@ function segmentsForProp(prop: Prop, absoluteStart: number, outputId: string): P
     cursor += item.ledCount;
   }
   return fromEdges;
+}
+
+/** Where this attachment starts on its output. Null when the chain cannot be read. */
+export function outputStartForAttachment(input: {
+  attachment: PropAttachment;
+  props: readonly Prop[];
+  attachments: readonly PropAttachment[];
+}): number | null {
+  const resolved = resolveStartIndex({
+    outputId: input.attachment.outputId,
+    place: { startIndex: input.attachment.startIndex, afterPropId: input.attachment.afterPropId },
+    props: input.props,
+    attachments: input.attachments,
+    selfId: input.attachment.propId,
+  });
+  return resolved.ok ? resolved.startIndex : null;
 }
 
 function resolveStartIndex(input: {

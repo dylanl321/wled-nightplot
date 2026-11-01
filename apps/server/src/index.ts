@@ -9,6 +9,7 @@ import { FileLedProductsStore } from "./store/led-products-store.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
 import { FileSettingsStore } from "./store/settings-store.ts";
 import { FileLooksStore } from "./store/looks-store.ts";
+import { FileYardSceneStore } from "./store/yard-scene-store.ts";
 import { FileSetupProfilesStore } from "./store/setup-profiles-store.ts";
 import { createWledCfgReader, createWledCfgWriter } from "./wled/cfg.ts";
 import { createWledConfigExportReader, createWledNativeFilesReader, createWledNativeFilesWriter } from "./wled/native-backup.ts";
@@ -30,6 +31,7 @@ const setupProfilesPath = resolve(
   process.env.NIGHTPLOT_SETUP_PROFILES_PATH ?? join(dirname(storePath), "setup-profiles.json"),
 );
 const looksPath = resolve(process.env.NIGHTPLOT_LOOKS_PATH ?? join(dirname(storePath), "looks.json"));
+const yardScenePath = resolve(process.env.NIGHTPLOT_YARD_SCENE_PATH ?? join(dirname(storePath), "yard-scene.json"));
 recoverInterruptedRestore(storePath);
 const products = new FileLedProductsStore(productsPath);
 const settings = new FileSettingsStore(settingsPath);
@@ -43,6 +45,7 @@ const app = createApp({
   products,
   profiles: new FileSetupProfilesStore(setupProfilesPath),
   looks: new FileLooksStore(looksPath),
+  yardScene: new FileYardSceneStore(yardScenePath),
   probe: createWledProbe(),
   write: createWledWriter(),
   readLive: createWledLiveReader(),
@@ -65,4 +68,5 @@ serve({ fetch: app.fetch, port, hostname }, (info) => {
   console.log(`led products  ${productsPath} (${seededProducts.length})`);
   console.log(`setup profiles  ${setupProfilesPath}`);
   console.log(`looks  ${looksPath}`);
+  console.log(`yard scene  ${yardScenePath}`);
 });

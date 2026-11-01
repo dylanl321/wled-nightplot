@@ -10,7 +10,9 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:mobile": "node e2e/mobile-overflow.mjs",
-    "test:editor": "node e2e/editor-use-cases.mjs"
+    "test:editor": "node e2e/editor-use-cases.mjs",
+    "test:yard3d": "node e2e/yard-street.mjs",
+    "test:looks": "node e2e/looks.mjs"
   },
   "dependencies": {
     "@nightplot/shared": "workspace:*",

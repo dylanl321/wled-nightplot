@@ -1,0 +1,26 @@
+services:
+  nightplot:
+    image: ghcr.io/dylanl321/wled-nightplot:sha-__IMAGE_SHA__
+    command: ["all"]
+    network_mode: host
+    environment:
+      NIGHTPLOT_API_HOST: "127.0.0.1"
+      NIGHTPLOT_API_PORT: "43181"
+      NIGHTPLOT_WEB_HOST: "0.0.0.0"
+      NIGHTPLOT_WEB_PORT: "30808"
+      NIGHTPLOT_STORE_PATH: /data/lights.json
+      NIGHTPLOT_LED_PRODUCTS_PATH: /data/led-products.json
+      NIGHTPLOT_API_URL: http://127.0.0.1:43181
+      NIGHTPLOT_DISCOVERY_TARGETS: "10.0.0.85,10.0.1.29,10.0.1.143,10.0.1.207"
+      TZ: America/New_York
+    volumes:
+      - nightplot-configure-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:30808/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+volumes:
+  nightplot-configure-data:

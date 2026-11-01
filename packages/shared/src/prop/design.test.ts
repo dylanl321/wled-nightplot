@@ -6,6 +6,7 @@ import {
   compilePropDesign,
   designFromLegacy,
   lightsAlong,
+  migrateDesignedProp,
   planPropPlacement,
   yardSetupSteps,
 } from "./design.ts";
@@ -194,6 +195,36 @@ describe("prop migration", () => {
       { ...light, outputs: undefined },
     );
     expect(attachment?.outputId).toBe(legacyOutputId(light.id));
+  });
+
+  it("gives a repeated run id a new one and keeps the section on the first run", () => {
+    const run = [
+      { id: "e1", from: "c1", to: "c2", kind: "lit" as const, name: "near" },
+      { id: "e1", from: "c2", to: "c3", kind: "wire" as const, name: "jump" },
+    ];
+    const prop = {
+      id: "line",
+      label: "Line",
+      kind: "custom" as const,
+      elementIds: [],
+      layout: {
+        source: "trace" as const,
+        units: "m" as const,
+        pitchM: 0.1,
+        startOffsetM: 0,
+        corners: [{ id: "c1", x: 0, y: 0 }, { id: "c2", x: 1, y: 0 }, { id: "c3", x: 2, y: 0 }],
+        run,
+        strings: [{ id: "s1", startId: "c1", run }],
+      },
+      sections: [{ id: "sec", name: "Near", edgeIds: ["e1"], pinnedRanges: [] }],
+    };
+    const migrated = migrateDesignedProp(prop);
+    const runs = migrated.layout?.strings?.[0]?.run ?? migrated.layout?.run ?? [];
+    expect(runs[0]).toMatchObject({ id: "e1", name: "near", kind: "lit" });
+    expect(runs[1]?.id).not.toBe("e1");
+    expect(runs[1]).toMatchObject({ name: "jump", kind: "wire" });
+    expect(migrated.sections?.[0]?.edgeIds).toEqual(["e1"]);
+    expect(migrateDesignedProp(migrated)).toBe(migrated);
   });
 });
 
