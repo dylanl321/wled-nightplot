@@ -190,15 +190,15 @@ The other thread has been asked to keep logic in `packages/shared` and the serve
 
 ## Slices
 
-One PR each, in order. The old routes keep working until slice 8, so main is shippable after every slice.
+Epic #133. One PR each, in order. The old routes keep working until slice 8, so main is shippable after every slice.
 
-1. **Yard page shell.** Three columns on desktop and sheets on the phone, using the existing `YardStage`. Selection model, a fixed-order prop list, the nothing-selected panel, the page-wide save indicator and Undo. The page is no longer immersive.
-2. **Prop inspector.** Name, X/Y, unit, spacing, light count, Duplicate, Delete (with key). Shape shown read-only.
-3. **Path mode in place.** `PropLayoutEditor`'s tools move into a canvas mode in the yard frame, with neighbours faded and a run inspector. Edit on the card opens this.
-4. **Add on the drawing.** Palette, ghost, click to drop, Line and Draw it trace at the click. Template sizes are editable in the inspector, with Reset to template. New prop opens this.
-5. **Sections fold.** Section list in the inspector, click runs on the drawing, colour with hex, 1-based numbers.
-6. **Controller fold.** Attach, Blink, Apply with readback, and Check on the lights, all in the panel.
-7. **Look lens.** Top-bar picker, click to include or exclude, colour and effect fold. Looks page gets Edit on yard; the library list, playlist, schedule and push stay there.
-8. **Routes, nav and cleanup.** Redirects, the Yard / Looks / Lights / Check / More nav, delete the dead pages, and a Playwright run of the eight tasks above at 1440×900 and 390×844.
+1. **Yard page shell** (#134). Three columns on desktop and sheets on the phone, using the existing `YardStage`. Selection model, a fixed-order prop list, the nothing-selected panel, the page-wide save indicator and Undo. The page is no longer immersive.
+2. **Prop inspector** (#135). Name, X/Y, unit, spacing, light count, Duplicate, Delete (with key). Shape shown read-only.
+3. **Path mode in place** (#136). `PropLayoutEditor`'s tools move into a canvas mode in the yard frame, with neighbours faded and a run inspector. Edit on the card opens this.
+4. **Add on the drawing** (#137). Palette, ghost, click to drop, Line and Draw it trace at the click. Template sizes are editable in the inspector, with Reset to template. New prop opens this.
+5. **Sections fold** (#138). Section list in the inspector, click runs on the drawing, colour with hex, 1-based numbers.
+6. **Controller fold** (#139). Attach, Blink, Apply with readback, and Check on the lights, all in the panel.
+7. **Look lens** (#140). Top-bar picker, click to include or exclude, colour and effect fold. Looks page gets Edit on yard; the library list, playlist, schedule and push stay there.
+8. **Routes, nav and cleanup** (#141). Redirects, the Yard / Looks / Lights / Check / More nav, delete the dead pages, and a Playwright run of the eight tasks above at 1440×900 and 390×844.
 
 Every slice: lint, typecheck, unit tests, phone overflow, and the editor Playwright suite pass.
