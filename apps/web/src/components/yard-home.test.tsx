@@ -92,7 +92,7 @@ describe("Your yard", () => {
     expect(screen.getByText("Drawn shape · started as Mini tree")).toBeTruthy();
   });
 
-  it("switches between the drawing and 3D, and says when 3D cannot draw", async () => {
+  it("switches between the drawing and the street", () => {
     render(
       <YardHome
         props={[{ id: "roof", label: "Front roof", kind: "roofline", elementIds: [], lightId: "l1" }]}
@@ -105,10 +105,10 @@ describe("Your yard", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "2D", pressed: true })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "3D" }));
-    expect(await screen.findByText(/cannot show the 3D yard/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Street" }));
+    expect(screen.getByRole("img", { name: "Yard from the street" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "2D" }));
-    expect(screen.queryByText(/cannot show the 3D yard/)).toBeNull();
+    expect(screen.queryByRole("img", { name: "Yard from the street" })).toBeNull();
   });
 });
 
