@@ -16,10 +16,8 @@ import {
   ensureStrings,
   layoutFromMeasurements,
   layoutStrings,
-  lookIncludesProp,
   METRES_PER_FOOT,
   moveCorner,
-  nextLookSlot,
   propShapeChanged,
   sectionIndexRanges,
   installGuide,
@@ -32,9 +30,6 @@ import {
   windowSideNames,
   type LayoutEdge,
   type LayoutUnits,
-  type Look,
-  type LookOverride,
-  type LookStyle,
   type Prop,
   type PropKind,
   type PropLayout,
@@ -611,67 +606,3 @@ export function renameForShape(label: string, shape: ShapeId, taken: readonly st
   return nextName(shape, taken.filter((name) => name !== label));
 }
 
-// ---------- Looks ----------
-
-export type LookTarget = { propId: string; sectionId?: string };
-
-export function propOn(look: Look, propId: string): boolean {
-  return lookIncludesProp(look, propId);
-}
-
-function findOverride(look: Look, target: LookTarget): LookOverride | undefined {
-  return look.overrides.find((row) => row.propId === target.propId && (row.sectionId ?? null) === (target.sectionId ?? null) && !row.propKind && !row.elementId && !row.wireframeGroup);
-}
-
-/** The style a prop (or one of its sections) shows in this Look: its own override, then the prop's, then the Look's. */
-export function styleFor(look: Look, prop: Pick<Prop, "id" | "sections">, sectionId?: string): LookStyle {
-  const whole = findOverride(look, { propId: prop.id });
-  if (sectionId) {
-    const own = findOverride(look, { propId: prop.id, sectionId });
-    if (own && !own.off) return own.style;
-    const stored = prop.sections?.find((section) => section.id === sectionId)?.color;
-    if (!whole && stored) return { ...look.style, color: stored };
-  }
-  return whole?.style ?? look.style;
-}
-
-export function sectionLit(look: Look, propId: string, sectionId: string): boolean {
-  return !look.overrides.some((row) => row.propId === propId && row.sectionId === sectionId && row.off);
-}
-
-export function setPropOn(look: Look, allPropIds: readonly string[], propId: string, on: boolean): Look {
-  const current = look.propIds ?? [...allPropIds];
-  const propIds = on ? (current.includes(propId) ? current : [...current, propId]) : current.filter((id) => id !== propId);
-  return { ...look, propIds };
-}
-
-export function setAllOn(look: Look, allPropIds: readonly string[]): Look {
-  return { ...look, propIds: [...allPropIds] };
-}
-
-/** Change the colour or effect of a prop, or of one section, in this Look. */
-export function setLookStyle(look: Look, prop: Pick<Prop, "id" | "sections">, sectionId: string | undefined, patch: Partial<LookStyle>): Look {
-  const target: LookTarget = sectionId ? { propId: prop.id, sectionId } : { propId: prop.id };
-  const existing = findOverride(look, target);
-  const style = { ...styleFor(look, prop, sectionId), ...patch };
-  const row: LookOverride = { ...(existing ?? {}), ...target, style };
-  if (row.off) delete row.off;
-  const overrides = existing ? look.overrides.map((item) => (item === existing ? row : item)) : [...look.overrides, row];
-  return { ...look, overrides };
-}
-
-export function setSectionLit(look: Look, prop: Pick<Prop, "id" | "sections">, sectionId: string, lit: boolean): Look {
-  const existing = findOverride(look, { propId: prop.id, sectionId });
-  if (lit) {
-    if (!existing?.off) return look;
-    return { ...look, overrides: look.overrides.filter((item) => item !== existing) };
-  }
-  const row: LookOverride = { ...(existing ?? { style: styleFor(look, prop, sectionId) }), propId: prop.id, sectionId, off: true };
-  const overrides = existing ? look.overrides.map((item) => (item === existing ? row : item)) : [...look.overrides, row];
-  return { ...look, overrides };
-}
-
-/** The first preset slot no Look or playlist uses. */
-export function freeSlot(looks: readonly Pick<Look, "slot">[], playlists: readonly { slot: number }[]): number | null {
-  return nextLookSlot([...looks.map((row) => row.slot), ...playlists.map((row) => row.slot)]);
-}

@@ -3,8 +3,8 @@
 /**
  * The one-page yard editor. The yard is home and shows every prop. Building
  * or editing a prop opens its own clean canvas (Save / Cancel) and returns
- * to the yard; a new prop comes back as an outline to place. A Look is the
- * yard in that Look's colours (changes save as you go, Done returns).
+ * to the yard; a new prop comes back as an outline to place. Looks open on
+ * the Looks page (`/looks/<id>`), which draws the same yard in their colours.
  *
  * Ported from docs/prototypes/yard-page.html (v4). Editor state lives in one
  * ref, as in the prototype, so a drag or pinch redraws the canvas without a
@@ -12,8 +12,9 @@
  */
 import {
   countLayout,
+  drawnYard,
   formatLength,
-  LOOK_EFFECTS,
+  lookIncludesProp,
   layoutBox,
   layoutStrings,
   METRES_PER_FOOT,
@@ -35,6 +36,7 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from "react";
 import { AllOffControl, type LiveHint } from "@/components/all-off-control";
+import { YardCanvas } from "@/components/looks/yard-canvas";
 import { deleteJson, patchJson, postJson, putJson } from "@/lib/api";
 import { ColourInput, CommitField } from "./fields";
 import {
@@ -44,7 +46,6 @@ import {
   deleteSection,
   dragCorner,
   draftFromProp,
-  freeSlot,
   isAutoName,
   kindOfShape,
   lightTotal,
@@ -52,24 +53,18 @@ import {
   newDraft,
   nextName,
   placeWireIn,
-  propOn,
   removeRun,
   renameForShape,
   resetToTemplate,
   runRows,
-  sectionLit,
   sectionOfEdge,
   sectionRangeText,
-  setAllOn,
   setCount,
   setZigzagDirection,
   guideFor,
   isSpiral,
-  setLookStyle,
-  setPropOn,
   setRunLength,
   setRunLights,
-  setSectionLit,
   setSize,
   setSpacing,
   setUnits,
@@ -78,7 +73,6 @@ import {
   SIZE_FIELDS,
   sizeForRun,
   startFrom,
-  styleFor,
   toggleRunInSection,
   totalLengthM,
   traceTo,
@@ -114,11 +108,11 @@ export type YardEditorProps = {
   looks: LooksDocument | null;
   looksReady: boolean;
   yardClear: boolean;
-  /** From the address bar: `view=new`, `prop=<id>`, `view=edit`, `look=<id>`, `fold=controller`. */
+  /** From the address bar: `view=new`, `prop=<id>`, `view=edit`, `fold=controller` (`look=<id>` redirects to the Looks page). */
   query: { view?: string; prop?: string; look?: string; fold?: string };
 };
 
-type ViewName = "yard" | "prop" | "look";
+type ViewName = "yard" | "prop";
 type Tool = "move" | "trace" | "split";
 type Snapshot = { props: Prop[]; looks: Look[] | null };
 
@@ -155,7 +149,7 @@ export function YardEditor(init: YardEditorProps) {
     attachments: init.attachments,
     looksDoc: init.looks,
     view: "yard" as ViewName,
-    lookId: null as string | null,
+    street: false,
     sel: null as string | null,
     placing: null as Prop | null,
     ghost: null as { x: number; y: number } | null,
@@ -202,7 +196,6 @@ export function YardEditor(init: YardEditorProps) {
   const size = useRef({ W: 0, H: 0, dpr: 1 });
 
   const inProp = () => s.view === "prop";
-  const look = (): Look | null => (s.view === "look" ? s.looksDoc?.looks.find((k) => k.id === s.lookId) ?? null : null);
   const yardSel = () => s.props.find((p) => p.id === s.sel) ?? null;
   const fmt = (m: number) => `${+(s.units === "ft" ? m / METRES_PER_FOOT : m).toFixed(2)} ${s.units === "ft" ? "ft" : "m"}`;
   const fmtLen = (m: number) => (s.units === "m" ? `${m.toFixed(2)} m` : formatLength(m, "ft"));
@@ -250,23 +243,13 @@ export function YardEditor(init: YardEditorProps) {
     return { id, name, x: at.x, y: at.y, edges, corners, start, lights, box: layoutBox(layout ?? undefined) };
   }
 
-  function lookColour(L: Look, p: Prop) {
-    return (edgeId: string) => {
-      if (!propOn(L, p.id)) return null;
-      const section = sectionOfEdge(p.sections ?? [], edgeId);
-      if (section && !sectionLit(L, p.id, section.id)) return null;
-      return styleFor(L, p, section?.id).color;
-    };
-  }
-
   function yardDrawables(): DrawProp[] {
     const at = placements();
-    const L = look();
     return s.props
       .filter((p) => p.id !== s.placing?.id)
       .map((p) => {
         const place = at.get(p.id)?.at ?? { x: 0, y: 0 };
-        const colour = L ? lookColour(L, p) : (edgeId: string) => sectionOfEdge(p.sections ?? [], edgeId)?.color ?? lit();
+        const colour = (edgeId: string) => sectionOfEdge(p.sections ?? [], edgeId)?.color ?? lit();
         return drawable(p.id, p.label, p.layout, p.sections ?? [], place, colour);
       });
   }
@@ -293,7 +276,7 @@ export function YardEditor(init: YardEditorProps) {
     const ghost = s.placing && s.ghost ? { prop: drawable(s.placing.id, s.placing.label, s.placing.layout, s.placing.sections ?? [], { x: 0, y: 0 }, () => lit()), x: s.ghost.x, y: s.ghost.y } : null;
     const section = inProp() && s.activeSection ? s.draft?.sections.find((x) => x.id === s.activeSection)?.edgeIds ?? [] : null;
     drawScene(ctx, view(), {
-      mode: inProp() ? "prop" : look() ? "look" : "yard",
+      mode: inProp() ? "prop" : "yard",
       units: s.units,
       phone: s.phone,
       props,
@@ -466,22 +449,7 @@ export function YardEditor(init: YardEditorProps) {
     await moveProp(data.prop.id, at.x + 0.5, at.y, false);
   }
 
-  // ---------- Looks: autosave ----------
-  const lookTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  function commitLook(fn: (L: Look) => Look) {
-    const L = look();
-    if (!L || !s.looksDoc) return;
-    pushHistory();
-    s.looksDoc = { ...s.looksDoc, looks: s.looksDoc.looks.map((k) => (k.id === L.id ? fn(k) : k)) };
-    render();
-    queueLooksSave();
-  }
-  function queueLooksSave() {
-    if (lookTimer.current) clearTimeout(lookTimer.current);
-    s.saving = "Saving…";
-    renderChromeSoon();
-    lookTimer.current = setTimeout(() => void saveLooks(), 400);
-  }
+  // ---------- Looks: put back after an undo ----------
   async function saveLooks() {
     const doc = s.looksDoc;
     if (!doc) return;
@@ -708,59 +676,6 @@ export function YardEditor(init: YardEditorProps) {
     void placeAt(+(right + 1 - bb.minX).toFixed(2), -bb.minY);
   }
 
-  function openLook(id: string) {
-    s.sel = null;
-    s.view = "look";
-    s.lookId = id;
-    s.lensSection = null;
-    s.confirmDelete = false;
-    s.railOpen = false;
-    s.sheet = "half";
-    setQuery({ look: id }, true);
-    render();
-  }
-  function closeLook() {
-    s.view = "yard";
-    s.lookId = null;
-    s.lensSection = null;
-    setQuery(s.sel ? { prop: s.sel } : {});
-    render();
-  }
-  function newLook() {
-    if (!s.looksDoc) return;
-    const slot = freeSlot(s.looksDoc.looks, s.looksDoc.playlists);
-    if (slot == null) {
-      s.error = "Every preset slot is taken. Delete a Look on the Looks page first.";
-      render();
-      return;
-    }
-    pushHistory();
-    const names = new Set(s.looksDoc.looks.map((k) => k.name));
-    let n = s.looksDoc.looks.length + 1;
-    while (names.has(`Look ${n}`)) n += 1;
-    const k: Look = { id: `look-${Date.now().toString(36)}`, name: `Look ${n}`, slot, style: { fx: 0, pal: 0, sx: 128, ix: 128, bri: 180, color: "#ffa000" }, overrides: [], propIds: [] };
-    s.looksDoc = { ...s.looksDoc, looks: [...s.looksDoc.looks, k] };
-    queueLooksSave();
-    openLook(k.id);
-  }
-  function deleteLook() {
-    const L = look();
-    if (!L || !s.looksDoc) return;
-    if (s.looksDoc.looks.length <= 1) {
-      s.error = "Keep at least one Look.";
-      render();
-      return;
-    }
-    pushHistory();
-    s.looksDoc = {
-      ...s.looksDoc,
-      looks: s.looksDoc.looks.filter((k) => k.id !== L.id),
-      playlists: s.looksDoc.playlists.map((pl) => ({ ...pl, lookIds: pl.lookIds.filter((x) => x !== L.id) })).filter((pl) => pl.lookIds.length > 0),
-    };
-    queueLooksSave();
-    closeLook();
-  }
-
   const snap = (v: number) => {
     const step = s.units === "ft" ? METRES_PER_FOOT / 4 : 0.1;
     return Math.round(v / step) * step;
@@ -846,24 +761,15 @@ export function YardEditor(init: YardEditorProps) {
     const props = yardDrawables();
     const hit = hitProp(vw, props, px, py);
     if (hit) {
-      if (look() && hit.id === s.sel) {
-        const run = hitRun(vw, hit, px, py);
-        const p = s.props.find((q) => q.id === hit.id);
-        const section = run && p ? sectionOfEdge(p.sections ?? [], run.id) : undefined;
-        s.lensSection = section ? section.id : null;
-        render();
-        return;
-      }
       if (s.sel !== hit.id) {
         s.sel = hit.id;
         s.confirmDelete = false;
         s.lensSection = null;
         s.ctrl = { ...s.ctrl, notice: null, applied: false };
         if (!s.sheet) s.sheet = "half";
-        setQuery(look() ? { look: s.lookId } : { prop: hit.id });
+        setQuery({ prop: hit.id });
         render();
       }
-      if (look()) return;
       dragRef.current = { kind: "prop", id: hit.id, ox: hit.x, oy: hit.y, wx: vw.wx(px), wy: vw.wy(py), pushed: false, ...start };
       return;
     }
@@ -1035,7 +941,7 @@ export function YardEditor(init: YardEditorProps) {
     else if (drag.kind === "pan" && !drag.moved && drag.deselect) {
       s.sel = null;
       s.confirmDelete = false;
-      setQuery(look() ? { look: s.lookId } : {});
+      setQuery({});
       render();
     } else if (drag.kind === "prop" && drag.pushed) {
       const p = s.props.find((q) => q.id === drag.id);
@@ -1056,7 +962,7 @@ export function YardEditor(init: YardEditorProps) {
       return s.tool === "trace" ? "crosshair" : "grab";
     }
     const h = hitProp(vw, yardDrawables(), px, py);
-    return h ? (look() ? "pointer" : "move") : "grab";
+    return h ? "move" : "grab";
   }
 
   // ---------- lifecycle ----------
@@ -1094,7 +1000,6 @@ export function YardEditor(init: YardEditorProps) {
     const target = q.prop ? s.props.find((p) => p.id === q.prop) ?? null : null;
     if (q.view === "new") openProp(null, true);
     else if (target && q.view === "edit") openProp(target, false);
-    else if (q.look && s.looksDoc?.looks.some((k) => k.id === q.look)) openLook(q.look);
     else if (target) {
       s.sel = target.id;
       s.sheet = "half";
@@ -1115,7 +1020,7 @@ export function YardEditor(init: YardEditorProps) {
           s.askDiscard = true;
           render();
         } else cancelProp(true);
-      } else if (s.view === "look") closeLook();
+      }
     };
     window.addEventListener("popstate", onPop);
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -1139,7 +1044,7 @@ export function YardEditor(init: YardEditorProps) {
   });
 
   // A panel opens at the top when what it shows changes.
-  const panelKey = `${s.view}|${s.sel}|${Boolean(s.placing)}|${s.lookId}|${s.selRun}|${s.activeSection}`;
+  const panelKey = `${s.view}|${s.sel}|${Boolean(s.placing)}|${s.selRun}|${s.activeSection}`;
   const lastKey = useRef(panelKey);
   useEffect(() => {
     if (lastKey.current !== panelKey && insp.current) insp.current.scrollTop = 0;
@@ -1183,23 +1088,22 @@ export function YardEditor(init: YardEditorProps) {
       const p = yardSel();
       if (e.key === "Escape") {
         if (s.placing) placeDefault();
-        else if (s.view === "look" && !s.sel) closeLook();
         else {
           s.sel = null;
           render();
         }
-      } else if ((e.key === "Delete" || e.key === "Backspace") && p && !look()) {
+      } else if ((e.key === "Delete" || e.key === "Backspace") && p) {
         e.preventDefault();
         s.confirmDelete = true;
         s.sheet = "half";
         render();
-      } else if (mod && e.key.toLowerCase() === "d" && p && !look()) {
+      } else if (mod && e.key.toLowerCase() === "d" && p) {
         e.preventDefault();
         void duplicateProp(p);
-      } else if (e.key === "Enter" && p && !look()) openProp(p, false);
-      else if (e.key === "n" && !look()) openProp(null, true);
+      } else if (e.key === "Enter" && p) openProp(p, false);
+      else if (e.key === "n") openProp(null, true);
       else if (e.key === "f") fitYard();
-      else if (e.key.startsWith("Arrow") && p && !look()) {
+      else if (e.key.startsWith("Arrow") && p) {
         e.preventDefault();
         const step = (s.units === "ft" ? METRES_PER_FOOT / 4 : 0.1) * (e.shiftKey ? 10 : 1);
         const at = placements().get(p.id)?.at ?? { x: 0, y: 0 };
@@ -1287,8 +1191,34 @@ export function YardEditor(init: YardEditorProps) {
           </div>
           <p className="note" style={{ marginTop: 6 }}>Switching converts every number. Nothing moves.</p>
         </div>
+        {(() => {
+          const looks = s.looksDoc?.looks ?? [];
+          const lonely = looks.length > 0 ? s.props.filter((p) => !looks.some((k) => lookIncludesProp(k, p.id))) : [];
+          return lonely.length > 0 ? (
+            <div>
+              <h2>In no Look</h2>
+              <ul className="lonely">
+                {lonely.map((p) => (
+                  <li key={p.id}><span>{p.label}</span> <span className="note">In no Look · <Link href={`/looks?add=${encodeURIComponent(p.id)}`}>Add to Looks…</Link></span></li>
+                ))}
+              </ul>
+            </div>
+          ) : null;
+        })()}
         <div className="keys"><h2>Keys</h2><p className="note">N new prop · Enter edit the selected prop · Delete · Esc · ⌘/Ctrl+Z undo · ⌘/Ctrl+D duplicate · arrows nudge (Shift ×10) · F fit</p></div>
       </>
+    );
+  }
+
+  /** How many Looks light this prop, and a way in when none does. */
+  function lookLine(p: Prop) {
+    const looks = s.looksDoc?.looks ?? [];
+    if (looks.length === 0) return null;
+    const n = looks.filter((k) => lookIncludesProp(k, p.id)).length;
+    return n === 0 ? (
+      <p className="note">In no Look · <Link href={`/looks?add=${encodeURIComponent(p.id)}`}>Add to Looks…</Link></p>
+    ) : (
+      <p className="note">In {n} of {looks.length} Looks · <Link href="/looks">Looks page</Link></p>
     );
   }
 
@@ -1309,6 +1239,7 @@ export function YardEditor(init: YardEditorProps) {
           <NumRow id="ye-x" label={`X from origin (${uLabel()})`} value={String(+toU(at.x).toFixed(2))} onCommit={(v) => void moveProp(p.id, fromU(v), at.y).then(() => fitIfOff(p.id))} />
           <NumRow id="ye-y" label={`Y above ground (${uLabel()})`} value={String(+toU(at.y).toFixed(2))} onCommit={(v) => void moveProp(p.id, at.x, fromU(v)).then(() => fitIfOff(p.id))} />
         </div>
+        {lookLine(p)}
         {(p.sections ?? []).length > 0 ? (
           <div>
             <h2>Sections</h2>
@@ -1752,92 +1683,9 @@ export function YardEditor(init: YardEditorProps) {
     );
   }
 
-  function lookPropPanel(p: Prop, L: Look) {
-    const on = propOn(L, p.id);
-    const sections = p.sections ?? [];
-    const sid = s.lensSection && sections.some((x) => x.id === s.lensSection) ? s.lensSection : null;
-    const style = styleFor(L, p, sid ?? undefined);
-    const allIds = s.props.map((q) => q.id);
-    const chip = (id: string, label: string, dot: string, off: boolean) => (
-      <button key={id || "whole"} type="button" className="btn" aria-pressed={(sid ?? "") === id} style={(sid ?? "") === id ? { borderColor: "var(--y-pick)", color: "var(--y-pick)" } : undefined} onClick={() => { s.lensSection = id || null; render(); }}>
-        <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: dot, border: "1px solid var(--y-input)", marginRight: 6 }} />
-        {label}{off ? " (off)" : ""}
-      </button>
-    );
-    return (
-      <>
-        <div>
-          <div className="title"><h1>{p.label}</h1></div>
-          <p className="sub">In “{L.name}” · {on ? "on" : "off"}</p>
-        </div>
-        <button type="button" className={`btn ${on ? "" : "primary"}`} style={{ minHeight: 44 }} onClick={() => commitLook((k) => setPropOn(k, allIds, p.id, !on))}>{on ? "Switch off in this Look" : "Switch on in this Look"}</button>
-        {on ? (
-          <>
-            {sections.length > 0 ? (
-              <div>
-                <h2>Colour for</h2>
-                <div className="btnrow">
-                  {chip("", "Whole prop", styleFor(L, p).color, false)}
-                  {sections.map((x) => { const lit = sectionLit(L, p.id, x.id); return chip(x.id, x.name, lit ? styleFor(L, p, x.id).color : "transparent", !lit); })}
-                </div>
-              </div>
-            ) : null}
-            <div className="grid2">
-              <label className="f">Colour
-                <ColourInput label="Look colour" value={style.color} onChange={(hex) => commitLook((k) => setLookStyle(k, p, sid ?? undefined, { color: hex }))} />
-              </label>
-              <label className="f">Effect
-                <select value={style.fx} onChange={(e) => commitLook((k) => setLookStyle(k, p, sid ?? undefined, { fx: Number(e.target.value) }))}>
-                  {LOOK_EFFECTS.map((fx) => <option key={fx.fx} value={fx.fx}>{fx.label}</option>)}
-                </select>
-              </label>
-            </div>
-            {sid ? (
-              <label className="f" style={{ flexDirection: "row", alignItems: "center", gap: 8, color: "var(--y-fg)", fontSize: 14 }}>
-                <input type="checkbox" checked={sectionLit(L, p.id, sid)} onChange={(e) => commitLook((k) => setSectionLit(k, p, sid, e.target.checked))} /> {sections.find((x) => x.id === sid)?.name} lights up
-              </label>
-            ) : null}
-            {sections.length > 0 && !sid ? <p className="note">Pick a section to give it its own colour or switch it off. You can also {tapWord().toLowerCase()} the section on the drawing.</p> : null}
-          </>
-        ) : null}
-        <div className="btnrow"><button type="button" className="btn" onClick={() => { s.sel = null; render(); }}>Back to the whole Look</button></div>
-      </>
-    );
-  }
-
-  function lookSummary(L: Look) {
-    const on = s.props.filter((p) => propOn(L, p.id));
-    return (
-      <>
-        <div>
-          <div className="title"><h1>{L.name}</h1></div>
-          <p className="sub">Look · {on.length} of {s.props.length} props on</p>
-        </div>
-        <label className="f">Look name
-          <CommitField
-            id="ye-lookname"
-            className=""
-            selectOnFocus={/^Look \d+$/.test(L.name)}
-            value={L.name}
-            maxLength={32}
-            onCommit={(text) => { if (text.trim()) commitLook((k) => ({ ...k, name: text.trim() })); }}
-          />
-        </label>
-        <p className="note">{tapWord()} a prop to switch it on, pick its colour, or turn its sections off. Changes save as you go.</p>
-        {on.length < s.props.length ? <div className="btnrow"><button type="button" className="btn" onClick={() => commitLook((k) => setAllOn(k, s.props.map((p) => p.id)))}>Switch every prop on</button></div> : null}
-        <p className="proto">The playlist, the nightly schedule and Push to Lights stay on the <Link href="/looks">Looks page</Link>.</p>
-        <div className="btnrow">
-          <button type="button" className="btn primary" onClick={closeLook}>Done</button>
-          <button type="button" className="btn danger" onClick={deleteLook}>Delete Look</button>
-        </div>
-      </>
-    );
-  }
-
   // ---------- render ----------
   const editing = s.view !== "yard";
   const d = s.draft;
-  const L = look();
   const p = yardSel();
   let chip: React.ReactNode = null;
   let hint = "";
@@ -1848,9 +1696,8 @@ export function YardEditor(init: YardEditorProps) {
   } else if (s.placing) {
     chip = s.phone ? <><b>Place</b> drag the outline, then Place here</> : <><b>Place</b> {s.placing.label}</>;
     hint = "Click where it goes in the yard. Esc puts it next to the others.";
-  } else if (L) {
-    chip = s.phone ? null : <><b>Look</b> {L.name}</>;
-    hint = "Click a prop to set it in this Look. Click a section of the selected prop to colour it on its own.";
+  } else if (s.street) {
+    hint = "Street is the yard from eye height. Drag to look a little left or right. Pick 2D to move or edit props.";
   } else {
     hint = "Click a prop to select it. Drag to move it. Double-click to edit it on its own canvas. Scroll pans; Ctrl/⌘ + scroll zooms.";
   }
@@ -1865,7 +1712,6 @@ export function YardEditor(init: YardEditorProps) {
   let panel: React.ReactNode;
   if (inProp() && d) panel = propPanel(d);
   else if (s.placing) panel = placingPanel(s.placing);
-  else if (L) panel = p ? lookPropPanel(p, L) : lookSummary(L);
   else panel = p ? yardPropPanel(p) : yardSummary();
 
   return (
@@ -1890,9 +1736,9 @@ export function YardEditor(init: YardEditorProps) {
         </nav>
         {editing ? (
           <div className="crumb">
-            <a href="#" onClick={(e) => { e.preventDefault(); if (inProp()) cancelProp(); else closeLook(); }}>Yard</a>
+            <a href="#" onClick={(e) => { e.preventDefault(); cancelProp(); }}>Yard</a>
             <span aria-hidden="true">›</span>
-            <b>{inProp() ? d?.label || "New prop" : `Look: ${L?.name ?? ""}`}</b>
+            <b>{d?.label || "New prop"}</b>
           </div>
         ) : null}
         <span className="spacer" />
@@ -1906,7 +1752,6 @@ export function YardEditor(init: YardEditorProps) {
             <button type="button" className="btn primary" disabled={!d || runRows(d).length === 0} onClick={() => void saveProp()}>{s.draftIsNew && !s.phone ? "Save and place" : "Save"}</button>
           </>
         ) : null}
-        {L ? <button type="button" className="btn primary" onClick={closeLook}>Done</button> : null}
         {!editing ? <div className="alloff"><AllOffControl size="bar" lights={init.lightViews} sessions={init.sessions} /></div> : null}
       </header>
       <div className={`main ${inProp() ? "editor" : ""}`}>
@@ -1917,10 +1762,9 @@ export function YardEditor(init: YardEditorProps) {
             <ul className="plist">
               {sortedProps.length === 0 ? <li className="note">No props yet. A prop is a shape: a roofline, a window, an arch. It does not need a controller.</li> : null}
               {sortedProps.map((q) => {
-                const off = L && !propOn(L, q.id);
                 return (
-                  <li key={q.id} className={off ? "off" : ""}>
-                    <button type="button" className={q.id === s.sel ? "on" : ""} onClick={() => { s.sel = q.id; s.confirmDelete = false; s.railOpen = false; s.lensSection = null; s.sheet = s.sheet || "half"; setQuery(L ? { look: s.lookId } : { prop: q.id }); render(); requestAnimationFrame(() => fitIfOff(q.id)); }}>
+                  <li key={q.id}>
+                    <button type="button" className={q.id === s.sel ? "on" : ""} onClick={() => { s.sel = q.id; s.confirmDelete = false; s.railOpen = false; s.lensSection = null; s.sheet = s.sheet || "half"; setQuery({ prop: q.id }); render(); requestAnimationFrame(() => fitIfOff(q.id)); }}>
                       <span className="dot" />{q.label}<span className="n">{q.layout ? countLayout(q.layout).total : q.design?.ledCount ?? "?"}</span>
                     </button>
                   </li>
@@ -1934,17 +1778,17 @@ export function YardEditor(init: YardEditorProps) {
               <>
                 <ul className="plist">
                   {s.looksDoc.looks.map((k) => {
-                    const n = s.props.filter((q) => propOn(k, q.id)).length;
+                    const n = s.props.filter((q) => lookIncludesProp(k, q.id)).length;
                     return (
                       <li key={k.id}>
-                        <button type="button" className={k.id === s.lookId ? "on" : ""} onClick={() => openLook(k.id)}>
+                        <Link href={`/looks/${encodeURIComponent(k.id)}`} className="lookrow">
                           <span className="dot" style={{ background: "var(--y-pick)" }} />{k.name}<span className="n">{n}/{s.props.length}</span>
-                        </button>
+                        </Link>
                       </li>
                     );
                   })}
                 </ul>
-                <button type="button" className="btn" style={{ marginTop: 6, width: "100%" }} onClick={newLook}>+ New Look</button>
+                <Link href="/looks" className="btn" style={{ marginTop: 6, width: "100%" }}>New Look or playlist…</Link>
               </>
             ) : <p className="note">Could not read Looks.</p>}
           </section>
@@ -1969,7 +1813,7 @@ export function YardEditor(init: YardEditorProps) {
             onPointerUp={endPointer}
             onPointerCancel={endPointer}
             onDoubleClick={(e) => {
-              if (inProp() || look() || s.placing) return;
+              if (inProp() || s.placing) return;
               const { px, py } = localPoint(e);
               const hit = hitProp(view(), yardDrawables(), px, py);
               const prop = hit ? s.props.find((q) => q.id === hit.id) : null;
@@ -1982,6 +1826,24 @@ export function YardEditor(init: YardEditorProps) {
               draw();
             }}
           />
+          {!inProp() && !s.placing ? (
+            <div className="viewseg" role="group" aria-label="Yard view">
+              <button type="button" aria-pressed={!s.street} onClick={() => { s.street = false; render(); requestAnimationFrame(draw); }}>2D</button>
+              <button type="button" aria-pressed={s.street} onClick={() => { s.street = true; render(); }}>Street</button>
+            </div>
+          ) : null}
+          {s.street && !inProp() && !s.placing ? (
+            <YardCanvas
+              drawn={drawnYard(s.props)}
+              props={s.props}
+              look={s.looksDoc?.looks[0] ?? null}
+              neutral={!s.looksDoc?.looks[0]}
+              depth
+              className="street"
+              ariaLabel="Yard from the street"
+              onPick={(hit) => { s.sel = hit?.propId ?? null; if (s.sel && !s.sheet) s.sheet = "half"; setQuery(s.sel ? { prop: s.sel } : {}); render(); }}
+            />
+          ) : null}
           {inProp() && d && !shaped ? (
             <div className="empty"><div><strong>A clean canvas</strong><span>{s.phone ? "Pick a shape below. Or pick Draw it, then tap where the wire comes in." : "Pick a starting shape in the panel, or choose Draw it and click where the wire comes in."}</span></div></div>
           ) : null}
@@ -1998,7 +1860,7 @@ export function YardEditor(init: YardEditorProps) {
           ) : null}
           <div className="coords" id="ye-coords" hidden />
           <p className="hint" style={s.error ? { color: "var(--y-danger)" } : undefined}>{s.error ?? hint}</p>
-          <div className="zoom">
+          <div className="zoom" hidden={s.street && !inProp() && !s.placing}>
             <button type="button" aria-label="Zoom out" onClick={() => { s.cam = zoomAt(s.cam, size.current.W, size.current.H, size.current.W / 2, size.current.H / 2, 0.8); draw(); }}>−</button>
             <button type="button" aria-label="Zoom in" onClick={() => { s.cam = zoomAt(s.cam, size.current.W, size.current.H, size.current.W / 2, size.current.H / 2, 1.25); draw(); }}>+</button>
             <button type="button" onClick={() => (inProp() ? fitDraft() : fitYard())}>Fit</button>

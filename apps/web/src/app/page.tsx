@@ -2,6 +2,7 @@ import type { LightsPayload, LooksDocument, Prop, PropAttachment, YardCheckResul
 import { AppShell } from "@/components/app-shell";
 import { ServerDown } from "@/components/server-down";
 import { YardEditor, type YardLight } from "@/components/yard-editor/yard-editor";
+import { redirect } from "next/navigation";
 import { fetchJson } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,8 @@ function one(value: string | string[] | undefined): string | undefined {
 export default async function YardPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
   const query: Query = { view: one(params.view), prop: one(params.prop), look: one(params.look), fold: one(params.fold) };
+  // A Look opens on the Looks page, which draws the yard in its colours.
+  if (query.look) redirect(`/looks/${encodeURIComponent(query.look)}`);
   const lightsResult = await Promise.allSettled([fetchJson<LightsPayload>("/api/lights")]);
   const lights = lightsResult[0];
   if (!lights || lights.status === "rejected") {

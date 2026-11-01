@@ -48,13 +48,21 @@
 .ye .plist button.on { background: var(--y-secondary); }
 .ye .plist .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--y-lit); flex: none; }
 .ye .plist .n { margin-left: auto; font-family: var(--y-mono); font-size: 12px; color: var(--y-quiet); }
-.ye .plist .off .dot { background: var(--y-input); }
+.ye .plist .lookrow { width: 100%; display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 8px; border-radius: 6px; color: inherit; text-decoration: none; }
+.ye .plist .lookrow:hover { background: var(--y-secondary); }
+.ye .lonely { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ye .lonely li { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.ye .viewseg { position: absolute; right: 12px; top: 12px; z-index: 4; display: flex; border: 1px solid var(--y-border); border-radius: 8px; overflow: hidden; background: var(--y-card); }
+.ye .viewseg button { min-height: 34px; min-width: 52px; padding: 0 10px; border: 0; background: transparent; font-size: 13px; }
+.ye .viewseg button[aria-pressed="true"] { background: var(--y-secondary); font-weight: 600; }
+.ye .stagewrap .street { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 3; touch-action: none; background: var(--y-canvas); }
 .ye .stagewrap { position: relative; min-width: 0; min-height: 0; background: var(--y-canvas); }
 .ye canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .ye .modechip { position: absolute; left: 12px; top: 12px; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; background: var(--y-card); border: 1px solid var(--y-border); font-size: 12px; }
 .ye .modechip b { font-weight: 600; }
 .ye .modechip.path { border-color: var(--y-pick); }
-.ye .hint { position: absolute; left: 12px; bottom: 12px; max-width: calc(100% - 200px); font-size: 12px; color: var(--y-muted); background: color-mix(in srgb, var(--y-canvas) 80%, transparent); padding: 4px 8px; border-radius: 6px; }
+.ye .hint { position: absolute; z-index: 4; left: 12px; bottom: 12px; max-width: calc(100% - 200px); font-size: 12px; color: var(--y-muted); background: color-mix(in srgb, var(--y-canvas) 80%, transparent); padding: 4px 8px; border-radius: 6px; }
+.ye .zoom[hidden] { display: none; }
 .ye .zoom { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 4px; }
 .ye .zoom button { min-width: 36px; min-height: 36px; border: 1px solid var(--y-border); background: var(--y-card); border-radius: 6px; }
 .ye .tools { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); display: flex; gap: 4px; padding: 4px; background: var(--y-card); border: 1px solid var(--y-pick); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.18); }

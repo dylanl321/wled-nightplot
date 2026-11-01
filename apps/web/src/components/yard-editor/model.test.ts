@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Look, Prop } from "@nightplot/shared";
+import type { Prop } from "@nightplot/shared";
 import {
   addPoint,
   addSection,
@@ -12,18 +12,12 @@ import {
   runRows,
   sectionRangeText,
   setCount,
-  setLookStyle,
-  setPropOn,
   setRunLength,
   setRunLights,
-  setSectionLit,
   setSize,
   setUnits,
   startFrom,
-  styleFor,
   toggleRunInSection,
-  sectionLit,
-  propOn,
 } from "./model";
 
 const triangle = () => startFrom(newDraft("Triangle 1"), "triangle", "m", 0.1);
@@ -113,36 +107,5 @@ describe("yard editor drafts", () => {
     expect(opened.shape).toBe("triangle");
     expect(opened.drawn).toBe(false);
     expect(opened.sizes).toEqual({ base: 2, height: 2 });
-  });
-});
-
-describe("yard editor Looks", () => {
-  const style = { fx: 0, pal: 0, sx: 128, ix: 128, bri: 180, color: "#ffa000" };
-  const look: Look = { id: "k", name: "Half", slot: 9, style, overrides: [], propIds: [] };
-  const box = { id: "box", sections: [{ id: "top", name: "Top", edgeIds: [], pinnedRanges: [], color: "#e05a4f" }] };
-
-  it("switches a prop on and colours one section", () => {
-    let k = setPropOn(look, ["box"], "box", true);
-    expect(propOn(k, "box")).toBe(true);
-    k = setLookStyle(k, box, "top", { color: "#ff0000" });
-    expect(styleFor(k, box, "top").color).toBe("#ff0000");
-    expect(styleFor(k, box).color).toBe("#ffa000");
-  });
-
-  it("uses the section's own colour until the Look names it", () => {
-    expect(styleFor(look, box, "top").color).toBe("#e05a4f");
-  });
-
-  it("turns a section off and on again", () => {
-    let k = setSectionLit(look, box, "top", false);
-    expect(sectionLit(k, "box", "top")).toBe(false);
-    k = setSectionLit(k, box, "top", true);
-    expect(sectionLit(k, "box", "top")).toBe(true);
-  });
-
-  it("treats a Look with no list as every prop on", () => {
-    const old: Look = { ...look, propIds: undefined };
-    expect(propOn(old, "box")).toBe(true);
-    expect(setPropOn(old, ["box", "roof"], "box", false).propIds).toEqual(["roof"]);
   });
 });
