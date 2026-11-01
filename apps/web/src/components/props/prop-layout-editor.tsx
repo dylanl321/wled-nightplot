@@ -283,7 +283,7 @@ export function PropLayoutEditor({
     : `${counted.total} lights · string has ${stringLights} · ${short ? `${Math.abs(spare ?? 0)} short` : `${spare} spare`}`;
 
   return (
-    <div className="flex h-dvh max-h-dvh w-full max-w-full flex-col overflow-hidden bg-background landscape:flex-row">
+    <div className="flex h-dvh max-h-dvh w-full max-w-full flex-col overflow-hidden bg-background lg:flex-row max-lg:landscape:flex-row">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
         <header className="flex h-14 shrink-0 items-center gap-1 bg-background px-1">
           <button type="button" className="min-h-11 shrink-0 px-3 text-[16px]" onClick={onBack}>Back</button>
@@ -357,11 +357,8 @@ export function PropLayoutEditor({
                             text={`${lengthInUnit(row.lengthM, layout.units)} ${layout.units === "ft" ? "ft" : "m"} · ${row.lights}`}
                             fontSize={11}
                             fill={edge.lockedLights != null ? LIT : "#a8a296"}
-                            y={15}
-                            width={90}
-                            offsetX={45}
-                            align="center"
                             listening={false}
+                            {...captionPlacement(label, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })}
                           />
                         ) : null}
                       </Group>
@@ -405,10 +402,27 @@ export function PropLayoutEditor({
               </li>
             ))}
           </ul>
+          {toast ? (
+            <div className="absolute bottom-3 left-3 right-16 flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 text-[14px]">
+              <span className="flex-1">{toast}</span>
+              <button type="button" className="min-h-11 px-3 text-primary" onClick={undo}>Undo</button>
+            </div>
+          ) : null}
+          {ask ? (
+            <div className="absolute inset-x-4 top-16 rounded-xl border border-amber-500/60 bg-card p-4 text-[15px]" role="dialog" aria-label="Short edge">
+              <p>This edge is shorter than one light, so it has 0 lights.</p>
+              <Button type="button" className="mt-3 min-h-11" onClick={() => setAsk(false)}>OK</Button>
+            </div>
+          ) : null}
         </div>
       </div>
+      {/* Phone portrait: under the drawing. Wide window or short landscape phone: a fixed-width column beside it. */}
+      <aside
+        aria-label="Path tools"
+        className="flex min-h-0 shrink-0 flex-col bg-background lg:w-[380px] lg:border-l lg:border-border max-lg:landscape:w-[300px] max-lg:landscape:border-l max-lg:landscape:border-border"
+      >
       <RunList
-        className="max-h-[24dvh] shrink-0 border-t border-border bg-background"
+        className="max-h-[24dvh] min-h-0 shrink-0 border-t border-border bg-background lg:max-h-none lg:flex-1 lg:border-t-0 max-lg:landscape:max-h-none max-lg:landscape:flex-1 max-lg:landscape:border-t-0"
         layout={layout}
         picked={picked}
         onPick={setPicked}
@@ -430,18 +444,7 @@ export function PropLayoutEditor({
         <Button type="button" variant="outline" className="min-h-12 flex-1 text-base" onClick={onBack}>Back</Button>
         <Button type="button" className="min-h-12 flex-1 text-base" onClick={() => onDone(ensureStrings(layout))}>{doneLabel}</Button>
       </div>
-      {toast ? (
-        <div className="absolute bottom-20 left-3 right-3 flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 text-[14px] landscape:bottom-3 landscape:right-20">
-          <span className="flex-1">{toast}</span>
-          <button type="button" className="min-h-11 px-3 text-primary" onClick={undo}>Undo</button>
-        </div>
-      ) : null}
-      {ask ? (
-        <div className="absolute inset-x-4 top-24 rounded-xl border border-amber-500/60 bg-card p-4 text-[15px]" role="dialog" aria-label="Short edge">
-          <p>This edge is shorter than one light, so it has 0 lights.</p>
-          <Button type="button" className="mt-3 min-h-11" onClick={() => setAsk(false)}>OK</Button>
-        </div>
-      ) : null}
+      </aside>
     </div>
   );
 }
@@ -463,7 +466,7 @@ function ModeButton({ active, onClick, children }: { active: boolean; onClick: (
 
 function DockButton({ onClick, disabled, pressed, children }: { onClick: () => void; disabled?: boolean; pressed?: boolean; children: string }) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled} aria-pressed={pressed} className={`min-h-11 min-w-11 flex-1 rounded-lg border text-[14px] landscape:flex-none ${pressed ? "border-primary" : "border-border"} disabled:opacity-40`}>
+    <button type="button" onClick={onClick} disabled={disabled} aria-pressed={pressed} className={`min-h-11 min-w-11 flex-1 rounded-lg border px-1 text-[14px] ${pressed ? "border-primary" : "border-border"} disabled:opacity-40`}>
       {children}
     </button>
   );
@@ -489,6 +492,16 @@ function LockMark() {
       <Line points={[2, 5, 2, 3, 4.5, 0.8, 7, 3, 7, 5]} stroke={INK} strokeWidth={1.4} tension={0.4} />
     </Group>
   );
+}
+
+/** Put a run's length caption on the far side of its badge from the line, so it never sits on the run. */
+function captionPlacement(badge: Point, mid: Point): { x: number; y: number; width: number; align: string } {
+  const dx = badge.x - mid.x;
+  const dy = badge.y - mid.y;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return dx > 0 ? { x: 15, y: -6, width: 90, align: "left" } : { x: -105, y: -6, width: 90, align: "right" };
+  }
+  return { x: -45, y: dy >= 0 ? 15 : -27, width: 90, align: "center" };
 }
 
 /** Keep run-number badges off the line and clear of each other. */
