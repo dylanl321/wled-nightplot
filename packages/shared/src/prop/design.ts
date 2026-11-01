@@ -6,7 +6,7 @@
 
 import type { Element, Light, LightOutput } from "../lights.ts";
 import { legacyOutputId } from "../outputs.ts";
-import { assignStableRunIds, countLayout, layoutFromMeasurements, layoutStrings, wellHouseEdgeLabel, wellHouseEdgeOrder, windowSideNames, type PropLayout } from "./layout.ts";
+import { assignStableRunIds, countLayout, layoutFromMeasurements, layoutStrings, stampEdgeNames, wellHouseEdgeLabel, wellHouseEdgeOrder, windowSideNames, type PropLayout } from "./layout.ts";
 import { defaultSections, isLegacyWellHouseLayout, sectionIndexRanges } from "./sections.ts";
 import { defaultWireframeSpec } from "./wireframe.ts";
 import {
@@ -127,9 +127,11 @@ export function designFromLayout(
 ): PropDesign {
   const counted = countLayout(layout);
   const names = edgeNames(measurements, layout);
+  const stored = new Map(layoutStrings(layout).flatMap((string) => string.run).map((edge) => [edge.id, edge.name]));
+  const anyNamed = [...stored.values()].some((name) => name);
   const edges = counted.edges.filter((edge) => edge.kind === "lit").map((edge, index) => ({
     id: edge.id,
-    label: names[index] ?? `Side ${index + 1}`,
+    label: stored.get(edge.id) || (anyNamed ? null : names[index]) || wellHouseEdgeLabel(edge.id) || `Side ${index + 1}`,
     lengthMm: Math.round(edge.lengthM * 1000),
     ledCount: edge.lights,
   }));
@@ -421,7 +423,7 @@ export function migrateDesignedProp(prop: Prop): Prop {
   if (!prop.layout) {
     return prop.sections ? prop : prop;
   }
-  const stable = assignStableRunIds(prop.layout);
+  const stable = stampEdgeNames(assignStableRunIds(prop.layout));
   const source = stable === prop.layout ? prop : { ...prop, layout: stable };
   let layout = source.layout ?? prop.layout;
   let design = source.design;

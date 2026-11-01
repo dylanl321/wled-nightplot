@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CAPTION_HALF_W, placeRunLabels, runBadge, stringColour, stringLetter } from "./run-labels";
+import { labelsOffScreen, placeRunLabels, runBadge, stringColour, stringLetter } from "./run-labels";
 
 describe("string badges", () => {
   it("prefixes the run with the string letter", () => {
@@ -13,48 +13,60 @@ describe("string badges", () => {
 });
 
 describe("placeRunLabels", () => {
-  it("gives every run a caption, including one too short to read on the line", () => {
-    const spots = placeRunLabels([{ ax: 0, ay: 0, bx: 8, by: 0 }]);
-    expect(spots).toHaveLength(1);
-    expect(spots[0]?.caption).toBeTruthy();
-    expect(Math.hypot(spots[0]!.badge.x - spots[0]!.caption.x, spots[0]!.badge.y - spots[0]!.caption.y)).toBeGreaterThan(20);
+  it("anchors the badge and the caption on the run midpoint", () => {
+    const spots = placeRunLabels([{ ax: 0, ay: 100, bx: 200, by: 100 }]);
+    const badge = spots[0]?.badge;
+    const caption = spots[0]?.caption;
+    expect(badge).toBeTruthy();
+    expect(caption).toBeTruthy();
+    expect(badge!.x).toBeCloseTo(100, 5);
+    expect(caption!.x).toBeCloseTo(100, 5);
+    expect(Math.abs(badge!.y - 100)).toBeCloseTo(20, 5);
+    expect(Math.abs(caption!.y - 100)).toBeGreaterThan(Math.abs(badge!.y - 100));
   });
 
-  it("keeps two labels on the same line apart", () => {
+  it("hides the later label when two runs share a midpoint", () => {
     const spots = placeRunLabels([
       { ax: 0, ay: 0, bx: 200, by: 0 },
-      { ax: 0, ay: 8, bx: 200, by: 8 },
+      { ax: 0, ay: 0, bx: 200, by: 0 },
     ]);
-    const gap = Math.hypot(spots[0]!.badge.x - spots[1]!.badge.x, spots[0]!.badge.y - spots[1]!.badge.y);
-    expect(gap).toBeGreaterThanOrEqual(28);
-    const captions = Math.hypot(spots[0]!.caption.x - spots[1]!.caption.x, spots[0]!.caption.y - spots[1]!.caption.y);
-    expect(captions).toBeGreaterThanOrEqual(28);
+    expect(spots[0]?.badge).toBeTruthy();
+    expect(spots[1]?.badge).toBeNull();
+    expect(spots[1]?.off).toBeNull();
   });
 
-  it("nudges a caption that would leave the stage back inside", () => {
+  it("keeps the selected label and hides the one underneath it", () => {
+    const spots = placeRunLabels([
+      { ax: 0, ay: 0, bx: 200, by: 0 },
+      { ax: 0, ay: 0, bx: 200, by: 0, selected: true },
+    ]);
+    expect(spots[0]?.badge).toBeNull();
+    expect(spots[1]?.badge).toBeTruthy();
+  });
+
+  it("hides a run whose midpoint is off the stage instead of pinning it to the edge", () => {
     const frame = { w: 390, h: 380 };
     const spots = placeRunLabels(
       [
-        { ax: 8, ay: 180, bx: 200, by: 180 },
-        { ax: 360, ay: 190, bx: 384, by: 190 },
+        { ax: 40, ay: 180, bx: 200, by: 180 },
+        { ax: 420, ay: 190, bx: 500, by: 190 },
       ],
       [],
       28,
       frame,
     );
-    for (const spot of spots) {
-      expect(spot.caption.x).toBeGreaterThanOrEqual(8 + CAPTION_HALF_W);
-      expect(spot.caption.x).toBeLessThanOrEqual(frame.w - 8 - CAPTION_HALF_W);
-      expect(spot.caption.y).toBeGreaterThanOrEqual(8);
-      expect(spot.caption.y).toBeLessThanOrEqual(frame.h - 8);
-      expect(spot.badge.x).toBeGreaterThanOrEqual(8);
-      expect(spot.badge.x).toBeLessThanOrEqual(frame.w - 8);
-    }
+    expect(spots[0]?.badge).toBeTruthy();
+    expect(spots[0]!.badge!.x).toBeGreaterThan(40);
+    expect(spots[0]!.badge!.x).toBeLessThan(200);
+    expect(spots[1]?.badge).toBeNull();
+    expect(spots[1]?.off).toBe("right");
+    expect(labelsOffScreen(spots)).toEqual([{ side: "right", count: 1 }]);
   });
 
-  it("stays off a Wire in label", () => {
-    const wire = { x: 40, y: 0 };
+  it("steps to the other side of a Wire in label", () => {
+    const wire = { x: 40, y: -40 };
     const spots = placeRunLabels([{ ax: 0, ay: 0, bx: 80, by: 0 }], [wire]);
-    expect(Math.hypot(spots[0]!.badge.x - wire.x, spots[0]!.badge.y - wire.y)).toBeGreaterThanOrEqual(28);
+    expect(spots[0]?.badge).toBeTruthy();
+    expect(spots[0]!.badge!.y).toBeGreaterThan(0);
   });
 });

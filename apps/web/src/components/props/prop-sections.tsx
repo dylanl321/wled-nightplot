@@ -177,9 +177,7 @@ export function PropSectionsStep({
       <div className="flex flex-col gap-2 lg:col-start-2">
         {edgeChoices(layout, active).map((edge, index) => {
           const on = active?.edgeIds.includes(edge.id) ?? false;
-          const raw = labels.get(edge.id) ?? wellHouseEdgeLabel(edge.id) ?? edge.id;
-          // "Edge 2, Right side": the edge's own name, so it does not read as a section name.
-          const name = `Edge ${index + 1}, ${raw.charAt(0).toLowerCase()}${raw.slice(1)}`;
+          const name = edge.name?.trim() || labels.get(edge.id) || wellHouseEdgeLabel(edge.id) || `Run ${index + 1}`;
           return (
             <button
               key={edge.id}
@@ -201,7 +199,7 @@ export function PropSectionsStep({
           </p>
           {selected ? (
             <div className="flex items-center justify-between gap-2">
-              <p className="min-w-0 truncate text-[15px]">{shortEdgeName(labels.get(selected.edgeId) ?? selected.edgeId)}</p>
+              <p className="min-w-0 truncate text-[15px]">{shortEdgeName(selectedEdge?.name?.trim() || labels.get(selected.edgeId) || wellHouseEdgeLabel(selected.edgeId) || selected.edgeId)}</p>
               <div className="flex shrink-0 items-center gap-2">
                 <button type="button" aria-label="Fewer lights on this edge" className="min-h-11 min-w-11 rounded-lg border border-border text-[20px]" onClick={() => nudge(-1)}>−</button>
                 <span className="min-w-8 text-center font-mono text-[16px]">{selected.lights}</span>

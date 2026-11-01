@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addStringAt,
+  addUnlitConnector,
   assignStableRunIds,
   clearEdgeLights,
   continueToCorner,
@@ -10,12 +11,18 @@ import {
   deleteRun,
   edgeLengthM,
   emptyTrace,
+  formatPitch,
   isPropLayout,
+  layoutFromMeasurements,
   layoutReview,
+  layoutWireLengthM,
+  parsePitch,
   layoutStrings,
   mergeShortRuns,
   moveCorner,
+  runGaps,
   runsOnSameSpan,
+  stampEdgeNames,
   setEdgeLength,
   setEdgeLights,
   setEdgeName,
@@ -275,5 +282,49 @@ describe("delete a run", () => {
   it("an unknown run changes nothing", () => {
     const layout = three();
     expect(deleteRun(layout, "nope")).toBe(layout);
+  });
+});
+
+describe("gaps, wire length, and spacing", () => {
+  it("draws a gap when one run does not meet the next, and a connector closes it", () => {
+    const open = deleteRun(three(), "e2");
+    const gaps = runGaps(open);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]?.lengthM).toBeCloseTo(1, 5);
+    expect(layoutWireLengthM(open)).toBeCloseTo(3, 5);
+    const joined = addUnlitConnector(open, gaps[0]!.afterId);
+    expect(runGaps(joined)).toEqual([]);
+    const wire = layoutStrings(joined)[0]!.run[1]!;
+    expect(wire.kind).toBe("wire");
+    expect(wire.from).toBe("c2");
+    expect(wire.to).toBe("c3");
+    expect(layoutStrings(joined)[0]!.run.map((edge) => edge.id)).toEqual(["e1", wire.id, "e3"]);
+    expect(countLayout(joined).total).toBe(20);
+    expect(layoutWireLengthM(joined)).toBeCloseTo(3, 5);
+  });
+
+  it("stores inches when the prop is in feet, and centimetres when it is in metres", () => {
+    expect(formatPitch(0.1, "m")).toBe("10");
+    expect(formatPitch(0.1, "ft")).toBe("3.94");
+    expect(parsePitch("4", "ft")).toBeCloseTo(4 * 0.0254, 6);
+    expect(parsePitch("10", "m")).toBeCloseTo(0.1, 6);
+    expect(parsePitch("0", "ft")).toBeNull();
+  });
+
+  it("writes the template description onto the run, and a split does not move it", () => {
+    const window = layoutFromMeasurements({
+      units: "ft",
+      pitchM: 0.1,
+      shape: "window",
+      params: { width: 4, height: 3 },
+    });
+    expect(window?.run.map((edge) => edge.name)).toEqual(["Bottom", "Right", "Top", "Left"]);
+    const named = window!;
+    const split = splitRun(named, named.run[0]!.id, (named.corners[0]!.x + named.corners[1]!.x) / 2, 0);
+    const runs = layoutStrings(split.layout)[0]!.run;
+    expect(runs[0]?.name).toBe("Bottom");
+    expect(runs[1]?.name).toBeUndefined();
+    expect(runs[2]?.name).toBe("Right");
+    expect(stampEdgeNames(named)).toBe(named);
   });
 });

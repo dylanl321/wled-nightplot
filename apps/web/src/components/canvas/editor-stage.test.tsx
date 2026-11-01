@@ -153,6 +153,11 @@ describe("EditorStage", () => {
     const world = ref.current!.toWorld({ x: 228, y: 328 });
     expect(world.x).toBeCloseTo(2);
     expect(world.y).toBeCloseTo(2);
+    act(() => ref.current!.centerOn({ x: 1, y: 0 }));
+    const centered = cameraOf(screen.getByTestId("editor-stage"));
+    expect(centered.ppm).toBeCloseTo(cameraOf(screen.getByTestId("editor-stage")).ppm);
+    expect(centered.ox).toBeCloseTo((456 + 56) / 2 - centered.ppm);
+    expect(centered.oy).toBeCloseTo(856 / 2);
     act(() => ref.current!.zoomIn());
     expect(ref.current!.camera().ppm).toBeCloseTo(125);
     act(() => ref.current!.fit());
