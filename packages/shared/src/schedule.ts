@@ -520,7 +520,39 @@ function nearly(a: number, b: number): boolean {
   return Math.abs(a - b) < 0.0001;
 }
 
-export function defaultScheduleDraft(looks: readonly { id: string }[], playlists: readonly { id: string }[]): NightlySchedule {
+/** A WLED time zone for a browser's IANA zone. A guess: the Schedule tab shows it to check. */
+export function guessWledTimezone(iana: string | null | undefined): number {
+  const zone = iana ?? "";
+  const table: [RegExp, number][] = [
+    [/^America\/(New_York|Detroit|Toronto|Montreal|Indiana|Kentucky|Nassau|Iqaluit)/, 4],
+    [/^America\/(Chicago|Winnipeg|Menominee|North_Dakota|Matamoros)/, 5],
+    [/^America\/(Denver|Edmonton|Boise|Ojinaga)/, 6],
+    [/^America\/Phoenix/, 7],
+    [/^America\/(Los_Angeles|Vancouver|Tijuana)/, 8],
+    [/^America\/(Anchorage|Juneau|Sitka|Nome)/, 20],
+    [/^America\/Regina/, 15],
+    [/^America\/(Mexico_City|Monterrey|Merida)/, 21],
+    [/^America\/Sao_Paulo/, 23],
+    [/^Pacific\/Honolulu/, 18],
+    [/^Europe\/(London|Dublin|Lisbon)/, 1],
+    [/^Europe\/(Athens|Helsinki|Kiev|Kyiv|Riga|Sofia|Tallinn|Vilnius|Bucharest)/, 3],
+    [/^Europe\//, 2],
+    [/^Asia\/(Shanghai|Hong_Kong|Taipei|Singapore|Manila)/, 9],
+    [/^Asia\/Tokyo/, 10],
+    [/^Asia\/(Kolkata|Calcutta)/, 14],
+    [/^Asia\/Karachi/, 22],
+    [/^Asia\/Novosibirsk/, 19],
+    [/^Asia\/Pyongyang/, 13],
+    [/^Australia\/(Sydney|Melbourne|Hobart|Canberra)/, 11],
+    [/^Australia\/Darwin/, 16],
+    [/^Australia\/Adelaide/, 17],
+    [/^Australia\/Perth/, 24],
+    [/^Pacific\/Auckland/, 12],
+  ];
+  return table.find(([pattern]) => pattern.test(zone))?.[1] ?? 0;
+}
+
+export function defaultScheduleDraft(looks: readonly { id: string }[], playlists: readonly { id: string }[], tz = 0): NightlySchedule {
   const playlist = playlists[0];
   const look = looks[0];
   return {
@@ -532,7 +564,7 @@ export function defaultScheduleDraft(looks: readonly { id: string }[], playlists
       : { kind: "look", lookId: look?.id ?? "" },
     ntp: {
       host: WLED_NTP_HOST_DEFAULT,
-      tz: 8,
+      tz,
       utcOffsetSecs: 0,
       latitude: 0,
       longitude: 0,

@@ -60,10 +60,10 @@ describe("Looks on the lights", () => {
     expect(during.seg[0]!.col[0]!.slice(0, 3)).toEqual([255, 0, 0]);
     // A second edit updates the same Preview.
     const again = await post(`/api/looks/${look.id}/preview`, { look: { ...look, style: { ...look.style, color: "#00ff00" } } });
-    expect((await again.json()).rows[0].status).toBe("showing");
+    expect(((await again.json()) as { rows: { status: string }[] }).rows[0]!.status).toBe("showing");
     expect((await state()).seg[0]!.col[0]!.slice(0, 3)).toEqual([0, 255, 0]);
     const ended = await post("/api/looks/preview/end", {});
-    expect((await ended.json()).rows[0]).toMatchObject({ lightId: light.id, status: "matched" });
+    expect(((await ended.json()) as { rows: unknown[] }).rows[0]).toMatchObject({ lightId: light.id, status: "matched" });
     const after = await state();
     expect(after.seg.map((row) => [row.start, row.stop])).toEqual(before.seg.map((row) => [row.start, row.stop]));
     expect(after.seg[0]!.col[0]).toEqual(before.seg[0]!.col[0]);
@@ -73,7 +73,7 @@ describe("Looks on the lights", () => {
     const { app, post } = await setup();
     const doc = await (await app.request("/api/looks")).json() as LooksDocument;
     const res = await post("/api/looks/turn-on", { slot: doc.looks[0]!.slot });
-    const body = await res.json();
+    const body = await res.json() as any; // eslint-disable-line @typescript-eslint/no-explicit-any
     expect(body.rows[0]).toMatchObject({ status: "refused" });
     expect(body.rows[0].detail).toMatch(/Send first/);
   });
@@ -92,7 +92,7 @@ describe("Looks on the lights", () => {
     const { light, post } = await setup();
     const res = await post("/api/looks/capture", { lightId: light.id });
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await res.json() as any; // eslint-disable-line @typescript-eslint/no-explicit-any
     expect(body.style).toMatchObject({ fx: expect.any(Number), color: expect.stringMatching(/^#[0-9a-f]{6}$/) });
   });
 });

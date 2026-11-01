@@ -559,6 +559,8 @@ export function createApp(deps: AppDeps) {
         return c.json({ error: "wled-restore-failed",
           message: `WLED did not accept the uploaded files. Nightplot data is unchanged. Safety backup ${safety.id} is kept. ${error instanceof Error ? error.message : ""}` }, 502);
       }
+      // The Light no longer holds what Nightplot last sent; say so rather than guess.
+      if (light.lastLookPush) deps.store.replace({ ...light, lastLookPush: null });
       return c.json({
         restored: true,
         kind: "wled-native",

@@ -850,6 +850,7 @@ export {
   buildScheduleTimers,
   buildScheduleWrite,
   defaultScheduleDraft,
+  guessWledTimezone,
   disabledTimer,
   isClockHour,
   isMinute,
@@ -980,3 +981,11 @@ export {
   type YardPoint2,
   type YardScene,
 } from "./house.ts";
+export {
+  drawnLightColour,
+  drawnLightStyle,
+  drawnYard,
+  type DrawnLight,
+  type DrawnProp,
+  type DrawnSection,
+} from "./look-drawing.ts";
