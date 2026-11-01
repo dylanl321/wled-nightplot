@@ -1,9 +1,10 @@
 /* Looks: ported from docs/prototypes/looks.html (approved). Scoped to .lk so it
    cannot leak into the rest of the app. Tokens map onto the app's theme. */
 .lk {
-  --bg: var(--background); --fg: var(--foreground); --card: var(--card); --rail: var(--rail);
-  --muted: var(--muted-foreground); --quiet: var(--quiet); --border: var(--border); --input: var(--input);
-  --secondary: var(--secondary); --primary: var(--primary); --primary-fg: var(--primary-foreground);
+  /* --card, --rail, --quiet, --border, --input, --secondary and --primary are
+     the app's own; naming them here again would make a cycle and blank them. */
+  --bg: var(--background); --fg: var(--foreground);
+  --muted: var(--muted-foreground); --primary-fg: var(--primary-foreground);
   --lit: #d4a574; --pick: var(--online); --danger: var(--destructive); --ok: #7ee0a0; --warn: #e6c068;
   --night: #07080b; --nightfg: #c9c4b8;
   --serif: var(--font-serif); --sans: var(--font-sans); --mono: var(--font-mono);
@@ -136,6 +137,7 @@
 .lk .card canvas { width: 100%; aspect-ratio: 16/8; display: block; background: var(--night); cursor: pointer; }
 .lk .card .body { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
 .lk .card .row { display: flex; align-items: center; gap: 8px; }
+.lk .card .row .btn { white-space: nowrap; }
 .lk .card h3 { font-size: 15px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lk .tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--quiet); white-space: nowrap; }
 .lk .tag.new { color: var(--primary); border-color: var(--primary); }

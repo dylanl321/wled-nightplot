@@ -46,7 +46,8 @@ export function LooksPage({ initial, lights }: { initial: LooksPayload; lights: 
   const [tab, setTab] = useState<Tab>(() => (TABS.some(([key]) => key === params.get("tab")) ? params.get("tab") as Tab : "looks"));
   const [sendOpen, setSendOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
-  const [addTo, setAddTo] = useState<string | null>(null);
+  // The yard's "Add to Looks…" lands here with ?add=<prop id>.
+  const [addTo, setAddTo] = useState<string | null>(() => params.get("add"));
 
   // Done from a Look, or Delete, lands here with a note.
   const [toast, setToast] = useState<Toast | null>(() => {
@@ -65,7 +66,7 @@ export function LooksPage({ initial, lights }: { initial: LooksPayload; lights: 
     return null;
   });
   useEffect(() => {
-    if (params.get("saved") || params.get("deleted")) router.replace(`/looks${tab === "looks" ? "" : `?tab=${tab}`}`, { scroll: false });
+    if (params.get("saved") || params.get("deleted") || params.get("add")) router.replace(`/looks${tab === "looks" ? "" : `?tab=${tab}`}`, { scroll: false });
     // Once, on arrival.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -120,7 +121,15 @@ export function LooksPage({ initial, lights }: { initial: LooksPayload; lights: 
             <div className="banner">
               <b>{lonely.length === 1 ? `${lonely[0]!.label} is new.` : `${lonely.length} props are in no Look.`}</b>
               <span>{lonely.length === 1 ? "It's off in every Look until you add it." : lonely.map((prop) => prop.label).join(", ")}</span>
-              <div className="btnrow">{lonely.slice(0, 4).map((prop) => <button type="button" key={prop.id} className="btn primary" onClick={() => setAddTo(prop.id)}>Add {prop.label} to Looks…</button>)}</div>
+              <div className="btnrow">
+                {lonely.length > 1 ? (
+                  <button type="button" className="btn primary" onClick={() => {
+                    setDoc((current) => ({ ...current, looks: current.looks.map((look) => lonely.reduce((acc, prop) => setPropMode(acc, allPropIds, prop, "follow"), look)) }));
+                    setToast({ text: `${lonely.length} props added to every Look. Each follows the Look's style.` });
+                  }}>Add all to every Look</button>
+                ) : null}
+                {lonely.slice(0, 4).map((prop) => <button type="button" key={prop.id} className={`btn ${lonely.length > 1 ? "" : "primary"}`} onClick={() => setAddTo(prop.id)}>Add {prop.label} to Looks…</button>)}
+              </div>
             </div>
           ) : null}
           <div className="tabs" role="tablist">
@@ -383,6 +392,8 @@ const ROW_COLOURS = ["#1f8f80", "#85552c", "#6a4caf", "#2f6fae", "#a0452f"];
 function ScheduleTab({ state }: { state: LooksState }) {
   const { doc, setDoc, plan } = state;
   const [open, setOpen] = useState<string | null>(null);
+  // Opens itself while sunset has no place, and stays open while it's typed.
+  const [placeOpen, setPlaceOpen] = useState(false);
   const schedule = doc.schedule;
   const rows = schedule ? (schedule.enabled || schedule.rows ? scheduleRows(schedule) : []) : [];
   const runs = useMemo(() => [
@@ -416,6 +427,7 @@ function ScheduleTab({ state }: { state: LooksState }) {
         <span className="today" style={{ left: `${(todayDoy - 1) / 365 * 100}%` }} title="Today" />
       </div>
       <p className="note">When two rows cover the same day, the higher row wins. Move a row up with ↑.</p>
+      {needsPlace ? <p className="warnnote" role="alert">Sunset needs where the lights are. Set the latitude and longitude under “Where the lights are” below; the Schedule is not saved until then.</p> : null}
       {rows.length === 0 ? <p className="note">Nothing is scheduled. The lights stay as they are until you turn something on.</p> : null}
       {rows.map((row, index) => {
         const isOpen = open === row.id;
@@ -531,7 +543,7 @@ function ScheduleTab({ state }: { state: LooksState }) {
           <span style={{ marginLeft: 12 }}>Sunrise timer: {plan?.sunriseUsed ? "used" : "free"}</span>
         </div>
         {rows.length && plan?.error ? <p className="warnnote">{plan.error} Send is blocked until it fits.</p> : null}
-        <details className="fold" open={needsPlace}>
+        <details className="fold" open={placeOpen || needsPlace} onToggle={(event) => setPlaceOpen(event.currentTarget.open)}>
           <summary>Where the lights are <span className="meta">{WLED_TIMEZONES.find((zone) => zone.tz === ntp.tz)?.label ?? `zone ${ntp.tz}`}{ntp.latitude || ntp.longitude ? ` · ${ntp.latitude.toFixed(2)}, ${ntp.longitude.toFixed(2)}` : ""}</span></summary>
           <div className="foldbody">
             <div className="grid2">

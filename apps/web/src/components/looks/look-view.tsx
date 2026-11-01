@@ -52,13 +52,23 @@ export function LookView({ initial, lights, lookId, startProp }: { initial: Look
 
   // ---------------------------------------------------------------- Preview on lights
   const previewOn = preview.on;
+  // A Preview post still in flight when Preview ends must not turn it back on,
+  // and End waits for it, so the Light is put back after the last write.
+  const previewGen = useRef(0);
+  const inflight = useRef<Promise<unknown> | null>(null);
   const sendPreview = useCallback(async (next: Look) => {
-    const result = await postJson<{ rows: PreviewState["rows"]; message: string }>(`/api/looks/${next.id}/preview`, { look: next });
+    const gen = previewGen.current;
+    const request = postJson<{ rows: PreviewState["rows"]; message: string }>(`/api/looks/${next.id}/preview`, { look: next });
+    inflight.current = request;
+    const result = await request;
+    if (gen !== previewGen.current) return;
     if (!result.ok) { setPreview({ on: false, rows: [], message: result.data.message ?? "Preview did not start." }); setToast(result.data.message ?? "Preview did not start."); return; }
     setPreview({ on: true, rows: result.data.rows, message: result.data.message });
   }, []);
   const endPreview = useCallback(async (quiet = false) => {
+    previewGen.current += 1;
     setPreview({ on: false, rows: [], message: null });
+    if (inflight.current) await inflight.current.catch(() => undefined);
     const result = await postJson<{ message: string }>("/api/looks/preview/end", {});
     if (!quiet) setToast(result.ok ? result.data.message : result.data.message ?? "Preview did not end cleanly. Check the lights.");
   }, []);
@@ -324,7 +334,7 @@ export function LookView({ initial, lights, lookId, startProp }: { initial: Look
         </div>
         <span className="spacer" />
         <span className={`note hidephone ${saveState === "error" ? "warnnote" : ""}`} role="status">{saveState === "saving" ? "Saving…" : saveState === "error" ? saveError : "Saved"}</span>
-        <button type="button" className="toggle" aria-pressed={previewOn} onClick={() => { if (previewOn) void endPreview(); else void sendPreview(look); }}>
+        <button type="button" className="toggle" aria-label="Preview on lights" aria-pressed={previewOn} onClick={() => { if (previewOn) void endPreview(); else void sendPreview(look); }}>
           <span className="sw" /><span className="lbl">Preview on lights</span>
         </button>
         <button type="button" className="btn primary" onClick={() => { void done(); }}>Done</button>

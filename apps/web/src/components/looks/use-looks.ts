@@ -96,16 +96,19 @@ export function useLooks(initial: LooksPayload, lights: LightLite[]) {
     inFlight.current = null;
   }, []);
 
+  // The latest document, updated as soon as an edit is made, so a flush
+  // straight after setDoc (New Look, then open it) saves that edit.
+  const latest = useRef(doc);
   const setDoc = useCallback((update: (doc: Doc) => Doc) => {
-    setDocState((current) => {
-      const next = update(current);
-      if (next === current) return current;
-      pending.current = next;
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => { void flush(); }, 400);
-      setSaveState("saving");
-      return next;
-    });
+    const current = latest.current;
+    const next = update(current);
+    if (next === current) return;
+    latest.current = next;
+    pending.current = next;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => { void flush(); }, 400);
+    setSaveState("saving");
+    setDocState(next);
   }, [flush]);
 
   useEffect(() => {

@@ -111,3 +111,12 @@ describe("Your yard", () => {
     expect(screen.queryByText(/cannot show the 3D yard/)).toBeNull();
   });
 });
+
+describe("Your yard and Looks", () => {
+  it("offers Add to Looks for a prop that is in no Look", () => {
+    const prop = { id: "p1", label: "Wreath", kind: "custom", elementIds: [], design: { ledCount: 20 } } as unknown as Parameters<typeof YardHome>[0]["props"][number];
+    const look = { id: "l1", name: "Warm", slot: 1, style: { fx: 0, pal: 0, sx: 128, ix: 128, bri: 128, color: "#ffffff" }, overrides: [], propIds: [] };
+    render(<YardHome props={[prop]} attachments={[]} lights={[]} looksReady={false} yardClear={false} looksKnown yardKnown looks={[look]} />);
+    expect(screen.getByRole("link", { name: "Add to Looks…" }).getAttribute("href")).toBe("/looks?add=p1");
+  });
+});
