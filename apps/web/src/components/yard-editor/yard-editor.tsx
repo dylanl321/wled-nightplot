@@ -11,8 +11,10 @@
  * React render; `render()` re-renders the panels.
  */
 import {
+  applyCommand,
   countLayout,
   drawnYard,
+  ensureStrings,
   formatLength,
   lookIncludesProp,
   layoutBox,
@@ -45,6 +47,7 @@ import {
   countRunFromLength,
   deleteSection,
   dragCorner,
+  drawRows,
   draftFromProp,
   isAutoName,
   kindOfShape,
@@ -75,7 +78,6 @@ import {
   startFrom,
   toggleRunInSection,
   totalLengthM,
-  traceTo,
   updateSection,
   addRunLight,
   alongRunAt,
@@ -88,7 +90,10 @@ import {
   type LightPick,
   type SizeKey,
 } from "./model";
+import { mergeToast, previewRun, previewTotals } from "@/components/props/trace-preview";
+import { initialTool, reduceTool, type ToolHit, type ToolState } from "@/components/props/tool-machine";
 import {
+  drawRubber,
   drawScene,
   fitBox,
   hitCorner,
@@ -105,6 +110,7 @@ import {
   type DrawGuide,
   type DrawProp,
   type LightDot,
+  type RubberBand,
 } from "./stage";
 import "./yard-editor.css";
 
@@ -129,6 +135,7 @@ type Snapshot = { props: Prop[]; looks: Look[] | null };
 
 const UNIT_KEY = "nightplot.propUnit";
 const PITCH_KEY = "nightplot.propPitchM";
+const NEXT_RUN_KEY = "nightplot.propNextRun";
 const TAP_SLOP = 8;
 
 function readStored<T>(key: string, parse: (raw: string) => T | null, fallback: T): T {
@@ -175,6 +182,9 @@ export function YardEditor(init: YardEditorProps) {
     guideEvery: 20,
     allRuns: false,
     tool: "move" as Tool,
+    nextRun: "lit" as "lit" | "dark",
+    toast: null as string | null,
+    band: null as RubberBand | null,
     selRun: null as string | null,
     /** A single light picked on the prop canvas, and where it is while it is dragged. */
     selLight: null as LightPick | null,
@@ -209,6 +219,7 @@ export function YardEditor(init: YardEditorProps) {
   const cv = useRef<HTMLCanvasElement>(null);
   const insp = useRef<HTMLElement>(null);
   const size = useRef({ W: 0, H: 0, dpr: 1 });
+  const traceRef = useRef<ToolState>(initialTool("edit"));
 
   const inProp = () => s.view === "prop";
   const yardSel = () => s.props.find((p) => p.id === s.sel) ?? null;
@@ -238,10 +249,11 @@ export function YardEditor(init: YardEditorProps) {
         const c0 = layout.corners.find((c) => c.id === string.startId);
         if (index === 0 && c0) start = { x: c0.x, y: c0.y };
         used.add(string.startId);
-        for (const edge of string.run) {
+        const letter = index < 26 ? String.fromCharCode(65 + index) : String(index + 1);
+        string.run.forEach((edge, runIndex) => {
           const a = layout.corners.find((c) => c.id === edge.from);
           const b = layout.corners.find((c) => c.id === edge.to);
-          if (!a || !b) continue;
+          if (!a || !b) return;
           used.add(a.id);
           used.add(b.id);
           const n = counted.get(edge.id)?.lights ?? 0;
@@ -249,9 +261,10 @@ export function YardEditor(init: YardEditorProps) {
           edges.push({
             id: edge.id, ax: a.x, ay: a.y, bx: b.x, by: b.y, lights: n,
             color: edge.kind === "wire" ? null : colour(edge.id), wire: edge.kind !== "lit", typed: typed && edge.lockedLights != null,
+            badge: `${letter}${runIndex + 1}`,
             ...(edge.wrapLengthM != null ? { lengthM: counted.get(edge.id)?.lengthM ?? edge.wrapLengthM } : {}),
           });
-        }
+        });
       });
       for (const corner of layout.corners) if (used.has(corner.id)) corners.push(corner);
     }
@@ -302,7 +315,9 @@ export function YardEditor(init: YardEditorProps) {
       fmtLen,
       guide: inProp() ? drawGuideFor(s.draft) : null,
       dots: inProp() ? lightDots() : null,
+      badges: inProp() && s.draft?.shape === "draw",
     }, coloursRef.current, size.current.dpr);
+    if (s.band && coloursRef.current) drawRubber(ctx, view(), s.band, coloursRef.current);
     // The run panel says whether the dots are showing; zooming changes that without a React render.
     const dotsNow = inProp() && dotsShown();
     if (dotsNow !== s.dotsOn) {
@@ -756,7 +771,7 @@ export function YardEditor(init: YardEditorProps) {
 
   // ---------- pointer ----------
   type Drag =
-    | { kind: "pan"; cam: Camera; px: number; py: number; moved: boolean; onTap?: () => void; deselect?: boolean }
+    | { kind: "pan"; cam: Camera; px: number; py: number; moved: boolean; onTap?: () => void; deselect?: boolean; button?: number; noPan?: boolean }
     | { kind: "prop"; id: string; ox: number; oy: number; wx: number; wy: number; px: number; py: number; moved: boolean; pushed: boolean }
     | { kind: "corner"; id: string; px: number; py: number; moved: boolean }
     | { kind: "light"; pick: LightPick; px: number; py: number; moved: boolean }
@@ -814,7 +829,7 @@ export function YardEditor(init: YardEditorProps) {
     const vw = view();
     const start = { px, py, moved: false };
     if (inProp()) {
-      propPointer(px, py);
+      propPointer(px, py, e.button);
       return;
     }
     if (s.placing && s.ghost && e.pointerType === "touch") {
@@ -851,7 +866,153 @@ export function YardEditor(init: YardEditorProps) {
     dragRef.current = { kind: "pan", cam: { ...s.cam }, deselect: true, ...start };
   }
 
-  function propPointer(px: number, py: number) {
+  /** Phone taps add a point only after Draw it is picked. A template stays put. */
+  function tracingAllowed(): boolean {
+    const d = s.draft;
+    if (!d || s.tool !== "trace" || s.activeSection) return false;
+    if (s.phone && d.shape !== "draw") return false;
+    return true;
+  }
+
+  function showTrace(text: string | null) {
+    const el = document.getElementById("ye-trace");
+    if (!el) return;
+    el.hidden = !text;
+    el.textContent = text ?? "";
+  }
+
+  function tailOf(layout: NonNullable<Draft["layout"]>) {
+    const string = layoutStrings(ensureStrings(layout))[0];
+    if (!string) return null;
+    const id = string.run.length > 0 ? string.run[string.run.length - 1]!.to : string.startId;
+    const corner = layout.corners.find((row) => row.id === id);
+    return corner ? { string, id, corner } : null;
+  }
+
+  function runKind(button: 0 | 2): "lit" | "wire" {
+    const left = s.nextRun === "dark" ? "wire" : "lit";
+    return button === 2 ? (left === "lit" ? "wire" : "lit") : left;
+  }
+
+  function commitLayout(layout: NonNullable<Draft["layout"]>, notice?: string) {
+    edit((d) => ({ ...d, drawn: true, layout }));
+    s.toast = notice ?? null;
+    s.band = null;
+    showTrace(null);
+    if (notice) render();
+  }
+
+  function traceHit(px: number, py: number): ToolHit {
+    const d = s.draft;
+    const shape = draftDrawable();
+    if (!d?.layout || !shape) return { kind: "empty" };
+    const tail = tailOf(d.layout);
+    const cornerId = hitCorner(view(), shape, px, py);
+    const onlyPoint = d.layout.corners.length === 1 && (tail?.string.run.length ?? 0) === 0;
+    if (!cornerId || !tail) return { kind: "empty" };
+    const role = cornerId === tail.string.startId ? "wire-in" : cornerId === tail.id ? "tail" : "corner";
+    return { kind: "point", id: cornerId, role, onlyPoint };
+  }
+
+  function finishChain() {
+    traceRef.current = { ...traceRef.current, gesture: "idle", lengthDraft: "", press: null, dragId: null };
+    s.band = null;
+    showTrace(null);
+    draw();
+  }
+
+  function updateBand(px: number, py: number, button: 0 | 2) {
+    const d = s.draft;
+    if (!d?.layout || !tracingAllowed() || traceRef.current.gesture === "idle") {
+      s.band = null;
+      showTrace(null);
+      draw();
+      return;
+    }
+    const tail = tailOf(d.layout);
+    if (!tail) return;
+    const vw = view();
+    const point = { x: snapV(vw.wx(px)), y: snapV(vw.wy(py)) };
+    const kind = runKind(button);
+    const preview = previewRun({ from: tail.corner, to: point, pitchM: d.layout.pitchM, kind, units: d.layout.units });
+    if (!preview.valid) {
+      s.band = null;
+      showTrace(null);
+      draw();
+      return;
+    }
+    const order = tail.string.run.length + 1;
+    const name = `A${order}`;
+    s.band = {
+      ax: tail.corner.x, ay: tail.corner.y, bx: point.x, by: point.y,
+      wire: kind === "wire",
+      lengthText: preview.lengthText,
+      countText: preview.countText,
+      dots: preview.dots,
+      wireIn: shapeStart(d.layout),
+    };
+    showTrace(`${name} · ${preview.lengthText} · ${preview.countText}\nAfter: ${previewTotals(d.layout, preview, kind)}`);
+    draw();
+  }
+
+  function shapeStart(layout: NonNullable<Draft["layout"]>): { x: number; y: number } | null {
+    const id = layoutStrings(ensureStrings(layout))[0]?.startId;
+    const corner = id ? layout.corners.find((row) => row.id === id) : undefined;
+    return corner ? { x: corner.x, y: corner.y } : null;
+  }
+
+  function traceClick(button: 0 | 2, px: number, py: number) {
+    const d = s.draft;
+    if (!d?.layout || !tracingAllowed()) return;
+    const step = reduceTool(traceRef.current, {
+      type: "pointer",
+      phase: "up",
+      button,
+      pointerType: "mouse",
+      hit: traceHit(px, py),
+      moved: false,
+      detail: 0,
+      shift: false,
+      modifierPan: false,
+    });
+    traceRef.current = step.state;
+    const vw = view();
+    const point = { x: snapV(vw.wx(px)), y: snapV(vw.wy(py)) };
+    const tail = tailOf(d.layout);
+    const stringId = tail?.string.id ?? "s1";
+    if (step.effect.type === "place") {
+      const applied = applyCommand(d.layout, { type: "addPoint", stringId, x: point.x, y: point.y, kind: step.effect.kind });
+      if (applied.inverse) commitLayout(applied.layout);
+      return;
+    }
+    if (step.effect.type === "join") {
+      const applied = applyCommand(d.layout, { type: "joinPoint", stringId, cornerId: step.effect.pointId, kind: step.effect.kind });
+      if (applied.inverse) commitLayout(applied.layout);
+      return;
+    }
+    if (step.effect.type === "removePoint" || step.effect.type === "popTail") {
+      const cornerId = step.effect.type === "popTail" ? tail?.id : step.effect.pointId;
+      if (!cornerId) return;
+      const applied = applyCommand(d.layout, { type: "removePoint", cornerId, stringId });
+      if (applied.refused === "wire-in") {
+        s.toast = "The wire-in stays unless it is the only point.";
+        render();
+        return;
+      }
+      if (applied.inverse) commitLayout(applied.layout, applied.merge ? mergeToast(applied.merge) : undefined);
+      return;
+    }
+    if (step.effect.type === "refuseWireIn" || step.effect.type === "removeWireIn") {
+      if (step.effect.type === "refuseWireIn") {
+        s.toast = "The wire-in stays unless it is the only point.";
+        render();
+      }
+      return;
+    }
+    if (step.effect.type === "finishChain") finishChain();
+  }
+
+  function propPointer(px: number, py: number, button: number) {
     const d = s.draft;
     if (!d) return;
     const vw = view();
@@ -866,6 +1027,7 @@ export function YardEditor(init: YardEditorProps) {
           if (!s.draft) return;
           if (s.draft.shape !== "draw" && s.draft.layout) return;
           s.tool = "trace";
+          traceRef.current = { ...traceRef.current, mode: "trace", gesture: "tracing", nextRun: s.nextRun };
           edit((x) => placeWireIn({ ...x, label: renameForShape(x.label, "draw", s.props.map((p) => p.label)) }, snapV(vw.wx(px)), snapV(vw.wy(py)), s.units, s.pitchDefault));
           if (s.phone) s.sheet = "";
           render();
@@ -901,14 +1063,8 @@ export function YardEditor(init: YardEditorProps) {
         s.selRun = made.newEdgeId;
         render();
       };
-    } else if (ci && s.tool === "trace") {
-      onTap = () => {
-        if (!s.draft) return;
-        const made = traceTo(s.draft, { cornerId: ci });
-        edit(() => made.draft);
-        s.selRun = made.newEdgeId;
-        render();
-      };
+    } else if (ci && tracingAllowed()) {
+      onTap = () => traceClick(button === 2 ? 2 : 0, px, py);
     } else if (hr && dots && s.selRun === hr.id) {
       // Zoomed in on the selected run: a tap puts a light there.
       onTap = () => {
@@ -930,14 +1086,8 @@ export function YardEditor(init: YardEditorProps) {
         render();
         if (insp.current) insp.current.scrollTop = 0;
       };
-    } else if (s.tool === "trace") {
-      onTap = () => {
-        if (!s.draft) return;
-        const made = traceTo(s.draft, { x: snapV(vw.wx(px)), y: snapV(vw.wy(py)) });
-        edit(() => made.draft);
-        s.selRun = made.newEdgeId;
-        render();
-      };
+    } else if (tracingAllowed()) {
+      onTap = () => traceClick(button === 2 ? 2 : 0, px, py);
     } else {
       onTap = () => {
         if (s.selRun || s.selLight) {
@@ -947,7 +1097,7 @@ export function YardEditor(init: YardEditorProps) {
         }
       };
     }
-    dragRef.current = { kind: "pan", cam: { ...s.cam }, ...start, onTap };
+    dragRef.current = { kind: "pan", cam: { ...s.cam }, ...start, onTap, button, noPan: button === 2 };
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -975,12 +1125,17 @@ export function YardEditor(init: YardEditorProps) {
       if (!drag) return;
     }
     if (!drag) {
+      if (tracingAllowed() && e.pointerType !== "touch") updateBand(px, py, e.button === 2 ? 2 : 0);
       if (cv.current) cv.current.style.cursor = cursorAt(px, py);
       return;
     }
     if (Math.hypot(px - drag.px, py - drag.py) > (e.pointerType === "touch" ? TAP_SLOP : 3)) drag.moved = true;
+    if (!drag.moved && drag.kind === "pan" && tracingAllowed()) updateBand(px, py, drag.button === 2 ? 2 : 0);
     if (!drag.moved) return;
+    if (drag.kind === "pan" && drag.noPan) return;
     if (drag.kind === "pan") {
+      s.band = null;
+      showTrace(null);
       s.cam = { ...s.cam, x: drag.cam.x - (px - drag.px) / s.cam.ppm, y: drag.cam.y + (py - drag.py) / s.cam.ppm };
       draw();
       return;
@@ -1058,7 +1213,8 @@ export function YardEditor(init: YardEditorProps) {
       setTimeout(hideCoords, 900);
       return;
     }
-    if (drag.kind === "pan" && !drag.moved && drag.onTap) drag.onTap();
+    if (drag.kind === "pan" && !drag.moved && e.detail >= 2 && tracingAllowed()) finishChain();
+    else if (drag.kind === "pan" && !drag.moved && drag.onTap) drag.onTap();
     else if (drag.kind === "pan" && !drag.moved && drag.deselect) {
       s.sel = null;
       s.confirmDelete = false;
@@ -1096,6 +1252,8 @@ export function YardEditor(init: YardEditorProps) {
       const n = Number(raw);
       return n > 0 && n < 2 ? n : null;
     }, 0.1);
+    s.nextRun = readStored(NEXT_RUN_KEY, (raw) => (raw === "dark" || raw === "lit" ? raw : null), "lit");
+    traceRef.current = { ...traceRef.current, nextRun: s.nextRun };
     const host = wrap.current;
     if (!host) return;
     const resize = () => {
@@ -1194,8 +1352,31 @@ export function YardEditor(init: YardEditorProps) {
           if (s.activeSection) s.activeSection = null;
           else if (s.selLight) s.selLight = null;
           else if (s.selRun) s.selRun = null;
+          else if (s.tool === "trace" && traceRef.current.gesture !== "idle") finishChain();
           else return cancelProp();
           render();
+        } else if (e.key === "Enter" && s.tool === "trace") {
+          e.preventDefault();
+          finishChain();
+        } else if ((e.key === "d" || e.key === "D") && !mod) {
+          e.preventDefault();
+          s.nextRun = s.nextRun === "dark" ? "lit" : "dark";
+          writeStored(NEXT_RUN_KEY, s.nextRun);
+          traceRef.current = { ...traceRef.current, nextRun: s.nextRun };
+          render();
+        } else if (e.key === "Backspace" && tracingAllowed() && !s.selLight && !s.selRun && s.draft?.layout) {
+          e.preventDefault();
+          const tail = tailOf(s.draft.layout);
+          if (!tail || tail.string.run.length === 0) {
+            s.toast = "The wire-in stays unless it is the only point.";
+            render();
+          } else {
+            const applied = applyCommand(s.draft.layout, { type: "removePoint", cornerId: tail.id, stringId: tail.string.id });
+            if (!applied.inverse || applied.refused) {
+              s.toast = "The wire-in stays unless it is the only point.";
+              render();
+            } else commitLayout(applied.layout, applied.merge ? mergeToast(applied.merge) : undefined);
+          }
         } else if ((e.key === "Delete" || e.key === "Backspace") && s.selLight) {
           e.preventDefault();
           removeLight();
@@ -1203,9 +1384,12 @@ export function YardEditor(init: YardEditorProps) {
           e.preventDefault();
           const id = s.selRun;
           s.selRun = null;
-          edit((d) => removeRun(d, id));
-        } else if (e.key === "t") { s.tool = "trace"; render(); }
-        else if (e.key === "v") { s.tool = "move"; render(); }
+          if (id) edit((d) => removeRun(d, id));
+        } else if (e.key === "t") {
+          s.tool = "trace";
+          traceRef.current = { ...traceRef.current, mode: "trace", gesture: "tracing", nextRun: s.nextRun };
+          render();
+        } else if (e.key === "v") { s.tool = "move"; s.band = null; showTrace(null); render(); }
         else if (e.key === "a") { s.tool = "split"; render(); }
         else if (e.key === "f") fitDraft();
         return;
@@ -1524,7 +1708,7 @@ export function YardEditor(init: YardEditorProps) {
   }
 
   function propPanel(d: Draft) {
-    const rows = runRows(d);
+    const rows = d.shape === "draw" ? drawRows(d) : runRows(d).map((row) => ({ ...row, wire: false }));
     const r = rows.find((x) => x.edge.id === s.selRun) ?? null;
     const sec = d.sections.find((x) => x.id === s.activeSection) ?? null;
     const hasShape = Boolean(d.layout && d.layout.corners.length > 0 && (rows.length > 0 || d.shape !== "draw"));
@@ -1535,8 +1719,14 @@ export function YardEditor(init: YardEditorProps) {
       s.showTiles = false;
       if (s.phone) s.sheet = "";
       edit((x) => ({ ...startFrom(x, shape, s.units, s.pitchDefault), label: renameForShape(x.label, shape, taken) }));
-      if (shape === "draw") s.tool = "trace";
-      else s.tool = "move";
+      if (shape === "draw") {
+        s.tool = "trace";
+        traceRef.current = { ...traceRef.current, mode: "trace", gesture: "tracing", nextRun: s.nextRun };
+      } else {
+        s.tool = "move";
+        s.band = null;
+        traceRef.current = { ...traceRef.current, mode: "edit", gesture: "idle" };
+      }
       render();
       requestAnimationFrame(fitDraft);
     };
@@ -1838,7 +2028,7 @@ export function YardEditor(init: YardEditorProps) {
   if (inProp() && d) {
     chip = <><b>{s.draftIsNew ? "New prop" : "Editing"}</b> {d.label}</>;
     const shaped = Boolean(d.layout && d.layout.corners.length > 0);
-    hint = !shaped ? "" : s.activeSection ? "Click runs to put them in the highlighted section. Esc stops." : s.tool === "trace" ? "Click empty space to add a run from the last corner. Click a corner to go back over it." : s.tool === "split" ? "Click a run to add a point on it." : "Drag a corner to reshape. Click a run to set its length or lights. Drag empty space to pan.";
+    hint = !shaped ? "" : s.activeSection ? "Click runs to put them in the highlighted section. Esc stops." : s.tool === "trace" ? `${tapWord()} empty space for the next run. Right-click places the opposite. ${tapWord()} the last point to remove it.` : s.tool === "split" ? "Click a run to add a point on it." : "Drag a corner to reshape. Click a run to set its length or lights. Drag empty space to pan.";
   } else if (s.placing) {
     chip = s.phone ? <><b>Place</b> drag the outline, then Place here</> : <><b>Place</b> {s.placing.label}</>;
     hint = "Click where it goes in the yard. Esc puts it next to the others.";
@@ -1847,9 +2037,14 @@ export function YardEditor(init: YardEditorProps) {
   } else {
     hint = "Click a prop to select it. Drag to move it. Double-click to edit it on its own canvas. Scroll pans; Ctrl/⌘ + scroll zooms.";
   }
-  const shaped = Boolean(d?.layout && d.layout.corners.length > 0 && runRows(d).length + (d.shape === "draw" ? 0 : 1) > 0);
+  const shaped = Boolean(d?.layout && d.layout.corners.length > 0 && (d.shape === "draw" ? drawRows(d).length : runRows(d).length + 1) > 0);
   const toolBtn = (k: Tool, label: string, key: string) => (
-    <button key={k} type="button" aria-pressed={s.tool === k} title={key} onClick={() => { s.tool = k; render(); }}>{label}</button>
+    <button key={k} type="button" aria-pressed={s.tool === k} title={key} onClick={() => {
+      s.tool = k;
+      if (k === "trace") traceRef.current = { ...traceRef.current, mode: "trace", gesture: "tracing", nextRun: s.nextRun };
+      else { s.band = null; showTrace(null); traceRef.current = { ...traceRef.current, mode: "edit", gesture: "idle" }; }
+      render();
+    }}>{label}</button>
   );
   const sortedProps = [...s.props].filter((q) => q.id !== s.placing?.id).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
   const canUndo = inProp() ? s.dpast.length > 0 : s.past.length > 0;
@@ -1895,7 +2090,7 @@ export function YardEditor(init: YardEditorProps) {
         {inProp() ? (
           <>
             <button type="button" className="btn" onClick={() => cancelProp()}>Cancel</button>
-            <button type="button" className="btn primary" disabled={!d || runRows(d).length === 0} onClick={() => void saveProp()}>{s.draftIsNew && !s.phone ? "Save and place" : "Save"}</button>
+            <button type="button" className="btn primary" disabled={!d || (d.shape === "draw" ? drawRows(d).length : runRows(d).length) === 0} onClick={() => void saveProp()}>{s.draftIsNew && !s.phone ? "Save and place" : "Save"}</button>
           </>
         ) : null}
         {!editing ? <div className="alloff"><AllOffControl size="bar" lights={init.lightViews} sessions={init.sessions} /></div> : null}
@@ -1958,7 +2153,12 @@ export function YardEditor(init: YardEditorProps) {
             onPointerMove={onPointerMove}
             onPointerUp={endPointer}
             onPointerCancel={endPointer}
+            onContextMenu={(e) => { if (inProp()) e.preventDefault(); }}
             onDoubleClick={(e) => {
+              if (inProp() && tracingAllowed()) {
+                finishChain();
+                return;
+              }
               if (inProp() || s.placing) return;
               const { px, py } = localPoint(e);
               const hit = hitProp(view(), yardDrawables(), px, py);
@@ -2000,11 +2200,31 @@ export function YardEditor(init: YardEditorProps) {
               {toolBtn("move", "Select / move", "V")}
               {toolBtn("trace", "Trace", "T")}
               {toolBtn("split", "Add point", "A")}
+              {s.tool === "trace" ? (
+                <button
+                  type="button"
+                  aria-pressed={s.nextRun === "dark"}
+                  title="Next run. D switches it. Saved on this device."
+                  onClick={() => {
+                    s.nextRun = s.nextRun === "dark" ? "lit" : "dark";
+                    writeStored(NEXT_RUN_KEY, s.nextRun);
+                    traceRef.current = { ...traceRef.current, nextRun: s.nextRun };
+                    render();
+                  }}
+                >{s.nextRun === "dark" ? "Next: Dark" : "Next: Lit"}</button>
+              ) : null}
               <span className="sep" />
               <button type="button" onClick={fitDraft}>Fit</button>
             </div>
           ) : null}
           <div className="coords" id="ye-coords" hidden />
+          <div className="tracehud" id="ye-trace" hidden />
+          {s.toast ? (
+            <div className="tracetip" role="status">
+              <span>{s.toast}</span>
+              <button type="button" onClick={() => { s.toast = null; void undo(); }}>Undo</button>
+            </div>
+          ) : null}
           <p className="hint" style={s.error ? { color: "var(--y-danger)" } : undefined}>{s.error ?? hint}</p>
           <div className="zoom" hidden={s.street && !inProp() && !s.placing}>
             <button type="button" aria-label="Zoom out" onClick={() => { s.cam = zoomAt(s.cam, size.current.W, size.current.H, size.current.W / 2, size.current.H / 2, 0.8); draw(); }}>−</button>

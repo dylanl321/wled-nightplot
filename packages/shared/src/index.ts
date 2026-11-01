@@ -544,6 +544,13 @@ export {
   type SnapGuide,
 } from "./prop/layout.ts";
 export {
+  applyCommand,
+  type AppliedCommand,
+  type CommandRefusal,
+  type LayoutCommand,
+  type MergeNotice,
+} from "./prop/commands.ts";
+export {
   SPIRAL_MAX_TURNS,
   ZIGZAG_MAX_PASSES,
   installGuide,

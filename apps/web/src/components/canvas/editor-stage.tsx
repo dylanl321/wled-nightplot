@@ -28,6 +28,24 @@ import {
 
 export type StageTap = { world: Point; screen: Point; altKey: boolean; shiftKey: boolean };
 
+/** A pointer event the stage forwards. The caller decides what it means. */
+export type StagePointer = {
+  phase: "down" | "move" | "up" | "cancel";
+  button: number;
+  pointerType: "mouse" | "touch" | "pen";
+  pointerId: number;
+  screen: Point;
+  world: Point;
+  altKey: boolean;
+  shiftKey: boolean;
+  detail: number;
+  moved: boolean;
+  /** Space is held, or this is the middle button. */
+  modifierPan: boolean;
+  /** `np:point:<id>` or `np:run:<id>` when the pointer is on one. */
+  shapeName: string | null;
+};
+
 export type EditorStageHandle = {
   fit: () => void;
   zoomIn: () => void;
@@ -74,6 +92,17 @@ export type EditorStageProps = {
   axes?: boolean;
   /** A mouse moving with no button down, in world metres. `null` when it leaves. */
   onHover?: (hover: { world: Point; altKey: boolean; shiftKey: boolean } | null) => void;
+  /**
+   * Every pointer down, move, up, and cancel on the drawing. Return
+   * `"consume"` from pointerup to keep a tap from also calling `onBackgroundTap`.
+   */
+  onStagePointer?: (event: StagePointer) => "consume" | void;
+  /** The browser menu stays off this drawing. The rest of the page is left alone. */
+  blockContextMenu?: boolean;
+  /** A double-click on the drawing, not on the zoom buttons. */
+  onDoubleClick?: () => void;
+  /** Screen-space preview. Its own layer, and it does not take the pointer. */
+  rubberBand?: (camera: Camera, size: Size) => ReactNode;
 };
 
 type Press =
@@ -82,7 +111,9 @@ type Press =
   | { kind: "background"; pointerId: number; start: Point; last: Point; panning: boolean; tappable: boolean }
   | { kind: "pinch" }
   /** A press a shape owns (a corner, a run, a prop). The stage does nothing with it. */
-  | { kind: "shape"; pointerId: number };
+  | { kind: "shape"; pointerId: number; start: Point; moved: boolean }
+  /** Right button. Captured so pointerup still arrives, and it never pans. */
+  | { kind: "aux"; pointerId: number; start: Point; last: Point };
 
 /**
  * One Konva stage for the path editor, Name sections, and the yard. A mouse
@@ -106,6 +137,10 @@ export function EditorStage({
   children,
   overlay,
   onHover,
+  onStagePointer,
+  blockContextMenu = false,
+  onDoubleClick,
+  rubberBand,
   axes = false,
 }: EditorStageProps) {
   const frame = useRef<HTMLDivElement>(null);
@@ -129,6 +164,8 @@ export function EditorStage({
   const tapRef = useRef(onBackgroundTap);
   const changeRef = useRef(onCameraChange);
   const hoverRef = useRef(onHover);
+  const pointerRef = useRef(onStagePointer);
+  const doubleRef = useRef(onDoubleClick);
   // Pointer and wheel handlers read the latest props without re-binding.
   useLayoutEffect(() => {
     boundsRef.current = bounds;
@@ -139,6 +176,8 @@ export function EditorStage({
     tapRef.current = onBackgroundTap;
     changeRef.current = onCameraChange;
     hoverRef.current = onHover;
+    pointerRef.current = onStagePointer;
+    doubleRef.current = onDoubleClick;
   });
 
   const moveCamera = useCallback((next: Camera | ((current: Camera) => Camera)) => {
@@ -258,6 +297,31 @@ export function EditorStage({
     };
   }, []);
 
+  function emitPointer(
+    event: React.PointerEvent<HTMLDivElement>,
+    phase: StagePointer["phase"],
+    at: Point,
+    moved: boolean,
+    modifierPan: boolean,
+  ): "consume" | void {
+    const listener = pointerRef.current;
+    if (!listener) return;
+    return listener({
+      phase,
+      button: event.button,
+      pointerType: event.pointerType === "touch" || event.pointerType === "pen" ? event.pointerType : "mouse",
+      pointerId: event.pointerId,
+      screen: at,
+      world: screenToWorld(at),
+      altKey: event.altKey,
+      shiftKey: event.shiftKey,
+      detail: event.detail,
+      moved,
+      modifierPan,
+      shapeName: shapeNameAt(stage.current, at),
+    });
+  }
+
   function onPointerDown(event: React.PointerEvent<HTMLDivElement>) {
     const node = frame.current;
     if (!node || isControl(event.target)) return;
@@ -271,29 +335,38 @@ export function EditorStage({
       stage.current?.setAttr(PINCH_ATTR, true);
       stage.current?.find((node: Konva.Node) => node.isDragging()).forEach((node) => node.stopDrag());
       capture(node, event.pointerId);
+      emitPointer(event, "down", at, false, false);
+      return;
+    }
+    if (event.button === 2) {
+      event.preventDefault();
+      capture(node, event.pointerId);
+      press.current = { kind: "aux", pointerId: event.pointerId, start: at, last: at };
+      emitPointer(event, "down", at, false, false);
       return;
     }
     const forced = space.current || event.button === 1;
-    if (event.button !== 0 && !forced) {
-      press.current = { kind: "shape", pointerId: event.pointerId };
-      return;
-    }
     if (!forced && !onBackground(stage.current, at)) {
-      press.current = { kind: "shape", pointerId: event.pointerId };
+      press.current = { kind: "shape", pointerId: event.pointerId, start: at, moved: false };
+      emitPointer(event, "down", at, false, false);
       return;
     }
     if (event.button === 1) event.preventDefault();
     capture(node, event.pointerId);
     press.current = { kind: "background", pointerId: event.pointerId, start: at, last: at, panning: forced, tappable: !forced };
     if (forced) setGrabbing(true);
+    emitPointer(event, "down", at, false, forced);
   }
 
   function onPointerMove(event: React.PointerEvent<HTMLDivElement>) {
     const node = frame.current;
     if (!node) return;
     if (!pointers.current.has(event.pointerId)) {
-      if (event.pointerType === "mouse" && event.buttons === 0 && hoverRef.current) {
-        hoverRef.current({ world: screenToWorld(localPoint(node, event)), altKey: event.altKey, shiftKey: event.shiftKey });
+      const at = localPoint(node, event);
+      const hovering = event.buttons === 0 && event.pointerType !== "touch";
+      if (hovering) {
+        emitPointer(event, "move", at, false, false);
+        hoverRef.current?.({ world: screenToWorld(at), altKey: event.altKey, shiftKey: event.shiftKey });
       }
       return;
     }
@@ -308,6 +381,17 @@ export function EditorStage({
       }
       return;
     }
+    if (current.kind === "aux" && current.pointerId === event.pointerId) {
+      press.current = { ...current, last: at };
+      emitPointer(event, "move", at, !isTap(current.start, at), false);
+      return;
+    }
+    if (current.kind === "shape" && current.pointerId === event.pointerId) {
+      const moved = current.moved || !isTap(current.start, at);
+      press.current = { ...current, moved };
+      emitPointer(event, "move", at, moved, false);
+      return;
+    }
     if (current.kind !== "background" || current.pointerId !== event.pointerId) return;
     const panning = current.panning || !isTap(current.start, at);
     if (panning) {
@@ -317,6 +401,7 @@ export function EditorStage({
       moveCamera((value) => panBy(value, dx, dy));
     }
     press.current = { ...current, last: at, panning, tappable: current.tappable && !panning };
+    emitPointer(event, "move", at, panning, current.panning || space.current || event.button === 1);
   }
 
   function onPointerUp(event: React.PointerEvent<HTMLDivElement>) {
@@ -325,16 +410,30 @@ export function EditorStage({
     const at = localPoint(node, event);
     pointers.current.delete(event.pointerId);
     const current = press.current;
+    const phase = event.type === "pointercancel" ? "cancel" : "up";
     if (current.kind === "pinch") {
       // Lifting one finger of a pinch does not turn the other into a pan or a tap.
       if (pointers.current.size === 0) press.current = { kind: "idle" };
       return;
     }
+    if (current.kind === "aux" && current.pointerId === event.pointerId) {
+      const moved = !isTap(current.start, at);
+      press.current = { kind: "idle" };
+      emitPointer(event, phase, at, moved, false);
+      return;
+    }
+    if (current.kind === "shape" && current.pointerId === event.pointerId) {
+      press.current = { kind: "idle" };
+      emitPointer(event, phase, at, current.moved || !isTap(current.start, at), false);
+      return;
+    }
     if (current.kind === "background" && current.pointerId === event.pointerId) {
-      const tap = event.type === "pointerup" && current.tappable && isTap(current.start, at);
+      const tap = phase === "up" && current.tappable && isTap(current.start, at);
+      const moved = !isTap(current.start, at);
       press.current = { kind: "idle" };
       setGrabbing(space.current);
-      if (tap) tapRef.current?.({ world: screenToWorld(at), screen: at, altKey: event.altKey, shiftKey: event.shiftKey });
+      const consumed = emitPointer(event, phase, at, moved || !current.tappable, !current.tappable) === "consume";
+      if (tap && !consumed) tapRef.current?.({ world: screenToWorld(at), screen: at, altKey: event.altKey, shiftKey: event.shiftKey });
       return;
     }
     if (pointers.current.size === 0) press.current = { kind: "idle" };
@@ -361,7 +460,20 @@ export function EditorStage({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
-      onPointerLeave={() => hoverRef.current?.(null)}
+      onPointerLeave={(event) => {
+        hoverRef.current?.(null);
+        if (pointers.current.size > 0) return;
+        const node = frame.current;
+        if (!node) return;
+        emitPointer(event, "cancel", localPoint(node, event), false, false);
+      }}
+      onDoubleClick={(event) => {
+        if (isControl(event.target)) return;
+        doubleRef.current?.();
+      }}
+      onContextMenu={(event) => {
+        if (blockContextMenu) event.preventDefault();
+      }}
       onAuxClick={(event) => event.preventDefault()}
     >
       {size.w > 0 && size.h > 0 ? (
@@ -382,6 +494,11 @@ export function EditorStage({
             // Undo the stage transform so this layer is in stage pixels.
             <Layer x={-camera.ox / camera.ppm} y={-camera.oy / camera.ppm} scaleX={1 / camera.ppm} scaleY={1 / camera.ppm}>
               {overlay(camera, size)}
+            </Layer>
+          ) : null}
+          {rubberBand ? (
+            <Layer listening={false} x={-camera.ox / camera.ppm} y={-camera.oy / camera.ppm} scaleX={1 / camera.ppm} scaleY={1 / camera.ppm}>
+              {rubberBand(camera, size)}
             </Layer>
           ) : null}
         </Stage>
@@ -468,6 +585,17 @@ function StageButton({ label, onClick, children }: { label: string; onClick: () 
 function localPoint(node: HTMLElement, event: { clientX: number; clientY: number }): Point {
   const box = node.getBoundingClientRect();
   return { x: event.clientX - box.left, y: event.clientY - box.top };
+}
+
+function shapeNameAt(node: Konva.Stage | null, at: Point): string | null {
+  const hit = node?.getIntersection(at);
+  let current: Konva.Node | null = hit ?? null;
+  while (current) {
+    const name = current.name();
+    if (name.startsWith("np:")) return name;
+    current = current.getParent();
+  }
+  return null;
 }
 
 /** Empty space, or a shape named `background`, is the stage’s to pan. Anything else belongs to the shape. */

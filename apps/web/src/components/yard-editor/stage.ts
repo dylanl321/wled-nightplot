@@ -19,6 +19,8 @@ export type DrawEdge = {
   color: string | null;
   wire?: boolean;
   typed?: boolean;
+  /** Run badge, such as A2, on a drawn prop. */
+  badge?: string;
   /** Real length when it is not the drawn line (half a turn of a spiral). */
   lengthM?: number;
 };
@@ -61,7 +63,39 @@ export type Scene = {
   guide?: DrawGuide | null;
   /** Prop canvas only, zoomed in: every light as a numbered dot, in the prop's frame. */
   dots?: LightDot[] | null;
+  /** Draw-it canvas: badges (A1) beside the length caption. */
+  badges?: boolean;
 };
+
+/** The rubber band while tracing. Dots are in world metres. */
+export type RubberBand = {
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+  wire: boolean;
+  lengthText: string;
+  countText: string;
+  dots: { x: number; y: number }[];
+  /** Wire-in, so the label and the first dot stay off it. */
+  wireIn: { x: number; y: number } | null;
+};
+
+/** Caption on one side of the run, badge on the other, so they do not stack. */
+export function splitRunLabel(
+  mx: number,
+  my: number,
+  nx: number,
+  ny: number,
+  captionW: number,
+): { caption: { x: number; y: number; w: number; h: number }; badge: { x: number; y: number; r: number } } {
+  const capOff = captionW / 2 + 18;
+  const badgeOff = 11 + 22;
+  return {
+    caption: { x: mx - captionW / 2 + nx * capOff, y: my - 8 + ny * capOff, w: captionW, h: 16 },
+    badge: { x: mx - nx * badgeOff, y: my - ny * badgeOff, r: 11 },
+  };
+}
 
 export type LightDot = { edgeId: string; id: string | null; station: number; x: number; y: number; label: string; selected: boolean };
 
@@ -222,20 +256,30 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
       }
       ctx.shadowBlur = 0;
     }
-    if (scoped && !e.wire && (!crowded || isSel)) {
+    if (scoped && (!crowded || isSel || e.wire)) {
       const mx = (ax + bx) / 2, my = (ay + by) / 2;
-      const t = `${scene.fmtLen(e.lengthM ?? Math.hypot(e.bx - e.ax, e.by - e.ay))} · ${n}${e.typed ? "*" : ""}`;
+      const t = `${scene.fmtLen(e.lengthM ?? Math.hypot(e.bx - e.ax, e.by - e.ay))} · ${e.wire ? 0 : n}${e.typed ? "*" : ""}`;
       const w = ctx.measureText(t).width + 8;
-      // Off the outside of the run, then away from labels already placed.
       const nx = -(by - ay) / segLen, ny = (bx - ax) / segLen;
-      let lx = mx - w / 2 + nx * 14, ly = my - 8 + ny * 14;
+      const spots = splitRunLabel(mx, my, nx, ny, w);
+      let lx = spots.caption.x, ly = spots.caption.y + 8;
       const hit = (q: LabelBox) => lx < q.x + q.w && lx + w > q.x && ly < q.y + 16 && ly + 16 > q.y;
       for (let g = 0; g < 8 && labels.some(hit); g++) { lx += nx * 12; ly += ny * 12 + (g % 2 ? 10 : -10); }
       lx = Math.max(4, Math.min(W - w - 4, lx));
-      ly = Math.max(scene.phone ? 84 : 16, Math.min(H - 8, ly));
+      ly = Math.max(scene.phone ? 56 : 16, Math.min(H - 8, ly));
       labels.push({ x: lx, y: ly, w });
       ctx.fillStyle = c.card; ctx.globalAlpha = 0.92; ctx.fillRect(lx, ly - 11, w, 16); ctx.globalAlpha = 1;
       ctx.fillStyle = isSel ? c.pick : c.fg; ctx.fillText(t, lx + 4, ly + 1);
+      if (e.badge && (e.wire || scene.badges)) {
+        const bx = spots.badge.x, by = spots.badge.y;
+        ctx.beginPath(); ctx.arc(bx, by, spots.badge.r, 0, Math.PI * 2);
+        ctx.fillStyle = c.card; ctx.fill();
+        ctx.strokeStyle = e.wire ? c.quiet : c.lit; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = c.fg;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(e.badge, bx, by + 0.5);
+        ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
+      }
     }
   }
   if (scoped) {
@@ -331,6 +375,55 @@ function drawDots(ctx: CanvasRenderingContext2D, view: View, c: Colours, dots: r
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = d.selected ? c.canvas : c.fg;
     ctx.fillText(d.label, x, y + 0.5);
+  }
+  ctx.restore();
+}
+
+/**
+ * The run the pointer would add. Dots start clear of the tail and the wire-in,
+ * so the first one does not sit on either label.
+ */
+export function drawRubber(ctx: CanvasRenderingContext2D, view: View, band: RubberBand, c: Colours) {
+  const { sx, sy, W, H } = view;
+  const ax = sx(band.ax), ay = sy(band.ay), bx = sx(band.bx), by = sy(band.by);
+  const colour = band.wire ? c.quiet : c.lit;
+  ctx.save();
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 6]);
+  ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = colour;
+  const wire = band.wireIn ? { x: sx(band.wireIn.x), y: sy(band.wireIn.y) } : null;
+  for (const dot of band.dots) {
+    const x = sx(dot.x), y = sy(dot.y);
+    if (Math.hypot(x - ax, y - ay) < 36) continue;
+    if (wire && Math.hypot(x - wire.x, y - wire.y) < 48) continue;
+    ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.beginPath(); ctx.arc(bx, by, 5, 0, Math.PI * 2); ctx.stroke();
+  const seg = Math.max(1, Math.hypot(bx - ax, by - ay));
+  if (seg >= 150) {
+    const nx = -(by - ay) / seg, ny = (bx - ax) / seg;
+    const text = band.lengthText;
+    const count = band.countText;
+    ctx.font = "12px var(--font-plex-mono), 'IBM Plex Mono', monospace";
+    const w = Math.max(ctx.measureText(text).width, ctx.measureText(count).width) + 16;
+    let lx = (ax + bx) / 2 + nx * 64 - w / 2;
+    let ly = (ay + by) / 2 + ny * 64 - 16;
+    const near = (px: number, py: number) => Math.hypot(lx + w / 2 - px, ly + 16 - py) < 48;
+    if (near(ax, ay) || (wire && near(wire.x, wire.y))) {
+      lx = (ax + bx) / 2 - nx * 64 - w / 2;
+      ly = (ay + by) / 2 - ny * 64 - 16;
+    }
+    lx = Math.max(8, Math.min(W - w - 8, lx));
+    ly = Math.max(60, Math.min(H - 40, ly));
+    ctx.fillStyle = c.card; ctx.globalAlpha = 0.94;
+    ctx.beginPath(); ctx.roundRect(lx, ly, w, 32, 6); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = colour;
+    ctx.fillText(text, lx + 8, ly + 14);
+    ctx.fillText(count, lx + 8, ly + 28);
   }
   ctx.restore();
 }
