@@ -73,7 +73,7 @@ Dylan, 2026-11-01: "We see everything and then have custom views for things like
 - **The yard is home.** It shows every prop where it stands. You select, move, rename, place, attach and delete here. Changes autosave, with one yard-wide Undo.
 - **A focused job opens a scoped view** in the same page. The URL changes so Back works, but nothing loads. The view shows only what that job needs and says where you are ("Yard › Box"). It always returns to the yard. A scoped view never opens another scoped view, so there is no nesting.
 - **Two kinds of scoped view:**
-  - **Draft views** (build or edit a prop) work on a copy. They have **Save** and **Cancel**, an "Not saved yet" marker, and their own Undo. Cancel with changes asks once. Saving a new prop returns to the yard with the prop on the pointer, ready to place.
+  - **Draft views** (build or edit a prop) work on a copy. They have **Save** and **Cancel**, an "Not saved yet" marker, and their own Undo. Cancel with changes asks once. Saving a new prop returns to the yard with the prop as an outline, ready to place: click a spot with a mouse, or drag the outline on a phone and press **Place here**.
   - **Lens views** (a Look) are the yard drawn a different way. Edits autosave like the yard, and **Done** returns.
 - Esc always means "back one level": first it clears the selection, then it leaves the view.
 
@@ -82,8 +82,8 @@ Dylan, 2026-11-01: "We see everything and then have custom views for things like
 | View | Opens from | Shows | Leaves by |
 | --- | --- | --- | --- |
 | **Yard** (home, `/`) | The nav and the logo | Every prop, the origin, a scale bar and the grid. Left rail: New prop, the props (sorted by name), the Looks. Right panel: the selection. | — |
-| **Prop canvas** (`/?prop=<id>&view=edit`, or `view=new`) | New prop, double-click a prop, Enter, "Edit shape and sections" | Only that prop, in its own frame, with the wire-in at 0,0. Its runs carry length and light labels, and corners are handles. A floating toolbar has Select/move, Trace and Add point (plus Mark dark, Add string, Join and Snap from today's editor). Panel: name, a shape picker with template sizes, unit, light count and spacing, the selected run, sections. | Save (new: Save and place), Cancel, Esc |
-| **Look** (`/?look=<id>`) | A Look in the yard rail, + New Look, or Edit on yard from the Looks page | The yard in that Look's colours, with everything not in the Look dimmed. Clicking a prop or a section switches it in or out. Panel: Look name, then the selected prop's colour (hex), effect and per-section switches. | Done, Esc |
+| **Prop canvas** (`/?prop=<id>&view=edit`, or `view=new`) | New prop, double-click a prop, Enter, "Edit shape" | Only that prop, in its own frame, with the wire-in at 0,0. Its runs carry length and light labels, and corners are handles. A floating toolbar has Select/move, Trace and Add point (plus Mark dark, Add string, Join and Snap from today's editor). Panel, in the order you need it: shape, size (with the unit beside it), light count and spacing, name, sections, runs. The selected run or section opens at the top. | Save (new: Save and place), Cancel, Esc |
+| **Look** (`/?look=<id>`) | A Look in the yard rail, + New Look, or Edit on yard from the Looks page | The yard in that Look's colours, with everything not in the Look dimmed. Clicking selects a prop (and then a section of it). The panel does the switching: Switch on/off, Colour for Whole prop or a section, hex, effect, and "lights up" per section. | Done, Esc |
 
 The **Controller** setting stays a fold in the yard panel, because it's a short form about where a prop is wired, not a drawing job. It has controller, output, start or after another prop, what gets written, Blink, and Apply with readback.
 
@@ -143,7 +143,7 @@ On a phone (390×844), every view uses the same layout: the drawing fills the sc
 
 ### Look view
 
-The Looks page keeps what is about the whole show: the library list, playlist, schedule and Push to Lights. Each Look there gets **Edit on yard**, which opens the Look view. In the Look view, the first click selects a prop and the next click on it (or on one of its sections) switches it in or out. This depends on #127, where a Look stores the props it includes, so a new prop starts off in old Looks.
+The Looks page keeps what is about the whole show: the library list, playlist, schedule and Push to Lights. Each Look there gets **Edit on yard**, which opens the Look view. In the Look view, a click only selects: first the prop, then one of its sections. Switching on and off, colours and effects are buttons in the panel, so nothing changes by a stray tap. This depends on #127, where a Look stores the props it includes, so a new prop starts off in old Looks.
 
 ### Routes and nav
 
@@ -165,16 +165,35 @@ No migration. The prop canvas edits the prop-frame `layout`, and the yard edits 
 
 | # | Task | Route |
 | --- | --- | --- |
-| 1 | Triangle X, 2 × 2 m, 60 | New prop → Triangle → Name X → Metres, W 2, H 2 → How many 60 → Save and place → click the yard |
-| 2 | 80-light square | Double-click X → Window (keeps 2 × 2) → How many 80 → Save |
+| 1 | Triangle X, 2 × 2 m, 60 | New prop → Triangle (starts at 2 × 2 m) → How many 60 → Name X → Save → place it |
+| 2 | 80-light square | Double-click X → Change shape → Window → W 2, H 2 → How many 80 → Save |
 | 3 | Rename Box, 3 m right of origin | Select X → Name Box → X 3, Y 0 |
 | 4 | Top 1–40, Bottom 41–80 | Double-click Box → New section "Top" → click two runs → New section "Bottom" → click two runs → Save |
-| 5 | Look "Half and half" | + New Look → name it → click Box twice → Top #FF0000 → Bottom #00FF00 → Done |
-| 6 | Bottom off | Open the Look → click Box's Bottom → Done |
-| 7 | Line 4 m, 120, then 100 | New prop → Line → Length 4 → How many 120 → click the run → 100 → Save and place |
+| 5 | Look "Half and half" | + New Look → name it → select Box → Switch on → Top #FF0000 → Bottom #00FF00 → Done |
+| 6 | Bottom off | Open the Look → select Box → Bottom → untick "lights up" → Done |
+| 7 | Line 4 m, 120, then 100 | New prop → Line → Length 4 → How many 120 → Save → place → Edit shape → How many 100 → Save |
 | 8 | Delete Line, reload | Select Line → Delete → confirm |
 
 Every task starts and ends on the yard, and none goes more than one view deep.
+
+## First-use walkthrough of the prototype
+
+On 2026-11-01 the prototype was walked as a first-time user, on a 390×844 phone and at 1440×900, doing all eight tasks from opening the page. Each screen was checked for what a new user would trip on. What was found, and the rule it became:
+
+| Found | Rule for the build |
+| --- | --- |
+| The size fields sat below the fold, under Name, after picking a shape. | The panel follows the task: shape, size, lights, then name. Sizes show without scrolling on a phone. |
+| Typing into a filled number field added to it (64 became 6480). A field re-rendered while it was being tapped, so the next field lost its input. | A number, hex or auto name is selected on first tap, so typing replaces it. A change never rebuilds the field you just tapped. |
+| A hex box at full length took no typing. | Same rule: select on tap. |
+| Tapping to place dropped the prop in the sky, and a fingertip can't aim on a small yard. | The outline starts on the ground in view. Touch drags the outline; **Place here** confirms. Mouse click still places. |
+| In a Look, a second tap on a prop silently switched it. There was no way to open the prop list. | Taps select, the panel switches. The props list is reachable in every yard view. |
+| The sheet handle did nothing when the panel was short. The drawing didn't refit when the sheet grew. | Sheet heights are fixed steps, and the drawing refits to the part left visible. |
+| Changing X and Y moved the prop behind the sheet. | Editing a position keeps the prop in view. |
+| Labels jumped far from their props. Axis numbers had no unit, and negative heights were drawn below ground. | A label goes above, else below, else hides until selected. Axes carry units. Below ground is shaded, unlabelled, and fitting puts the ground near the bottom. |
+| The scale bar sat behind the buttons. A redundant "Yard" chip, desktop-only copy ("double-click") and a keys list showed on a phone. | Phone chrome is one row; copy says tap on touch; keys show only with a keyboard. |
+| New prop was a small floating button. Save worked with no shape. | New prop is the first thing in the yard panel on a phone. Save is disabled until there is a shape. |
+| A prop kept its old template name ("Triangle 1" became a window). | An automatic name follows the shape; a typed name is kept. |
+| A panel kept its scroll position after deleting a prop. | A panel opens at the top when what it shows changes. |
 
 ## Fitting with epic #122
 
