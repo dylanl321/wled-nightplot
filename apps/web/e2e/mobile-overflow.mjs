@@ -2,13 +2,7 @@
  * Phone viewports must not scroll sideways.
  * Reuses a stack already on :43180, or starts fixture, sim, API, and web.
  */
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { chromium } from "playwright";
-
-const webOrigin = process.env.NIGHTPLOT_WEB_URL ?? "http://127.0.0.1:43180";
-const apiOrigin = process.env.NIGHTPLOT_API_URL ?? "http://127.0.0.1:43181";
-const root = fileURLToPath(new URL("../../../", import.meta.url));
+import { apiOrigin, ensureStack, launch, stopChildren, webOrigin } from "./stack.mjs";
 
 const viewports = [
   { name: "iphone-390x844", width: 390, height: 844 },
@@ -21,77 +15,6 @@ const editorViewports = [
   { name: "desktop-1280x800", width: 1280, height: 800, touch: false },
   { name: "landscape-844x390", width: 844, height: 390, touch: true },
 ];
-
-const children = [];
-
-async function up(url) {
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(1500) });
-    return res.status < 500;
-  } catch {
-    return false;
-  }
-}
-
-const childLogs = new Map();
-
-function start(args, env = {}) {
-  const child = spawn("corepack", args, {
-    cwd: root,
-    env: { ...process.env, ...env },
-    detached: true,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const chunks = [];
-  const keep = (stream) => {
-    stream.on("data", (chunk) => {
-      chunks.push(chunk);
-      let size = chunks.reduce((sum, item) => sum + item.length, 0);
-      while (size > 24_000 && chunks.length > 1) size -= chunks.shift().length;
-    });
-  };
-  keep(child.stdout);
-  keep(child.stderr);
-  childLogs.set(child, chunks);
-  children.push(child);
-  return child;
-}
-
-function recentLogs() {
-  const parts = [];
-  for (const chunks of childLogs.values()) {
-    const text = Buffer.concat(chunks).toString("utf8").trim();
-    if (text) parts.push(text.split("\n").slice(-30).join("\n"));
-  }
-  return parts.join("\n---\n");
-}
-
-async function waitFor(url, ms) {
-  const deadline = Date.now() + ms;
-  while (Date.now() < deadline) {
-    if (await up(url)) return;
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  const logs = recentLogs();
-  throw new Error(`timed out waiting for ${url}${logs ? `\n${logs}` : ""}`);
-}
-
-function stopChildren() {
-  for (const child of children) {
-    if (child.pid) {
-      try { process.kill(-child.pid, "SIGTERM"); } catch { /* already gone */ }
-    }
-  }
-}
-
-async function launch() {
-  const args = ["--no-sandbox", "--disable-dev-shm-usage"];
-  try {
-    return await chromium.launch({ channel: "chrome", args });
-  } catch {
-    return await chromium.launch({ args });
-  }
-}
 
 async function lightId() {
   const listed = await fetch(`${apiOrigin}/api/lights`).then((res) => res.json());
@@ -182,17 +105,7 @@ async function settle(page) {
   await page.waitForTimeout(400);
 }
 
-const reuse = await up(webOrigin);
-if (!reuse) {
-  start(["pnpm", "fixture"]);
-  start(["pnpm", "sim"]);
-  start(["pnpm", "--filter", "@nightplot/server", "dev"], {
-    NIGHTPLOT_DISCOVERY_TARGETS: "127.0.0.1:48210,127.0.0.1:48211",
-  });
-  start(["pnpm", "--filter", "@nightplot/web", "dev"]);
-  await waitFor(`${webOrigin}/`, 90000);
-  await waitFor(`${apiOrigin}/health`, 90000);
-}
+await ensureStack();
 
 const browser = await launch();
 let failed = 0;

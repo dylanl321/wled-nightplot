@@ -7,7 +7,7 @@ const bounds = { minX: 0, minY: 0, maxX: 4, maxY: 2 };
 const limits = { minPpm: 5, maxPpm: 500 };
 
 beforeAll(() => {
-  Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 456 });
+  Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 456 + 56 }); // 56 px stay clear for the zoom buttons
   Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 856 });
 });
 
