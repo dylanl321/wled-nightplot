@@ -447,18 +447,9 @@ function startFirst(corners: LayoutCorner[], startId: string): LayoutCorner[] {
   return start ? [start, ...corners.filter((corner) => corner.id !== startId)] : corners;
 }
 
-function setEdgeLengthOnRun(layout: PropLayout, edgeId: string, lengthM: number, lockedElsewhere = false): LengthEdit {
+function setEdgeLengthOnRun(layout: PropLayout, edgeId: string, lengthM: number, _lockedElsewhere = false): LengthEdit {
   const edge = layout.run.find((row) => row.id === edgeId);
   if (!edge || edge.kind !== "lit" || !(lengthM > 0)) return { layout, scaledAll: false, gapM: null };
-  const current = edgeLengthM(layout, edge);
-  // A traced drawing has no scale until the first typed length, so that
-  // length scales the whole drawing. A template was drawn from typed
-  // measurements: later runs keep their own lengths.
-  const noneLocked = layout.source === "trace" && !lockedElsewhere && layout.run.every((row) => row.lockedLengthM == null);
-  if (noneLocked && current > 0) {
-    const scaled = scaleAboutStart(layout, lengthM / current);
-    return { layout: lock(scaled, edgeId, lengthM), scaledAll: true, gapM: null };
-  }
   const closed = isClosed(layout);
   const closing = closed && isClosingEdge(layout, edge);
   if (closing) {
@@ -484,6 +475,164 @@ export function addCorner(layout: PropLayout, x: number, y: number): PropLayout 
     corners: [...layout.corners, { id, x, y }],
     run: [...layout.run, { id: edgeId, from, to: id, kind: "lit" }],
   };
+}
+
+/**
+ * Split one run at the point on it nearest `(x, y)`. The first piece keeps
+ * the run's id. Both pieces count from their new lengths.
+ */
+export function splitRun(layout: PropLayout, edgeId: string, x: number, y: number): { layout: PropLayout; cornerId: string | null } {
+  const base = ensureStrings(layout);
+  const owner = (base.strings ?? []).find((string) => string.run.some((edge) => edge.id === edgeId));
+  const edge = owner?.run.find((row) => row.id === edgeId);
+  if (!owner || !edge || edge.kind === "hidden") return { layout, cornerId: null };
+  const from = cornerById(base, edge.from);
+  const to = cornerById(base, edge.to);
+  if (!from || !to) return { layout, cornerId: null };
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 1e-6) return { layout, cornerId: null };
+  const raw = ((x - from.x) * dx + (y - from.y) * dy) / (length * length);
+  if (raw < -0.05 || raw > 1.05) return { layout, cornerId: null };
+  const t = Math.min(0.95, Math.max(0.05, raw));
+  const cornerId = nextId(base, "c");
+  const pieceId = nextId({ ...base, corners: [...base.corners, { id: cornerId, x: 0, y: 0 }] }, "e");
+  const strings = (base.strings ?? []).map((string) => {
+    if (string.id !== owner.id) return string;
+    const index = string.run.findIndex((row) => row.id === edgeId);
+    const { lockedLengthM: _length, lockedLights: _lights, ...open } = edge;
+    const first: LayoutEdge = { ...open, to: cornerId };
+    const second: LayoutEdge = { ...open, id: pieceId, from: cornerId };
+    return { ...string, run: [...string.run.slice(0, index), first, second, ...string.run.slice(index + 1)] };
+  });
+  const corner = { id: cornerId, x: from.x + dx * t, y: from.y + dy * t };
+  return { layout: writeStrings({ ...base, corners: [...base.corners, corner] }, strings), cornerId };
+}
+
+/** Runs that travel the same two corners, in either direction. */
+export function runsOnSameSpan(layout: PropLayout): Map<string, string[]> {
+  const groups = new Map<string, string[]>();
+  for (const string of layoutStrings(layout)) {
+    for (const edge of string.run) {
+      const key = [edge.from, edge.to].sort().join("\0");
+      const list = groups.get(key) ?? [];
+      list.push(edge.id);
+      groups.set(key, list);
+    }
+  }
+  const byEdge = new Map<string, string[]>();
+  for (const ids of groups.values()) {
+    for (const id of ids) byEdge.set(id, ids);
+  }
+  return byEdge;
+}
+
+/** Lit runs shorter than one light spacing. They still round up to one light. */
+export function shortRuns(layout: PropLayout): string[] {
+  const ids: string[] = [];
+  for (const string of layoutStrings(layout)) {
+    for (const edge of string.run) {
+      if (edge.kind !== "lit") continue;
+      const length = edgeLengthM(layout, edge);
+      if (length > 0 && length < layout.pitchM - 1e-9) ids.push(edge.id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Join corners that sit within `toleranceM` of each other. A wire-in is the
+ * corner that stays. A run whose ends become the same corner is removed.
+ */
+export function weldCorners(layout: PropLayout, toleranceM: number): PropLayout {
+  if (!(toleranceM > 0)) return layout;
+  const base = ensureStrings(layout);
+  const corners = base.corners;
+  if (corners.length < 2) return layout;
+  const parent = new Map<string, string>();
+  for (const corner of corners) parent.set(corner.id, corner.id);
+  const find = (id: string): string => {
+    let current = id;
+    while (parent.get(current) !== current) current = parent.get(current)!;
+    let cursor = id;
+    while (cursor !== current) {
+      const next = parent.get(cursor)!;
+      parent.set(cursor, current);
+      cursor = next;
+    }
+    return current;
+  };
+  const unite = (a: string, b: string) => {
+    const left = find(a);
+    const right = find(b);
+    if (left !== right) parent.set(right, left);
+  };
+  for (let i = 0; i < corners.length; i += 1) {
+    for (let j = i + 1; j < corners.length; j += 1) {
+      const left = corners[i]!;
+      const right = corners[j]!;
+      if (Math.hypot(left.x - right.x, left.y - right.y) <= toleranceM + 1e-9) unite(left.id, right.id);
+    }
+  }
+  const starts = new Set((base.strings ?? []).map((string) => string.startId));
+  const members = new Map<string, string[]>();
+  for (const corner of corners) {
+    const root = find(corner.id);
+    const list = members.get(root) ?? [];
+    list.push(corner.id);
+    members.set(root, list);
+  }
+  const keepOf = new Map<string, string>();
+  let changed = false;
+  for (const ids of members.values()) {
+    const keep = ids.find((id) => starts.has(id)) ?? ids[0]!;
+    for (const id of ids) keepOf.set(id, keep);
+    if (ids.length > 1) changed = true;
+  }
+  if (!changed) return layout;
+  return applyCornerMap(base, (id) => keepOf.get(id) ?? id);
+}
+
+/** Drop each run shorter than one light by joining its two corners. */
+export function mergeShortRuns(layout: PropLayout): PropLayout {
+  let next = ensureStrings(layout);
+  for (let guard = 0; guard < 64; guard += 1) {
+    const id = shortRuns(next)[0];
+    if (!id) return guard === 0 ? layout : next;
+    const edge = layoutStrings(next).flatMap((string) => string.run).find((row) => row.id === id);
+    if (!edge) return next;
+    const starts = new Set(layoutStrings(next).map((string) => string.startId));
+    const keep = starts.has(edge.to) && !starts.has(edge.from) ? edge.to : edge.from;
+    const drop = keep === edge.from ? edge.to : edge.from;
+    next = applyCornerMap(next, (cornerId) => (cornerId === drop ? keep : cornerId));
+  }
+  return next;
+}
+
+function applyCornerMap(layout: PropLayout, mapId: (id: string) => string): PropLayout {
+  const strings = (layout.strings ?? []).map((string) => ({
+    ...string,
+    startId: mapId(string.startId),
+    run: string.run.flatMap((edge) => {
+      const from = mapId(edge.from);
+      const to = mapId(edge.to);
+      if (from === to) return [];
+      if (from === edge.from && to === edge.to) return [edge];
+      const { lockedLengthM: _dropped, ...rest } = edge;
+      return [{ ...rest, from, to }];
+    }),
+  }));
+  const used = new Set<string>();
+  for (const string of strings) {
+    used.add(string.startId);
+    for (const edge of string.run) {
+      used.add(edge.from);
+      used.add(edge.to);
+    }
+  }
+  const corners = layout.corners.filter((corner) => used.has(corner.id) && mapId(corner.id) === corner.id);
+  return writeStrings({ ...layout, corners }, strings);
 }
 
 export function moveCorner(layout: PropLayout, id: string, x: number, y: number): PropLayout {
