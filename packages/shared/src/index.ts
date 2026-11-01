@@ -973,10 +973,16 @@ export {
 } from "./look-preview.ts";
 export {
   defaultHouse,
+  EAVE_OVERHANG_M,
+  frontEave,
   houseEaves,
+  houseTriangles,
   isYardHouse,
+  rooflinePoint,
+  sceneLightPositions,
   snapRoofline,
   type EaveEdge,
+  type HouseTriangles,
   type YardHouse,
   type YardPoint2,
   type YardScene,
