@@ -6,7 +6,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 export type EditMenuTarget = { id: string; label: string };
 
 export type EditMenuState =
-  | { kind: "point"; id: string; x: number; y: number; targets: EditMenuTarget[] }
+  | { kind: "point"; id: string; x: number; y: number; targets: EditMenuTarget[]; deleteReason: string | null }
   | { kind: "run"; id: string; x: number; y: number; wx: number; wy: number; dark: boolean }
   | { kind: "multi"; x: number; y: number };
 
@@ -41,7 +41,8 @@ export function EditMenu({ menu, onClose, onAction }: {
         <Menu.Content className="yemenu" side="bottom" align="start" sideOffset={0} avoidCollisions={false}>
           {menu.kind === "point" ? (
             <>
-              <Item onSelect={() => onAction({ type: "delete-point", id: menu.id })}>Delete point</Item>
+              <Item danger disabled={menu.deleteReason != null} onSelect={() => onAction({ type: "delete-point", id: menu.id })}>Delete point</Item>
+              {menu.deleteReason ? <div className="yemenu-note">{menu.deleteReason}</div> : null}
               <Item onSelect={() => onAction({ type: "disconnect", id: menu.id })}>Disconnect</Item>
               <Menu.Sub>
                 <Menu.SubTrigger className="yemenu-item">Join to…</Menu.SubTrigger>
@@ -71,13 +72,13 @@ export function EditMenu({ menu, onClose, onAction }: {
                   </Menu.SubContent>
                 </Menu.Portal>
               </Menu.Sub>
-              <Item onSelect={() => onAction({ type: "delete-run", id: menu.id })}>Delete run</Item>
+              <Item danger onSelect={() => onAction({ type: "delete-run", id: menu.id })}>Delete run</Item>
             </>
           ) : null}
           {menu.kind === "multi" ? (
             <>
               <Item onSelect={() => onAction({ type: "toggle-dark" })}>Toggle dark</Item>
-              <Item onSelect={() => onAction({ type: "delete-selection" })}>Delete</Item>
+              <Item danger onSelect={() => onAction({ type: "delete-selection" })}>Delete</Item>
             </>
           ) : null}
         </Menu.Content>
@@ -86,6 +87,6 @@ export function EditMenu({ menu, onClose, onAction }: {
   );
 }
 
-function Item({ children, onSelect }: { children: ReactNode; onSelect: () => void }) {
-  return <Menu.Item className="yemenu-item" onSelect={onSelect}>{children}</Menu.Item>;
+function Item({ children, onSelect, danger, disabled }: { children: ReactNode; onSelect: () => void; danger?: boolean; disabled?: boolean }) {
+  return <Menu.Item className={danger ? "yemenu-item danger" : "yemenu-item"} disabled={disabled} onSelect={onSelect}>{children}</Menu.Item>;
 }

@@ -400,7 +400,7 @@ export function YardEditor(init: YardEditorProps) {
     if (!el) return null;
     const shape = draftDrawable();
     const corner = shape?.corners.find((c) => c.id === s.selPoint);
-    if (!s.selPoint || !s.phone || !shape || !corner) {
+    if (!s.selPoint || !s.phone || !shape || !corner || s.selPoints.length > 1 || wireInDeleteReason(s.selPoint)) {
       el.hidden = true;
       return null;
     }
@@ -1162,6 +1162,19 @@ export function YardEditor(init: YardEditorProps) {
     return corner ? { x: corner.x, y: corner.y } : null;
   }
 
+  function isWireIn(id: string): boolean {
+    const layout = s.draft?.layout;
+    const tail = layout ? tailOf(layout) : null;
+    return tail?.string.startId === id;
+  }
+
+  /** The wire-in stays while the string has other points. The only point can go. */
+  function wireInDeleteReason(id: string): string | null {
+    const layout = s.draft?.layout;
+    if (!layout || !isWireIn(id) || layout.corners.length <= 1) return null;
+    return "The wire-in starts the string.";
+  }
+
   function pointWord(id: string): string {
     const layout = s.draft?.layout;
     const tail = layout ? tailOf(layout) : null;
@@ -1334,7 +1347,8 @@ export function YardEditor(init: YardEditorProps) {
       && ((corner != null && s.selPoints.includes(corner)) || (run != null && s.selRuns.includes(run)));
     const kind = multi ? "multi" : corner ? "point" : run ? "run" : null;
     if (!kind) return;
-    const menuH = kind === "run" ? 208 : kind === "point" ? 112 : 80;
+    const deleteReason = corner && kind === "point" ? wireInDeleteReason(corner) : null;
+    const menuH = kind === "run" ? 208 : kind === "point" ? (deleteReason ? 148 : 112) : 80;
     const at = placeFloat(px, py, 200, menuH, [
       { x: px - 8, y: py + 40 },
       { x: Math.max(8, px - 96), y: py + 40 },
@@ -1352,7 +1366,7 @@ export function YardEditor(init: YardEditorProps) {
         id: row.id,
         label: `${formatLength(Math.hypot(row.x, row.y), layout.units)}${layout.units === "m" ? " m" : ""} from the origin`,
       }));
-      s.menu = { kind: "point", id: corner, x: at.x, y: at.y, targets };
+      s.menu = { kind: "point", id: corner, x: at.x, y: at.y, targets, deleteReason };
     } else if (run) {
       s.selRun = run;
       s.selRuns = [run];
@@ -2055,7 +2069,7 @@ export function YardEditor(init: YardEditorProps) {
   });
 
   // A panel opens at the top when what it shows changes.
-  const panelKey = `${s.view}|${s.sel}|${Boolean(s.placing)}|${s.selRun}|${s.selPoint}|${s.activeSection}`;
+  const panelKey = `${s.view}|${s.sel}|${Boolean(s.placing)}|${s.selRun}|${s.selPoint}|${s.selPoints.length}|${s.selRuns.length}|${s.activeSection}`;
   const lastKey = useRef(panelKey);
   useEffect(() => {
     if (lastKey.current !== panelKey && insp.current) insp.current.scrollTop = 0;
@@ -2115,7 +2129,13 @@ export function YardEditor(init: YardEditorProps) {
         }
         if (e.key === "Escape") {
           if (s.activeSection) s.activeSection = null;
-          else if (s.selPoint) s.selPoint = null;
+          else if (s.selPoints.length + s.selRuns.length > 1) {
+            s.selPoint = null;
+            s.selPoints = [];
+            s.selRun = null;
+            s.selRuns = [];
+            s.selLight = null;
+          } else if (s.selPoint) s.selPoint = null;
           else if (s.selLight) s.selLight = null;
           else if (s.selRun) s.selRun = null;
           else if (s.tool === "trace" && traceRef.current.gesture !== "idle") finishChain();
@@ -2130,9 +2150,16 @@ export function YardEditor(init: YardEditorProps) {
           writeStored(NEXT_RUN_KEY, s.nextRun);
           traceRef.current = { ...traceRef.current, nextRun: s.nextRun };
           render();
+        } else if ((e.key === "Delete" || e.key === "Backspace") && s.selPoints.length + s.selRuns.length > 1) {
+          e.preventDefault();
+          doMenu({ type: "delete-selection" });
         } else if ((e.key === "Delete" || e.key === "Backspace") && s.selPoint) {
           e.preventDefault();
-          applyPointEffect({ type: "removePoint", pointId: s.selPoint });
+          const reason = wireInDeleteReason(s.selPoint);
+          if (reason) {
+            s.toast = reason;
+            render();
+          } else applyPointEffect({ type: "removePoint", pointId: s.selPoint });
         } else if (e.key === "Backspace" && tracingAllowed() && !s.selLight && !s.selRun && s.draft?.layout) {
           e.preventDefault();
           const tail = tailOf(s.draft.layout);
@@ -2514,12 +2541,21 @@ export function YardEditor(init: YardEditorProps) {
     );
     return (
       <>
-        {s.selPoint ? (
+        {s.selPoints.length + s.selRuns.length > 1 ? (
+          <div className="runbox pointsheet">
+            <h2>{s.selPoints.length > 1 ? `${s.selPoints.length} points selected` : `${s.selRuns.length} runs selected`}</h2>
+            <p className="note">{s.selPoints.length > 1 ? "Toggle dark flips the runs between them." : "Toggle dark flips the selected runs."}</p>
+            <div className="btnrow">
+              <button type="button" className="btn" onClick={() => doMenu({ type: "toggle-dark" })}>Toggle dark</button>
+              <button type="button" className="btn danger" onClick={() => doMenu({ type: "delete-selection" })}>Delete</button>
+            </div>
+          </div>
+        ) : s.selPoint ? (
           <div className="runbox pointsheet">
             <h2>{pointWord(s.selPoint)}</h2>
-            <p className="note">A point between two runs merges them. Undo puts it back.</p>
+            <p className="note">{isWireIn(s.selPoint) ? "The wire-in starts the string." : "A point between two runs merges them. Undo puts it back."}</p>
             <div className="btnrow">
-              <button type="button" className="btn danger" onClick={() => s.selPoint && applyPointEffect({ type: "removePoint", pointId: s.selPoint })}>Delete point</button>
+              <button type="button" className="btn danger" disabled={wireInDeleteReason(s.selPoint) != null} onClick={() => s.selPoint && applyPointEffect({ type: "removePoint", pointId: s.selPoint })}>Delete point</button>
             </div>
           </div>
         ) : null}
@@ -2530,7 +2566,7 @@ export function YardEditor(init: YardEditorProps) {
             <button type="button" className="btn" onClick={() => { s.askDiscard = false; render(); }}>Keep editing</button>
           </div>
         ) : null}
-        {r ? runEditor(d, r) : null}
+        {s.selPoints.length + s.selRuns.length > 1 ? null : r ? runEditor(d, r) : null}
         {sec ? sectionEditor(d, sec) : null}
         {!hasShape || s.showTiles ? (
           <div>

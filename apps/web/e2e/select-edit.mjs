@@ -83,7 +83,9 @@ try {
     await page.getByRole("button", { name: "Select / move" }).click();
     const runAt = await screenOf(page, box, { x: (start.x + mid.x) / 2, y: start.y });
     await page.mouse.click(runAt.x, runAt.y, { button: "right" });
-    await page.getByRole("menuitem", { name: "Delete run" }).waitFor({ timeout: 5000 });
+    const deleteRun = page.getByRole("menuitem", { name: "Delete run" });
+    await deleteRun.waitFor({ timeout: 5000 });
+    expect("delete run is marked", (await deleteRun.getAttribute("class"))?.includes("danger") === true, await deleteRun.getAttribute("class"));
     await page.screenshot({ path: `${shots}/select-desktop-menu.png` });
     await page.keyboard.press("Escape");
     const corners = await page.evaluate(() => window.__yard.draft.layout.corners);
@@ -100,12 +102,23 @@ try {
     await page.mouse.move(b.x, b.y);
     await page.mouse.up();
     await page.waitForFunction(() => (window.__yard?.selPoints?.length ?? 0) >= 2);
+    await page.getByRole("heading", { name: "3 points selected" }).waitFor();
+    await page.getByRole("button", { name: "Toggle dark" }).waitFor();
+    await page.getByRole("button", { name: "Delete", exact: true }).waitFor();
     await page.screenshot({ path: `${shots}/select-desktop-box.png` });
     await page.mouse.move(runAt.x, runAt.y + 6);
     await page.locator("#ye-hover").waitFor();
     await page.screenshot({ path: `${shots}/select-desktop-hover.png` });
     const tip = await page.locator("#ye-hover").textContent();
     expect("hover tip names the run", /A1 · .+ · \d+ lights/.test(tip ?? ""), tip);
+    await page.keyboard.press("Escape");
+    const wire = await screenOf(page, box, start);
+    await page.mouse.click(wire.x, wire.y, { button: "right" });
+    const deletePoint = page.getByRole("menuitem", { name: "Delete point" });
+    await deletePoint.waitFor();
+    expect("wire-in delete stays", (await deletePoint.getAttribute("data-disabled")) != null, await deletePoint.getAttribute("aria-disabled"));
+    await page.getByText("The wire-in starts the string.").first().waitFor();
+    await page.screenshot({ path: `${shots}/select-desktop-wirein.png` });
     console.log("ok desktop select");
   } catch (error) {
     failed += 1;

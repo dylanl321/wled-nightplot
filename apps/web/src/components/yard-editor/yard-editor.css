@@ -197,6 +197,8 @@
 .ye .yemenu { z-index: 40; min-width: 168px; padding: 4px; border: 1px solid var(--y-border); border-radius: 8px; background: var(--y-card); box-shadow: 0 10px 24px rgba(0,0,0,.35); }
 .ye .yemenu-item { display: flex; align-items: center; min-height: 32px; padding: 0 10px; border-radius: 6px; outline: none; cursor: pointer; font-size: 13px; }
 .ye .yemenu-item[data-highlighted] { background: var(--y-secondary); }
+.ye .yemenu-item.danger, .ye .yemenu-item.danger[data-highlighted] { color: var(--y-danger); }
+.ye .yemenu-item[data-disabled] { opacity: .5; cursor: default; }
 .ye .yemenu-note { padding: 6px 10px; color: var(--y-quiet); font-size: 12px; }
 .ye .hovertip { position: absolute; z-index: 7; pointer-events: none; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--y-border); background: var(--y-card); font-size: 12px; white-space: nowrap; }
 @media (max-width: 860px) {
