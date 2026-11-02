@@ -27,6 +27,7 @@ import { CaptureDialog } from "./dialogs";
 import { EffectPicker, PalettePicker, StyleEditor, effectOf, effectPatch } from "./style-editor";
 import { duplicateLook, kindPlural, readRecent, rememberDeleted, segmentWarningText, segmentWarnings, writeRecent } from "./looks-helpers";
 import { useLooks, type LightLite, type LooksPayload } from "./use-looks";
+import { ShapePanel } from "./shape-panel";
 import { StyleStrip, YardCanvas } from "./yard-canvas";
 
 type PreviewState = { on: boolean; rows: { lightId: string; lightName: string; status: string; detail: string }[]; message: string | null };
@@ -34,7 +35,7 @@ type PreviewState = { on: boolean; rows: { lightId: string; lightName: string; s
 export function LookView({ initial, lights, lookId, startProp }: { initial: LooksPayload; lights: LightLite[]; lookId: string; startProp: string | null }) {
   const router = useRouter();
   const state = useLooks(initial, lights);
-  const { doc, setDoc, flush, saveState, saveError, props, drawn, allPropIds, catalog, now, refreshNow } = state;
+  const { doc, setDoc, flush, saveState, saveError, props, drawn, allPropIds, replaceProp, catalog, now, refreshNow } = state;
   // Count segments again a moment after an edit saves, for the warning below.
   useEffect(() => {
     if (saveState !== "saved") return;
@@ -277,6 +278,11 @@ export function LookView({ initial, lights, lookId, startProp }: { initial: Look
             </div>
             <p className="note" style={{ marginTop: 6 }}>{sectionsFollow(look, one.id) ? "Every section follows, so the effect runs along the whole prop." : "Sections are set separately, so each one runs its own effect."}</p>
           </div>
+        ) : null}
+        {!one.wireframe && one.layout ? (
+          <ShapePanel prop={one} props={props} allPropIds={allPropIds} sectionId={sec ? sec.id : null}
+            ownStyle={sec ? (secMode === "own" ? sectionStyle(look, one, sec.id) : null) : mode === "own" ? propStyle(look, one) : null}
+            setLook={setLook} onPatch={patch} onProp={replaceProp} onToast={setToast} onSection={setSection} />
         ) : null}
         {one.wireframe && mode !== "off" ? (
           <WireframeParts look={look} propId={one.id} sides={one.wireframe.sides} defaultRule={one.wireframe.sharedPostRule}

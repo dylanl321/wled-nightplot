@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  isShapeOverrideList,
   compilePropDesign,
   defaultSections,
   designFromLayout,
@@ -141,6 +142,26 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     if (label === "") {
       return c.json({ error: "invalid", message: "Give the prop a name. Nothing was saved." }, 400);
     }
+    const shapeRoles = row?.shapeRoles === undefined ? undefined : isShapeOverrideList(row.shapeRoles) ? row.shapeRoles : null;
+    if (shapeRoles === null) {
+      return c.json({ error: "invalid-shape-roles", message: "Those shape fixes could not be read. Nothing was saved." }, 400);
+    }
+    if (row?.layout === undefined && (row?.sections !== undefined || shapeRoles !== undefined)) {
+      // Sections or shape fixes alone, from the Looks page. The drawing stays as it is.
+      const sections = row?.sections === undefined ? existing.sections : parsePropSections(row.sections);
+      if (row?.sections !== undefined && !sections) {
+        return c.json({ error: "invalid-sections", message: "Those sections could not be read. Nothing was saved." }, 400);
+      }
+      const base = label && label !== existing.label ? renameProp(deps.store, existing, label) : existing;
+      const { shapeRoles: _old, ...rest } = base;
+      const prop: Prop = {
+        ...rest,
+        ...(sections ? { sections } : {}),
+        ...((shapeRoles ?? base.shapeRoles)?.length ? { shapeRoles: shapeRoles ?? base.shapeRoles } : {}),
+      };
+      deps.store.saveDesignedProp(prop);
+      return c.json({ prop, message: "Prop saved in Nightplot. Nothing was sent to a controller." });
+    }
     if (row?.layout === undefined && label) {
       const renamed = renameProp(deps.store, existing, label);
       return c.json({ prop: renamed, message: "Renamed in Nightplot. Nothing was sent to a controller." });
@@ -169,6 +190,7 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
       design,
       layout: row.layout,
       ...(sections ? { sections } : {}),
+      ...(shapeRoles !== undefined ? { shapeRoles } : {}),
     };
     deps.store.saveDesignedProp(prop);
     return c.json({ prop, message: "Prop saved in Nightplot. Nothing was sent to a controller." });

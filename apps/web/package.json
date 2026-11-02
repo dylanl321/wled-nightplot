@@ -16,7 +16,8 @@
     "test:phase4": "node e2e/phase4.mjs",
     "test:yard3d": "node e2e/yard-street.mjs",
     "test:looks": "node e2e/looks.mjs",
-    "test:sections": "node e2e/sections-zoom.mjs"
+    "test:sections": "node e2e/sections-zoom.mjs",
+    "test:shape": "node e2e/shape.mjs"
   },
   "dependencies": {
     "@nightplot/shared": "workspace:*",

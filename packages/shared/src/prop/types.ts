@@ -5,6 +5,7 @@
  */
 
 import { isPropLayout, type PropLayout } from "./layout.ts";
+import type { ShapeOverride } from "./shape.ts";
 import { SPIRAL_MAX_TURNS, ZIGZAG_MAX_PASSES } from "./wraps.ts";
 
 export const PROP_KINDS = ["roofline", "window", "arch", "tree", "stake-row", "custom", "wireframe", "spiral", "zigzag"] as const;
@@ -130,6 +131,11 @@ export type Prop = {
    * Pinned ranges are typed by hand and stay put when the path changes.
    */
   sections?: PropSection[];
+  /**
+   * A person's fixes to what the shape reader guessed (a run that is really
+   * border, or inside). Keyed by run and light ids, so a redraw keeps them.
+   */
+  shapeRoles?: ShapeOverride[];
   /**
    * Where the prop sits on the yard, in metres: the drawing's own origin
    * lands here. Absent means a default slot, so props never pile up.
@@ -373,8 +379,24 @@ export function isProp(value: unknown): value is Prop {
   if (row.layout !== undefined && !isPropLayout(row.layout)) return false;
   if (row.sections !== undefined && !isPropSectionList(row.sections)) return false;
   if (row.yard !== undefined && !isPropYardPoint(row.yard)) return false;
+  if (row.shapeRoles !== undefined && !isShapeOverrideList(row.shapeRoles)) return false;
   if (row.kind === "wireframe" || row.wireframe !== undefined) return isWireframeSpec(row.wireframe);
   return true;
+}
+
+const SHAPE_ROLE_MAX = 512;
+
+export function isShapeOverrideList(value: unknown): value is ShapeOverride[] {
+  if (!Array.isArray(value) || value.length > SHAPE_ROLE_MAX) return false;
+  return value.every((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return false;
+    const item = row as Record<string, unknown>;
+    if (item.role !== "border" && item.role !== "inside") return false;
+    const keys = Object.keys(item).filter((key) => key !== "role");
+    if (keys.length !== 1) return false;
+    const id = item[keys[0]!];
+    return (keys[0] === "edgeId" || keys[0] === "lightId") && typeof id === "string" && id.length > 0 && id.length <= 64;
+  });
 }
 
 export function isPropIndexRange(value: unknown): value is PropIndexRange {

@@ -83,7 +83,11 @@ export function useLooks(initial: LooksPayload, lights: LightLite[]) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlight = useRef<Promise<void> | null>(null);
 
-  const props = initial.yard.props;
+  const [props, setProps] = useState(initial.yard.props);
+  /** A prop saved from the Looks page (its sections or shape fixes). */
+  const replaceProp = useCallback((prop: Prop) => {
+    setProps((list) => list.map((row) => (row.id === prop.id ? { ...prop, lightName: row.lightName } : row)));
+  }, []);
   const drawn: DrawnProp[] = useMemo(() => drawnYard(props), [props]);
   const allPropIds = useMemo(() => props.map((prop) => prop.id), [props]);
 
@@ -206,7 +210,7 @@ export function useLooks(initial: LooksPayload, lights: LightLite[]) {
 
   return {
     doc, setDoc, flush, saveState, saveError,
-    props, drawn, allPropIds,
+    props, drawn, allPropIds, replaceProp,
     now, refreshNow, catalog,
     changesFor, allChanges, plan,
     send, undoSend, turnOn,

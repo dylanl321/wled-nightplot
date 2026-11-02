@@ -394,6 +394,7 @@ export {
   isPropIndexRange,
   isPropKind,
   isPropSection,
+  isShapeOverrideList,
   isSharedPostRule,
   isWireframeSpec,
   type HiddenReason,
@@ -574,6 +575,26 @@ export {
   type ShapeRole,
   type ShapeSide,
 } from "./prop/shape.ts";
+export {
+  SHAPE_MOTION_LABELS,
+  SHAPE_SECTION_PLANS,
+  applyPropDesign,
+  applySectionDesign,
+  directionForMotion,
+  propShape,
+  sectionShapeLights,
+  sectionSignature,
+  sectionsFromShape,
+  shapeSummary,
+  similarProps,
+  similarSections,
+  styleForLights,
+  type MotionFit,
+  type SectionSignature,
+  type ShapeSectionPlan,
+  type SimilarProp,
+  type SimilarSection,
+} from "./prop/shape-design.ts";
 export { parseTraceLength, type TraceLength, type TraceLengthResult } from "./prop/trace-length.ts";
 export { snap, traceAim, SNAP_ALIGN_PX, SNAP_POINT_PX, type SnapContext, type SnapHit, type SnapPoint, type TraceGuide } from "./prop/snap.ts";
 export {
@@ -842,6 +863,10 @@ export {
   type PropSectionPlan,
   type LooksDocument,
   type LookDirection,
+  type ShapeMotion,
+  LOOK_DIRECTIONS,
+  SHAPE_MOTIONS,
+  isShapeMotion,
   mergeFollowingSections,
 } from "./look.ts";
 export {
