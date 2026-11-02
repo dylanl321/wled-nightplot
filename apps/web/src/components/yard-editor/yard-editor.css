@@ -19,7 +19,7 @@
 .ye button, .ye input, .ye select { font: inherit; color: inherit; }
 .ye button { cursor: pointer; }
 .ye :focus-visible { outline: 2px solid var(--y-pick); outline-offset: 2px; }
-.ye { height: 100%; display: grid; grid-template-rows: auto 1fr; }
+.ye { position: relative; height: 100%; display: grid; grid-template-rows: auto 1fr; }
 .ye .top { display: flex; align-items: center; gap: 18px; min-height: 52px; border-bottom: 1px solid var(--y-border); background: var(--y-rail);
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 .ye .brand { display: flex; align-items: center; gap: 8px; font-family: var(--y-serif); font-size: 17px; color: var(--y-primary); white-space: nowrap; }
@@ -90,6 +90,13 @@
 .ye .btn { min-height: 36px; padding: 0 12px; border: 1px solid var(--y-border); border-radius: 6px; background: var(--y-card); font-size: 13px; }
 .ye .btn.primary { background: var(--y-primary); color: var(--y-primary-fg); border-color: var(--y-primary); }
 .ye .btn.danger { color: var(--y-danger); border-color: color-mix(in srgb, var(--y-danger) 45%, var(--y-border)); }
+.ye .btn[aria-pressed="true"] { border-color: var(--y-pick); color: var(--y-pick); }
+.ye .keyshade { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(0,0,0,.45); }
+.ye .keycard { width: min(420px, calc(100% - 32px)); max-height: min(640px, calc(100% - 32px)); overflow: auto; padding: 16px; border: 1px solid var(--y-border); border-radius: 12px; background: var(--y-card); box-shadow: 0 16px 40px rgba(0,0,0,.4); }
+.ye .keycard h2 { margin: 0; font-size: 16px; letter-spacing: 0; text-transform: none; }
+.ye .keycard ul { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ye .keycard li { display: grid; grid-template-columns: 9.5rem 1fr; gap: 10px; align-items: baseline; font-size: 13px; }
+.ye .keycard kbd { font-family: var(--y-mono); font-size: 12px; color: var(--y-pick); }
 .ye .btn.link { border: 0; background: transparent; color: var(--y-primary); padding: 0 4px; }
 .ye details.fold { border-top: 1px solid var(--y-border); padding-top: 10px; }
 .ye details.fold > summary { list-style: none; display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 32px; font-weight: 500; }

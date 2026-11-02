@@ -13,6 +13,7 @@
     "test:editor": "node e2e/editor-use-cases.mjs",
     "test:trace": "node e2e/trace-draw.mjs",
     "test:select": "node e2e/select-edit.mjs",
+    "test:phase4": "node e2e/phase4.mjs",
     "test:yard3d": "node e2e/yard-street.mjs",
     "test:looks": "node e2e/looks.mjs"
   },

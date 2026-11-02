@@ -16,6 +16,7 @@ import {
   isPropLayout,
   lengthLabel,
   moveCorner,
+  setLengthPin,
   parseLength,
   parsePitchCm,
   rooflineLayout,
@@ -263,6 +264,35 @@ describe("trace edits", () => {
     const moved = moveCorner(layout, "c2", 2, 0);
     expect(moved.run[0]?.lockedLengthM).toBeUndefined();
     expect(moved.corners[1]).toMatchObject({ x: 2, y: 0 });
+  });
+
+  it("keeps a pinned run on its circle when a neighbour is dragged", () => {
+    const pinned = setLengthPin(chain([1]), "e1", true);
+    expect(pinned.run[0]).toMatchObject({ lengthPinned: true, lockedLengthM: 1 });
+    const moved = moveCorner(pinned, "c2", 3, 4);
+    const start = moved.corners.find((corner) => corner.id === "c1")!;
+    const end = moved.corners.find((corner) => corner.id === "c2")!;
+    expect(end).toMatchObject({ x: 0.6, y: 0.8 });
+    expect(Math.hypot(end.x - start.x, end.y - start.y)).toBeCloseTo(1, 5);
+    expect(moved.run[0]?.lengthPinned).toBe(true);
+    expect(moved.run[0]?.lockedLengthM).toBe(1);
+    const freed = moveCorner(setLengthPin(pinned, "e1", false), "c2", 3, 4);
+    expect(freed.corners.find((corner) => corner.id === "c2")).toMatchObject({ x: 3, y: 4 });
+    expect(freed.run[0]?.lengthPinned).toBeUndefined();
+  });
+
+  it("uses the nearer crossing when two pins share the dragged point", () => {
+    const layout = setLengthPin(setLengthPin(chain([1, 1]), "e1", true), "e2", true);
+    const moved = moveCorner({
+      ...layout,
+      corners: layout.corners.map((corner) => corner.id === "c3" ? { ...corner, x: 1, y: 1 } : corner),
+    }, "c2", 0, 2);
+    const point = moved.corners.find((corner) => corner.id === "c2")!;
+    expect(point.x).toBeCloseTo(0, 5);
+    expect(point.y).toBeCloseTo(1, 5);
+    expect(Math.hypot(point.x, point.y)).toBeCloseTo(1, 5);
+    const far = moved.corners.find((corner) => corner.id === "c3")!;
+    expect(Math.hypot(point.x - far.x, point.y - far.y)).toBeCloseTo(1, 5);
   });
 });
 
