@@ -8,7 +8,15 @@ export const EFFECT_CONTRACT_VERSION = 1 as const;
 export const EFFECT_NODE_COUNT_MIN = 1;
 export const EFFECT_NODE_COUNT_MAX = 4096;
 
-export const EFFECT_BUILTINS = ["u", "t", "i", "n", "pi", "tau"] as const;
+/**
+ * Per-light inputs from the shape reader (`prop/shape.ts`), each 0–1. They
+ * read as 0 when a frame is sampled without a shape.
+ */
+export const EFFECT_SHAPE_FIELDS = ["x", "y", "r", "a", "d", "along", "ring", "h"] as const;
+export type EffectShapeField = (typeof EFFECT_SHAPE_FIELDS)[number];
+export type EffectShapeInputs = Record<EffectShapeField, number>;
+
+export const EFFECT_BUILTINS = ["u", "t", "i", "n", "pi", "tau", ...EFFECT_SHAPE_FIELDS] as const;
 export type EffectBuiltin = (typeof EFFECT_BUILTINS)[number];
 
 export const EFFECT_FUNCTIONS = [
@@ -108,5 +116,7 @@ export type EffectEnv = {
   t: number;
   i?: number;
   n?: number;
+  /** Shape inputs for this node. Absent reads every shape name as 0. */
+  shape?: EffectShapeInputs;
   values: Record<string, number>;
 };

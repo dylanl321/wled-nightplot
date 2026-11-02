@@ -13,6 +13,7 @@ import {
   type EffectFrame,
   type EffectParameter,
   type EffectPixel,
+  type EffectShapeInputs,
 } from "./types.ts";
 
 export {
@@ -21,6 +22,7 @@ export {
   EFFECT_FUNCTIONS,
   EFFECT_NODE_COUNT_MAX,
   EFFECT_NODE_COUNT_MIN,
+  EFFECT_SHAPE_FIELDS,
 } from "./types.ts";
 export type {
   EffectBinding,
@@ -32,6 +34,8 @@ export type {
   EffectFrame,
   EffectParameter,
   EffectPixel,
+  EffectShapeField,
+  EffectShapeInputs,
 } from "./types.ts";
 export { parseEffectExpr, evaluateEffectExpr } from "./expr.ts";
 
@@ -199,6 +203,33 @@ export function sampleEffect(input: {
     pixels.push(pixelAt(compiled, { u, t: input.timeSec, i: index, n: input.nodeCount, values }));
   }
   return { nodeCount: input.nodeCount, timeSec: input.timeSec, pixels };
+}
+
+/**
+ * Sample one Effect over a prop's lights, in string order, with the shape
+ * reader's fields as inputs. `u` still runs 0–1 along the lights. A software
+ * frame is not Preview, not Apply, and not a lit strip.
+ */
+export function sampleShapeEffect(input: {
+  definition: unknown;
+  shape: readonly EffectShapeInputs[];
+  timeSec: number;
+  values?: Record<string, number>;
+}): EffectFrame | null {
+  const definition = parseEffectDefinition(input.definition);
+  const nodeCount = input.shape.length;
+  if (!definition || nodeCount < EFFECT_NODE_COUNT_MIN || nodeCount > EFFECT_NODE_COUNT_MAX ||
+    !isFiniteNumber(input.timeSec)) return null;
+  const values = mergeEffectValues(definition, input.values);
+  const compiled = compileChannels(definition);
+  if (!values || !compiled) return null;
+  const pixels: EffectPixel[] = [];
+  for (let index = 0; index < nodeCount; index += 1) {
+    const u = normalizedPosition(index, nodeCount);
+    if (u === null) return null;
+    pixels.push(pixelAt(compiled, { u, t: input.timeSec, i: index, n: nodeCount, shape: input.shape[index], values }));
+  }
+  return { nodeCount, timeSec: input.timeSec, pixels };
 }
 
 /** Evaluate the same source at one normalized position. Used to prove resample. */

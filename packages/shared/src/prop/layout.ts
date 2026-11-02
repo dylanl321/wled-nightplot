@@ -1732,6 +1732,8 @@ export function alongRun(from: { x: number; y: number }, to: { x: number; y: num
 }
 
 export type StringLight = {
+  /** The string this light is on. */
+  stringId: string;
   edgeId: string;
   /** Null while the run is still evenly spaced and nothing is stored. */
   id: string | null;
@@ -1761,7 +1763,7 @@ export function stringLights(layout: PropLayout): StringLight[] {
       if (!from || !to) continue;
       for (const station of stationsOf(layout, edge)) {
         const at = pointOnRun(from, to, station.alongM);
-        marks.push({ edgeId: edge.id, id: station.id, alongM: station.alongM, index, x: at.x, y: at.y });
+        marks.push({ stringId: string.id, edgeId: edge.id, id: station.id, alongM: station.alongM, index, x: at.x, y: at.y });
         index += 1;
       }
     }

@@ -1,10 +1,18 @@
 import {
   EFFECT_FUNCTIONS,
+  EFFECT_SHAPE_FIELDS,
   type EffectBinOp,
   type EffectEnv,
   type EffectExpr,
   type EffectFnName,
+  type EffectShapeField,
 } from "./types.ts";
+
+const SHAPE_FIELDS = new Set<string>(EFFECT_SHAPE_FIELDS);
+
+function isShapeField(name: string): name is EffectShapeField {
+  return SHAPE_FIELDS.has(name);
+}
 
 export const EFFECT_EXPR_SOURCE_MAX = 280;
 export const EFFECT_EXPR_NODE_MAX = 64;
@@ -234,6 +242,7 @@ export function evaluateEffectExpr(expr: EffectExpr, env: EffectEnv): number {
       if (expr.name === "n") return env.n === undefined ? 0 : finiteNumber(env.n);
       if (expr.name === "pi") return Math.PI;
       if (expr.name === "tau") return Math.PI * 2;
+      if (isShapeField(expr.name)) return env.shape ? finiteNumber(env.shape[expr.name]) : 0;
       const value = env.values[expr.name];
       return value === undefined ? 0 : finiteNumber(value);
     }
