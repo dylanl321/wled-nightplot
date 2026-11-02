@@ -273,7 +273,14 @@ export function EditorStage({
       moveCamera((current) => zoomAt(current, factor, at, limitsRef.current));
     };
     node.addEventListener("wheel", onWheel, { passive: false });
-    return () => node.removeEventListener("wheel", onWheel);
+    // Safari pinches with its own gesture events. Stop them so the page itself does not zoom.
+    const stopGesture = (event: Event) => event.preventDefault();
+    const gestures = ["gesturestart", "gesturechange", "gestureend"];
+    for (const type of gestures) node.addEventListener(type, stopGesture, { passive: false });
+    return () => {
+      node.removeEventListener("wheel", onWheel);
+      for (const type of gestures) node.removeEventListener(type, stopGesture);
+    };
   }, [moveCamera, sayLimit]);
 
   useEffect(() => {

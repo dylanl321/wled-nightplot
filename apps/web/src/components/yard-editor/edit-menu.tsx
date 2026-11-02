@@ -22,6 +22,7 @@ export type EditMenuAction =
   | { type: "delete-run"; id: string }
   | { type: "pin"; id: string; pinned: boolean }
   | { type: "toggle-dark" }
+  | { type: "make-section"; id?: string }
   | { type: "delete-selection" };
 
 /** A small menu at a canvas point. Radix handles the keyboard and the dismiss. */
@@ -63,6 +64,7 @@ export function EditMenu({ menu, onClose, onAction }: {
               <Item onSelect={() => onAction({ type: "pin", id: menu.id, pinned: !menu.pinned })}>{menu.pinned ? "Unlock length" : "Lock length"}</Item>
               <Item onSelect={() => onAction({ type: "lights", id: menu.id })}>Set lights…</Item>
               <Item onSelect={() => onAction({ type: "dark", id: menu.id, dark: !menu.dark })}>{menu.dark ? "Make lit" : "Make dark"}</Item>
+              <Item onSelect={() => onAction({ type: "make-section", id: menu.id })}>Make section</Item>
               <Item onSelect={() => onAction({ type: "split", id: menu.id })}>Split here</Item>
               <Menu.Sub>
                 <Menu.SubTrigger className="yemenu-item">Split into N equal</Menu.SubTrigger>
@@ -79,6 +81,7 @@ export function EditMenu({ menu, onClose, onAction }: {
           ) : null}
           {menu.kind === "multi" ? (
             <>
+              <Item onSelect={() => onAction({ type: "make-section" })}>Make section</Item>
               <Item onSelect={() => onAction({ type: "toggle-dark" })}>Toggle dark</Item>
               <Item danger onSelect={() => onAction({ type: "delete-selection" })}>Delete</Item>
             </>

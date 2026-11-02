@@ -600,6 +600,35 @@ export function toggleRunInSection(draft: Draft, sectionId: string, edgeId: stri
   return { ...draft, sections };
 }
 
+/**
+ * A new section holding these runs. Each run leaves whatever section it was
+ * in, since a run is in one section at most. Unknown and wire runs are skipped.
+ */
+export function sectionFromRuns(draft: Draft, edgeIds: readonly string[]): { draft: Draft; id: string | null } {
+  const order = draft.layout ? litEdges(draft.layout).map((edge) => edge.id) : [];
+  const picked = [...new Set(edgeIds)].filter((id) => order.includes(id)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  if (picked.length === 0) return { draft, id: null };
+  const made = addSection(draft);
+  const sections = made.draft.sections.map((section) => section.id === made.id
+    ? { ...section, edgeIds: picked }
+    : { ...section, edgeIds: section.edgeIds.filter((id) => !picked.includes(id)) });
+  return { draft: { ...made.draft, sections }, id: made.id };
+}
+
+/** Put these runs in an existing section, taking them out of any other. */
+export function addRunsToSection(draft: Draft, sectionId: string, edgeIds: readonly string[]): Draft {
+  if (!draft.sections.some((section) => section.id === sectionId)) return draft;
+  const order = draft.layout ? litEdges(draft.layout).map((edge) => edge.id) : [];
+  const picked = [...new Set(edgeIds)].filter((id) => order.includes(id));
+  if (picked.length === 0) return draft;
+  const sections = draft.sections.map((section) => {
+    if (section.id !== sectionId) return { ...section, edgeIds: section.edgeIds.filter((id) => !picked.includes(id)) };
+    const edgeIds = [...new Set([...section.edgeIds, ...picked])];
+    return { ...section, edgeIds: edgeIds.sort((a, b) => order.indexOf(a) - order.indexOf(b)) };
+  });
+  return { ...draft, sections };
+}
+
 export function updateSection(draft: Draft, sectionId: string, patch: Partial<Pick<PropSection, "name" | "color">>): Draft {
   return { ...draft, sections: draft.sections.map((section) => (section.id === sectionId ? { ...section, ...patch } : section)) };
 }

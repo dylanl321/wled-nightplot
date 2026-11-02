@@ -23,7 +23,54 @@ export type DrawEdge = {
   badge?: string;
   /** Real length when it is not the drawn line (half a turn of a spiral). */
   lengthM?: number;
+  /**
+   * Runs that lie on the same line (up a roof edge and back down it) are
+   * drawn side by side so each one can be seen and picked. `lane` is how
+   * many gaps off the true line, and `nx`, `ny` is the shared world normal.
+   */
+  lane?: { offset: number; nx: number; ny: number };
 };
+
+/** Screen pixels between runs that share a line. */
+export const LANE_GAP_PX = 9;
+
+/** Give runs that share both ends their own lane. Mutates and returns `edges`. */
+export function assignLanes(edges: DrawEdge[], tolM = 0.01): DrawEdge[] {
+  const key = (x: number, y: number) => `${Math.round(x / tolM)},${Math.round(y / tolM)}`;
+  const groups = new Map<string, DrawEdge[]>();
+  for (const e of edges) {
+    if (Math.hypot(e.bx - e.ax, e.by - e.ay) < tolM) continue;
+    const a = key(e.ax, e.ay), b = key(e.bx, e.by);
+    const k = a < b ? `${a}|${b}` : `${b}|${a}`;
+    const row = groups.get(k);
+    if (row) row.push(e);
+    else groups.set(k, [e]);
+  }
+  for (const [k, row] of groups) {
+    if (row.length < 2) continue;
+    // One normal for the whole group, from the canonical end, so a run and its
+    // reverse land on opposite sides instead of the same one.
+    const first = row[0]!;
+    const forward = key(first.ax, first.ay) === k.split("|")[0];
+    const dx = forward ? first.bx - first.ax : first.ax - first.bx;
+    const dy = forward ? first.by - first.ay : first.ay - first.by;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    row.forEach((e, i) => { e.lane = { offset: i - (row.length - 1) / 2, nx, ny }; });
+  }
+  return edges;
+}
+
+/** A run's ends in screen pixels, moved onto its lane. */
+export function edgeOnScreen(view: View, p: Pick<DrawProp, "x" | "y">, e: DrawEdge): { ax: number; ay: number; bx: number; by: number } {
+  let ax = view.sx(e.ax + p.x), ay = view.sy(e.ay + p.y), bx = view.sx(e.bx + p.x), by = view.sy(e.by + p.y);
+  if (e.lane && e.lane.offset !== 0) {
+    // World y is up and screen y is down.
+    const ox = e.lane.nx * e.lane.offset * LANE_GAP_PX, oy = -e.lane.ny * e.lane.offset * LANE_GAP_PX;
+    ax += ox; bx += ox; ay += oy; by += oy;
+  }
+  return { ax, ay, bx, by };
+}
 
 /** Install marks on a prop's own canvas, in the prop's frame. */
 export type DrawGuide = {
@@ -359,7 +406,7 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
     }
   }
   for (const e of p.edges) {
-    const ax = sx(e.ax + p.x), ay = sy(e.ay + p.y), bx = sx(e.bx + p.x), by = sy(e.by + p.y);
+    const { ax, ay, bx, by } = edgeOnScreen(view, p, e);
     const col = ghost ? c.pick : e.color;
     const isSel = scoped && scene.selectedRun === e.id;
     const inSection = scoped && scene.sectionRuns?.includes(e.id);
@@ -667,9 +714,8 @@ export function selectInRect(
   const inside = (x: number, y: number) => x >= left && x <= right && y >= top && y <= bottom;
   const points = prop.corners.filter((corner) => inside(view.sx(corner.x + prop.x), view.sy(corner.y + prop.y))).map((corner) => corner.id);
   const runs = prop.edges.filter((edge) => {
-    const mx = view.sx((edge.ax + edge.bx) / 2 + prop.x);
-    const my = view.sy((edge.ay + edge.by) / 2 + prop.y);
-    return inside(mx, my);
+    const on = edgeOnScreen(view, prop, edge);
+    return inside((on.ax + on.bx) / 2, (on.ay + on.by) / 2);
   }).map((edge) => edge.id);
   return { points, runs };
 }
@@ -677,15 +723,15 @@ export function selectInRect(
 export function hitMid(view: View, prop: DrawProp, edgeId: string, px: number, py: number, slop = 12): boolean {
   const edge = prop.edges.find((row) => row.id === edgeId);
   if (!edge) return false;
-  const mx = view.sx((edge.ax + edge.bx) / 2 + prop.x);
-  const my = view.sy((edge.ay + edge.by) / 2 + prop.y);
-  return Math.hypot(mx - px, my - py) <= slop;
+  const on = edgeOnScreen(view, prop, edge);
+  return Math.hypot((on.ax + on.bx) / 2 - px, (on.ay + on.by) / 2 - py) <= slop;
 }
 
 export function hitRun(view: View, p: DrawProp, px: number, py: number, slop = 10): { id: string; d: number; t: number } | null {
   let best: { id: string; d: number; t: number } | null = null;
   for (const e of p.edges) {
-    const [d, t] = distSeg(px, py, view.sx(e.ax + p.x), view.sy(e.ay + p.y), view.sx(e.bx + p.x), view.sy(e.by + p.y));
+    const on = edgeOnScreen(view, p, e);
+    const [d, t] = distSeg(px, py, on.ax, on.ay, on.bx, on.by);
     if (d < slop && (!best || d < best.d)) best = { id: e.id, d, t };
   }
   return best;
