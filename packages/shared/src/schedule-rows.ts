@@ -9,7 +9,10 @@
  * one all-year sunset row gets the sunset timer, and a dated sunset row is
  * followed with clock timers: days whose sunset moves 10 minutes or less
  * share one, set a minute after the latest sunset in that run of days, so it
- * never starts before sunset.
+ * never starts before sunset. The row runs every year, so a step also breaks
+ * at the earliest and latest day the zone's daylight-saving rule can change
+ * (US Eastern: 8–14 March and 1–7 November). Days inside that window use the
+ * later of the two offsets, so the clock is not early in either year.
  *
  * Sunset here is worked out the way WLED does (NOAA formula, the Light's
  * location and WLED time zone). It plans the clock times; the Light still
@@ -66,11 +69,21 @@ export type ScheduleRow = {
 const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+function isLeapYear(year: number): boolean {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+}
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) return isLeapYear(year) ? 29 : 28;
+  return MONTH_DAYS[month - 1]!;
+}
+
 function isDate(value: unknown): value is ScheduleDate {
   if (!value || typeof value !== "object") return false;
   const row = value as Partial<ScheduleDate>;
+  const maxDay = row.month === 2 ? 29 : MONTH_DAYS[(row.month ?? 1) - 1];
   return Number.isInteger(row.month) && row.month! >= 1 && row.month! <= 12 &&
-    Number.isInteger(row.day) && row.day! >= 1 && row.day! <= MONTH_DAYS[row.month! - 1]!;
+    Number.isInteger(row.day) && row.day! >= 1 && row.day! <= (maxDay ?? 0);
 }
 
 export function isScheduleRow(value: unknown): value is ScheduleRow {
@@ -130,30 +143,47 @@ export function withScheduleRows(schedule: NightlySchedule, rows: ScheduleRow[])
 
 // ---------------------------------------------------------------- dates
 
-export function dayOfYear(date: ScheduleDate): number {
-  return MONTH_DAYS.slice(0, date.month - 1).reduce((sum, days) => sum + days, 0) + date.day;
+export function dayOfYear(date: ScheduleDate, year: number): number {
+  let n = 0;
+  for (let month = 1; month < date.month; month += 1) n += daysInMonth(year, month);
+  return n + date.day;
 }
 
-export function dateOfDay(doy: number): ScheduleDate {
-  let rest = ((Math.round(doy) - 1) % 365 + 365) % 365 + 1;
-  let month = 0;
-  while (rest > MONTH_DAYS[month]!) { rest -= MONTH_DAYS[month]!; month += 1; }
-  return { month: month + 1, day: rest };
+export function dateOfDay(doy: number, year: number): ScheduleDate {
+  const length = isLeapYear(year) ? 366 : 365;
+  let rest = ((Math.round(doy) - 1) % length + length) % length + 1;
+  let month = 1;
+  while (rest > daysInMonth(year, month)) {
+    rest -= daysInMonth(year, month);
+    month += 1;
+  }
+  return { month, day: rest };
+}
+
+/** A missing 29 February starts on 1 March and ends on 28 February. */
+function endpointDoy(date: ScheduleDate, year: number, end: boolean): number {
+  if (date.day >= 1 && date.day <= daysInMonth(year, date.month)) return dayOfYear(date, year);
+  if (date.month === 2 && date.day === 29) {
+    return end ? dayOfYear({ month: 2, day: 28 }, year) : dayOfYear({ month: 3, day: 1 }, year);
+  }
+  return dayOfYear({ month: date.month, day: Math.min(date.day, daysInMonth(year, date.month)) }, year);
 }
 
 export function formatScheduleDate(date: ScheduleDate): string {
   return `${MONTH_NAMES[date.month - 1]} ${date.day}`;
 }
 
-/** Day numbers (1–365, no leap day) a row covers, in order from its first date. */
-export function rowDays(dates: ScheduleDates | null): number[] {
-  if (!dates) return Array.from({ length: 365 }, (_, index) => index + 1);
-  const from = dayOfYear(dates.from);
-  const to = dayOfYear(dates.to);
+/** Day numbers a row covers in `year`, in order from its first date. Leap years include 29 February. */
+export function rowDays(dates: ScheduleDates | null, year: number): number[] {
+  const length = isLeapYear(year) ? 366 : 365;
+  if (!dates) return Array.from({ length }, (_, index) => index + 1);
+  if (!isLeapYear(year) && dates.from.month === 2 && dates.from.day === 29 && dates.to.month === 2 && dates.to.day === 29) return [];
+  const from = endpointDoy(dates.from, year, false);
+  const to = endpointDoy(dates.to, year, true);
   const out: number[] = [];
   if (from <= to) for (let day = from; day <= to; day += 1) out.push(day);
   else {
-    for (let day = from; day <= 365; day += 1) out.push(day);
+    for (let day = from; day <= length; day += 1) out.push(day);
     for (let day = 1; day <= to; day += 1) out.push(day);
   }
   return out;
@@ -195,11 +225,8 @@ export function wledUtcOffsetMinutes(ntp: Pick<ScheduleNtp, "tz" | "utcOffsetSec
   return (summer ? daylight.offset : standard.offset) + extra;
 }
 
-/**
- * Local sunset, minutes after midnight, for a day of the year. Same NOAA
- * formula and zenith (90.833°) WLED uses. Null in the polar circles.
- */
-export function localSunsetMinutes(ntp: ScheduleNtp, year: number, doy: number): number | null {
+/** UTC sunset in hours, or null in the polar circles and where the sun does not set. */
+function sunsetUtcHours(ntp: ScheduleNtp, doy: number): number | null {
   if (Math.abs(ntp.latitude) > WLED_LATITUDE_POLAR) return null;
   const rad = Math.PI / 180;
   const n = doy;
@@ -217,10 +244,80 @@ export function localSunsetMinutes(ntp: ScheduleNtp, year: number, doy: number):
   const cosH = (Math.cos(90.833 * rad) - sinDec * Math.sin(ntp.latitude * rad)) / (cosDec * Math.cos(ntp.latitude * rad));
   if (cosH < -1 || cosH > 1) return null;
   const h = Math.acos(cosH) / rad / 15;
-  const ut = (((h + ra - 0.06571 * t - 6.622 - lngHour) % 24) + 24) % 24;
-  const date = dateOfDay(doy);
+  return (((h + ra - 0.06571 * t - 6.622 - lngHour) % 24) + 24) % 24;
+}
+
+type ZoneRules = (typeof WLED_TIMEZONES)[number];
+
+function zoneRules(ntp: Pick<ScheduleNtp, "tz">): ZoneRules {
+  return WLED_TIMEZONES.find((row) => row.tz === ntp.tz) ?? WLED_TIMEZONES[0]!;
+}
+
+/** Earliest and latest calendar day a WLED week-of-month rule can fall on. */
+function transitionWindow(rule: WledTimeChangeRule): { start: ScheduleDate; end: ScheduleDate } {
+  if (rule.week === 0) {
+    const shortest = rule.month === 2 ? 28 : MONTH_DAYS[rule.month - 1]!;
+    const longest = rule.month === 2 ? 29 : MONTH_DAYS[rule.month - 1]!;
+    return { start: { month: rule.month, day: shortest - 6 }, end: { month: rule.month, day: longest } };
+  }
+  return {
+    start: { month: rule.month, day: (rule.week - 1) * 7 + 1 },
+    end: { month: rule.month, day: rule.week * 7 },
+  };
+}
+
+function dayAfter(date: ScheduleDate): ScheduleDate {
+  const dim = date.month === 2 ? 29 : MONTH_DAYS[date.month - 1]!;
+  if (date.day < dim) return { month: date.month, day: date.day + 1 };
+  return { month: date.month === 12 ? 1 : date.month + 1, day: 1 };
+}
+
+/** Days that must start a new clock step: the first possible change, and the day after the last. */
+function dstSplitDates(zone: ZoneRules): ScheduleDate[] {
+  if (zone.daylight.offset === zone.standard.offset) return [];
+  const dates: ScheduleDate[] = [];
+  for (const rule of [zone.daylight, zone.standard]) {
+    const window = transitionWindow(rule);
+    dates.push(window.start, dayAfter(window.end));
+  }
+  return dates;
+}
+
+function inTransitionWindow(zone: ZoneRules, date: ScheduleDate): boolean {
+  if (zone.daylight.offset === zone.standard.offset) return false;
+  return [zone.daylight, zone.standard].some((rule) => {
+    const window = transitionWindow(rule);
+    return date.month === rule.month && date.day >= window.start.day && date.day <= window.end.day;
+  });
+}
+
+/**
+ * Local sunset, minutes after midnight, for a day of the year. Same NOAA
+ * formula and zenith (90.833°) WLED uses. `doy` is the real day of `year`
+ * (60 is 29 February in a leap year, 1 March otherwise). Null in the polar circles.
+ */
+export function localSunsetMinutes(ntp: ScheduleNtp, year: number, doy: number): number | null {
+  const ut = sunsetUtcHours(ntp, doy);
+  if (ut == null) return null;
+  const date = dateOfDay(doy, year);
   const utcMs = Date.UTC(year, date.month - 1, date.day) + ut * 3_600_000;
   return ut * 60 + wledUtcOffsetMinutes(ntp, utcMs);
+}
+
+/**
+ * Sunset a repeating row may plan from. Outside the zone's possible
+ * daylight-saving window this is the real local sunset. Inside it, the
+ * later of the standard and daylight offsets, so the clock is not early
+ * in a year whose change falls on a different day.
+ */
+function plannedSunsetMinutes(ntp: ScheduleNtp, year: number, doy: number): number | null {
+  const ut = sunsetUtcHours(ntp, doy);
+  if (ut == null) return null;
+  const date = dateOfDay(doy, year);
+  const zone = zoneRules(ntp);
+  if (!inTransitionWindow(zone, date)) return localSunsetMinutes(ntp, year, doy);
+  const extra = Math.round((ntp.utcOffsetSecs ?? 0) / 60);
+  return ut * 60 + Math.max(zone.daylight.offset, zone.standard.offset) + extra;
 }
 
 // ---------------------------------------------------------------- plan
@@ -319,13 +416,19 @@ export function planSchedule(
       continue;
     }
     if (error && usesSun && /latitude/.test(error)) continue;
+    const zone = zoneRules(schedule.ntp);
+    const splitOn = dstSplitDates(zone);
+    const length = isLeapYear(year) ? 366 : 365;
     const runs: { from: number; to: number; lo: number; hi: number }[] = [];
     let current: (typeof runs)[number] | null = null;
-    for (const day of rowDays(row.dates)) {
-      const sunset = localSunsetMinutes(schedule.ntp, year, day);
+    for (const day of rowDays(row.dates, year)) {
+      const sunset = plannedSunsetMinutes(schedule.ntp, year, day);
       if (sunset === null) continue;
       const at = sunset + row.on.offsetMinutes;
-      if (current && Math.max(current.hi, at) - Math.min(current.lo, at) <= SUNSET_STEP_MINUTES && day === current.to + 1 - (current.to === 365 ? 365 : 0)) {
+      const date = dateOfDay(day, year);
+      const boundary = splitOn.some((edge) => edge.month === date.month && edge.day === date.day);
+      const follows = current != null && day === (current.to === length ? 1 : current.to + 1);
+      if (current && !boundary && follows && Math.max(current.hi, at) - Math.min(current.lo, at) <= SUNSET_STEP_MINUTES) {
         current.to = day; current.hi = Math.max(current.hi, at); current.lo = Math.min(current.lo, at);
       } else {
         current = { from: day, to: day, lo: at, hi: at };
@@ -334,7 +437,7 @@ export function planSchedule(
     }
     const list = runs.map((run) => {
       const fire = Math.min(1439, Math.ceil(run.hi + 1));
-      return { from: dateOfDay(run.from), to: dateOfDay(run.to), hour: Math.floor(fire / 60), minute: fire % 60,
+      return { from: dateOfDay(run.from, year), to: dateOfDay(run.to, year), hour: Math.floor(fire / 60), minute: fire % 60,
         latestMinutesAfter: Math.round(fire - run.lo) };
     });
     steps[row.id] = list;

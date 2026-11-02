@@ -13,6 +13,7 @@ import {
   planPropPlacement,
   validateDeclaredRangesForLight,
   defaultWireframeSpec,
+  parseWireframeSpec,
   type DraftRange,
   type Element,
   type Light,
@@ -52,9 +53,19 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     const kind = parsePropKind(row?.kind);
     const unit = row?.unit === "m" || row?.unit === "ft" ? row.unit : null;
     const pitchMm = typeof row?.pitchMm === "number" ? row.pitchMm : 100;
+    if (row && Object.prototype.hasOwnProperty.call(row, "ledProductId") && row.ledProductId !== null) {
+      if (typeof row.ledProductId !== "string" || !row.ledProductId.trim()) {
+        return c.json({ error: "invalid", message: "That LED product could not be read. Nothing was saved." }, 400);
+      }
+    }
     const ledProductId = typeof row?.ledProductId === "string" && row.ledProductId.trim()
       ? row.ledProductId.trim()
       : null;
+    const wireframeSent = Boolean(row && Object.prototype.hasOwnProperty.call(row, "wireframe") && row.wireframe != null);
+    const wireframe = wireframeSent ? parseWireframeSpec(row?.wireframe) : null;
+    if (wireframeSent && !wireframe) {
+      return c.json({ error: "invalid", message: "That wireframe could not be read. Nothing was saved." }, 400);
+    }
     if (!label || !kind || !unit) {
       return c.json({ error: "invalid", message: "Send a name and a shape. Nothing was saved." }, 400);
     }
@@ -97,9 +108,11 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
       design: fromDrawing ?? (built && built.ok ? built.design : undefined),
       ...(storedLayout ? { layout: storedLayout } : {}),
       ...(sections ? { sections } : {}),
-      ...(kind === "wireframe" && measurements?.shape === "wireframe"
-        ? { wireframe: defaultWireframeSpec({ sides: measurements.sides, pitchMm }) }
-        : built && built.ok && built.wireframe ? { wireframe: built.wireframe } : {}),
+      ...(wireframe
+        ? { wireframe }
+        : kind === "wireframe" && measurements?.shape === "wireframe"
+          ? { wireframe: defaultWireframeSpec({ sides: measurements.sides, pitchMm }) }
+          : built && built.ok && built.wireframe ? { wireframe: built.wireframe } : {}),
     };
     if (!prop.design) {
       return c.json({ error: "invalid-shape", message: "That drawing could not be saved." }, 422);
@@ -118,9 +131,12 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
   });
 
   app.patch("/api/props/:id", async (c) => {
-    const existing = deps.store.loadProps().find((row) => row.id === c.req.param("id"));
-    if (!existing) return c.json({ error: "not_found", message: "That prop is not in the yard." }, 404);
+    // Read the body before the row. A yard move can land while this request
+    // waits on the body; loading first and saving the whole prop would put
+    // the old spot back. Only the fields in the body are written.
     const row = await c.req.json().catch(() => null) as Record<string, unknown> | null;
+    const existing = deps.store.loadProps().find((prop) => prop.id === c.req.param("id"));
+    if (!existing) return c.json({ error: "not_found", message: "That prop is not in the yard." }, 404);
     const label = typeof row?.label === "string" ? row.label.trim().slice(0, 64) : null;
     if (label === "") {
       return c.json({ error: "invalid", message: "Give the prop a name. Nothing was saved." }, 400);
@@ -223,9 +239,9 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
   // reported as moved.
   app.patch("/api/props/:id/yard", async (c) => {
     const id = c.req.param("id");
-    const existing = deps.store.loadProps().find((row) => row.id === id);
-    if (!existing) return c.json({ error: "not_found", message: "That prop is not in the yard." }, 404);
     const row = await c.req.json().catch(() => null) as Record<string, unknown> | null;
+    const existing = deps.store.loadProps().find((prop) => prop.id === id);
+    if (!existing) return c.json({ error: "not_found", message: "That prop is not in the yard." }, 404);
     const yard = row?.yard;
     if (!isPropYardPoint(yard)) {
       return c.json({ error: "invalid", message: "Send where the prop sits, in metres. Nothing was saved." }, 400);

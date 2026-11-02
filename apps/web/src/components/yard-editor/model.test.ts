@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { Prop } from "@nightplot/shared";
+import { applyCommand } from "@nightplot/shared";
 import {
   addPoint,
   addRunLight,
+  drawRows,
   lightMarks,
   moveRunLight,
+  placeWireIn,
   removeRunLight,
   spaceRunEvenly,
+  traceTo,
   addSection,
   draftFromProp,
   lightTotal,
@@ -159,11 +163,90 @@ describe("single lights on a run", () => {
     expect(lightTotal(added.draft.layout)).toBe(total + 1);
   });
 
+  it("keeps a removed light on a window when the width changes", () => {
+    let d = startFrom(newDraft("Window 1"), "window", "m", 0.1);
+    const bottom = runRows(d)[0]!;
+    const before = bottom.lights;
+    d = removeRunLight(d, { edgeId: bottom.edge.id, id: null, station: 0 });
+    expect(d.drawn).toBe(true);
+    expect(runRows(d)[0]!.lights).toBe(before - 1);
+    const layout = d.layout;
+    d = setSize(d, "width", 3);
+    expect(d.layout).toBe(layout);
+    expect(runRows(d)[0]!.lights).toBe(before - 1);
+  });
+
+  it("treats an even spacing and a per-run count as hand edits", () => {
+    let d = startFrom(newDraft("Window 1"), "window", "m", 0.1);
+    const edgeId = runRows(d)[0]!.edge.id;
+    d = setRunLights(d, edgeId, 7);
+    expect(d.drawn).toBe(true);
+    expect(runRows(d)[0]!.lights).toBe(7);
+    const kept = setSize(d, "width", 4);
+    expect(runRows(kept)[0]!.lights).toBe(7);
+
+    const line = startFrom(newDraft("Line 1"), "line", "m", 0.1);
+    const run = runRows(line)[0]!;
+    const spaced = spaceRunEvenly(addRunLight(line, run.edge.id, 0.2).draft, run.edge.id);
+    expect(spaced.drawn).toBe(true);
+    expect(setSize(spaced, "length", 6).layout).toBe(spaced.layout);
+  });
+
   it("keeps placed lights when the run's length is typed", () => {
     const d = line();
     const run = runRows(d)[0]!;
     const added = addRunLight(d, run.edge.id, 0.33).draft;
     const longer = setRunLength(added, run.edge.id, run.lengthM + 1);
     expect(runRows(longer)[0]!.lights).toBe(run.lights + 1);
+  });
+});
+
+describe("tracing, dark runs, and points", () => {
+  function traced() {
+    const d = placeWireIn(startFrom(newDraft("Drawing 1"), "draw", "m", 0.1), 0, 0, "m", 0.1);
+    const first = traceTo(d, { x: 2, y: 0 });
+    const second = traceTo(first.draft, { x: 2, y: 1 });
+    return second.draft;
+  }
+
+  it("traces lit runs from the wire-in and names them in order", () => {
+    const rows = drawRows(traced());
+    expect(rows.map((row) => row.name)).toEqual(["A1", "A2"]);
+    expect(rows[0]!.lengthM).toBeCloseTo(2, 5);
+    expect(rows.every((row) => !row.wire && row.lights > 0)).toBe(true);
+  });
+
+  it("names a dark run and gives it no lights", () => {
+    const d = traced();
+    const edgeId = drawRows(d)[1]!.edge.id;
+    const applied = applyCommand(d.layout!, { type: "setRunDark", edgeId, dark: true });
+    const rows = drawRows({ ...d, layout: applied.layout });
+    expect(rows.map((row) => row.name)).toEqual(["A1", "A2 · dark"]);
+    expect(rows[1]).toMatchObject({ wire: true, lights: 0 });
+    expect(lightTotal(applied.layout)).toBe(rows[0]!.lights);
+  });
+
+  it("splits a run, then deleting the new point joins it back", () => {
+    const d = traced();
+    const edgeId = drawRows(d)[0]!.edge.id;
+    const split = addPoint(d, edgeId, 1, 0);
+    expect(drawRows(split.draft)).toHaveLength(3);
+    const added = split.draft.layout!.corners.find((corner) => !d.layout!.corners.some((row) => row.id === corner.id));
+    const removed = applyCommand(split.draft.layout!, { type: "removePoint", cornerId: added!.id });
+    expect(removed.refused).toBeNull();
+    expect(drawRows({ ...split.draft, layout: removed.layout })).toHaveLength(2);
+    expect(removed.layout.corners).toHaveLength(d.layout!.corners.length);
+  });
+
+  it("types a run length in metres while the prop's unit stays the geometry", () => {
+    let d = startFrom(newDraft("Line 1"), "line", "m", 0.1);
+    const edgeId = runRows(d)[0]!.edge.id;
+    d = setRunLength(d, edgeId, 4);
+    expect(d.layout?.units).toBe("m");
+    expect(runRows(d)[0]!.lengthM).toBeCloseTo(4, 5);
+    const feet = setUnits(d, "ft");
+    expect(feet.layout?.units).toBe("ft");
+    expect(feet.layout?.corners).toEqual(d.layout?.corners);
+    expect(runRows(feet)[0]!.lengthM).toBeCloseTo(4, 5);
   });
 });

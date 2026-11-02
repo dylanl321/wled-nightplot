@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { Look, LooksDocument, Prop } from "@nightplot/shared";
+import { defaultWireframeSpec, type Look, type LooksDocument, type Prop } from "@nightplot/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { YardEditor, type YardEditorProps } from "./yard-editor";
-import { newDraft, startFrom, measurementsOf } from "./model";
+import { lightTotal, measurementsOf, newDraft, setCount, startFrom } from "./model";
 
 function triangleProp(): Prop {
   const d = startFrom(newDraft("Peak"), "triangle", "m", 0.1);
@@ -98,5 +98,134 @@ describe("YardEditor", () => {
     expect(screen.getByText(/Leave without saving/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     expect(screen.getByRole("heading", { name: "Peak" })).toBeTruthy();
+  });
+
+  it("a rename reply does not put an older yard point back", async () => {
+    let release: (response: Response) => void = () => {};
+    const gate = new Promise<Response>((resolve) => { release = resolve; });
+    const seen: { url: string; body: { yard?: { x: number; y: number }; label?: string } }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) as { yard?: { x: number; y: number }; label?: string } : {};
+      seen.push({ url: String(url), body });
+      if (String(url).endsWith("/api/props/peak") && init?.method === "PATCH") return gate;
+      if (String(url).includes("/yard")) {
+        return new Response(JSON.stringify({ prop: { ...triangleProp(), label: "Peak", yard: body.yard } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }));
+    const prop = { ...triangleProp(), yard: { x: 2, y: 1 } };
+    setup({ props: [prop] });
+    fireEvent.click(screen.getAllByRole("button", { name: /Peak/ })[0]!);
+    const name = document.getElementById("ye-name") as HTMLInputElement;
+    name.focus();
+    fireEvent.change(name, { target: { value: "Box" } });
+    fireEvent.keyDown(name, { key: "Enter" });
+    const x = document.getElementById("ye-x") as HTMLInputElement;
+    x.focus();
+    fireEvent.change(x, { target: { value: "3" } });
+    fireEvent.keyDown(x, { key: "Enter" });
+    await waitFor(() => expect(seen.some((call) => call.url.includes("/yard") && call.body.yard?.x === 3)).toBe(true));
+    release(new Response(JSON.stringify({ prop: { ...prop, label: "Box", yard: { x: 2, y: 1 } } }), { status: 200 }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Box" })).toBeTruthy());
+    const y = document.getElementById("ye-y") as HTMLInputElement;
+    y.focus();
+    fireEvent.change(y, { target: { value: "0" } });
+    fireEvent.keyDown(y, { key: "Enter" });
+    await waitFor(() => {
+      const yards = seen.filter((call) => call.url.includes("/yard"));
+      expect(yards[yards.length - 1]?.body).toEqual({ yard: { x: 3, y: 0 } });
+    });
+    expect(screen.getByRole("heading", { name: "Box" })).toBeTruthy();
+  });
+
+  it("sends the wireframe and LED product when a prop is duplicated", async () => {
+    const wireframe = { ...defaultWireframeSpec({ sides: 4, pitchMm: 80 }), locks: [{ role: "post.0", physicalIndex: 4 }] };
+    const prop: Prop = {
+      ...triangleProp(),
+      id: "well",
+      label: "Well",
+      kind: "wireframe",
+      wireframe,
+      design: { ...triangleProp().design!, ledProductId: "led-porch" },
+    };
+    setup({ props: [prop] });
+    fireEvent.click(screen.getAllByRole("button", { name: /Well/ })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: "Duplicate" }));
+    await waitFor(() => expect(calls.some((call) => call.method === "POST" && call.url.endsWith("/api/props"))).toBe(true));
+    const post = calls.find((call) => call.method === "POST" && call.url.endsWith("/api/props"));
+    expect(post?.body).toMatchObject({ label: "Well copy", ledProductId: "led-porch", wireframe });
+  });
+});
+
+describe("prop canvas behaviour", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1440 });
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({}), { status: 200 })));
+  });
+
+  function windowProp(): Prop {
+    const d = setCount(startFrom(newDraft("Box"), "window", "m", 0.1), 80);
+    return {
+      id: "box",
+      label: "Box",
+      kind: "window",
+      elementIds: [],
+      layout: d.layout!,
+      design: { unit: "m", pitchMm: 100, ledProductId: null, measurements: measurementsOf(d), ledCount: lightTotal(d.layout), edges: [] },
+      yard: { x: 0, y: 0 },
+    };
+  }
+
+  function openCanvas() {
+    return render(
+      <YardEditor
+        props={[windowProp()]}
+        attachments={[]}
+        lights={[]}
+        lightViews={[]}
+        sessions={[]}
+        looks={looks}
+        looksReady={false}
+        yardClear={false}
+        query={{ prop: "box", view: "edit" }}
+      />,
+    );
+  }
+
+  it("switches Trace and Select, and the next run between lit and dark", () => {
+    openCanvas();
+    fireEvent.click(screen.getByRole("button", { name: "Trace" }));
+    expect(screen.getByRole("button", { name: "Trace" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText(/empty space for the next run/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Next: Lit" }));
+    expect(screen.getByRole("button", { name: "Next: Dark" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Select / move" }));
+    expect(screen.getByRole("button", { name: "Select / move" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("types a run length in metres and a per-run light count, and can delete the run", () => {
+    openCanvas();
+    const run = document.querySelector("[data-run]") as HTMLButtonElement;
+    const runName = run.textContent ?? "";
+    fireEvent.click(run);
+    const length = document.getElementById("ye-rlen") as HTMLInputElement;
+    length.focus();
+    fireEvent.change(length, { target: { value: "3" } });
+    fireEvent.keyDown(length, { key: "Enter" });
+    expect(document.querySelector(`[data-run="${run.dataset.run}"]`)?.parentElement?.textContent).toContain("3.00 m");
+
+    fireEvent.click(screen.getByRole("button", { name: runName }));
+    const lights = document.getElementById("ye-rlights") as HTMLInputElement;
+    lights.focus();
+    fireEvent.change(lights, { target: { value: "7" } });
+    fireEvent.keyDown(lights, { key: "Enter" });
+    expect(screen.getByText(/Edited by hand/)).toBeTruthy();
+    expect(document.querySelector(`[data-run="${run.dataset.run}"]`)?.parentElement?.textContent).toContain("7");
+
+    fireEvent.click(screen.getByText("Delete run"));
+    expect(document.querySelector(`[data-run="${run.dataset.run}"]`)).toBeNull();
   });
 });

@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { Prop } from "@nightplot/shared";
+import { defaultWireframeSpec, type Prop } from "@nightplot/shared";
 import { createApp } from "./app.ts";
 import { FileBackupStore } from "./store/backup-store.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
@@ -367,6 +367,152 @@ describe("prop yard point", () => {
     leds = null;
     const missed = await app.request("/api/yard/live") as Response;
     expect((await missed.json() as { lights: { leds: null }[] }).lights[0]?.leds).toBeNull();
+  });
+
+  it("a rename that is still reading does not put back a yard move", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-overlap-"));
+    const store = new FileLightsStore(join(dir, "lights.json"));
+    const app = appWith(store, dir);
+    const created = await app.request("/api/props", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: "Peak", kind: "window", unit: "m", pitchMm: 100, measurements: { shape: "window", width: 2, height: 2 } }),
+    });
+    const prop = (await created.json() as { prop: Prop }).prop;
+    await app.request(`/api/props/${prop.id}/yard`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ yard: { x: 2, y: 0 } }),
+    });
+
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const stream = new ReadableStream({
+      async pull(controller) {
+        await gate;
+        controller.enqueue(new TextEncoder().encode(JSON.stringify({ label: "Box" })));
+        controller.close();
+      },
+    });
+    const pending = app.request(new Request(`http://nightplot.test/api/props/${prop.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: stream,
+      duplex: "half",
+    } as RequestInit));
+    await new Promise((resolve) => setImmediate(resolve));
+    const moved = await app.request(`/api/props/${prop.id}/yard`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ yard: { x: 3, y: 0 } }),
+    });
+    expect(moved.status).toBe(200);
+    release();
+    const renamed = await pending;
+    expect(renamed.status).toBe(200);
+    const saved = store.loadProps().find((row) => row.id === prop.id);
+    expect(saved?.label).toBe("Box");
+    expect(saved?.yard).toEqual({ x: 3, y: 0 });
+  });
+
+  it("a yard move that is still reading does not put back a rename", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-overlap-yard-"));
+    const store = new FileLightsStore(join(dir, "lights.json"));
+    const app = appWith(store, dir);
+    const created = await app.request("/api/props", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: "Peak", kind: "window", unit: "m", pitchMm: 100, measurements: { shape: "window", width: 2, height: 2 } }),
+    });
+    const prop = (await created.json() as { prop: Prop }).prop;
+    await app.request(`/api/props/${prop.id}/yard`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ yard: { x: 2, y: 0 } }),
+    });
+
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const stream = new ReadableStream({
+      async pull(controller) {
+        await gate;
+        controller.enqueue(new TextEncoder().encode(JSON.stringify({ yard: { x: 3, y: 0 } })));
+        controller.close();
+      },
+    });
+    const pending = app.request(new Request(`http://nightplot.test/api/props/${prop.id}/yard`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: stream,
+      duplex: "half",
+    } as RequestInit));
+    await new Promise((resolve) => setImmediate(resolve));
+    const renamed = await app.request(`/api/props/${prop.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: "Box" }),
+    });
+    expect(renamed.status).toBe(200);
+    release();
+    const moved = await pending;
+    expect(moved.status).toBe(200);
+    const saved = store.loadProps().find((row) => row.id === prop.id);
+    expect(saved?.label).toBe("Box");
+    expect(saved?.yard).toEqual({ x: 3, y: 0 });
+  });
+
+  it("keeps a copied wireframe and LED product, and refuses one it cannot read", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-copy-wire-"));
+    const store = new FileLightsStore(join(dir, "lights.json"));
+    const app = appWith(store, dir);
+    const wireframe = { ...defaultWireframeSpec({ sides: 4, pitchMm: 80 }), locks: [{ role: "post.0", physicalIndex: 4 }] };
+    const created = await app.request("/api/props", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        label: "Well copy",
+        kind: "wireframe",
+        unit: "m",
+        pitchMm: 80,
+        ledProductId: "led-porch",
+        measurements: { shape: "wireframe", sides: 4, side: 1, height: 2 },
+        wireframe,
+      }),
+    });
+    const createdBody = await created.json() as { prop?: Prop; message?: string };
+    expect(created.status, JSON.stringify(createdBody)).toBe(200);
+    expect(createdBody.prop?.design?.ledProductId).toBe("led-porch");
+    expect(createdBody.prop?.wireframe).toMatchObject({ sides: 4, pitchMm: 80, locks: [{ role: "post.0", physicalIndex: 4 }] });
+
+    const badFrame = await app.request("/api/props", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        label: "Nope",
+        kind: "wireframe",
+        unit: "m",
+        pitchMm: 80,
+        measurements: { shape: "wireframe", sides: 4, side: 1, height: 2 },
+        wireframe: { template: "nope" },
+      }),
+    });
+    expect(badFrame.status).toBe(400);
+    expect(store.loadProps().some((row) => row.label === "Nope")).toBe(false);
+
+    const badProduct = await app.request("/api/props", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        label: "Num",
+        kind: "window",
+        unit: "m",
+        pitchMm: 100,
+        ledProductId: 12,
+        measurements: { shape: "window", width: 2, height: 2 },
+      }),
+    });
+    expect(badProduct.status).toBe(400);
+    expect(store.loadProps().some((row) => row.label === "Num")).toBe(false);
   });
 
   it("keeps a house beside the lights file, and a missing file is no house", async () => {

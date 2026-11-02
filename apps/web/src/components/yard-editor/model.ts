@@ -525,7 +525,7 @@ export function setRunLights(draft: Draft, edgeId: string, lights: number): Draf
     // Freeze every run at what it shows now, then change this one.
     for (const row of runRows(draft)) layout = setEdgeLights(layout, row.edge.id, row.lights);
   }
-  return { ...draft, count: null, layout: setEdgeLights(layout, edgeId, lights) };
+  return { ...draft, drawn: true, count: null, layout: setEdgeLights(layout, edgeId, lights) };
 }
 
 export function countRunFromLength(draft: Draft, edgeId: string): Draft {
@@ -652,7 +652,7 @@ export function renameForShape(label: string, shape: ShapeId, taken: readonly st
 /** A light picked on the canvas: its stored id once the run keeps each light, else its place on the run. */
 export type LightPick = { edgeId: string; id: string | null; station: number };
 
-/** Each light's spot, numbered from 0 at the wire-in. */
+/** Each light's spot. `index` counts from 0; the numbered dots label from 1 at the wire-in. */
 export function lightMarks(draft: Draft): StringLight[] {
   return draft.layout ? stringLights(draft.layout) : [];
 }
@@ -717,12 +717,12 @@ export function removeRunLight(draft: Draft, pick: LightPick): Draft {
   const frozen = freeze(draft);
   const locked = lockedPick(frozen, pick);
   if (!locked) return draft;
-  return { ...frozen, layout: removePlacedLight(locked.layout, pick.edgeId, locked.id) };
+  return { ...frozen, drawn: true, layout: removePlacedLight(locked.layout, pick.edgeId, locked.id) };
 }
 
 /** Keep every light on the run, and spread them evenly along it. */
 export function spaceRunEvenly(draft: Draft, edgeId: string): Draft {
   if (!draft.layout) return draft;
   const layout = spaceEvenly(draft.layout, edgeId);
-  return layout === draft.layout ? draft : { ...draft, layout };
+  return layout === draft.layout ? draft : { ...draft, drawn: true, layout };
 }
