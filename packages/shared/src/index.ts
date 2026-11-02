@@ -9,6 +9,7 @@ export {
   EFFECT_FUNCTIONS,
   EFFECT_NODE_COUNT_MAX,
   EFFECT_NODE_COUNT_MIN,
+  EFFECT_SHAPE_FIELDS,
   effectAllowedVars,
   evaluateEffectExpr,
   mergeEffectValues,
@@ -20,6 +21,7 @@ export {
   sampleBoundEffect,
   sampleEffect,
   sampleEffectAt,
+  sampleShapeEffect,
   type EffectBinding,
   type EffectChannels,
   type EffectDefinition,
@@ -29,6 +31,8 @@ export {
   type EffectFrame,
   type EffectParameter,
   type EffectPixel,
+  type EffectShapeField,
+  type EffectShapeInputs,
 } from "./effect/evaluate.ts";
 export type {
   BackupData,
@@ -547,6 +551,29 @@ export {
   type LayoutUnits,
   type SnapGuide,
 } from "./prop/layout.ts";
+export {
+  readPropShape,
+  shapeDistancesFrom,
+  shapeWeldToleranceM,
+  SHAPE_CORNER_MAX_DEG,
+  SHAPE_MIRROR_MATCH_PITCH,
+  SHAPE_MIRROR_MIN_SCORE,
+  type ReadShapeOptions,
+  type ShapeFace,
+  type ShapeFields,
+  type ShapeGroup,
+  type ShapeGroupKind,
+  type ShapeLight,
+  type ShapeLink,
+  type ShapeMirror,
+  type ShapeMirrorAxis,
+  type ShapeOverride,
+  type ShapePoint,
+  type ShapePointKind,
+  type ShapeProfile,
+  type ShapeRole,
+  type ShapeSide,
+} from "./prop/shape.ts";
 export { parseTraceLength, type TraceLength, type TraceLengthResult } from "./prop/trace-length.ts";
 export { snap, traceAim, SNAP_ALIGN_PX, SNAP_POINT_PX, type SnapContext, type SnapHit, type SnapPoint, type TraceGuide } from "./prop/snap.ts";
 export {

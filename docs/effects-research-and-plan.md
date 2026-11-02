@@ -60,6 +60,7 @@ Whitespace is allowed between tokens. The parser refuses leftover tokens, unknow
 | `n` | Node count. Discrete. Does **not** resample smoothly |
 | `pi` | π |
 | `tau` | 2π |
+| `x` `y` `r` `a` `d` `along` `ring` `h` | Shape inputs from the shape reader, each 0–1 (see `docs/shape-aware-effects.md`). They read as 0 when a frame has no shape |
 
 Portable artwork uses `u` and `t` (and parameters). `i` and `n` stay available for count-off style patterns; those looks change when the strip length changes, by design.
 
