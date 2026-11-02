@@ -6,7 +6,8 @@
  */
 import { lookIncludesProp, type Look, type LookStyle } from "./look.ts";
 import { propStyle, sampleLookStyle, sectionStyle, sectionsFollow } from "./look-design.ts";
-import { pathEdgeIndexRanges } from "./prop/sections.ts";
+import { layoutStrings } from "./prop/layout.ts";
+import { sectionIndexRanges } from "./prop/sections.ts";
 import { yardLightPositions } from "./prop/space.ts";
 import type { Prop } from "./prop/types.ts";
 
@@ -18,13 +19,14 @@ export function drawnYard(props: readonly Prop[]): DrawnProp[] {
   const all = yardLightPositions(props);
   return props.flatMap((prop) => {
     if (!prop.layout) return [];
-    const ranges = pathEdgeIndexRanges(prop.layout);
+    // A light is in the first section whose runs or typed ranges hold its index.
+    const firstString = layoutStrings(prop.layout)[0]?.id ?? "s1";
+    const reports = sectionIndexRanges(prop.layout, prop.sections ?? []);
     const mine = all.filter((light) => light.propId === prop.id);
     const lights: DrawnLight[] = mine.map((light) => {
-      const edge = ranges.find((row) => row.edgeId === light.edgeId && (row.stringId === light.stringId || row.stringId === "s1"));
-      const inside = edge && light.index >= edge.start && light.index < edge.stop;
-      const section = inside ? prop.sections?.find((row) => row.edgeIds.includes(light.edgeId)) : undefined;
-      return { x: light.x, y: light.y, z: light.z, sectionId: section?.id ?? null };
+      const section = reports.find((report) => report.ranges.some((range) =>
+        (range.stringId ?? firstString) === light.stringId && light.index >= range.start && light.index < range.stop));
+      return { x: light.x, y: light.y, z: light.z, sectionId: section?.sectionId ?? null };
     });
     const sections: DrawnSection[] = (prop.sections ?? []).flatMap((section) => {
       const idx = lights.map((light, index) => (light.sectionId === section.id ? index : -1)).filter((index) => index >= 0);

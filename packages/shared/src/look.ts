@@ -47,11 +47,27 @@ export type LookStyle = {
   color3?: string;
   /** Which way the effect runs. Absent is from light 1 (`rev` and `mi` off). */
   dir?: LookDirection;
+  /**
+   * The way the effect should travel over the prop's shape (toward the
+   * centre, clockwise, upward…). `dir` holds the WLED direction worked out
+   * from it for this section; copying the style to another section works it
+   * out again there. Absent is plain wiring order.
+   */
+  motion?: ShapeMotion;
   /** Segment brightness 1–255 (WLED `seg.bri`). Absent is full. */
   opacity?: number;
 };
 
-export type LookDirection = "fwd" | "rev" | "mirror";
+/** `mirror` runs from both ends to the middle (WLED `mi`); `mirror-rev` from the middle out (`mi` and `rev`). */
+export type LookDirection = "fwd" | "rev" | "mirror" | "mirror-rev";
+export const LOOK_DIRECTIONS: readonly LookDirection[] = ["fwd", "rev", "mirror", "mirror-rev"];
+
+export const SHAPE_MOTIONS = ["wire", "inward", "outward", "clockwise", "counter", "up", "down"] as const;
+export type ShapeMotion = (typeof SHAPE_MOTIONS)[number];
+
+export function isShapeMotion(value: unknown): value is ShapeMotion {
+  return typeof value === "string" && (SHAPE_MOTIONS as readonly string[]).includes(value);
+}
 
 export type LookOverride = {
   style: LookStyle;
@@ -172,7 +188,8 @@ export function isLookStyle(value: unknown): value is LookStyle {
   if (!parseHexColor(row.color ?? "")) return false;
   if (row.color2 !== undefined && !parseHexColor(row.color2)) return false;
   if (row.color3 !== undefined && !parseHexColor(row.color3)) return false;
-  if (row.dir !== undefined && row.dir !== "fwd" && row.dir !== "rev" && row.dir !== "mirror") return false;
+  if (row.dir !== undefined && !LOOK_DIRECTIONS.includes(row.dir)) return false;
+  if (row.motion !== undefined && !isShapeMotion(row.motion)) return false;
   if (row.opacity !== undefined && (!isByte(row.opacity) || row.opacity < 1)) return false;
   return true;
 }
@@ -254,6 +271,7 @@ export function normalizeLookStyle(style: LookStyle): LookStyle {
     ...(color2 ? { color2 } : {}),
     ...(color3 ? { color3 } : {}),
     ...(style.dir && style.dir !== "fwd" ? { dir: style.dir } : {}),
+    ...(style.motion && style.motion !== "wire" ? { motion: style.motion } : {}),
     ...(style.opacity !== undefined && style.opacity < 255 ? { opacity: style.opacity } : {}),
   };
 }
@@ -597,8 +615,8 @@ export function buildLookPreset(look: Look, targets: readonly LookTarget[], rgbw
         sx: style.sx,
         ix: style.ix,
         pal: style.pal,
-        rev: style.dir === "rev",
-        mi: style.dir === "mirror",
+        rev: style.dir === "rev" || style.dir === "mirror-rev",
+        mi: style.dir === "mirror" || style.dir === "mirror-rev",
       };
     }),
   };

@@ -64,7 +64,7 @@ export function styleFromSegment(segment: WledNativeSegment, bri: number): LookS
     color: hexOf(col[0]), color2: hexOf(col[1]), color3: hexOf(col[2]),
   };
   if (segment.rev === true) style.dir = "rev";
-  if (segment.mi === true) style.dir = "mirror";
+  if (segment.mi === true) style.dir = segment.rev === true ? "mirror-rev" : "mirror";
   const opacity = num("bri", 255);
   if (opacity !== 255) style.opacity = opacity;
   return style;

@@ -238,3 +238,13 @@
 .lk canvas.thumb { width: 100%; aspect-ratio: 16/8; display: block; background: var(--night); }
 .lk .page { padding-bottom: 60px; }
 .lk-look .main { height: 100%; }
+
+/* Shape panel: what the shape reader found, and designing over it. */
+.lk .shape { display: flex; flex-direction: column; gap: 10px; }
+.lk .shape .shapeview { width: 100%; max-height: 220px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--muted); touch-action: manipulation; }
+.lk .shape .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 999px; vertical-align: -1px; margin: 0 2px 0 4px; }
+.lk .shape .shapeblock { display: flex; flex-direction: column; gap: 8px; }
+.lk .shape .likelist { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow: auto; }
+.lk .shape .check { display: flex; align-items: center; gap: 8px; min-height: 36px; font-size: 13px; }
+.lk .shape .check input { width: 18px; height: 18px; }
+.lk .shape .linkbtn { background: none; border: 0; padding: 0; color: var(--pick); text-decoration: underline; font-size: 12px; cursor: pointer; }

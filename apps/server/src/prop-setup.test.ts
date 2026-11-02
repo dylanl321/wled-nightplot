@@ -552,4 +552,43 @@ describe("prop yard point", () => {
     });
     expect((await cleared.json() as { house: null }).house).toBeNull();
   });
+  it("saves sections and shape fixes from the Looks page without the drawing, and refuses bad fixes", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-shape-"));
+    const store = new FileLightsStore(join(dir, "lights.json"));
+    const app = appWith(store, dir);
+    const created = await app.request("/api/props", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: "Window", kind: "window", unit: "m", pitchMm: 100, measurements: { shape: "window", width: 1, height: 1 } }),
+    });
+    const prop = (await created.json() as { prop: Prop }).prop;
+    const layout = prop.layout!;
+    const sections = [{ id: "shape.1", name: "Border", edgeIds: layout.run.map((edge) => edge.id), pinnedRanges: [] }];
+    const saved = await app.request(`/api/props/${prop.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sections, shapeRoles: [{ edgeId: layout.run[0]!.id, role: "inside" }] }),
+    });
+    expect(saved.status).toBe(200);
+    const stored = store.loadProps().find((row) => row.id === prop.id)!;
+    expect(stored.sections).toEqual(sections);
+    expect(stored.shapeRoles).toEqual([{ edgeId: layout.run[0]!.id, role: "inside" }]);
+    expect(stored.layout).toEqual(layout);
+
+    const cleared = await app.request(`/api/props/${prop.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ shapeRoles: [] }),
+    });
+    expect(cleared.status).toBe(200);
+    expect(store.loadProps().find((row) => row.id === prop.id)!.shapeRoles).toBeUndefined();
+    expect(store.loadProps().find((row) => row.id === prop.id)!.sections).toEqual(sections);
+
+    const bad = await app.request(`/api/props/${prop.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ shapeRoles: [{ edgeId: "e1", role: "middle" }] }),
+    });
+    expect(bad.status).toBe(400);
+  });
 });

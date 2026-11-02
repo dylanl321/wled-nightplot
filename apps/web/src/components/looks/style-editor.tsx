@@ -120,8 +120,8 @@ export function StyleEditor({ style, effects, palettes, mixed, isLook, recent, c
         <summary>Direction and more</summary>
         <div className="foldbody">
           <div className="seg3" role="group" aria-label="Direction">
-            {([["fwd", "→ From light 1"], ["rev", "← From the end"], ["mirror", "↔ Mirror"]] as const).map(([dir, label]) => (
-              <button type="button" key={dir} aria-pressed={(style.dir ?? "fwd") === dir} onClick={() => onPatch({ dir })}>{label}</button>
+            {([["fwd", "→ From light 1"], ["rev", "← From the end"], ["mirror", "→← To the middle"], ["mirror-rev", "←→ From the middle"]] as const).map(([dir, label]) => (
+              <button type="button" key={dir} aria-pressed={(style.dir ?? "fwd") === dir} onClick={() => onPatch({ dir, motion: undefined })}>{label}</button>
             ))}
           </div>
           <div className="btnrow">

@@ -408,7 +408,11 @@ export function sampleLookStyle(style: LookStyle, index: number, count: number, 
   let i = index;
   let u = count > 1 ? index / (count - 1) : 0;
   if (style.dir === "rev") { u = 1 - u; i = count - 1 - index; }
-  if (style.dir === "mirror") { u = u < 0.5 ? u * 2 : (1 - u) * 2; i = Math.round((u * (count - 1)) / 2); }
+  if (style.dir === "mirror" || style.dir === "mirror-rev") {
+    u = u < 0.5 ? u * 2 : (1 - u) * 2;
+    if (style.dir === "mirror-rev") u = 1 - u;
+    i = Math.round((u * (count - 1)) / 2);
+  }
   const c1 = rgb(style.color), c2 = rgb(style.color2);
   const sp = 0.15 + (style.sx / 255) * 2.4, k = style.ix / 255;
   const level = (style.opacity ?? 255) / 255;
