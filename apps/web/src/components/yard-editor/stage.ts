@@ -67,10 +67,20 @@ export type Scene = {
   badges?: boolean;
   /** A point picked on a phone, drawn with a ring. */
   selectedPoint?: string | null;
+  /** Point under the pointer in Select. */
+  hoverPoint?: string | null;
+  /** Screen box while dragging a selection. */
+  boxSelect?: { x0: number; y0: number; x1: number; y1: number } | null;
+  /** Runs in the current selection, so each can show a midpoint handle. */
+  pickedRuns?: string[];
+  /** Points in the current selection. */
+  pickedPoints?: string[];
   /** Screen boxes labels must stay off, such as Delete point. */
   obstacles?: ScreenBox[];
   /** Filled while drawing so a caption can be tapped. */
   labelHits?: { edgeId: string; box: ScreenBox }[];
+  /** Captions, badges, and corners, so a menu can sit clear of them. */
+  decor?: ScreenBox[];
   /** Where run labels may sit. The phone tool row is above `top`. */
   labelBounds?: { top: number; bottom: number; left: number; right: number };
 };
@@ -294,6 +304,15 @@ export function drawScene(ctx: CanvasRenderingContext2D, view: View, scene: Scen
   const labels: LabelBox[] = [];
   if (inProp) {
     for (const p of scene.props) drawProp(ctx, view, scene, c, p, 1, true, false, labels);
+    if (scene.boxSelect) {
+      const box = scene.boxSelect;
+      ctx.save();
+      ctx.strokeStyle = c.pick; ctx.fillStyle = c.pick; ctx.globalAlpha = 0.12;
+      ctx.fillRect(Math.min(box.x0, box.x1), Math.min(box.y0, box.y1), Math.abs(box.x1 - box.x0), Math.abs(box.y1 - box.y0));
+      ctx.globalAlpha = 0.9; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+      ctx.strokeRect(Math.min(box.x0, box.x1), Math.min(box.y0, box.y1), Math.abs(box.x1 - box.x0), Math.abs(box.y1 - box.y0));
+      ctx.restore();
+    }
     if (scene.dots) drawDots(ctx, view, c, scene.dots);
     if (scene.guide) for (const p of scene.props) drawGuide(ctx, view, c, p, scene.guide);
   } else {
@@ -328,12 +347,15 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
     const x = sx(p.start.x + p.x), y = sy(p.start.y + p.y);
     const spot = wireInLabelBox(x, y, tw, scene.phone ? 120 : 16);
     blocked.push(spot);
+    scene.decor?.push(spot);
   }
   if (scoped) {
     for (const corner of p.corners) {
       const x = sx(corner.x + p.x), y = sy(corner.y + p.y);
       const rad = scene.selectedPoint === corner.id ? 16 : 12;
-      blocked.push({ x: x - rad, y: y - rad, w: rad * 2, h: rad * 2 });
+      const pad = { x: x - rad, y: y - rad, w: rad * 2, h: rad * 2 };
+      blocked.push(pad);
+      scene.decor?.push(pad);
     }
   }
   for (const e of p.edges) {
@@ -391,6 +413,7 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
       blocked.push(cap);
       labels.push(cap);
       scene.labelHits?.push({ edgeId: e.id, box: cap });
+      scene.decor?.push(cap);
       ctx.fillStyle = c.card; ctx.globalAlpha = 0.92; ctx.fillRect(cap.x, cap.y, cap.w, cap.h); ctx.globalAlpha = 1;
       ctx.fillStyle = isSel ? c.pick : c.fg; ctx.fillText(t, cap.x + 4, cap.y + 12);
       if (e.badge && (e.wire || scene.badges)) {
@@ -398,6 +421,7 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
         const badgeBox = { x: mark.x - mark.r, y: mark.y - mark.r, w: mark.r * 2, h: mark.r * 2 };
         blocked.push(badgeBox);
         labels.push(badgeBox);
+        scene.decor?.push(badgeBox);
         ctx.beginPath(); ctx.arc(mark.x, mark.y, mark.r, 0, Math.PI * 2);
         ctx.fillStyle = c.card; ctx.fill();
         ctx.strokeStyle = darkWire ? c.quiet : c.lit; ctx.lineWidth = 1.5; ctx.stroke();
@@ -406,15 +430,21 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
         ctx.fillText(e.badge, mark.x, mark.y + 0.5);
         ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
       }
+      if (scoped && (scene.selectedRun === e.id || scene.pickedRuns?.includes(e.id))) {
+        const hx = (ax + bx) / 2, hy = (ay + by) / 2;
+        ctx.fillStyle = c.card; ctx.strokeStyle = c.pick; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.rect(hx - 6, hy - 6, 12, 12); ctx.fill(); ctx.stroke();
+      }
     }
   }
   if (scoped) {
     for (const corner of p.corners) {
       const x = sx(corner.x + p.x), y = sy(corner.y + p.y);
       const isStart = p.start && Math.abs(p.start.x - corner.x) < 1e-9 && Math.abs(p.start.y - corner.y) < 1e-9;
-      if (scene.selectedPoint === corner.id) {
-        ctx.beginPath(); ctx.arc(x, y, POINT_TOUCH_PX / 2, 0, Math.PI * 2);
-        ctx.strokeStyle = c.pick; ctx.lineWidth = 3; ctx.stroke();
+      const picked = scene.selectedPoint === corner.id || scene.pickedPoints?.includes(corner.id);
+      if (picked || scene.hoverPoint === corner.id) {
+        ctx.beginPath(); ctx.arc(x, y, picked ? 16 : 14, 0, Math.PI * 2);
+        ctx.strokeStyle = c.pick; ctx.lineWidth = picked ? 3 : 1.5; ctx.stroke();
       }
       ctx.fillStyle = c.card; ctx.strokeStyle = isStart ? c.primary : c.pick; ctx.lineWidth = 2;
       const r = crowded && !isStart ? 2.5 : 5;
@@ -619,6 +649,37 @@ function distSeg(px: number, py: number, ax: number, ay: number, bx: number, by:
   let t = l ? ((px - ax) * dx + (py - ay) * dy) / l : 0;
   t = Math.max(0, Math.min(1, t));
   return [Math.hypot(px - (ax + dx * t), py - (ay + dy * t)), t];
+}
+
+/** Points inside the screen box, and runs whose midpoint is inside it. */
+export function selectInRect(
+  view: View,
+  prop: DrawProp,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): { points: string[]; runs: string[] } {
+  const left = Math.min(x0, x1);
+  const right = Math.max(x0, x1);
+  const top = Math.min(y0, y1);
+  const bottom = Math.max(y0, y1);
+  const inside = (x: number, y: number) => x >= left && x <= right && y >= top && y <= bottom;
+  const points = prop.corners.filter((corner) => inside(view.sx(corner.x + prop.x), view.sy(corner.y + prop.y))).map((corner) => corner.id);
+  const runs = prop.edges.filter((edge) => {
+    const mx = view.sx((edge.ax + edge.bx) / 2 + prop.x);
+    const my = view.sy((edge.ay + edge.by) / 2 + prop.y);
+    return inside(mx, my);
+  }).map((edge) => edge.id);
+  return { points, runs };
+}
+
+export function hitMid(view: View, prop: DrawProp, edgeId: string, px: number, py: number, slop = 12): boolean {
+  const edge = prop.edges.find((row) => row.id === edgeId);
+  if (!edge) return false;
+  const mx = view.sx((edge.ax + edge.bx) / 2 + prop.x);
+  const my = view.sy((edge.ay + edge.by) / 2 + prop.y);
+  return Math.hypot(mx - px, my - py) <= slop;
 }
 
 export function hitRun(view: View, p: DrawProp, px: number, py: number, slop = 10): { id: string; d: number; t: number } | null {

@@ -77,6 +77,9 @@ jobs:
       - name: Trace a string at 1440×900 and 390×844
         run: pnpm --filter @nightplot/web test:trace
 
+      - name: Select mode at 1440×900 and 390×844
+        run: pnpm --filter @nightplot/web test:select
+
       - name: Yard at 1440×900 and 390×844
         run: pnpm --filter @nightplot/web test:yard3d
 

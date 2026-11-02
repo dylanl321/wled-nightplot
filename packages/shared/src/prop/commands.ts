@@ -7,7 +7,9 @@
 import {
   continueToCorner,
   continueToPoint,
+  deleteRun,
   ensureStrings,
+  splitRun,
   stringById,
   stringEndId,
   type LayoutCorner,
@@ -43,7 +45,15 @@ export type LayoutCommand =
     /** Ids the merge retired. Restoring takes them off the retired list. */
     retired: string[];
   }
-  | { type: "replaceEdge"; edge: LayoutEdge; retiredAdd: string[]; retiredDrop: string[] };
+  | { type: "replaceEdge"; edge: LayoutEdge; retiredAdd: string[]; retiredDrop: string[] }
+  | { type: "splitAt"; edgeId: string; x: number; y: number }
+  | { type: "splitEqual"; edgeId: string; parts: number }
+  | { type: "deleteEdge"; edgeId: string }
+  | { type: "disconnect"; cornerId: string }
+  | { type: "setRunsDark"; edgeIds: string[] }
+  | { type: "deleteSelection"; edgeIds: string[]; cornerIds: string[] }
+  | { type: "removePoints"; cornerIds: string[] }
+  | { type: "restoreLayout"; corners: LayoutCorner[]; strings: LayoutString[]; retiredIds?: string[] };
 
 export type AppliedCommand = {
   layout: PropLayout;
@@ -71,6 +81,22 @@ export function applyCommand(layout: PropLayout, command: LayoutCommand): Applie
       return unmerge(layout, command);
     case "replaceEdge":
       return replaceEdge(layout, command);
+    case "splitAt":
+      return splitAt(layout, command);
+    case "splitEqual":
+      return splitEqual(layout, command);
+    case "deleteEdge":
+      return deleteEdge(layout, command);
+    case "disconnect":
+      return disconnectPoint(layout, command);
+    case "setRunsDark":
+      return setRunsDark(layout, command);
+    case "deleteSelection":
+      return deleteSelection(layout, command);
+    case "removePoints":
+      return removePoints(layout, command);
+    case "restoreLayout":
+      return restoreLayout(layout, command);
     default: {
       const _never: never = command;
       return _never;
@@ -349,6 +375,129 @@ function commitStrings(
     return rest;
   }
   return { ...next, retiredIds };
+}
+
+function splitAt(layout: PropLayout, command: Extract<LayoutCommand, { type: "splitAt" }>): AppliedCommand {
+  const base = ensureStrings(layout);
+  const split = splitRun(base, command.edgeId, command.x, command.y);
+  if (!split.cornerId) return unchanged(base);
+  return withUndo(base, split.layout);
+}
+
+function splitEqual(layout: PropLayout, command: Extract<LayoutCommand, { type: "splitEqual" }>): AppliedCommand {
+  const base = ensureStrings(layout);
+  if (!Number.isInteger(command.parts) || command.parts < 2) return unchanged(base);
+  const found = findEdge(base, command.edgeId);
+  if (!found || found.edge.kind === "hidden") return unchanged(base);
+  const from = base.corners.find((corner) => corner.id === found.edge.from);
+  const to = base.corners.find((corner) => corner.id === found.edge.to);
+  if (!from || !to) return unchanged(base);
+  let current = base;
+  let edgeId = command.edgeId;
+  for (let part = 1; part < command.parts; part += 1) {
+    const t = part / command.parts;
+    const split = splitRun(current, edgeId, from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);
+    if (!split.cornerId) return unchanged(base);
+    current = ensureStrings(split.layout);
+    const next = (current.strings ?? []).flatMap((string) => string.run).find((edge) => edge.from === split.cornerId);
+    if (!next) return unchanged(base);
+    edgeId = next.id;
+  }
+  return withUndo(base, current);
+}
+
+function deleteEdge(layout: PropLayout, command: Extract<LayoutCommand, { type: "deleteEdge" }>): AppliedCommand {
+  const base = ensureStrings(layout);
+  const owner = (base.strings ?? []).find((string) => string.run.some((edge) => edge.id === command.edgeId));
+  if (!owner) return unchanged(base);
+  const next = deleteRun(base, command.edgeId);
+  return withUndo(base, next);
+}
+
+function disconnectPoint(layout: PropLayout, command: Extract<LayoutCommand, { type: "disconnect" }>): AppliedCommand {
+  const base = ensureStrings(layout);
+  const corner = base.corners.find((row) => row.id === command.cornerId);
+  const outgoing = (base.strings ?? []).some((string) => string.run.some((edge) => edge.from === command.cornerId));
+  if (!corner || !outgoing) return unchanged(base);
+  const duplicateId = freshId(base, "c");
+  const corners = [...base.corners, { id: duplicateId, x: corner.x, y: corner.y }];
+  const strings = (base.strings ?? []).map((string) => ({
+    ...string,
+    run: string.run.map((edge) => edge.from === command.cornerId ? { ...edge, from: duplicateId } : edge),
+  }));
+  return withUndo(base, commitStrings(base, strings, corners, base.retiredIds));
+}
+
+function deleteSelection(layout: PropLayout, command: Extract<LayoutCommand, { type: "deleteSelection" }>): AppliedCommand {
+  let current = ensureStrings(layout);
+  for (const edgeId of command.edgeIds) current = deleteRun(current, edgeId);
+  for (const cornerId of command.cornerIds) {
+    const applied = removePoint(current, { type: "removePoint", cornerId });
+    if (applied.inverse) current = applied.layout;
+  }
+  return withUndo(ensureStrings(layout), current);
+}
+
+function setRunsDark(layout: PropLayout, command: Extract<LayoutCommand, { type: "setRunsDark" }>): AppliedCommand {
+  const base = ensureStrings(layout);
+  let current = base;
+  let changed = false;
+  for (const edgeId of command.edgeIds) {
+    const found = findEdge(current, edgeId);
+    if (!found || found.edge.kind === "hidden") continue;
+    const dark = found.edge.kind !== "wire";
+    const applied = setRunDark(current, { type: "setRunDark", edgeId, dark });
+    if (!applied.inverse) continue;
+    current = applied.layout;
+    changed = true;
+  }
+  if (!changed) return unchanged(base);
+  return withUndo(base, current);
+}
+
+function removePoints(layout: PropLayout, command: Extract<LayoutCommand, { type: "removePoints" }>): AppliedCommand {
+  let current = ensureStrings(layout);
+  for (const cornerId of command.cornerIds) {
+    const applied = removePoint(current, { type: "removePoint", cornerId });
+    if (!applied.inverse) return unchanged(ensureStrings(layout));
+    current = applied.layout;
+  }
+  return withUndo(ensureStrings(layout), current);
+}
+
+function restoreLayout(layout: PropLayout, command: Extract<LayoutCommand, { type: "restoreLayout" }>): AppliedCommand {
+  const base = ensureStrings(layout);
+  const inverse: LayoutCommand = {
+    type: "restoreLayout",
+    corners: base.corners.map((corner) => ({ ...corner })),
+    strings: (base.strings ?? []).map((string) => ({ ...string, run: string.run.map((edge) => ({ ...edge })) })),
+    retiredIds: base.retiredIds ? [...base.retiredIds] : undefined,
+  };
+  const committed = commitStrings(base, command.strings, command.corners, command.retiredIds ?? []);
+  const { retiredIds: _omit, ...rest } = committed;
+  const next = command.retiredIds?.length ? { ...rest, retiredIds: [...command.retiredIds] } : rest;
+  return done(next, inverse);
+}
+
+function withUndo(before: PropLayout, after: PropLayout): AppliedCommand {
+  const prior = ensureStrings(before);
+  return done(after, {
+    type: "restoreLayout",
+    corners: prior.corners.map((corner) => ({ ...corner })),
+    strings: (prior.strings ?? []).map((string) => ({ ...string, run: string.run.map((edge) => ({ ...edge })) })),
+    retiredIds: prior.retiredIds ? [...prior.retiredIds] : undefined,
+  });
+}
+
+function freshId(layout: PropLayout, prefix: string): string {
+  const used = new Set<string>([
+    ...layout.corners.map((corner) => corner.id),
+    ...(layout.strings ?? []).flatMap((string) => [string.id, string.startId, ...string.run.map((edge) => edge.id)]),
+    ...(layout.retiredIds ?? []),
+  ]);
+  let n = 1;
+  while (used.has(`${prefix}${n}`)) n += 1;
+  return `${prefix}${n}`;
 }
 
 function done(layout: PropLayout, inverse: LayoutCommand): AppliedCommand {
