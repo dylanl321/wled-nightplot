@@ -1492,7 +1492,7 @@ export function YardEditor(init: YardEditorProps) {
     const kind = multi ? "multi" : corner ? "point" : run ? "run" : null;
     if (!kind) return;
     const deleteReason = corner && kind === "point" ? wireInDeleteReason(corner) : null;
-    const menuH = kind === "run" ? 276 : kind === "point" ? (deleteReason ? 148 : 112) : 116;
+    const menuH = kind === "run" ? 240 : kind === "point" ? (deleteReason ? 148 : 112) : 116;
     const at = placeFloat(px, py, 200, menuH, [
       { x: px - 8, y: py + 40 },
       { x: Math.max(8, px - 96), y: py + 40 },
