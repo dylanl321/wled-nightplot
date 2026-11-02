@@ -21,6 +21,9 @@ import {
   layoutBox,
   layoutStrings,
   moveCorner,
+  pinRings,
+  pinSlidesFree,
+  setLengthPin,
   METRES_PER_FOOT,
   parseTraceLength,
   planPropPlacement,
@@ -174,6 +177,21 @@ function writeStored(key: string, value: string) {
 
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
+const KEY_ROWS: [string, string][] = [
+  ["T", "Trace"],
+  ["E or V", "Select"],
+  ["D", "Next run lit or dark"],
+  ["S", "Snap"],
+  ["F", "Fit"],
+  ["Esc", "Clear the selection, or leave"],
+  ["Enter", "Finish the chain"],
+  ["Backspace", "Remove the last point"],
+  ["Delete", "Delete the selection"],
+  ["0–9", "Type a length"],
+  ["⌘/Ctrl Z", "Undo. Shift is redo"],
+  ["Space drag", "Pan. The middle button does too"],
+];
+
 export function YardEditor(init: YardEditorProps) {
   const [, bump] = useReducer((n: number) => n + 1, 0);
   const render = useCallback(() => bump(), []);
@@ -214,6 +232,9 @@ export function YardEditor(init: YardEditorProps) {
     selPoints: [] as string[],
     selRuns: [] as string[],
     menu: null as EditMenuState | null,
+    help: false,
+    loupe: null as { px: number; py: number; ax: number; ay: number } | null,
+    pinRings: [] as { x: number; y: number; r: number }[],
     hoverPoint: null as string | null,
     box: null as { x0: number; y0: number; x1: number; y1: number } | null,
     /** A single light picked on the prop canvas, and where it is while it is dragged. */
@@ -325,6 +346,59 @@ export function YardEditor(init: YardEditorProps) {
   const coloursRef = useRef<ReturnType<typeof readColours> | null>(null);
   const lit = () => coloursRef.current?.lit || "#d4a574";
 
+  function drawLoupe(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, finger: { px: number; py: number; ax: number; ay: number }) {
+    const { px, py } = finger;
+    const dpr = size.current.dpr || 1;
+    const zoom = 2.2;
+    const radius = 48;
+    const hud = { x: 4, y: s.phone ? 130 : 44, w: 200, h: 78 };
+    const hitsHud = (cx: number, cy: number) => cx - radius < hud.x + hud.w && cx + radius > hud.x && cy - radius < hud.y + hud.h && cy + radius > hud.y;
+    const spots = [
+      { x: px + radius + 18, y: py - radius - 10 },
+      { x: px - radius - 18, y: py - radius - 10 },
+      { x: px, y: py - radius - 28 },
+      { x: px, y: py + radius + 36 },
+    ];
+    const spot = spots.find((row) => !hitsHud(row.x, row.y)) ?? spots[2]!;
+    let cx = spot.x;
+    let cy = spot.y;
+    cx = Math.max(radius + 8, Math.min(size.current.W - radius - 8, cx));
+    cy = Math.max(radius + 8, Math.min(size.current.H - radius - 8, cy));
+    const src = radius / zoom;
+    const buffer = loupeBuf.current ?? (loupeBuf.current = document.createElement("canvas"));
+    if (buffer.width !== canvas.width || buffer.height !== canvas.height) {
+      buffer.width = canvas.width;
+      buffer.height = canvas.height;
+    }
+    const copy = buffer.getContext("2d");
+    if (!copy) return;
+    copy.setTransform(1, 0, 0, 1, 0, 0);
+    copy.clearRect(0, 0, buffer.width, buffer.height);
+    copy.drawImage(canvas, 0, 0);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.clip();
+    const ax = finger.ax;
+    const ay = finger.ay;
+    ctx.drawImage(buffer, (ax - src) * dpr, (ay - src) * dpr, src * 2 * dpr, src * 2 * dpr, cx - radius, cy - radius, radius * 2, radius * 2);
+    ctx.restore();
+    ctx.save();
+    ctx.strokeStyle = coloursRef.current?.pick ?? "#7ee0d0";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - 7, cy);
+    ctx.lineTo(cx + 7, cy);
+    ctx.moveTo(cx, cy - 7);
+    ctx.lineTo(cx, cy + 7);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   const draw = useCallback(() => {
     const canvas = cv.current;
     const host = wrap.current;
@@ -381,6 +455,21 @@ export function YardEditor(init: YardEditorProps) {
       } : undefined,
     }, coloursRef.current, size.current.dpr);
     if (s.band && coloursRef.current) drawRubber(ctx, view(), s.band, coloursRef.current);
+    if (s.pinRings.length && coloursRef.current) {
+      const ringView = view();
+      ctx.save();
+      ctx.strokeStyle = coloursRef.current.pick;
+      ctx.globalAlpha = 0.85;
+      ctx.setLineDash([5, 4]);
+      ctx.lineWidth = 1.5;
+      for (const ring of s.pinRings) {
+        ctx.beginPath();
+        ctx.arc(ringView.sx(ring.x), ringView.sy(ring.y), Math.max(1, ring.r * s.cam.ppm), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    if (s.loupe) drawLoupe(ctx, canvas, s.loupe);
     if (inProp() && s.guides.length && coloursRef.current) {
       const tail = s.draft?.layout ? tailOf(s.draft.layout) : null;
       drawSnapGuides(ctx, view(), s.guides, tail ? { x: tail.corner.x, y: tail.corner.y } : null, coloursRef.current.pick);
@@ -939,6 +1028,7 @@ export function YardEditor(init: YardEditorProps) {
     | { kind: "points"; ids: string[]; origins: { id: string; x: number; y: number }[]; wx: number; wy: number; px: number; py: number; moved: boolean; pushed: boolean }
     | { kind: "box"; px: number; py: number; moved: boolean; shift: boolean }
     | { kind: "mid"; edgeId: string; px: number; py: number; moved: boolean }
+    | { kind: "trace"; px: number; py: number; moved: boolean; wireIn: boolean }
     | { kind: "point"; id: string; hit: ToolHit; px: number; py: number; moved: boolean }
     | { kind: "light"; pick: LightPick; px: number; py: number; moved: boolean }
     | { kind: "ghost"; gx: number; gy: number; wx: number; wy: number; px: number; py: number; moved: boolean };
@@ -946,6 +1036,8 @@ export function YardEditor(init: YardEditorProps) {
   const holdRef = useRef<{ timer: number; fired: boolean } | null>(null);
   const pointers = useRef(new Map<number, { px: number; py: number }>());
   const pinch = useRef<{ d: number; mx: number; my: number; cam: Camera } | null>(null);
+  const spacePan = useRef(false);
+  const loupeBuf = useRef<HTMLCanvasElement | null>(null);
 
   function localPoint(e: { clientX: number; clientY: number }) {
     const r = cv.current!.getBoundingClientRect();
@@ -981,6 +1073,10 @@ export function YardEditor(init: YardEditorProps) {
         if (drag.moved && before) s.draft = JSON.parse(before) as Draft;
       }
       clearHold();
+      s.loupe = null;
+      s.band = null;
+      s.pinRings = [];
+      showTrace(null);
       if (drag?.kind === "light") s.slide = null;
       if (drag?.kind === "prop" && drag.pushed) {
         const q = s.props.find((x) => x.id === drag.id);
@@ -994,6 +1090,11 @@ export function YardEditor(init: YardEditorProps) {
       return;
     }
     if (pointers.current.size > 2) return;
+    if (e.button === 1) e.preventDefault();
+    if (e.pointerType === "mouse" && (e.button === 1 || spacePan.current)) {
+      dragRef.current = { kind: "pan", cam: { ...s.cam }, px, py, moved: false };
+      return;
+    }
     const vw = view();
     const start = { px, py, moved: false };
     if (inProp()) {
@@ -1348,7 +1449,7 @@ export function YardEditor(init: YardEditorProps) {
     const kind = multi ? "multi" : corner ? "point" : run ? "run" : null;
     if (!kind) return;
     const deleteReason = corner && kind === "point" ? wireInDeleteReason(corner) : null;
-    const menuH = kind === "run" ? 208 : kind === "point" ? (deleteReason ? 148 : 112) : 80;
+    const menuH = kind === "run" ? 240 : kind === "point" ? (deleteReason ? 148 : 112) : 80;
     const at = placeFloat(px, py, 200, menuH, [
       { x: px - 8, y: py + 40 },
       { x: Math.max(8, px - 96), y: py + 40 },
@@ -1373,7 +1474,7 @@ export function YardEditor(init: YardEditorProps) {
       s.selPoint = null;
       s.selPoints = [];
       const edge = layoutStrings(ensureStrings(layout)).flatMap((string) => string.run).find((row) => row.id === run);
-      s.menu = { kind: "run", id: run, x: at.x, y: at.y, wx: vw.wx(px), wy: vw.wy(py), dark: edge?.kind === "wire" };
+      s.menu = { kind: "run", id: run, x: at.x, y: at.y, wx: vw.wx(px), wy: vw.wy(py), dark: edge?.kind === "wire", pinned: edge?.lengthPinned === true };
     } else return;
     render();
   }
@@ -1385,6 +1486,10 @@ export function YardEditor(init: YardEditorProps) {
     s.menu = null;
     if (action.type === "length") {
       openLenEdit(action.id);
+      return;
+    }
+    if (action.type === "pin") {
+      edit((d) => d.layout ? { ...d, layout: setLengthPin(d.layout, action.id, action.pinned) } : d);
       return;
     }
     if (action.type === "join") {
@@ -1558,6 +1663,12 @@ export function YardEditor(init: YardEditorProps) {
     const start = { px, py, moved: false };
     const shape = draftDrawable();
     if (!d.layout || !shape || shape.corners.length === 0 || (d.shape === "draw" && d.layout.corners.length === 1 && countLayout(d.layout).edges.length === 0 && !d.layout.corners.length)) {
+      if (pointerType !== "mouse" && (s.tool === "trace" || d.shape === "draw")) {
+        dragRef.current = { kind: "trace", ...start, wireIn: true };
+        s.loupe = { px, py, ax: px, ay: py };
+        draw();
+        return;
+      }
       dragRef.current = {
         kind: "pan",
         cam: { ...s.cam },
@@ -1708,6 +1819,17 @@ export function YardEditor(init: YardEditorProps) {
         }
       };
     }
+    if (finger && tracingAllowed() && button === 0 && !ci) {
+      dragRef.current = { kind: "trace", ...start, wireIn: false };
+      s.loupe = { px, py, ax: px, ay: py };
+      updateBand(px, py, 0);
+      if (s.band) {
+        const aim = view();
+        s.loupe = { px, py, ax: aim.sx(s.band.bx), ay: aim.sy(s.band.by) };
+        draw();
+      }
+      return;
+    }
     if (s.tool === "move" && !s.activeSection && button === 0) {
       dragRef.current = { kind: "box", ...start, shift };
       return;
@@ -1750,6 +1872,18 @@ export function YardEditor(init: YardEditorProps) {
     if (Math.hypot(px - drag.px, py - drag.py) > (e.pointerType === "touch" ? TAP_SLOP : 3)) drag.moved = true;
     if (cv.current && drag.moved && (drag.kind === "corner" || drag.kind === "run" || drag.kind === "points" || drag.kind === "mid")) cv.current.style.cursor = "move";
     s.pointer = { px, py };
+    if (drag.kind === "trace") {
+      s.loupe = { px, py, ax: px, ay: py };
+      if (drag.wireIn) draw();
+      else {
+        updateBand(px, py, 0);
+        if (s.band) {
+          s.loupe = { px, py, ax: vw.sx(s.band.bx), ay: vw.sy(s.band.by) };
+          draw();
+        }
+      }
+      return;
+    }
     if (!drag.moved && drag.kind === "pan" && tracingAllowed()) updateBand(px, py, drag.button === 2 ? 2 : 0, e.altKey, e.shiftKey);
     if (!drag.moved) return;
     if (drag.kind === "mid") {
@@ -1791,8 +1925,9 @@ export function YardEditor(init: YardEditorProps) {
       const dy = vw.wy(py) - drag.wy;
       let layout = s.draft.layout;
       if (layout) {
-        layout = moveCorner(layout, drag.fromId, drag.fx + dx, drag.fy + dy);
-        layout = moveCorner(layout, drag.toId, drag.tx + dx, drag.ty + dy);
+        const moving = new Set([drag.fromId, drag.toId]);
+        layout = moveCorner(layout, drag.fromId, drag.fx + dx, drag.fy + dy, { free: pinSlidesFree(layout, drag.fromId, moving) });
+        layout = moveCorner(layout, drag.toId, drag.tx + dx, drag.ty + dy, { free: pinSlidesFree(layout, drag.toId, moving) });
         s.draft = { ...s.draft, drawn: true, layout };
         s.draftDirty = true;
       }
@@ -1808,7 +1943,8 @@ export function YardEditor(init: YardEditorProps) {
       const dx = vw.wx(px) - drag.wx;
       const dy = vw.wy(py) - drag.wy;
       let layout = s.draft.layout;
-      for (const origin of drag.origins) layout = moveCorner(layout, origin.id, origin.x + dx, origin.y + dy);
+      const moving = new Set(drag.origins.map((origin) => origin.id));
+      for (const origin of drag.origins) layout = moveCorner(layout, origin.id, origin.x + dx, origin.y + dy, { free: pinSlidesFree(layout, origin.id, moving) });
       s.draft = { ...s.draft, drawn: true, layout };
       s.draftDirty = true;
       draw();
@@ -1822,6 +1958,7 @@ export function YardEditor(init: YardEditorProps) {
         dragRef.current = { kind: "corner", id: drag.id, px: drag.px, py: drag.py, moved: true };
         const x = snapV(vw.wx(px));
         const y = snapV(vw.wy(py));
+        s.pinRings = s.draft.layout ? pinRings(s.draft.layout, drag.id) : [];
         s.draft = dragCorner(s.draft, drag.id, x, y);
         s.draftDirty = true;
         showCoords(px, py, `${fmt(x)}, ${fmt(y)} from the wire-in`);
@@ -1875,6 +2012,7 @@ export function YardEditor(init: YardEditorProps) {
       const snapped = aimSnap(raw, { ...snapContext(drag.id, e.altKey), shift: e.shiftKey });
       s.guides = snapped.guides;
       const x = snapped.point.x, y = snapped.point.y;
+      s.pinRings = s.draft.layout ? pinRings(s.draft.layout, drag.id) : [];
       s.draft = dragCorner(s.draft, drag.id, x, y);
       s.draftDirty = true;
       showCoords(px, py, `${fmt(x)}, ${fmt(y)} from the wire-in`);
@@ -1905,6 +2043,32 @@ export function YardEditor(init: YardEditorProps) {
     if (!s.placing) hideCoords();
     const drag = dragRef.current;
     dragRef.current = null;
+    s.pinRings = [];
+    if (drag?.kind === "trace") {
+      const { px, py } = localPoint(e);
+      const inside = e.type !== "pointercancel" && px >= 0 && py >= 0 && px <= size.current.W && py <= size.current.H;
+      s.loupe = null;
+      if (!inside) {
+        s.band = null;
+        showTrace(null);
+        draw();
+        return;
+      }
+      if (drag.wireIn) {
+        if (s.draft) {
+          s.tool = "trace";
+          traceRef.current = { ...traceRef.current, mode: "trace", gesture: "tracing", nextRun: s.nextRun };
+          const vw = view();
+          edit((x) => placeWireIn({ ...x, label: renameForShape(x.label, "draw", s.props.map((p) => p.label)) }, snapV(vw.wx(px)), snapV(vw.wy(py)), s.units, s.pitchDefault));
+          if (s.phone) s.sheet = "";
+          render();
+        }
+        return;
+      }
+      traceClick(0, px, py);
+      return;
+    }
+    s.loupe = null;
     if (drag?.kind === "box") {
       const shape = draftDrawable();
       const { px, py } = localPoint(e);
@@ -1984,6 +2148,7 @@ export function YardEditor(init: YardEditorProps) {
       if (p?.yard) void moveProp(p.id, p.yard.x, p.yard.y, false);
     } else if (drag.kind === "corner") {
       s.guides = [];
+      s.pinRings = [];
       if (drag.moved) render();
       else s.dpast.pop();
     }
@@ -2106,8 +2271,26 @@ export function YardEditor(init: YardEditorProps) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const el = document.activeElement;
-      const typing = /INPUT|SELECT|TEXTAREA/.test(el?.tagName ?? "");
+      const typing = /INPUT|SELECT|TEXTAREA/.test(el?.tagName ?? "") || (el instanceof HTMLElement && el.isContentEditable);
+      const typingLength = !typing && inProp() && traceRef.current.gesture === "lengthEntry";
+      if (e.code === "Space" && !typing && !typingLength) {
+        e.preventDefault();
+        spacePan.current = true;
+        return;
+      }
+      if (typing) return;
       const mod = e.ctrlKey || e.metaKey;
+      if (e.key === "?" && inProp()) {
+        e.preventDefault();
+        s.help = !s.help;
+        render();
+        return;
+      }
+      if (e.key === "Escape" && s.help) {
+        s.help = false;
+        render();
+        return;
+      }
       if (mod && e.key.toLowerCase() === "z" && !typing) {
         e.preventDefault();
         void (e.shiftKey ? redo() : undo());
@@ -2118,7 +2301,6 @@ export function YardEditor(init: YardEditorProps) {
         void saveProp();
         return;
       }
-      if (typing) return;
       if (inProp()) {
         const tracingKeys = tracingAllowed() && !mod && (traceRef.current.gesture === "lengthEntry" || /^[0-9#]$/.test(e.key));
         if (tracingKeys) {
@@ -2207,12 +2389,12 @@ export function YardEditor(init: YardEditorProps) {
           const id = s.selRun;
           s.selRun = null;
           if (id) edit((d) => removeRun(d, id));
-        } else if (e.key === "t") {
+        } else if (e.key === "e" || e.key === "v") { s.tool = "move"; s.band = null; showTrace(null); render(); }
+        else if (e.key === "t") {
           s.tool = "trace";
           traceRef.current = { ...traceRef.current, mode: "trace", gesture: "tracing", nextRun: s.nextRun };
           render();
-        } else if (e.key === "v") { s.tool = "move"; s.band = null; showTrace(null); render(); }
-        else if (e.key === "a") { s.tool = "split"; render(); }
+        } else if (e.key === "a") { s.tool = "split"; render(); }
         else if (e.key === "f") fitDraft();
         return;
       }
@@ -2243,8 +2425,15 @@ export function YardEditor(init: YardEditorProps) {
         void moveProp(p.id, at.x + dx, at.y + dy);
       }
     }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code === "Space") spacePan.current = false;
+    }
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    document.addEventListener("keyup", onKeyUp);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("keyup", onKeyUp);
+    };
   });
 
   // ---------- panels ----------
@@ -2567,6 +2756,7 @@ export function YardEditor(init: YardEditorProps) {
     );
     return (
       <>
+        {s.phone ? <button type="button" className="btn link" onClick={() => { s.help = true; render(); }}>Keys</button> : null}
         {s.selPoints.length + s.selRuns.length > 1 ? (
           <div className="runbox pointsheet">
             <h2>{s.selPoints.length > 1 ? `${s.selPoints.length} points selected` : `${s.selRuns.length} runs selected`}</h2>
@@ -2749,7 +2939,7 @@ export function YardEditor(init: YardEditorProps) {
           <button type="button" className="btn primary" disabled={rows.length === 0} onClick={() => void saveProp()}>{s.draftIsNew ? "Save and place" : "Save"}</button>
           <button type="button" className="btn" onClick={() => cancelProp()}>Cancel</button>
         </div>
-        <p className="note keys">Keys: V select, T trace, A add point, Delete removes the selected run, ⌘/Ctrl+S saves, Esc leaves.</p>
+        <p className="note keys">Press ? for the keys. T traces, E or V selects, D switches lit and dark.</p>
       </>
     );
   }
@@ -2795,7 +2985,12 @@ export function YardEditor(init: YardEditorProps) {
     const nudge = (sign: number) => edit((x) => setRunLength(x, r.edge.id, Math.max(step, r.lengthM + sign * step)));
     return (
       <div className="runbox">
-        <h2>Selected run · {r.name}</h2>
+        <div className="hrow">
+          <h2>Selected run · {r.name}</h2>
+          <button type="button" className="btn" aria-pressed={r.edge.lengthPinned === true} onClick={() => edit((x) => x.layout ? { ...x, layout: setLengthPin(x.layout, r.edge.id, r.edge.lengthPinned !== true) } : x)}>
+            {r.edge.lengthPinned ? "Pinned" : "Pin"}
+          </button>
+        </div>
         <label className="f">Length ({uLabel()})
           <span className="stepper">
             <button type="button" aria-label={`Shorter by ${stepText}`} onClick={() => nudge(-1)}>−</button>
@@ -2995,10 +3190,10 @@ export function YardEditor(init: YardEditorProps) {
             onPointerMove={onPointerMove}
             onPointerUp={endPointer}
             onPointerCancel={endPointer}
+            onAuxClick={(e) => e.preventDefault()}
             onContextMenu={(e) => {
-              if (!inProp()) return;
               e.preventDefault();
-              if (s.tool !== "move") return;
+              if (!inProp() || s.tool !== "move") return;
               const { px, py } = localPoint(e);
               openMenu(px, py);
             }}
@@ -3177,6 +3372,21 @@ export function YardEditor(init: YardEditorProps) {
           {panel}
         </aside>
       </div>
+      {s.help ? (
+        <div className="keyshade" onClick={() => { s.help = false; render(); }}>
+          <div className="keycard" role="dialog" aria-label="Keys" onClick={(e) => e.stopPropagation()}>
+            <div className="hrow">
+              <h2>Keys</h2>
+              <button type="button" className="btn" onClick={() => { s.help = false; render(); }}>Close</button>
+            </div>
+            <ul>
+              {KEY_ROWS.map(([key, what]) => (
+                <li key={key}><kbd>{key}</kbd><span>{what}</span></li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

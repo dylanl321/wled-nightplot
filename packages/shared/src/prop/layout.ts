@@ -39,6 +39,8 @@ export type LayoutEdge = {
   to: string;
   kind: RunKind;
   lockedLengthM?: number;
+  /** The pin. Dragging either end stays on a circle of this length. */
+  lengthPinned?: boolean;
   /**
    * A light count the operator typed for this lit run. It wins over
    * round(length ÷ pitch) for counts, sections, and Attach. A later length
@@ -926,9 +928,101 @@ function applyCornerMap(layout: PropLayout, mapId: (id: string) => string): Prop
   return writeStrings({ ...layout, ...retired, corners }, strings);
 }
 
-export function moveCorner(layout: PropLayout, id: string, x: number, y: number): PropLayout {
-  const moved = mapEdges(layout, (edge) => edge.from === id || edge.to === id ? { ...edge, lockedLengthM: undefined } : edge);
-  const shifted = { ...moved, corners: layout.corners.map((corner) => corner.id === id ? { ...corner, x, y } : corner) };
+/** Pin a run at its current length, or take the pin off. A typed length is kept when the pin comes off. */
+export function setLengthPin(layout: PropLayout, edgeId: string, pinned: boolean): PropLayout {
+  return mapEdges(ensureStrings(layout), (edge) => {
+    if (edge.id !== edgeId || (edge.kind !== "lit" && edge.kind !== "wire")) return edge;
+    if (!pinned) {
+      if (!edge.lengthPinned) return edge;
+      const { lengthPinned: _drop, ...rest } = edge;
+      return rest;
+    }
+    const length = edge.lockedLengthM ?? edgeLengthM(layout, edge);
+    if (!(length > 0)) return edge;
+    return { ...edge, lengthPinned: true, lockedLengthM: length };
+  });
+}
+
+/** Circles a dragged point has to stay on, one per pinned run that uses it. */
+export function pinRings(layout: PropLayout, cornerId: string): { x: number; y: number; r: number }[] {
+  const base = ensureStrings(layout);
+  const corner = base.corners.find((row) => row.id === cornerId);
+  if (!corner) return [];
+  const rings: { x: number; y: number; r: number }[] = [];
+  for (const string of base.strings ?? []) {
+    for (const edge of string.run) {
+      if (!edge.lengthPinned || (edge.from !== cornerId && edge.to !== cornerId)) continue;
+      const other = base.corners.find((row) => row.id === (edge.from === cornerId ? edge.to : edge.from));
+      if (!other) continue;
+      const radius = edge.lockedLengthM ?? Math.hypot(corner.x - other.x, corner.y - other.y);
+      if (radius > 0) rings.push({ x: other.x, y: other.y, r: radius });
+    }
+  }
+  return rings;
+}
+
+function projectOntoCircle(cx: number, cy: number, radius: number, x: number, y: number, fallback: { x: number; y: number }): { x: number; y: number } {
+  const dx = x - cx;
+  const dy = y - cy;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 1e-9) {
+    const fx = fallback.x - cx;
+    const fy = fallback.y - cy;
+    const previous = Math.hypot(fx, fy) || 1;
+    return { x: cx + (fx / previous) * radius, y: cy + (fy / previous) * radius };
+  }
+  return { x: cx + (dx / dist) * radius, y: cy + (dy / dist) * radius };
+}
+
+function circleCrossings(a: { x: number; y: number; r: number }, b: { x: number; y: number; r: number }): { x: number; y: number }[] {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 1e-9 || dist > a.r + b.r + 1e-6 || dist < Math.abs(a.r - b.r) - 1e-6) return [];
+  const along = (a.r * a.r - b.r * b.r + dist * dist) / (2 * dist);
+  const rise = Math.sqrt(Math.max(0, a.r * a.r - along * along));
+  const mx = a.x + (along * dx) / dist;
+  const my = a.y + (along * dy) / dist;
+  if (rise < 1e-8) return [{ x: mx, y: my }];
+  const rx = (-dy * rise) / dist;
+  const ry = (dx * rise) / dist;
+  return [{ x: mx + rx, y: my + ry }, { x: mx - rx, y: my - ry }];
+}
+
+/** A rigid move: every pinned neighbour of this point is moving with it. */
+export function pinSlidesFree(layout: PropLayout, cornerId: string, moving: ReadonlySet<string>): boolean {
+  const base = ensureStrings(layout);
+  for (const string of base.strings ?? []) {
+    for (const edge of string.run) {
+      if (!edge.lengthPinned || (edge.from !== cornerId && edge.to !== cornerId)) continue;
+      const other = edge.from === cornerId ? edge.to : edge.from;
+      if (!moving.has(other)) return false;
+    }
+  }
+  return true;
+}
+
+/** The point a drag asked for, pulled onto the pinned runs that share this corner. */
+export function constrainToPinned(layout: PropLayout, id: string, x: number, y: number): { x: number; y: number } {
+  const corner = layout.corners.find((row) => row.id === id);
+  const rings = pinRings(layout, id);
+  if (!corner || rings.length === 0) return { x, y };
+  const first = rings[0]!;
+  if (rings.length === 1) return projectOntoCircle(first.x, first.y, first.r, x, y, corner);
+  const hits = circleCrossings(first, rings[1]!);
+  if (hits.length === 0) return projectOntoCircle(first.x, first.y, first.r, x, y, corner);
+  hits.sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
+  return hits[0]!;
+}
+
+export function moveCorner(layout: PropLayout, id: string, x: number, y: number, options?: { free?: boolean }): PropLayout {
+  const point = options?.free ? { x, y } : constrainToPinned(layout, id, x, y);
+  const moved = mapEdges(layout, (edge) => {
+    if ((edge.from !== id && edge.to !== id) || edge.lengthPinned || edge.lockedLengthM == null) return edge;
+    const { lockedLengthM: _drop, ...rest } = edge;
+    return rest;
+  });
+  const shifted = { ...moved, corners: layout.corners.map((corner) => corner.id === id ? { ...corner, x: point.x, y: point.y } : corner) };
   return clampManualLights(shifted);
 }
 

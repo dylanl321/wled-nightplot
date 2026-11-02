@@ -80,6 +80,9 @@ jobs:
       - name: Select mode at 1440×900 and 390×844
         run: pnpm --filter @nightplot/web test:select
 
+      - name: Trace touch, keys, and a locked run
+        run: pnpm --filter @nightplot/web test:phase4
+
       - name: Yard at 1440×900 and 390×844
         run: pnpm --filter @nightplot/web test:yard3d
 

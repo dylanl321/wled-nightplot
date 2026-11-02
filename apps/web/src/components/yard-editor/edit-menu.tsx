@@ -7,7 +7,7 @@ export type EditMenuTarget = { id: string; label: string };
 
 export type EditMenuState =
   | { kind: "point"; id: string; x: number; y: number; targets: EditMenuTarget[]; deleteReason: string | null }
-  | { kind: "run"; id: string; x: number; y: number; wx: number; wy: number; dark: boolean }
+  | { kind: "run"; id: string; x: number; y: number; wx: number; wy: number; dark: boolean; pinned: boolean }
   | { kind: "multi"; x: number; y: number };
 
 export type EditMenuAction =
@@ -20,6 +20,7 @@ export type EditMenuAction =
   | { type: "split"; id: string }
   | { type: "split-n"; id: string; parts: number }
   | { type: "delete-run"; id: string }
+  | { type: "pin"; id: string; pinned: boolean }
   | { type: "toggle-dark" }
   | { type: "delete-selection" };
 
@@ -59,6 +60,7 @@ export function EditMenu({ menu, onClose, onAction }: {
           {menu.kind === "run" ? (
             <>
               <Item onSelect={() => onAction({ type: "length", id: menu.id })}>Set length…</Item>
+              <Item onSelect={() => onAction({ type: "pin", id: menu.id, pinned: !menu.pinned })}>{menu.pinned ? "Unlock length" : "Lock length"}</Item>
               <Item onSelect={() => onAction({ type: "lights", id: menu.id })}>Set lights…</Item>
               <Item onSelect={() => onAction({ type: "dark", id: menu.id, dark: !menu.dark })}>{menu.dark ? "Make lit" : "Make dark"}</Item>
               <Item onSelect={() => onAction({ type: "split", id: menu.id })}>Split here</Item>
