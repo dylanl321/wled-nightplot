@@ -1598,7 +1598,16 @@ export function YardEditor(init: YardEditorProps) {
       return;
     }
     if (hr && finger && s.tool === "move" && !ci && !s.activeSection) {
-      dragRef.current = { kind: "pan", cam: { ...s.cam }, ...start, onTap: () => { s.selRun = hr.id; s.selRuns = [hr.id]; render(); } };
+      dragRef.current = {
+        kind: "pan", cam: { ...s.cam }, ...start,
+        onTap: () => {
+          if (!placeLightOnRun(hr.id, px, py)) {
+            s.selRun = hr.id;
+            s.selRuns = [hr.id];
+            render();
+          }
+        },
+      };
       armRunHold(hr.id, px, py);
       return;
     }
@@ -1873,6 +1882,19 @@ export function YardEditor(init: YardEditorProps) {
     }
   }
 
+  /** A click on the selected run, zoomed in, puts a light there. A drag does not. */
+  function placeLightOnRun(id: string, px: number, py: number): boolean {
+    if (s.tool !== "move" || s.selRun !== id || !s.draft || !lightDots()) return false;
+    const along = alongRunAt(s.draft, id, view().wx(px), view().wy(py));
+    if (along == null) return false;
+    const made = addRunLight(s.draft, id, along);
+    if (!made.id) return false;
+    edit(() => made.draft);
+    s.selLight = { edgeId: id, id: made.id, station: 0 };
+    render();
+    return true;
+  }
+
   function endPointer(e: React.PointerEvent<HTMLCanvasElement>) {
     pointers.current.delete(e.pointerId);
     if (pinch.current) {
@@ -1899,13 +1921,17 @@ export function YardEditor(init: YardEditorProps) {
       return;
     }
     if (drag?.kind === "run") {
-      if (!drag.moved) {
+      if (!drag.moved && !placeLightOnRun(drag.id, drag.px, drag.py)) {
         s.selRun = drag.id;
         s.selRuns = [drag.id];
         s.selPoints = [];
         s.selPoint = null;
       }
       render();
+      return;
+    }
+    if (drag?.kind === "mid") {
+      if (!drag.moved) placeLightOnRun(drag.edgeId, drag.px, drag.py);
       return;
     }
     if (drag?.kind === "points") {
