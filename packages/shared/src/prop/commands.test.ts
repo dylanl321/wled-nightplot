@@ -30,6 +30,25 @@ function roundTrip(layout: PropLayout, command: LayoutCommand): PropLayout {
   return applied.layout;
 }
 
+function polyline(): PropLayout {
+  const run: LayoutEdge[] = [
+    { id: "e1", from: "c1", to: "c2", kind: "lit" },
+    { id: "e2", from: "c2", to: "c3", kind: "lit" },
+    { id: "e3", from: "c3", to: "c4", kind: "wire" },
+  ];
+  return ensureStrings({
+    ...emptyTrace("m", 0.1),
+    corners: [
+      { id: "c1", x: 0, y: 0 },
+      { id: "c2", x: 1, y: 0 },
+      { id: "c3", x: 2, y: 0 },
+      { id: "c4", x: 3, y: 1 },
+    ],
+    run,
+    strings: [{ id: "s1", startId: "c1", run }],
+  });
+}
+
 function line(kind: LayoutEdge["kind"] = "lit", extra: Partial<LayoutEdge> = {}): PropLayout {
   const edge: LayoutEdge = { id: "e1", from: "c1", to: "c2", kind, ...extra };
   return ensureStrings({
@@ -91,6 +110,19 @@ describe("layout commands", () => {
     expect(applyCommand(layout, { type: "removePoint", cornerId: "c1" }).refused).toBe("wire-in");
     const lone = ensureStrings(emptyTrace("ft"));
     expect(applyCommand(lone, { type: "removePoint", cornerId: "c1" })).toMatchObject({ inverse: null, refused: null });
+  });
+
+  it("splits a run, splits it into equal parts, deletes a run, and toggles several dark", () => {
+    const poly = polyline();
+    const split = roundTrip(poly, { type: "splitAt", edgeId: "e1", x: 0.4, y: 0 });
+    expect(split.corners).toHaveLength(poly.corners.length + 1);
+    const equal = roundTrip(line(), { type: "splitEqual", edgeId: "e1", parts: 3 });
+    expect(equal.strings?.[0]?.run).toHaveLength(3);
+    const removed = roundTrip(poly, { type: "deleteEdge", edgeId: "e2" });
+    expect(removed.strings?.[0]?.run.map((edge) => edge.id)).toEqual(["e1", "e3"]);
+    const toggled = roundTrip(poly, { type: "setRunsDark", edgeIds: ["e1", "e3"] });
+    expect(toggled.strings?.[0]?.run.map((edge) => edge.kind)).toEqual(["wire", "lit", "lit"]);
+    roundTrip(poly, { type: "disconnect", cornerId: "c2" });
   });
 
   it("counts a placed run with lightsOnLength, the same number the sidebar reads", () => {

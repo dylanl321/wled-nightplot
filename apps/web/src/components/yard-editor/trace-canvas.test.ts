@@ -1,7 +1,34 @@
 import { applyCommand, emptyTrace, ensureStrings } from "@nightplot/shared";
 import { describe, expect, it } from "vitest";
 import { drawRows, newDraft } from "./model";
-import { boxesOverlap, hitCorner, hitRun, needsLabelZoom, placeBesideRun, POINT_TOUCH_PX, pointHitSlop, View, type DrawProp } from "./stage";
+import { boxesOverlap, hitCorner, hitRun, needsLabelZoom, placeBesideRun, POINT_TOUCH_PX, pointHitSlop, selectInRect, View, type DrawProp } from "./stage";
+
+describe("box select", () => {
+  it("keeps the points and runs whose middles fall in the box", () => {
+    const view = new View({ x: 0, y: 0, ppm: 100 }, 400, 400);
+    const prop = {
+      id: "p",
+      name: "P",
+      x: 0,
+      y: 0,
+      edges: [
+        { id: "e1", ax: 0, ay: 0, bx: 1, by: 0, lights: 10, color: "#d4a574" },
+        { id: "e2", ax: 1, ay: 0, bx: 2, by: 0, lights: 10, color: "#d4a574" },
+      ],
+      start: { x: 0, y: 0 },
+      lights: 20,
+      box: { minX: 0, minY: 0, maxX: 2, maxY: 0 },
+      corners: [
+        { id: "c1", x: 0, y: 0 },
+        { id: "c2", x: 1, y: 0 },
+        { id: "c3", x: 2, y: 0 },
+      ],
+    } satisfies DrawProp;
+    const hit = selectInRect(view, prop, 240, 180, 320, 220);
+    expect(hit.points).toEqual(["c2"]);
+    expect(hit.runs).toEqual(["e1"]);
+  });
+});
 
 describe("draw-it labels", () => {
   it("names a dark run and keeps the badge off the length caption", () => {

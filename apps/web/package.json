@@ -12,11 +12,13 @@
     "test:mobile": "node e2e/mobile-overflow.mjs",
     "test:editor": "node e2e/editor-use-cases.mjs",
     "test:trace": "node e2e/trace-draw.mjs",
+    "test:select": "node e2e/select-edit.mjs",
     "test:yard3d": "node e2e/yard-street.mjs",
     "test:looks": "node e2e/looks.mjs"
   },
   "dependencies": {
     "@nightplot/shared": "workspace:*",
+    "@radix-ui/react-dropdown-menu": "^2.2.1",
     "@radix-ui/react-slot": "^1.2.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
