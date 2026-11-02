@@ -55,6 +55,7 @@ import { deleteJson, patchJson, postJson, putJson } from "@/lib/api";
 import { ColourInput, CommitField } from "./fields";
 import {
   addPoint,
+  addRunsToSection,
   addSection,
   countRunFromLength,
   deleteSection,
@@ -72,6 +73,7 @@ import {
   renameForShape,
   resetToTemplate,
   runRows,
+  sectionFromRuns,
   sectionOfEdge,
   sectionRangeText,
   setCount,
@@ -106,6 +108,7 @@ import { EditMenu, type EditMenuAction, type EditMenuState } from "./edit-menu";
 import { mergeToast, previewRun, previewTotals } from "@/components/props/trace-preview";
 import { initialTool, LONG_PRESS_MS, reduceTool, type ToolEffect, type ToolHit, type ToolState } from "@/components/props/tool-machine";
 import {
+  assignLanes,
   boxesOverlap,
   drawRubber,
   drawScene,
@@ -322,6 +325,7 @@ export function YardEditor(init: YardEditorProps) {
         });
       });
       for (const corner of layout.corners) if (used.has(corner.id)) corners.push(corner);
+      assignLanes(edges);
     }
     return { id, name, x: at.x, y: at.y, edges, corners, start, lights, box: layoutBox(layout ?? undefined) };
   }
@@ -1060,7 +1064,7 @@ export function YardEditor(init: YardEditorProps) {
     | { kind: "pan"; cam: Camera; px: number; py: number; moved: boolean; onTap?: () => void; deselect?: boolean; button?: number; noPan?: boolean }
     | { kind: "prop"; id: string; ox: number; oy: number; wx: number; wy: number; px: number; py: number; moved: boolean; pushed: boolean }
     | { kind: "corner"; id: string; px: number; py: number; moved: boolean }
-    | { kind: "run"; id: string; fromId: string; toId: string; fx: number; fy: number; tx: number; ty: number; wx: number; wy: number; px: number; py: number; moved: boolean; pushed: boolean }
+    | { kind: "run"; id: string; fromId: string; toId: string; fx: number; fy: number; tx: number; ty: number; wx: number; wy: number; px: number; py: number; moved: boolean; pushed: boolean; shift?: boolean }
     | { kind: "points"; ids: string[]; origins: { id: string; x: number; y: number }[]; wx: number; wy: number; px: number; py: number; moved: boolean; pushed: boolean }
     | { kind: "box"; px: number; py: number; moved: boolean; shift: boolean }
     | { kind: "mid"; edgeId: string; px: number; py: number; moved: boolean }
@@ -1488,7 +1492,7 @@ export function YardEditor(init: YardEditorProps) {
     const kind = multi ? "multi" : corner ? "point" : run ? "run" : null;
     if (!kind) return;
     const deleteReason = corner && kind === "point" ? wireInDeleteReason(corner) : null;
-    const menuH = kind === "run" ? 240 : kind === "point" ? (deleteReason ? 148 : 112) : 80;
+    const menuH = kind === "run" ? 276 : kind === "point" ? (deleteReason ? 148 : 112) : 116;
     const at = placeFloat(px, py, 200, menuH, [
       { x: px - 8, y: py + 40 },
       { x: Math.max(8, px - 96), y: py + 40 },
@@ -1518,11 +1522,48 @@ export function YardEditor(init: YardEditorProps) {
     render();
   }
 
+  /** Shift-click: add a run to the selection, or take it out. */
+  function toggleRunPick(id: string) {
+    const base = s.selRuns.length ? s.selRuns : s.selRun ? [s.selRun] : [];
+    s.selRuns = base.includes(id) ? base.filter((x) => x !== id) : [...base, id];
+    s.selRun = s.selRuns.length === 1 ? s.selRuns[0]! : null;
+    s.selPoint = null;
+    s.selPoints = [];
+    s.selLight = null;
+    s.activeSection = null;
+    render();
+  }
+
+  /** A new section from the picked runs, opened so it can be named. */
+  function makeSection(edgeIds: readonly string[]) {
+    if (!s.draft) return;
+    const made = sectionFromRuns(s.draft, edgeIds);
+    if (!made.id) {
+      s.toast = "Pick lit runs to make a section. A dark run has no lights.";
+      render();
+      return;
+    }
+    edit(() => made.draft);
+    s.activeSection = made.id;
+    s.selRun = null;
+    s.selRuns = [];
+    s.selPoint = null;
+    s.selPoints = [];
+    s.tool = "move";
+    if (s.phone) s.sheet = "half";
+    render();
+    setTimeout(() => { const n = document.getElementById("ye-secname") as HTMLInputElement | null; n?.focus(); n?.select(); });
+  }
+
   function doMenu(action: EditMenuAction) {
     const layout = s.draft?.layout;
     const menu = s.menu;
     if (!layout) return;
     s.menu = null;
+    if (action.type === "make-section") {
+      makeSection(action.id ? [action.id] : s.selRuns);
+      return;
+    }
     if (action.type === "length") {
       openLenEdit(action.id);
       return;
@@ -1733,7 +1774,7 @@ export function YardEditor(init: YardEditorProps) {
     const ci = hitCorner(vw, shape, px, py, pointHitSlop(finger));
     const hr = hitRun(vw, shape, px, py, finger ? 22 : 10);
     const layout = d.layout;
-    const mid = s.tool === "move" && s.selRuns.length === 1 ? hitMid(vw, shape, s.selRuns[0]!, px, py) : false;
+    const mid = s.tool === "move" && s.selRuns.length === 1 && !shift ? hitMid(vw, shape, s.selRuns[0]!, px, py) : false;
     if (button === 2 && s.tool === "move") {
       dragRef.current = { kind: "pan", cam: { ...s.cam }, ...start, button, noPan: true };
       return;
@@ -1793,7 +1834,7 @@ export function YardEditor(init: YardEditorProps) {
         dragRef.current = {
           kind: "run", id: edge.id, fromId: from.id, toId: to.id,
           fx: from.x, fy: from.y, tx: to.x, ty: to.y,
-          wx: vw.wx(px), wy: vw.wy(py), px, py, moved: false, pushed: false,
+          wx: vw.wx(px), wy: vw.wy(py), px, py, moved: false, pushed: false, shift,
         };
         return;
       }
@@ -1832,6 +1873,8 @@ export function YardEditor(init: YardEditorProps) {
         s.selLight = { edgeId: hr.id, id: made.id, station: 0 };
         render();
       };
+    } else if (hr && shift) {
+      onTap = () => toggleRunPick(hr.id);
     } else if (hr) {
       onTap = () => {
         if (s.selLight?.edgeId !== hr.id) s.selLight = null;
@@ -2124,6 +2167,10 @@ export function YardEditor(init: YardEditorProps) {
       return;
     }
     if (drag?.kind === "run") {
+      if (!drag.moved && drag.shift) {
+        toggleRunPick(drag.id);
+        return;
+      }
       if (!drag.moved && !placeLightOnRun(drag.id, drag.px, drag.py)) {
         s.selRun = drag.id;
         s.selRuns = [drag.id];
@@ -2485,6 +2532,58 @@ export function YardEditor(init: YardEditorProps) {
     };
   });
 
+  // Wheel and pinch. React's onWheel is passive, so a Mac trackpad pinch
+  // (Ctrl + wheel in Chrome, Firefox and Edge) also zoomed the browser page.
+  // Safari sends its own gesture events for a pinch instead; those are
+  // stopped too, and zoom the drawing by their scale.
+  useEffect(() => {
+    const node = cv.current;
+    if (!node) return;
+    let gesture: { scale: number } | null = null;
+    function onWheel(e: WheelEvent) {
+      e.preventDefault();
+      const { px, py } = localPoint(e);
+      if (e.ctrlKey || e.metaKey) {
+        if (gesture) return; // Safari already zooms from the gesture.
+        const step = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+        s.cam = zoomAt(s.cam, size.current.W, size.current.H, px, py, Math.exp(-Math.max(-50, Math.min(50, step)) * 0.01));
+      } else {
+        s.cam = { ...s.cam, x: s.cam.x + e.deltaX / s.cam.ppm, y: s.cam.y - e.deltaY / s.cam.ppm };
+      }
+      draw();
+    }
+    type GestureLike = Event & { scale?: number; clientX?: number; clientY?: number };
+    function onGestureStart(e: Event) {
+      e.preventDefault();
+      gesture = { scale: (e as GestureLike).scale ?? 1 };
+    }
+    function onGestureChange(e: Event) {
+      e.preventDefault();
+      const g = e as GestureLike;
+      if (!gesture || typeof g.scale !== "number" || g.scale <= 0) return;
+      const r = node!.getBoundingClientRect();
+      const px = (g.clientX ?? r.left + r.width / 2) - r.left;
+      const py = (g.clientY ?? r.top + r.height / 2) - r.top;
+      s.cam = zoomAt(s.cam, size.current.W, size.current.H, px, py, g.scale / gesture.scale);
+      gesture.scale = g.scale;
+      draw();
+    }
+    function onGestureEnd(e: Event) {
+      e.preventDefault();
+      gesture = null;
+    }
+    node.addEventListener("wheel", onWheel, { passive: false });
+    node.addEventListener("gesturestart", onGestureStart, { passive: false });
+    node.addEventListener("gesturechange", onGestureChange, { passive: false });
+    node.addEventListener("gestureend", onGestureEnd, { passive: false });
+    return () => {
+      node.removeEventListener("wheel", onWheel);
+      node.removeEventListener("gesturestart", onGestureStart);
+      node.removeEventListener("gesturechange", onGestureChange);
+      node.removeEventListener("gestureend", onGestureEnd);
+    };
+  });
+
   // ---------- panels ----------
   const sheetHandle = (
     <button
@@ -2609,18 +2708,21 @@ export function YardEditor(init: YardEditorProps) {
           <NumRow id="ye-y" label={`Y above ground (${uLabel()})`} value={String(+toU(at.y).toFixed(2))} onCommit={(v) => { const live = placements().get(p.id)?.at ?? at; void moveProp(p.id, live.x, fromU(v)).then(() => fitIfOff(p.id)); }} />
         </div>
         {lookLine(p)}
-        {(p.sections ?? []).length > 0 ? (
+        {p.layout && p.layout.corners.length > 0 ? (
           <div>
             <h2>Sections</h2>
-            <div className="sectionrows">
-              {(p.sections ?? []).map((sec) => (
-                <div className="secrow" key={sec.id}>
-                  <span className="sw" style={{ background: sec.color ?? "var(--y-lit)" }} />
-                  <span className="nm">{sec.name}</span>
-                  <span className="rng">{sectionRangeText(p.layout ?? null, p.sections ?? [], sec.id).human}</span>
-                </div>
-              ))}
-            </div>
+            {(p.sections ?? []).length > 0 ? (
+              <div className="sectionrows">
+                {(p.sections ?? []).map((sec) => (
+                  <div className="secrow" key={sec.id}>
+                    <span className="sw" style={{ background: sec.color ?? "var(--y-lit)" }} />
+                    <span className="nm">{sec.name}</span>
+                    <span className="rng">{sectionRangeText(p.layout ?? null, p.sections ?? [], sec.id).human}</span>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="note">None yet. A section is a group of runs that a Look can colour on its own.</p>}
+            <button type="button" className="btn link" data-edit-sections onClick={() => openProp(p, false)}>{(p.sections ?? []).length > 0 ? "Edit sections" : "Make sections"}</button>
           </div>
         ) : null}
         <div className="btnrow">
@@ -2816,11 +2918,19 @@ export function YardEditor(init: YardEditorProps) {
         {s.selPoints.length + s.selRuns.length > 1 ? (
           <div className="runbox pointsheet">
             <h2>{s.selPoints.length > 1 ? `${s.selPoints.length} points selected` : `${s.selRuns.length} runs selected`}</h2>
-            <p className="note">{s.selPoints.length > 1 ? "Toggle dark flips the runs between them." : "Toggle dark flips the selected runs."}</p>
+            <p className="note">{s.selPoints.length > 1 ? "Toggle dark flips the runs between them." : "Toggle dark flips the selected runs."} Make section groups the selected runs as one section.</p>
             <div className="btnrow">
+              <button type="button" className="btn primary" disabled={s.selRuns.length === 0} onClick={() => makeSection(s.selRuns)}>Make section</button>
               <button type="button" className="btn" onClick={() => doMenu({ type: "toggle-dark" })}>Toggle dark</button>
               <button type="button" className="btn danger" onClick={() => doMenu({ type: "delete-selection" })}>Delete</button>
             </div>
+            {d.sections.length > 0 && s.selRuns.length > 0 ? (
+              <div className="btnrow" style={{ marginTop: 6 }}>
+                {d.sections.map((x) => (
+                  <button key={x.id} type="button" className="btn" onClick={() => { const ids = [...s.selRuns]; s.selRuns = []; s.selRun = null; s.selPoints = []; s.selPoint = null; edit((y) => addRunsToSection(y, x.id, ids)); }}>Add to {x.name}</button>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : s.selPoint ? (
           <div className="runbox pointsheet">
@@ -2961,6 +3071,7 @@ export function YardEditor(init: YardEditorProps) {
                   setTimeout(() => { const n = document.getElementById("ye-secname") as HTMLInputElement | null; n?.focus(); n?.select(); });
                 }}>New section</button>
               </div>
+              <p className="note" style={{ marginTop: 6 }}>{s.phone ? "Or drag a box around runs on the drawing" : "Or drag a box around runs, or Shift-click them,"} and choose Make section. Runs that share a line, like up and back down an edge, sit side by side so each can be picked.</p>
               {unsectioned.length && d.sections.length ? <p className="note" style={{ marginTop: 6 }}>Not in any section: {unsectioned.map((x) => x.name).join(", ")}.</p> : null}
             </div>
             <div>
@@ -3281,12 +3392,6 @@ export function YardEditor(init: YardEditorProps) {
               const hit = hitProp(view(), yardDrawables(), px, py);
               const prop = hit ? s.props.find((q) => q.id === hit.id) : null;
               if (prop) openProp(prop, false);
-            }}
-            onWheel={(e) => {
-              const { px, py } = localPoint(e);
-              if (e.ctrlKey || e.metaKey) s.cam = zoomAt(s.cam, size.current.W, size.current.H, px, py, Math.exp(-e.deltaY * 0.01));
-              else s.cam = { ...s.cam, x: s.cam.x + e.deltaX / s.cam.ppm, y: s.cam.y - e.deltaY / s.cam.ppm };
-              draw();
             }}
           />
           {!inProp() && !s.placing ? (

@@ -1,7 +1,7 @@
 import { applyCommand, emptyTrace, ensureStrings } from "@nightplot/shared";
 import { describe, expect, it } from "vitest";
 import { drawRows, newDraft } from "./model";
-import { boxesOverlap, hitCorner, hitRun, needsLabelZoom, placeBesideRun, POINT_TOUCH_PX, pointHitSlop, selectInRect, View, type DrawProp } from "./stage";
+import { assignLanes, boxesOverlap, hitCorner, hitRun, needsLabelZoom, placeBesideRun, POINT_TOUCH_PX, pointHitSlop, selectInRect, View, type DrawProp } from "./stage";
 
 describe("box select", () => {
   it("keeps the points and runs whose middles fall in the box", () => {
@@ -93,5 +93,24 @@ describe("draw-it labels", () => {
     expect(hitCorner(view, alone, 222, 200, slop)).toBe("near");
     expect(hitCorner(view, alone, 223, 200, slop)).toBeNull();
     expect(hitCorner(view, prop, 200, 200, pointHitSlop(false))).toBe("near");
+  });
+});
+
+describe("runs that share a line", () => {
+  it("sit side by side so a click picks the up run or the down run", () => {
+    const view = new View({ x: 0, y: 1, ppm: 100 }, 400, 400);
+    const edges = assignLanes([
+      { id: "up", ax: 0, ay: 0, bx: 0, by: 2, lights: 20, color: "#d4a574" },
+      { id: "down", ax: 0, ay: 2, bx: 0, by: 0, lights: 20, color: "#d4a574" },
+      { id: "base", ax: 0, ay: 0, bx: 1, by: 0, lights: 10, color: "#d4a574" },
+    ]);
+    expect(edges[2]!.lane).toBeUndefined();
+    const prop = { id: "p", name: "P", x: 0, y: 0, edges, corners: [], start: null, lights: 50, box: { minX: 0, minY: 0, maxX: 1, maxY: 2 } } satisfies DrawProp;
+    const x = view.sx(0), y = view.sy(1);
+    const a = hitRun(view, prop, x - 4, y)?.id;
+    const b = hitRun(view, prop, x + 4, y)?.id;
+    expect(new Set([a, b])).toEqual(new Set(["up", "down"]));
+    const box = selectInRect(view, prop, x - 8, y - 4, x, y + 4);
+    expect(box.runs).toHaveLength(1);
   });
 });

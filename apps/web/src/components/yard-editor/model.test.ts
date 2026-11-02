@@ -12,6 +12,8 @@ import {
   spaceRunEvenly,
   traceTo,
   addSection,
+  addRunsToSection,
+  sectionFromRuns,
   draftFromProp,
   lightTotal,
   measurementsOf,
@@ -101,6 +103,22 @@ describe("yard editor drafts", () => {
     const [bottom, right] = runRows(d);
     d = toggleRunInSection(toggleRunInSection(d, made.id, bottom!.edge.id), made.id, right!.edge.id);
     expect(sectionRangeText(d.layout, d.sections, made.id)).toEqual({ human: "1–40", wled: "0–39", empty: false });
+  });
+
+  it("makes a section from picked runs and takes them out of other sections", () => {
+    let d = triangle();
+    const [left, right, base] = runRows(d).map((row) => row.edge.id) as [string, string, string];
+    const first = sectionFromRuns(d, [left, base]);
+    d = first.draft;
+    expect(d.sections.find((x) => x.id === first.id)!.edgeIds).toEqual([left, base]);
+    const second = sectionFromRuns(d, [base, right, "nope"]);
+    d = second.draft;
+    expect(d.sections.find((x) => x.id === second.id)!.edgeIds).toEqual([right, base]);
+    expect(d.sections.find((x) => x.id === first.id)!.edgeIds).toEqual([left]);
+    expect(sectionFromRuns(d, ["nope"]).id).toBeNull();
+    d = addRunsToSection(d, first.id!, [base]);
+    expect(d.sections.find((x) => x.id === first.id)!.edgeIds).toEqual([left, base]);
+    expect(d.sections.find((x) => x.id === second.id)!.edgeIds).toEqual([right]);
   });
 
   it("names a new prop after its shape and keeps a typed name", () => {

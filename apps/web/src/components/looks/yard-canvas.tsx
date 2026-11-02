@@ -221,7 +221,11 @@ export function YardCanvas({ drawn, props, look, className, small, labels, selec
     cv.addEventListener("pointerup", up);
     cv.addEventListener("pointercancel", up);
     cv.addEventListener("wheel", wheel, { passive: false });
+    // Safari pinches with its own gesture events. Stop them so the page itself does not zoom.
+    const stopGesture = (event: Event) => event.preventDefault();
+    for (const type of ["gesturestart", "gesturechange", "gestureend"]) cv.addEventListener(type, stopGesture, { passive: false });
     return () => {
+      for (const type of ["gesturestart", "gesturechange", "gestureend"]) cv.removeEventListener(type, stopGesture);
       cv.removeEventListener("pointerdown", down);
       cv.removeEventListener("pointermove", move);
       cv.removeEventListener("pointerup", up);
