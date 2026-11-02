@@ -210,6 +210,8 @@ export function YardEditor(init: YardEditorProps) {
     draftPos: null as { x: number; y: number } | null,
     draftIsNew: false,
     draftDirty: false,
+    /** The draft as opened, so a reverted pinch can tell a real edit from an undone one. */
+    draftBasis: "",
     askDiscard: false,
     showTiles: false,
     /** Install marks on the prop canvas. Null: on for a spiral or zigzag, off otherwise. */
@@ -585,7 +587,7 @@ export function YardEditor(init: YardEditorProps) {
     return Boolean(d?.layout && !s.activeSection && showLightDots(d.layout.pitchM, s.cam.ppm, draftFits(d)));
   }
 
-  /** Every light as a numbered dot, from 0 at the wire-in, once zoomed in. */
+  /** Every light as a numbered dot, counted from 1 at the wire-in, once zoomed in. */
   function lightDots(): LightDot[] | null {
     const d = s.draft;
     if (!d || !dotsShown()) return null;
@@ -716,24 +718,45 @@ export function YardEditor(init: YardEditorProps) {
     else s.props.push(prop);
   }
 
+  /**
+   * Keep a reply from putting back fields this request did not send.
+   * A rename that returns the whole prop must not reset a yard move that
+   * landed while the rename was in flight, and the reverse. A field is
+   * taken from the reply only when the local prop still has the value
+   * this request sent.
+   */
+  function mergeReply(id: string, reply: Prop, sent: Partial<Prop>) {
+    const local = s.props.find((p) => p.id === id);
+    if (!local) {
+      replaceProp(reply);
+      return;
+    }
+    const next: Prop = { ...local };
+    if (sent.label !== undefined && local.label === sent.label) next.label = reply.label;
+    if (sent.yard !== undefined && JSON.stringify(local.yard) === JSON.stringify(sent.yard)) next.yard = reply.yard;
+    replaceProp(next);
+  }
+
   async function moveProp(id: string, x: number, y: number, record = true) {
     const p = s.props.find((q) => q.id === id);
     if (!p) return;
     if (record) pushHistory();
-    p.yard = { x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000 };
+    const yard = { x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000 };
+    p.yard = yard;
     render();
-    const data = await saving<{ prop: Prop }>(() => patchJson(`/api/props/${id}/yard`, { yard: p.yard }));
-    if (data?.prop) replaceProp(data.prop);
+    const data = await saving<{ prop: Prop }>(() => patchJson(`/api/props/${id}/yard`, { yard }));
+    if (data?.prop) mergeReply(id, data.prop, { yard });
     render();
   }
   async function renameProp(id: string, label: string) {
     const p = s.props.find((q) => q.id === id);
-    if (!p || !label.trim() || label.trim() === p.label) return;
+    const nextLabel = label.trim();
+    if (!p || !nextLabel || nextLabel === p.label) return;
     pushHistory();
-    p.label = label.trim();
+    p.label = nextLabel;
     render();
-    const data = await saving<{ prop: Prop }>(() => patchJson(`/api/props/${id}`, { label: p.label }));
-    if (data?.prop) replaceProp(data.prop);
+    const data = await saving<{ prop: Prop }>(() => patchJson(`/api/props/${id}`, { label: nextLabel }));
+    if (data?.prop) mergeReply(id, data.prop, { label: nextLabel });
     render();
   }
   async function deleteProp(id: string) {
@@ -763,9 +786,11 @@ export function YardEditor(init: YardEditorProps) {
       kind: p.kind,
       unit: p.layout?.units ?? p.design?.unit ?? "m",
       pitchMm: Math.round((p.layout?.pitchM ?? 0.1) * 1000 * 1000) / 1000,
+      ledProductId: p.design?.ledProductId ?? null,
       measurements: p.design?.measurements,
       layout: p.layout,
       sections: p.sections ?? [],
+      ...(p.wireframe ? { wireframe: p.wireframe } : {}),
     }));
     if (!data?.prop) {
       s.past.pop();
@@ -870,6 +895,15 @@ export function YardEditor(init: YardEditorProps) {
     await syncTo(nextSnap);
   }
 
+  /** True when the open draft differs from the one that was opened or last saved. A new prop stays unsaved. */
+  function syncDraftDirty() {
+    if (!s.draft) {
+      s.draftDirty = false;
+      return;
+    }
+    s.draftDirty = s.draftIsNew || JSON.stringify(s.draft) !== s.draftBasis;
+  }
+
   /** Change the draft on the prop canvas, with its own Undo. */
   function edit(fn: (d: Draft) => Draft) {
     if (!s.draft) return;
@@ -898,6 +932,7 @@ export function YardEditor(init: YardEditorProps) {
     if (p && s.draft.layout && s.draft.layout.units !== s.units) s.units = s.draft.layout.units;
     s.draftPos = p ? placements().get(p.id)?.at ?? null : null;
     s.draftIsNew = isNew;
+    s.draftBasis = JSON.stringify(s.draft);
     s.draftDirty = isNew;
     s.askDiscard = false;
     s.showTiles = false;
@@ -958,7 +993,8 @@ export function YardEditor(init: YardEditorProps) {
       s.past.pop();
       return;
     }
-    replaceProp(data.prop);
+    const keptYard = s.props.find((p) => p.id === d.id)?.yard;
+    replaceProp(keptYard ? { ...data.prop, yard: keptYard } : data.prop);
     s.sel = data.prop.id;
     leaveProp();
     render();
@@ -1071,6 +1107,9 @@ export function YardEditor(init: YardEditorProps) {
       if (drag?.kind === "corner") {
         const before = s.dpast.pop();
         if (drag.moved && before) s.draft = JSON.parse(before) as Draft;
+        s.guides = [];
+        syncDraftDirty();
+        render();
       }
       clearHold();
       s.loupe = null;
@@ -2124,7 +2163,17 @@ export function YardEditor(init: YardEditorProps) {
       requestAnimationFrame(draw);
       return;
     }
-    if (e.type === "pointercancel") return;
+    if (e.type === "pointercancel") {
+      // Pointer-down already pushed an Undo step. A cancel that never moved
+      // the corner leaves that step empty, and a drag leaves snap guides up.
+      if (drag?.kind === "corner") {
+        s.guides = [];
+        s.pinRings = [];
+        if (drag.moved) render();
+        else s.dpast.pop();
+      }
+      return;
+    }
     if (drag.kind === "ghost") {
       if (!drag.moved && s.placing) {
         const bb = layoutBox(s.placing.layout);
@@ -2556,8 +2605,8 @@ export function YardEditor(init: YardEditorProps) {
           <CommitField id="ye-name" className="" selectOnFocus={false} value={p.label} maxLength={64} onCommit={(text) => void renameProp(p.id, text)} />
         </label>
         <div className="grid2">
-          <NumRow id="ye-x" label={`X from origin (${uLabel()})`} value={String(+toU(at.x).toFixed(2))} onCommit={(v) => void moveProp(p.id, fromU(v), at.y).then(() => fitIfOff(p.id))} />
-          <NumRow id="ye-y" label={`Y above ground (${uLabel()})`} value={String(+toU(at.y).toFixed(2))} onCommit={(v) => void moveProp(p.id, at.x, fromU(v)).then(() => fitIfOff(p.id))} />
+          <NumRow id="ye-x" label={`X from origin (${uLabel()})`} value={String(+toU(at.x).toFixed(2))} onCommit={(v) => { const live = placements().get(p.id)?.at ?? at; void moveProp(p.id, fromU(v), live.y).then(() => fitIfOff(p.id)); }} />
+          <NumRow id="ye-y" label={`Y above ground (${uLabel()})`} value={String(+toU(at.y).toFixed(2))} onCommit={(v) => { const live = placements().get(p.id)?.at ?? at; void moveProp(p.id, live.x, fromU(v)).then(() => fitIfOff(p.id)); }} />
         </div>
         {lookLine(p)}
         {(p.sections ?? []).length > 0 ? (
@@ -2636,7 +2685,14 @@ export function YardEditor(init: YardEditorProps) {
         render();
         return;
       }
-      if (res.data.prop) replaceProp(res.data.prop);
+      if (res.data.prop) {
+        const local = s.props.find((q) => q.id === p.id);
+        replaceProp({
+          ...res.data.prop,
+          ...(local?.yard ? { yard: local.yard } : {}),
+          ...(local ? { label: local.label } : {}),
+        });
+      }
       s.attachments = [...s.attachments.filter((a) => a.propId !== p.id), { propId: p.id, lightId: light.id, outputId: output.id, startIndex: after ? null : 0, afterPropId: after }];
       const readback = res.data.apply?.message ?? res.data.message;
       s.ctrl = { ...s.ctrl, busy: false, blinking: false, applied: res.data.apply?.matched === true, notice: readback ?? "The controller did not report a readback. Not treating this as done." };

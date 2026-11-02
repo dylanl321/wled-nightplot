@@ -206,12 +206,12 @@ function nameOfRun(row: NowRow, state: LooksState): string {
   return "Something set by hand in WLED";
 }
 
-function todayRow(schedule: NightlySchedule | null): ScheduleRow | null {
+function todayRow(schedule: NightlySchedule | null, now = new Date()): ScheduleRow | null {
   if (!schedule?.enabled) return null;
-  const date = new Date();
-  const doy = dayOfYear({ month: date.getMonth() + 1, day: Math.min(date.getDate(), date.getMonth() === 1 ? 28 : 31) });
-  const dow = 1 << ((date.getDay() + 6) % 7);
-  return scheduleRows(schedule).find((row) => (row.weekdays & dow) && rowDays(row.dates).includes(doy)) ?? null;
+  const year = now.getFullYear();
+  const doy = dayOfYear({ month: now.getMonth() + 1, day: now.getDate() }, year);
+  const dow = 1 << ((now.getDay() + 6) % 7);
+  return scheduleRows(schedule).find((row) => (row.weekdays & dow) && rowDays(row.dates, year).includes(doy)) ?? null;
 }
 
 function describeRow(row: ScheduleRow): { on: string; off: string } {
@@ -394,7 +394,7 @@ function PlaylistsTab({ state, onTurnOn, onToast }: { state: LooksState; onTurnO
 // ---------------------------------------------------------------- Schedule tab
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const MDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+const MDAYS = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const ROW_COLOURS = ["#1f8f80", "#85552c", "#6a4caf", "#2f6fae", "#a0452f"];
 
@@ -418,7 +418,9 @@ function ScheduleTab({ state }: { state: LooksState }) {
   const setRow = (id: string, update: (row: ScheduleRow) => ScheduleRow) => setRows(rows.map((row) => (row.id === id ? update(row) : row)));
   const runOf = (value: string): ScheduleRow["run"] => value.startsWith("playlist:") ? { kind: "playlist", playlistId: value.slice(9) } : { kind: "look", lookId: value.slice(5) };
   const today = new Date();
-  const todayDoy = dayOfYear({ month: today.getMonth() + 1, day: Math.min(today.getDate(), MDAYS[today.getMonth()]!) });
+  const year = today.getFullYear();
+  const yearLength = rowDays(null, year).length;
+  const todayDoy = dayOfYear({ month: today.getMonth() + 1, day: today.getDate() }, year);
   const over = (plan?.clockUsed ?? 0) > WLED_CLOCK_TIMERS;
   const ntp = schedule?.ntp ?? base().ntp;
   const setNtp = (patch: Partial<NightlySchedule["ntp"]>) => setDoc((current) => ({ ...current, schedule: { ...(current.schedule ?? base()), ntp: { ...(current.schedule ?? base()).ntp, ...patch } } }));
@@ -427,13 +429,13 @@ function ScheduleTab({ state }: { state: LooksState }) {
   return (
     <div className="list">
       <div className="yearbar" aria-label="The year, with what each row covers">
-        {MONTHS.map((m, i) => <span key={m} className="m" style={{ left: `${(dayOfYear({ month: i + 1, day: 1 }) - 1) / 365 * 100}%` }}>{m}</span>)}
+        {MONTHS.map((m, i) => <span key={m} className="m" style={{ left: `${(dayOfYear({ month: i + 1, day: 1 }, year) - 1) / yearLength * 100}%` }}>{m}</span>)}
         {rows.map((row, ri) => {
           const cover: { a: number; b: number }[] = [];
-          for (const d of rowDays(row.dates)) { const last = cover[cover.length - 1]; if (last && d === last.b + 1) last.b = d; else cover.push({ a: d, b: d }); }
-          return cover.map((c) => <span key={`${row.id}-${c.a}`} className="r" style={{ top: 18 + (ri % 2) * 17, left: `${(c.a - 1) / 365 * 100}%`, width: `${(c.b - c.a + 1) / 365 * 100}%`, background: ROW_COLOURS[ri % ROW_COLOURS.length] }}>{rowRunName(row, doc)}</span>);
+          for (const d of rowDays(row.dates, year)) { const last = cover[cover.length - 1]; if (last && d === last.b + 1) last.b = d; else cover.push({ a: d, b: d }); }
+          return cover.map((c) => <span key={`${row.id}-${c.a}`} className="r" style={{ top: 18 + (ri % 2) * 17, left: `${(c.a - 1) / yearLength * 100}%`, width: `${(c.b - c.a + 1) / yearLength * 100}%`, background: ROW_COLOURS[ri % ROW_COLOURS.length] }}>{rowRunName(row, doc)}</span>);
         })}
-        <span className="today" style={{ left: `${(todayDoy - 1) / 365 * 100}%` }} title="Today" />
+        <span className="today" style={{ left: `${(todayDoy - 1) / yearLength * 100}%` }} title="Today" />
       </div>
       <p className="note">When two rows cover the same day, the higher row wins. Move a row up with ↑.</p>
       {needsPlace ? <p className="warnnote" role="alert">Sunset needs where the lights are. Set the latitude and longitude under “Where the lights are” below; the Schedule is not saved until then.</p> : null}

@@ -78,6 +78,14 @@ async function type(page, selector, value) {
   await field.press("Enter");
 }
 
+/** Commit a yard field and wait until that PATCH has been stored. The status stays in the DOM on a phone, where the bar hides it. */
+async function commitPatch(page, selector, value) {
+  const saved = page.waitForResponse((res) => res.request().method() === "PATCH" && res.url().includes("/api/props/") && res.ok());
+  await type(page, selector, value);
+  await saved;
+  await page.waitForFunction(() => document.querySelector(".ye .saved")?.textContent === "Saved");
+}
+
 /** Pick a prop from the list: the rail on desktop, the drawer on a phone. */
 async function pick(page, viewport, label) {
   if (viewport.touch) await page.getByRole("button", { name: "Props and Looks" }).click();
@@ -121,9 +129,9 @@ async function task2(page, viewport, name) {
 }
 
 async function task3(page, viewport, name, box) {
-  await type(page, "#ye-name", box);
-  await type(page, "#ye-x", "3");
-  await type(page, "#ye-y", "0");
+  await commitPatch(page, "#ye-name", box);
+  await commitPatch(page, "#ye-x", "3");
+  await commitPatch(page, "#ye-y", "0");
   await waitUntil("3 stored", async () => {
     const prop = await propNamed(box);
     return prop?.yard?.x === 3 && prop.yard.y === 0 ? true : prop?.yard ?? `no prop ${box}`;
