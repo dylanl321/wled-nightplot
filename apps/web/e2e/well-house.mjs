@@ -26,8 +26,9 @@ async function screenOf(page, box, world) {
 await ensureStack();
 const browser = await launch();
 let failed = 0;
+let page;
 try {
-  const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+  page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
   await page.goto(`${webOrigin}/?view=new`, { waitUntil: "domcontentloaded" });
   await page.addStyleTag({ content: "nextjs-portal { display: none !important; }" });
   await page.waitForFunction(() => Boolean(window.__yard?.started));
@@ -111,6 +112,49 @@ try {
   expect("mirror flips left and right in place", flipped.every((x, i) => Math.abs(x - (sum - xs[i])) < 1e-9), { xs, flipped });
   if (shots) await page.screenshot({ path: `${shots}/well-mirror.png` });
 
+  // #186: Repeat a wall, box-select runs into a section, scale.
+  const runsBefore = await page.evaluate(() => window.__yard.draft.layout.strings[0].run.length);
+  await page.getByRole("button", { name: "Fit" }).first().click();
+  const all = await page.evaluate(() => window.__yard.draft.layout.corners);
+  const corner = async (x, y) => screenOf(page, box, { x, y });
+  const lo = await corner(Math.min(...all.map((c) => c.x)), Math.max(...all.map((c) => c.y)));
+  const hi = await corner(Math.max(...all.map((c) => c.x)), Math.min(...all.map((c) => c.y)));
+  await page.mouse.move(lo.x - 30, lo.y - 30);
+  await page.mouse.down();
+  await page.mouse.move(hi.x + 30, hi.y + 30, { steps: 4 });
+  await page.mouse.up();
+  await page.getByRole("button", { name: "Repeat…" }).click();
+  await page.locator("#ye-repeat-n").fill("2");
+  await page.getByRole("group", { name: "Repeat" }).getByRole("button", { name: "Repeat", exact: true }).click();
+  const runsAfter = await page.evaluate(() => window.__yard.draft.layout.strings[0].run.length);
+  expect("repeat adds two copies and their jumps", runsAfter === runsBefore * 3 + 2, { runsBefore, runsAfter });
+  if (shots) await page.screenshot({ path: `${shots}/well-repeat.png` });
+
+  await page.getByRole("button", { name: "Wall 4" }).click();
+  await page.waitForTimeout(200);
+  const now = await page.evaluate(() => window.__yard.draft.layout.corners);
+  const a2 = await corner(Math.min(...now.map((c) => c.x)), Math.max(...now.map((c) => c.y)));
+  const b2 = await corner(Math.max(...now.map((c) => c.x)), Math.min(...now.map((c) => c.y)));
+  await page.mouse.move(a2.x - 30, a2.y - 30);
+  await page.mouse.down();
+  await page.mouse.move(b2.x + 30, b2.y + 30, { steps: 4 });
+  await page.mouse.up();
+  const inWall = await page.evaluate(() => window.__yard.draft.sections.find((x) => x.name === "Wall 4").edgeIds.length);
+  const litRuns = await page.evaluate(() => window.__yard.draft.layout.strings[0].run.filter((r) => r.kind === "lit").length);
+  expect("a box in section mode adds every lit run in it", inWall === litRuns, { inWall, litRuns });
+  await page.keyboard.press("Escape");
+
+  const widthOf = () => page.evaluate(() => { const xs = window.__yard.draft.layout.corners.map((c) => c.x); return Math.max(...xs) - Math.min(...xs); });
+  const w1 = await widthOf();
+  const lights1 = await page.locator("#ye-count").inputValue();
+  await page.getByRole("button", { name: "Scale…" }).click();
+  await page.locator("#ye-scale-pct").fill("50");
+  await page.getByRole("button", { name: "Light count" }).click();
+  await page.getByRole("group", { name: "Scale" }).getByRole("button", { name: "Scale", exact: true }).click();
+  const w2 = await widthOf();
+  expect("scale halves the width", Math.abs(w2 - w1 / 2) < 1e-6, { w1, w2 });
+  expect("keep light count keeps the count", (await page.locator("#ye-count").inputValue()) === lights1, lights1);
+
   // Save names it after its shape.
   await page.getByRole("button", { name: "Save and place" }).first().click();
   await page.waitForFunction(() => window.__yard.placing != null);
@@ -125,7 +169,8 @@ try {
   console.log("ok well house fixes");
 } catch (error) {
   failed += 1;
-  console.error(String(error));
+  console.error(String(error).split("\n")[0]);
+  if (shots) await page.screenshot({ path: `${shots}/well-failed.png` }).catch(() => {});
 } finally {
   await browser.close();
   stopChildren();

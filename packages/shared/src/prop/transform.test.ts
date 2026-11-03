@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { countLayout, layoutStrings, stringLights, type PropLayout } from "./layout.ts";
-import { mirrorLayout, reverseLayout, setWireIn } from "./transform.ts";
+import { mirrorLayout, repeatRuns, reverseLayout, scaleLayout, setWireIn } from "./transform.ts";
 
 /** Up 1 m, across 2 m (dark), down 1 m: a little gate. */
 function gate(): PropLayout {
@@ -70,5 +70,48 @@ describe("setWireIn", () => {
   it("refuses the middle of an open string", () => {
     const moved = setWireIn(gate(), "c2");
     expect(moved.ok).toBe(false);
+  });
+});
+
+describe("repeatRuns", () => {
+  it("adds copies after the end, joined by dark jumps", () => {
+    const one = gate();
+    const out = repeatRuns(one, ["e1", "e2", "e3"], 2, 1, "right");
+    const run = layoutStrings(out)[0]!.run;
+    // 3 runs, then per copy: a dark jump (2 m box + 1 m gap, from x=2 to x=3) and 3 runs.
+    expect(run).toHaveLength(3 + 2 * 4);
+    expect(run[3]!.kind).toBe("wire");
+    const at = (id: string) => out.corners.find((c) => c.id === id)!;
+    expect(at(run[4]!.from)).toMatchObject({ x: 3, y: 0 });
+    expect(at(run[run.length - 1]!.to).x).toBeCloseTo(8, 6);
+    expect(countLayout(out).total).toBe(countLayout(one).total * 3);
+  });
+  it("needs no jump when a copy starts where the string ends", () => {
+    const wall: PropLayout = { ...gate(), run: gate().run.slice(0, 1) };
+    // Up 1 m from (0,0): a copy upward with no gap starts at the top.
+    const out = repeatRuns(wall, ["e1"], 1, 0, "up");
+    const run = layoutStrings(out)[0]!.run;
+    expect(run.map((e) => e.kind)).toEqual(["lit", "lit"]);
+  });
+});
+
+describe("scaleLayout", () => {
+  it("scales about the wire-in and keeps spacing, so lights follow length", () => {
+    const one = gate();
+    const out = scaleLayout(one, 2, 2, "spacing");
+    expect(out.corners.find((c) => c.id === "c1")).toMatchObject({ x: 0, y: 0 });
+    expect(out.corners.find((c) => c.id === "c3")).toMatchObject({ x: 4, y: 2 });
+    const lit = countLayout(out).edges.find((e) => e.id === "e1")!;
+    expect(lit.lights).toBe(countLayout(one).edges.find((e) => e.id === "e1")!.lights * 2);
+  });
+  it("keeps light counts when asked", () => {
+    const one = gate();
+    const out = scaleLayout(one, 0.5, 0.5, "count");
+    expect(countLayout(out).total).toBe(countLayout(one).total);
+  });
+  it("scales only the picked runs' corners", () => {
+    const out = scaleLayout(gate(), 1, 2, "spacing", ["e3"]);
+    expect(out.corners.find((c) => c.id === "c3")).toMatchObject({ x: 2, y: 2 });
+    expect(out.corners.find((c) => c.id === "c1")).toMatchObject({ x: 0, y: 0 });
   });
 });

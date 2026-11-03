@@ -22,7 +22,11 @@ import {
   layoutStrings,
   mirrorLayout,
   moveCorner,
+  repeatRuns,
   reverseLayout,
+  scaleLayout,
+  type RepeatDirection,
+  type ScaleKeep,
   setWireIn,
   pinRings,
   pinSlidesFree,
@@ -254,6 +258,10 @@ export function YardEditor(init: YardEditorProps) {
     activeSection: null as string | null,
     lensSection: null as string | null,
     confirmDelete: false,
+    /** Repeat the picked runs: copies, gap (in the prop's unit) and which way. */
+    repeat: null as { count: string; gap: string; dir: RepeatDirection } | null,
+    /** Scale the prop, or the picked runs, to a width and height or a percent. */
+    scale: null as { w: string; h: string; pct: string; keep: ScaleKeep; picked: boolean } | null,
     folds: { controller: init.query.fold === "controller" },
     cam: { x: 7, y: 2.2, ppm: 60 } as Camera,
     yardCam: null as Camera | null,
@@ -958,6 +966,8 @@ export function YardEditor(init: YardEditorProps) {
     s.draftDirty = isNew;
     s.askDiscard = false;
     s.showTiles = false;
+    s.repeat = null;
+    s.scale = null;
     s.dpast = [];
     s.dfuture = [];
     s.view = "prop";
@@ -2034,7 +2044,7 @@ export function YardEditor(init: YardEditorProps) {
       }
       return;
     }
-    if (s.tool === "move" && !s.activeSection && button === 0) {
+    if (s.tool === "move" && button === 0 && (!s.activeSection || (!hr && !ci))) {
       dragRef.current = { kind: "box", ...start, shift };
       return;
     }
@@ -2277,6 +2287,21 @@ export function YardEditor(init: YardEditorProps) {
       const shape = draftDrawable();
       const { px, py } = localPoint(e);
       s.box = null;
+      if (shape && drag.moved && s.activeSection && s.draft) {
+        // Section mode: every lit run in the box goes in the open section.
+        const hit = selectInRect(view(), shape, drag.px, drag.py, px, py);
+        const id = s.activeSection;
+        const lit = new Set(drawRows(s.draft).filter((row) => !row.wire).map((row) => row.edge.id));
+        const runs = hit.runs.filter((run) => lit.has(run));
+        const name = s.draft.sections.find((x) => x.id === id)?.name ?? "the section";
+        if (runs.length) {
+          edit((x) => addRunsToSection(x, id, runs));
+          s.toast = `Added ${runs.length} ${runs.length === 1 ? "run" : "runs"} to ${name}.`;
+          s.toastPlain = false;
+        }
+        render();
+        return;
+      }
       if (shape && drag.moved) {
         const hit = selectInRect(view(), shape, drag.px, drag.py, px, py);
         s.selPoints = drag.shift ? [...new Set([...s.selPoints, ...hit.points])] : hit.points;
@@ -3055,6 +3080,14 @@ export function YardEditor(init: YardEditorProps) {
               <button type="button" className="btn" onClick={() => doMenu({ type: "toggle-dark" })}>Toggle dark</button>
               <button type="button" className="btn danger" onClick={() => doMenu({ type: "delete-selection" })}>Delete</button>
             </div>
+            {s.selRuns.length > 0 ? (
+              <div className="btnrow" style={{ marginTop: 6 }}>
+                <button type="button" className="btn" aria-expanded={s.repeat != null} onClick={() => { s.repeat = s.repeat ? null : { count: "1", gap: "1", dir: "right" }; s.scale = null; render(); }}>Repeat…</button>
+                <button type="button" className="btn" aria-expanded={s.scale?.picked === true} onClick={() => { s.scale = s.scale?.picked ? null : scaleStart(true); s.repeat = null; render(); }}>Scale…</button>
+              </div>
+            ) : null}
+            {s.repeat && s.selRuns.length > 0 ? repeatForm() : null}
+            {s.scale?.picked && s.selRuns.length > 0 ? scaleForm() : null}
             {d.sections.length > 0 && s.selRuns.length > 0 ? (
               <div className="btnrow" style={{ marginTop: 6 }}>
                 {d.sections.map((x) => (
@@ -3108,8 +3141,10 @@ export function YardEditor(init: YardEditorProps) {
                 <button type="button" className="btn" title="Wire it from the other end. Light 1 becomes the last light." onClick={() => rewire("reverse")}>Reverse direction</button>
                 <button type="button" className="btn" title="Flip left and right, in place" onClick={() => rewire("mirror-x")}>Mirror ↔</button>
                 <button type="button" className="btn" title="Flip top and bottom, in place" onClick={() => rewire("mirror-y")}>Mirror ↕</button>
+                <button type="button" className="btn" aria-expanded={s.scale != null && !s.scale.picked} onClick={() => { s.scale = s.scale && !s.scale.picked ? null : scaleStart(false); s.repeat = null; render(); }}>Scale…</button>
               </div>
             ) : null}
+            {s.scale && !s.scale.picked ? scaleForm() : null}
             {d.layout && d.layout.corners.length > 1 && rows.length > 0 ? <p className="note" style={{ marginTop: 4 }}>To move the wire-in, right-click a point{s.phone ? " (or hold it)" : ""} and choose Set wire-in here.</p> : null}
           </div>
         )}
@@ -3278,6 +3313,106 @@ export function YardEditor(init: YardEditorProps) {
     );
   }
 
+  /** The box of the picked runs, or of the whole drawing. */
+  function spanOf(picked: boolean): { w: number; h: number } {
+    const layout = s.draft?.layout;
+    if (!layout) return { w: 0, h: 0 };
+    const ids = picked ? new Set(layoutStrings(ensureStrings(layout)).flatMap((x) => x.run).filter((e) => s.selRuns.includes(e.id)).flatMap((e) => [e.from, e.to])) : null;
+    const pts = layout.corners.filter((c) => !ids || ids.has(c.id));
+    if (pts.length === 0) return { w: 0, h: 0 };
+    return { w: Math.max(...pts.map((c) => c.x)) - Math.min(...pts.map((c) => c.x)), h: Math.max(...pts.map((c) => c.y)) - Math.min(...pts.map((c) => c.y)) };
+  }
+  function scaleStart(picked: boolean) {
+    const span = spanOf(picked);
+    return { w: String(+toU(span.w).toFixed(2)), h: String(+toU(span.h).toFixed(2)), pct: "100", keep: "spacing" as ScaleKeep, picked };
+  }
+  function applyScale() {
+    const f = s.scale;
+    const layout = s.draft?.layout;
+    if (!f || !layout) return;
+    const span = spanOf(f.picked);
+    const pct = parse(f.pct);
+    const w = parse(f.w);
+    const h = parse(f.h);
+    let fx = 1, fy = 1;
+    if (pct != null && pct > 0 && pct !== 100) { fx = pct / 100; fy = pct / 100; }
+    else {
+      if (w != null && w > 0 && span.w > 1e-6) fx = fromU(w) / span.w;
+      if (h != null && h > 0 && span.h > 1e-6) fy = fromU(h) / span.h;
+      // A flat line has no height: scale it by the width alone.
+      if (span.h <= 1e-6) fy = fx;
+      if (span.w <= 1e-6) fx = fy;
+    }
+    if (Math.abs(fx - 1) < 1e-9 && Math.abs(fy - 1) < 1e-9) { s.scale = null; render(); return; }
+    const next = scaleLayout(layout, fx, fy, f.keep, f.picked ? s.selRuns : undefined);
+    s.scale = null;
+    commitLayout(next, `Scaled to ${Math.round(fx * 100)}%${Math.abs(fx - fy) > 1e-6 ? ` × ${Math.round(fy * 100)}%` : ""}. ${f.keep === "count" ? "Light counts kept." : "Light spacing kept."}`);
+    requestAnimationFrame(fitDraft);
+  }
+  function scaleForm() {
+    const f = s.scale!;
+    const set = (patch: Partial<NonNullable<typeof s.scale>>) => { s.scale = { ...f, ...patch }; render(); };
+    return (
+      <div className="runbox" role="group" aria-label="Scale">
+        <h2>Scale {f.picked ? "the picked runs" : "the whole prop"}</h2>
+        <div className="grid2">
+          <label className="f">Width ({uLabel()})<input id="ye-scale-w" className="num" inputMode="decimal" value={f.w} onChange={(e) => set({ w: e.target.value, pct: "100" })} /></label>
+          <label className="f">Height ({uLabel()})<input id="ye-scale-h" className="num" inputMode="decimal" value={f.h} onChange={(e) => set({ h: e.target.value, pct: "100" })} /></label>
+        </div>
+        <div className="grid2" style={{ marginTop: 8 }}>
+          <label className="f">Or percent<input id="ye-scale-pct" className="num" inputMode="decimal" value={f.pct} onChange={(e) => set({ pct: e.target.value })} /></label>
+          <label className="f">Keep
+            <span className="seg" role="group" aria-label="Keep">
+              <button type="button" aria-pressed={f.keep === "spacing"} onClick={() => set({ keep: "spacing" })}>Spacing</button>
+              <button type="button" aria-pressed={f.keep === "count"} onClick={() => set({ keep: "count" })}>Light count</button>
+            </span>
+          </label>
+        </div>
+        <p className="note">{f.keep === "count" ? "Every lit run keeps its lights; they spread out or close up." : "Lights stay the same distance apart, so a longer run gets more."} {f.picked ? "Scales from the lower-left of the picked runs." : "The wire-in stays put."}</p>
+        <div className="btnrow" style={{ marginTop: 6 }}>
+          <button type="button" className="btn primary" onClick={applyScale}>Scale</button>
+          <button type="button" className="btn" onClick={() => { s.scale = null; render(); }}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
+  function applyRepeat() {
+    const f = s.repeat;
+    const layout = s.draft?.layout;
+    if (!f || !layout) return;
+    const n = Math.round(parse(f.count) ?? 0);
+    const gap = parse(f.gap) ?? 0;
+    if (n < 1) return;
+    const next = repeatRuns(layout, s.selRuns, n, fromU(gap), f.dir);
+    s.repeat = null;
+    s.selRuns = []; s.selRun = null; s.selPoints = []; s.selPoint = null;
+    commitLayout(next, `Added ${n} ${n === 1 ? "copy" : "copies"} at the end of the string, joined by dark jumps.`);
+    requestAnimationFrame(fitDraft);
+  }
+  function repeatForm() {
+    const f = s.repeat!;
+    const set = (patch: Partial<NonNullable<typeof s.repeat>>) => { s.repeat = { ...f, ...patch }; render(); };
+    return (
+      <div className="runbox" role="group" aria-label="Repeat">
+        <h2>Repeat the picked runs</h2>
+        <div className="grid2">
+          <label className="f">More copies<input id="ye-repeat-n" className="num" inputMode="numeric" value={f.count} onChange={(e) => set({ count: e.target.value })} /></label>
+          <label className="f">Gap ({uLabel()})<input id="ye-repeat-gap" className="num" inputMode="decimal" value={f.gap} onChange={(e) => set({ gap: e.target.value })} /></label>
+        </div>
+        <span className="seg" role="group" aria-label="Which way" style={{ marginTop: 8 }}>
+          {(["left", "right", "up", "down"] as const).map((dir) => (
+            <button key={dir} type="button" aria-pressed={f.dir === dir} onClick={() => set({ dir })}>{dir === "left" ? "← Left" : dir === "right" ? "Right →" : dir === "up" ? "↑ Up" : "↓ Down"}</button>
+          ))}
+        </span>
+        <p className="note">Each copy sits one width (or height) plus the gap further on. Copies go on the end of the string, with a dark jump wherever a copy does not start where the string ends.</p>
+        <div className="btnrow" style={{ marginTop: 6 }}>
+          <button type="button" className="btn primary" onClick={applyRepeat}>Repeat</button>
+          <button type="button" className="btn" onClick={() => { s.repeat = null; render(); }}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
+
   function removeLight() {
     const pick = s.selLight;
     if (!pick) return;
@@ -3355,7 +3490,7 @@ export function YardEditor(init: YardEditorProps) {
         <div style={{ marginTop: 8 }}>
           <ColourInput label="Section colour" value={sec.color ?? "#d4a574"} onChange={(hex) => edit((x) => updateSection(x, sec.id, { color: hex }))} />
         </div>
-        <p className="note">{ranges.empty ? `Empty. ${tapWord()} runs on the drawing to put them in this section.` : `Lights ${ranges.human} (WLED counts from 0: ${ranges.wled}).`}</p>
+        <p className="note">{ranges.empty ? `Empty. ${tapWord()} runs on the drawing to put them in this section, or drag a box around them.` : `Lights ${ranges.human} (WLED counts from 0: ${ranges.wled}).`}</p>
         <div className="btnrow" style={{ marginTop: 6 }}>
           <button type="button" className="btn" onClick={() => { s.activeSection = null; render(); }}>Done with {sec.name}</button>
           <button type="button" className="btn danger" onClick={() => { s.activeSection = null; edit((x) => deleteSection(x, sec.id)); }}>Delete section</button>
@@ -3373,7 +3508,7 @@ export function YardEditor(init: YardEditorProps) {
   if (inProp() && d) {
     chip = <><b>{s.draftIsNew ? "New prop" : "Editing"}</b> {d.label || (d.shape ? autoLabel(d) : "")}</>;
     const shaped = Boolean(d.layout && d.layout.corners.length > 0);
-    hint = !shaped ? "" : s.activeSection ? "Click runs to put them in the highlighted section. Esc stops." : s.tool === "trace" ? (s.phone
+    hint = !shaped ? "" : s.activeSection ? `${tapWord()} runs to put them in the highlighted section, or drag a box around them. Esc stops.` : s.tool === "trace" ? (s.phone
       ? "Tap empty space for the next run. Tap the last point to remove it. Done tracing stops."
       : "Click empty space for the next run · right-click empty space for the opposite run · Shift-click a point to join it with the opposite run · right-click a point to delete it · Esc or Enter stops.") : s.tool === "split" ? "Click a run to add a point on it." : "Drag empty space to select. Drag a run to move its ends. Right-click for the menu.";
   } else if (s.placing) {
