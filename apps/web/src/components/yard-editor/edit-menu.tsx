@@ -12,6 +12,7 @@ export type EditMenuState =
 
 export type EditMenuAction =
   | { type: "delete-point"; id: string }
+  | { type: "wire-in"; id: string }
   | { type: "disconnect"; id: string }
   | { type: "join"; id: string; targetId: string }
   | { type: "length"; id: string }
@@ -45,6 +46,7 @@ export function EditMenu({ menu, onClose, onAction }: {
             <>
               <Item danger disabled={menu.deleteReason != null} onSelect={() => onAction({ type: "delete-point", id: menu.id })}>Delete point</Item>
               {menu.deleteReason ? <div className="yemenu-note">{menu.deleteReason}</div> : null}
+              <Item onSelect={() => onAction({ type: "wire-in", id: menu.id })}>Set wire-in here</Item>
               <Item onSelect={() => onAction({ type: "disconnect", id: menu.id })}>Disconnect</Item>
               <Menu.Sub>
                 <Menu.SubTrigger className="yemenu-item">Join to…</Menu.SubTrigger>

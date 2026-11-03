@@ -93,6 +93,24 @@ try {
   expect("letters do not reach the tool keys", (await page.evaluate(() => window.__yard.tool)) === "move", await page.evaluate(() => window.__yard.tool));
   await page.keyboard.press("Escape");
 
+  // #185: Reverse, Set wire-in here, Mirror.
+  const before = await page.evaluate(() => { const st = window.__yard.draft.layout.strings[0]; return { start: st.startId, end: st.run.at(-1).to }; });
+  await page.getByRole("button", { name: "Reverse direction" }).click();
+  const reversed = await page.evaluate(() => window.__yard.draft.layout.strings[0].startId);
+  expect("reverse moves light 1 to the far end", reversed === before.end, { before, reversed });
+  const oldIn = await page.evaluate((id) => window.__yard.draft.layout.corners.find((c) => c.id === id), before.start);
+  const oldInAt = await screenOf(page, box, oldIn);
+  await page.mouse.click(oldInAt.x, oldInAt.y, { button: "right" });
+  await page.getByRole("menuitem", { name: "Set wire-in here" }).click();
+  const back = await page.evaluate(() => window.__yard.draft.layout.strings[0].startId);
+  expect("set wire-in here moves it back", back === before.start, back);
+  const xs = await page.evaluate(() => window.__yard.draft.layout.corners.map((c) => c.x));
+  await page.getByRole("button", { name: "Mirror ↔" }).click();
+  const flipped = await page.evaluate(() => window.__yard.draft.layout.corners.map((c) => c.x));
+  const sum = Math.min(...xs) + Math.max(...xs);
+  expect("mirror flips left and right in place", flipped.every((x, i) => Math.abs(x - (sum - xs[i])) < 1e-9), { xs, flipped });
+  if (shots) await page.screenshot({ path: `${shots}/well-mirror.png` });
+
   // Save names it after its shape.
   await page.getByRole("button", { name: "Save and place" }).first().click();
   await page.waitForFunction(() => window.__yard.placing != null);

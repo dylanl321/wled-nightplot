@@ -20,7 +20,10 @@ import {
   lookIncludesProp,
   layoutBox,
   layoutStrings,
+  mirrorLayout,
   moveCorner,
+  reverseLayout,
+  setWireIn,
   pinRings,
   pinSlidesFree,
   setLengthPin,
@@ -1578,7 +1581,7 @@ export function YardEditor(init: YardEditorProps) {
     const kind = multi ? "multi" : corner ? "point" : run ? "run" : null;
     if (!kind) return;
     const deleteReason = corner && kind === "point" ? wireInDeleteReason(corner) : null;
-    const menuH = kind === "run" ? 240 : kind === "point" ? (deleteReason ? 148 : 112) : 116;
+    const menuH = kind === "run" ? 240 : kind === "point" ? (deleteReason ? 184 : 148) : 116;
     const at = placeFloat(px, py, 200, menuH, [
       { x: px - 8, y: py + 40 },
       { x: Math.max(8, px - 96), y: py + 40 },
@@ -1650,6 +1653,10 @@ export function YardEditor(init: YardEditorProps) {
       makeSection(action.id ? [action.id] : s.selRuns);
       return;
     }
+    if (action.type === "wire-in") {
+      moveWireIn(action.id);
+      return;
+    }
     if (action.type === "length") {
       openLenEdit(action.id);
       return;
@@ -1702,6 +1709,30 @@ export function YardEditor(init: YardEditorProps) {
     s.selPoint = null;
     s.selPoints = [];
     commitLayout(applied.layout, notice);
+  }
+
+  /** Whole-drawing wiring edits. Sections keep their runs; light numbers follow the new order. */
+  function rewire(kind: "reverse" | "mirror-x" | "mirror-y") {
+    const layout = s.draft?.layout;
+    if (!layout || layout.corners.length < 2) return;
+    const next = kind === "reverse" ? reverseLayout(layout) : mirrorLayout(layout, kind === "mirror-x" ? "x" : "y");
+    s.selRun = null; s.selRuns = []; s.selPoint = null; s.selPoints = []; s.selLight = null;
+    commitLayout(next, kind === "reverse" ? "Reversed. Light 1 is at the other end now." : kind === "mirror-x" ? "Mirrored left to right." : "Mirrored top to bottom.");
+    requestAnimationFrame(fitDraft);
+  }
+
+  function moveWireIn(cornerId: string) {
+    const layout = s.draft?.layout;
+    if (!layout) return;
+    const moved = setWireIn(layout, cornerId);
+    if (!moved.ok) {
+      s.toast = moved.reason;
+      s.toastPlain = true;
+      render();
+      return;
+    }
+    s.selPoint = null; s.selPoints = [];
+    commitLayout(moved.layout, "Wire-in moved. Light 1 is here now.");
   }
 
   function edgeById(id: string): { from: { x: number; y: number }; to: { x: number; y: number } } | null {
@@ -3038,6 +3069,7 @@ export function YardEditor(init: YardEditorProps) {
             <p className="note">{isWireIn(s.selPoint) ? "The wire-in starts the string." : "A point between two runs merges them. Undo puts it back."}</p>
             <div className="btnrow">
               <button type="button" className="btn danger" disabled={wireInDeleteReason(s.selPoint) != null} onClick={() => s.selPoint && applyPointEffect({ type: "removePoint", pointId: s.selPoint })}>Delete point</button>
+              {!isWireIn(s.selPoint) ? <button type="button" className="btn" onClick={() => s.selPoint && moveWireIn(s.selPoint)}>Set wire-in here</button> : null}
             </div>
           </div>
         ) : null}
@@ -3071,6 +3103,14 @@ export function YardEditor(init: YardEditorProps) {
               <span className="nm">{d.keepKind ? "Drawn" : d.drawn && d.shape !== "draw" ? `Drawn · from ${SHAPE_TITLES[d.shape ?? "draw"]}` : SHAPE_TITLES[d.shape ?? "draw"]} · {fmtLen(totalLengthM(d.layout))}</span>
               <button type="button" className="btn link" onClick={() => { s.showTiles = true; render(); }}>Change shape</button>
             </div>
+            {d.layout && d.layout.corners.length > 1 && rows.length > 0 ? (
+              <div className="btnrow wiring" style={{ marginTop: 8 }} role="group" aria-label="Wiring">
+                <button type="button" className="btn" title="Wire it from the other end. Light 1 becomes the last light." onClick={() => rewire("reverse")}>Reverse direction</button>
+                <button type="button" className="btn" title="Flip left and right, in place" onClick={() => rewire("mirror-x")}>Mirror ↔</button>
+                <button type="button" className="btn" title="Flip top and bottom, in place" onClick={() => rewire("mirror-y")}>Mirror ↕</button>
+              </div>
+            ) : null}
+            {d.layout && d.layout.corners.length > 1 && rows.length > 0 ? <p className="note" style={{ marginTop: 4 }}>To move the wire-in, right-click a point{s.phone ? " (or hold it)" : ""} and choose Set wire-in here.</p> : null}
           </div>
         )}
         {hasShape ? (

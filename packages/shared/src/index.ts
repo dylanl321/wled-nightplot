@@ -596,6 +596,7 @@ export {
   type SimilarSection,
 } from "./prop/shape-design.ts";
 export { parseTraceLength, type TraceLength, type TraceLengthResult } from "./prop/trace-length.ts";
+export { mirrorLayout, reverseLayout, setWireIn, type WireInMove } from "./prop/transform.ts";
 export { snap, traceAim, SNAP_ALIGN_PX, SNAP_POINT_PX, type SnapContext, type SnapHit, type SnapPoint, type TraceGuide } from "./prop/snap.ts";
 export {
   applyCommand,
