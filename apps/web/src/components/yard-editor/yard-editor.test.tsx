@@ -55,6 +55,16 @@ describe("YardEditor", () => {
     }));
   });
 
+  it("names a new prop after its shape only when no name was typed", () => {
+    setup({ query: { view: "new" } });
+    const name = document.getElementById("ye-name") as HTMLInputElement;
+    expect(name.value).toBe("");
+    fireEvent.click(document.querySelector('[data-start="triangle"]') as HTMLButtonElement);
+    const after = document.getElementById("ye-name") as HTMLInputElement;
+    expect(after.value).toBe("");
+    expect(after.placeholder).toContain("Triangle 1");
+  });
+
   it("shows the yard with its props, and opens a Look on the Looks page", () => {
     setup();
     expect(screen.getByRole("heading", { name: "Your yard" })).toBeTruthy();
@@ -200,8 +210,17 @@ describe("prop canvas behaviour", () => {
     fireEvent.click(screen.getByRole("button", { name: "Trace" }));
     expect(screen.getByRole("button", { name: "Trace" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByText(/empty space for the next run/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Next: Lit" }));
-    expect(screen.getByRole("button", { name: "Next: Dark" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Lit" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Dark" }));
+    expect(screen.getByRole("button", { name: "Dark" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Lit" }).getAttribute("aria-pressed")).toBe("false");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("button", { name: "Select / move" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText(/Stopped tracing/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Trace" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done tracing" }));
+    expect(screen.getByRole("button", { name: "Select / move" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Trace" }));
     fireEvent.click(screen.getByRole("button", { name: "Select / move" }));
     expect(screen.getByRole("button", { name: "Select / move" }).getAttribute("aria-pressed")).toBe("true");
   });

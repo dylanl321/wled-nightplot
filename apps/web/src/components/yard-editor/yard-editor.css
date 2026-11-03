@@ -259,3 +259,14 @@
   .ye .alloff > div > div { width: min(380px, calc(100vw - 24px)); }
 }
 .ye .lightsbox { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+/* Next run: Lit | Dark. The pressed half is the one the next click places. */
+.ye .tools .runseg { display: inline-flex; border: 1px solid var(--y-border); border-radius: 6px; overflow: hidden; }
+.ye .tools .runseg button { border-radius: 0; }
+.ye .tools .runseg button + button { border-left: 1px solid var(--y-border); }
+/* Wire path: scrubber and the whole string as one strip. */
+.ye .scrubrow { display: flex; gap: 8px; align-items: center; }
+.ye .scrubrow input[type="range"] { flex: 1; min-width: 0; accent-color: var(--y-primary); }
+.ye .strip { position: relative; display: flex; align-items: stretch; height: 18px; margin-top: 6px; border: 1px solid var(--y-border); border-radius: 4px; overflow: hidden; background: var(--y-card); }
+.ye .strip .blk { flex-basis: 0; min-width: 2px; border: 0; padding: 0; border-right: 1px solid var(--y-card); cursor: pointer; }
+.ye .strip .jump { flex: 0 0 6px; background: repeating-linear-gradient(90deg, var(--y-border) 0 2px, transparent 2px 4px); }
+.ye .strip .cursor { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: var(--y-fg); pointer-events: none; }

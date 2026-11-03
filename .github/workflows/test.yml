@@ -83,6 +83,9 @@ jobs:
       - name: Trace touch, keys, and a locked run
         run: pnpm --filter @nightplot/web test:phase4
 
+      - name: Well house fixes at 1440×900
+        run: pnpm --filter @nightplot/web test:well
+
       - name: Yard at 1440×900 and 390×844
         run: pnpm --filter @nightplot/web test:yard3d
 

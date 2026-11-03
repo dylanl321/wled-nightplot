@@ -90,6 +90,8 @@ export type DrawProp = {
   corners: { id: string; x: number; y: number }[];
   /** Wire-in corner, in the prop's own frame. */
   start: { x: number; y: number } | null;
+  /** Last point of the string and the light number there. Drawn as the END cap. */
+  end?: { x: number; y: number; light: number } | null;
   lights: number;
   box: { minX: number; minY: number; maxX: number; maxY: number };
 };
@@ -116,6 +118,10 @@ export type Scene = {
   selectedPoint?: string | null;
   /** Point under the pointer in Select. */
   hoverPoint?: string | null;
+  /** Run under the pointer: its labels show even when zoomed out or dark. */
+  hoverRun?: string | null;
+  /** Prop canvas: the wire path overlay, with the light the scrubber is on. */
+  wirePath?: WirePath | null;
   /** Screen box while dragging a selection. */
   boxSelect?: { x0: number; y0: number; x1: number; y1: number } | null;
   /** Runs in the current selection, so each can show a midpoint handle. */
@@ -133,6 +139,16 @@ export type Scene = {
 };
 
 export type ScreenBox = { x: number; y: number; w: number; h: number };
+
+/**
+ * The whole string in order: arrows along every run, lit and dark, the
+ * first light number where each lit run starts, and the scrubbed light.
+ * Points are in the prop's frame.
+ */
+export type WirePath = {
+  starts: { x: number; y: number; label: string }[];
+  cursor: { x: number; y: number; label: string } | null;
+};
 
 export function boxesOverlap(a: ScreenBox, b: ScreenBox, pad = 0): boolean {
   return a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y;
@@ -162,12 +178,32 @@ export type RubberBand = {
 
 const BADGE_R = 11;
 
-/** The wire-in name sits off the point, so a run leaving it does not cross the words. */
-export function wireInLabelBox(x: number, y: number, textWidth: number, topLimit: number): ScreenBox {
+/**
+ * The wire-in name sits off the point, so a run leaving it does not cross
+ * the words. It stays inside the canvas: near an edge it slides along, so
+ * "Wire in · light 1" is never cut to "Wire in · light".
+ */
+export function wireInLabelBox(x: number, y: number, textWidth: number, topLimit: number, right = Infinity, bottom = Infinity): ScreenBox {
   const h = 14;
-  const baseline = y - 24 >= topLimit ? y - 24 : y + 28;
-  const left = Math.max(4, x - textWidth / 2);
+  let baseline = y - 24 >= topLimit ? y - 24 : y + 28;
+  if (baseline > bottom - 4) baseline = Math.max(topLimit + 11, bottom - 4);
+  const left = Math.max(4, Math.min(right - textWidth - 4, x - textWidth / 2));
   return { x: left, y: baseline - 11, w: textWidth, h };
+}
+
+/** On-screen run length, in pixels, for a length caption, and for a badge alone. */
+export const LABEL_FULL_PX = 96;
+export const LABEL_BADGE_PX = 36;
+
+/**
+ * How much of a run's label shows at this zoom. Zoomed out, runs are short
+ * on screen and their captions would pile up, so they keep only the badge,
+ * then nothing. The hover tip has the details.
+ */
+export function runLabelLevel(segPx: number): "full" | "badge" | "none" {
+  if (segPx >= LABEL_FULL_PX) return "full";
+  if (segPx >= LABEL_BADGE_PX) return "badge";
+  return "none";
 }
 
 /**
@@ -360,6 +396,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, view: View, scene: Scen
       ctx.strokeRect(Math.min(box.x0, box.x1), Math.min(box.y0, box.y1), Math.abs(box.x1 - box.x0), Math.abs(box.y1 - box.y0));
       ctx.restore();
     }
+    if (scene.wirePath) for (const p of scene.props) drawWirePath(ctx, view, c, p, scene.wirePath);
     if (scene.dots) drawDots(ctx, view, c, scene.dots);
     if (scene.guide) for (const p of scene.props) drawGuide(ctx, view, c, p, scene.guide);
   } else {
@@ -383,18 +420,27 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
   const ppm = view.cam.ppm;
   ctx.save();
   ctx.globalAlpha = alpha;
+  ctx.font = "11px var(--font-plex-mono), 'IBM Plex Mono', monospace";
   const selected = scoped || p.id === scene.selectedId;
   // A spiral has dozens of half-turn runs: label only the picked one, and draw corners as dots.
-  const crowded = p.edges.length > 16;
+  // A hand-drawn prop (badges on) keeps its labels: each one shows once it has room at this zoom.
+  const crowded = p.edges.length > 16 && !scene.badges;
   const blocked: ScreenBox[] = [...(scene.obstacles ?? [])];
+  /** Run captions and badges already drawn on this prop, and the IN and END marks. */
+  const drawn: ScreenBox[] = [];
   if (scoped && p.start) {
     ctx.font = "11px var(--font-plex-sans), 'IBM Plex Sans', sans-serif";
     const wire = "Wire in · light 1";
-    const tw = ctx.measureText(wire).width;
+    const tw = ctx.measureText(wire).width + MARK_PAD;
     const x = sx(p.start.x + p.x), y = sy(p.start.y + p.y);
-    const spot = wireInLabelBox(x, y, tw, scene.phone ? 120 : 16);
+    const spot = wireInLabelBox(x, y, tw, scene.phone ? 120 : 16, W, view.H);
     blocked.push(spot);
+    drawn.push(spot, { x: x - 13, y: y - 9, w: 26, h: 18 });
     scene.decor?.push(spot);
+  }
+  if (scoped && p.end && p.edges.length > 0) {
+    const x = sx(p.end.x + p.x), y = sy(p.end.y + p.y);
+    drawn.push({ x: x - 16, y: y - 9, w: 32, h: 18 });
   }
   if (scoped) {
     for (const corner of p.corners) {
@@ -449,25 +495,36 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
       }
       ctx.shadowBlur = 0;
     }
-    if (scoped && (!crowded || isSel || e.wire)) {
+    // Picked or under the pointer: always labelled. Dark jumps stay quiet
+    // until then, since several often share one gap and their labels stack.
+    const focus = isSel || scene.hoverRun === e.id || Boolean(scene.pickedRuns?.includes(e.id));
+    if (scoped && (!crowded || focus) && (!e.wire || focus)) {
       const mx = (ax + bx) / 2, my = (ay + by) / 2;
       const t = `${scene.fmtLen(e.lengthM ?? Math.hypot(e.bx - e.ax, e.by - e.ay))} · ${e.wire ? 0 : n}${e.typed ? "*" : ""}`;
       ctx.font = "11px var(--font-plex-mono), 'IBM Plex Mono', monospace";
       const w = ctx.measureText(t).width + 8;
+      const level = focus ? "full" : runLabelLevel(segLen);
       const nx = -(by - ay) / segLen, ny = (bx - ax) / segLen;
       const spots = placeBesideRun(mx, my, nx, ny, w, blocked, scene.labelBounds);
       const cap = spots.caption;
-      blocked.push(cap);
-      labels.push(cap);
-      scene.labelHits?.push({ edgeId: e.id, box: cap });
-      scene.decor?.push(cap);
-      ctx.fillStyle = c.card; ctx.globalAlpha = 0.92; ctx.fillRect(cap.x, cap.y, cap.w, cap.h); ctx.globalAlpha = 1;
-      ctx.fillStyle = isSel ? c.pick : c.fg; ctx.fillText(t, cap.x + 4, cap.y + 12);
-      if (e.badge && (e.wire || scene.badges)) {
-        const mark = spots.badge;
+      // A caption that would sit on another label waits for hover, unless this run is picked.
+      const clashes = !focus && drawn.some((q) => boxesOverlap(cap, q, 1));
+      if (level === "full" && !clashes) {
+        blocked.push(cap);
+        labels.push(cap);
+        drawn.push(cap);
+        scene.labelHits?.push({ edgeId: e.id, box: cap });
+        scene.decor?.push(cap);
+        ctx.fillStyle = c.card; ctx.globalAlpha = 0.92; ctx.fillRect(cap.x, cap.y, cap.w, cap.h); ctx.globalAlpha = 1;
+        ctx.fillStyle = isSel ? c.pick : c.fg; ctx.fillText(t, cap.x + 4, cap.y + 12);
+      }
+      const mark = spots.badge;
+      const badgeFree = focus || ![...drawn, ...blocked.filter((q) => q !== cap)].some((q) => boxesOverlap({ x: mark.x - mark.r, y: mark.y - mark.r, w: mark.r * 2, h: mark.r * 2 }, q, 1));
+      if (e.badge && (e.wire || scene.badges) && level !== "none" && badgeFree) {
         const badgeBox = { x: mark.x - mark.r, y: mark.y - mark.r, w: mark.r * 2, h: mark.r * 2 };
         blocked.push(badgeBox);
         labels.push(badgeBox);
+        drawn.push(badgeBox);
         scene.decor?.push(badgeBox);
         ctx.beginPath(); ctx.arc(mark.x, mark.y, mark.r, 0, Math.PI * 2);
         ctx.fillStyle = c.card; ctx.fill();
@@ -493,16 +550,32 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
         ctx.beginPath(); ctx.arc(x, y, picked ? 16 : 14, 0, Math.PI * 2);
         ctx.strokeStyle = c.pick; ctx.lineWidth = picked ? 3 : 1.5; ctx.stroke();
       }
-      ctx.fillStyle = c.card; ctx.strokeStyle = isStart ? c.primary : c.pick; ctx.lineWidth = 2;
-      const r = crowded && !isStart ? 2.5 : 5;
+      if (isStart) continue;
+      const isEnd = p.end && p.edges.length > 0 && Math.abs(p.end.x - corner.x) < 1e-9 && Math.abs(p.end.y - corner.y) < 1e-9;
+      if (isEnd) continue;
+      ctx.fillStyle = c.card; ctx.strokeStyle = c.pick; ctx.lineWidth = 2;
+      const r = crowded ? 2.5 : 5;
       ctx.beginPath(); ctx.rect(x - r, y - r, r * 2, r * 2); ctx.fill(); ctx.stroke();
     }
-    if (p.start) {
-      ctx.fillStyle = c.primary;
+    // END first, so the IN plug sits on top where a loop closes on the wire-in.
+    if (p.end && p.edges.length > 0) {
+      const x = sx(p.end.x + p.x), y = sy(p.end.y + p.y);
+      drawEndCap(ctx, c, x, y);
       ctx.font = "11px var(--font-plex-sans), 'IBM Plex Sans', sans-serif";
-      const t = "Wire in · light 1", tw = ctx.measureText(t).width, x = sx(p.start.x + p.x), y = sy(p.start.y + p.y);
-      const spot = wireInLabelBox(x, y, tw, scene.phone ? 120 : 16);
-      ctx.fillText(t, spot.x, spot.y + 11);
+      const t = `End · light ${p.end.light}`;
+      const tw = ctx.measureText(t).width + MARK_PAD;
+      const spot = endLabelBox(x, y, tw, scene.phone ? 120 : 16, W, view.H, blocked);
+      blocked.push(spot);
+      scene.decor?.push(spot);
+      drawMarkLabel(ctx, c, t, spot, c.fg);
+    }
+    if (p.start) {
+      const x = sx(p.start.x + p.x), y = sy(p.start.y + p.y);
+      drawInPlug(ctx, c, x, y);
+      ctx.font = "11px var(--font-plex-sans), 'IBM Plex Sans', sans-serif";
+      const t = "Wire in · light 1", tw = ctx.measureText(t).width + MARK_PAD;
+      const spot = wireInLabelBox(x, y, tw, scene.phone ? 120 : 16, W, view.H);
+      drawMarkLabel(ctx, c, t, spot, c.primary);
       ctx.font = "11px var(--font-plex-mono), 'IBM Plex Mono', monospace";
     }
     ctx.restore();
@@ -738,6 +811,117 @@ export function hitRun(view: View, p: DrawProp, px: number, py: number, slop = 1
 }
 
 /** Arrow toward the far end of a dark run, sitting on the line clear of the corner. */
+const MARK_PAD = 8;
+
+/** Chevrons every ~56 px along every run, so the wire's direction reads at a glance. */
+function drawWirePath(ctx: CanvasRenderingContext2D, view: View, c: Colours, p: DrawProp, path: WirePath) {
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  for (const e of p.edges) {
+    const { ax, ay, bx, by } = edgeOnScreen(view, p, e);
+    const seg = Math.hypot(bx - ax, by - ay);
+    if (seg < 14) continue;
+    const ux = (bx - ax) / seg, uy = (by - ay) / seg;
+    const count = Math.max(1, Math.floor(seg / 56));
+    ctx.strokeStyle = e.wire ? c.quiet : c.pick;
+    for (let i = 0; i < count; i += 1) {
+      const d = (seg * (i + 0.5)) / count + 4;
+      const tx = ax + ux * d, ty = ay + uy * d;
+      ctx.beginPath();
+      ctx.moveTo(tx - ux * 7 - uy * 5, ty - uy * 7 + ux * 5);
+      ctx.lineTo(tx, ty);
+      ctx.lineTo(tx - ux * 7 + uy * 5, ty - uy * 7 - ux * 5);
+      ctx.stroke();
+    }
+  }
+  ctx.font = "bold 10px var(--font-plex-mono), 'IBM Plex Mono', monospace";
+  ctx.textBaseline = "middle";
+  for (const start of path.starts) {
+    const x = view.sx(start.x + p.x), y = view.sy(start.y + p.y);
+    const w = ctx.measureText(start.label).width + 8;
+    ctx.fillStyle = c.pick;
+    ctx.beginPath();
+    ctx.roundRect(x + 7, y - 17, w, 14, 7);
+    ctx.fill();
+    ctx.fillStyle = c.canvas;
+    ctx.fillText(start.label, x + 11, y - 10);
+  }
+  if (path.cursor) {
+    const x = view.sx(path.cursor.x + p.x), y = view.sy(path.cursor.y + p.y);
+    ctx.strokeStyle = c.primary;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke();
+    ctx.font = "bold 11px var(--font-plex-sans), 'IBM Plex Sans', sans-serif";
+    const w = ctx.measureText(path.cursor.label).width + 10;
+    const lx = Math.max(4, Math.min(view.W - w - 4, x - w / 2));
+    const ly = y - 30 < 8 ? y + 16 : y - 30;
+    ctx.fillStyle = c.primary;
+    ctx.beginPath(); ctx.roundRect(lx, ly, w, 18, 4); ctx.fill();
+    ctx.fillStyle = c.card;
+    ctx.fillText(path.cursor.label, lx + 5, ly + 9.5);
+  }
+  ctx.restore();
+}
+
+/** The wire-in: a filled plug marked IN, the same size at every zoom. */
+function drawInPlug(ctx: CanvasRenderingContext2D, c: Colours, x: number, y: number) {
+  ctx.save();
+  ctx.fillStyle = c.primary;
+  ctx.strokeStyle = c.card;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(x - 12, y - 8, 24, 16, 4);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = c.card;
+  ctx.font = "bold 10px var(--font-plex-sans), 'IBM Plex Sans', sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("IN", x, y + 0.5);
+  ctx.restore();
+}
+
+/** The last light: an outlined cap marked END. */
+function drawEndCap(ctx: CanvasRenderingContext2D, c: Colours, x: number, y: number) {
+  ctx.save();
+  ctx.fillStyle = c.card;
+  ctx.strokeStyle = c.fg;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(x - 15, y - 8, 30, 16, 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = c.fg;
+  ctx.font = "bold 9px var(--font-plex-sans), 'IBM Plex Sans', sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("END", x, y + 0.5);
+  ctx.restore();
+}
+
+/** A marker's words on a card, so they read over runs and the grid. */
+function drawMarkLabel(ctx: CanvasRenderingContext2D, c: Colours, text: string, box: ScreenBox, colour: string) {
+  ctx.save();
+  ctx.globalAlpha = 0.92;
+  ctx.fillStyle = c.card;
+  ctx.fillRect(box.x, box.y - 1, box.w, box.h + 2);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = colour;
+  ctx.fillText(text, box.x + MARK_PAD / 2, box.y + 11);
+  ctx.restore();
+}
+
+/** The END label: below the cap, else above, inside the canvas and off the wire-in label. */
+export function endLabelBox(x: number, y: number, textWidth: number, topLimit: number, right: number, bottom: number, blocked: readonly ScreenBox[]): ScreenBox {
+  const left = Math.max(4, Math.min(right - textWidth - 4, x - textWidth / 2));
+  const tries = [y + 16, y - 30, y + 30, y - 44];
+  for (const top of tries) {
+    const box = { x: left, y: top, w: textWidth, h: 14 };
+    if (top < topLimit - 11 || top + 14 > bottom - 2) continue;
+    if (!blocked.some((q) => boxesOverlap(box, q, 2))) return box;
+  }
+  return { x: left, y: Math.max(topLimit - 11, Math.min(bottom - 16, y + 16)), w: textWidth, h: 14 };
+}
+
 function drawDirectionArrow(ctx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number) {
   const seg = Math.hypot(bx - ax, by - ay) || 1;
   if (seg < 36) return;

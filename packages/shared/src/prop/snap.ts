@@ -94,7 +94,10 @@ function alignHit(raw: { x: number; y: number }, ctx: SnapContext): SnapHit | nu
     if (dy <= SNAP_ALIGN_PX && dy > 0.4 && (!best || dy < best.d)) best = { axis: "y", at: point.y, d: dy };
   }
   if (!best) return null;
-  const point = best.axis === "x" ? { x: best.at, y: raw.y } : { x: raw.x, y: best.at };
+  // The other axis still lands on the grid, counted from the tail, so a run
+  // lined up with the wire-in is a whole number of steps long like the rest.
+  const free = gridHit(raw, ctx).point;
+  const point = best.axis === "x" ? { x: best.at, y: free.y } : { x: free.x, y: best.at };
   return { point, guides: [{ kind: "align", axis: best.axis, at: best.at }] };
 }
 
@@ -113,15 +116,26 @@ function angleHit(raw: { x: number; y: number }, ctx: SnapContext): SnapHit | nu
   if (delta > limit) return null;
   const rad = snapped * Math.PI / 180;
   const degrees = ((snapped % 360) + 360) % 360;
+  // The length snaps too, to the grid step, so runs drawn to the same
+  // spacing read the same length (4' 0", not 4' 0" and 4' 1").
+  const grid = gridStepM(ctx.units);
+  const along = Math.max(grid, Math.round(dist / grid) * grid);
   return {
-    point: { x: ctx.tail.x + Math.cos(rad) * dist, y: ctx.tail.y + Math.sin(rad) * dist },
+    point: { x: ctx.tail.x + Math.cos(rad) * along, y: ctx.tail.y + Math.sin(rad) * along },
     guides: [{ kind: "angle", degrees }],
   };
 }
 
+function gridStepM(units: LayoutUnits): number {
+  return units === "ft" ? METRES_PER_FOOT : 0.25;
+}
+
 function gridHit(raw: { x: number; y: number }, ctx: SnapContext): SnapHit {
-  const step = ctx.units === "ft" ? METRES_PER_FOOT : 0.25;
-  const point = { x: Math.round(raw.x / step) * step, y: Math.round(raw.y / step) * step };
+  const step = gridStepM(ctx.units);
+  // Counted from the tail, so runs come out whole steps long even when an
+  // older drawing's wire-in sits between grid lines.
+  const o = ctx.tail ?? { x: 0, y: 0 };
+  const point = { x: o.x + Math.round((raw.x - o.x) / step) * step, y: o.y + Math.round((raw.y - o.y) / step) * step };
   const moved = Math.hypot((point.x - raw.x) * ctx.ppm, (point.y - raw.y) * ctx.ppm) > 0.5;
   return { point, guides: moved ? [{ kind: "grid" }] : [] };
 }

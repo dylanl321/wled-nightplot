@@ -53,4 +53,15 @@ describe("snap", () => {
     expect(flat.point.x).toBeCloseTo(2, 5);
     expect(flat.guides.some((guide) => guide.kind === "align")).toBe(true);
   });
+
+  it("keeps a run lined up with the wire-in a whole number of feet long", () => {
+    const foot = METRES_PER_FOOT;
+    const wire = { x: 3 * foot + 0.0254, y: 2 * foot };
+    const c = ctx({ units: "ft", ppm: 60, tail: wire, points: [{ id: "c1", ...wire }] });
+    const hit = snap({ x: wire.x + 4 * foot + 0.02, y: wire.y - 0.02 }, c);
+    expect(Math.hypot(hit.point.x - wire.x, hit.point.y - wire.y) / foot).toBeCloseTo(4, 6);
+    const angled = snap({ x: wire.x + 4.1 * foot, y: wire.y + 4.1 * foot - 0.3 }, ctx({ units: "ft", ppm: 60, tail: wire, points: [] }));
+    expect(angled.guides[0]).toMatchObject({ kind: "angle", degrees: 45 });
+    expect(Math.hypot(angled.point.x - wire.x, angled.point.y - wire.y) / foot).toBeCloseTo(Math.round(Math.hypot(4.1, 4.1 - 0.3 / foot)), 6);
+  });
 });
