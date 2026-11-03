@@ -5,7 +5,7 @@ import { mirrorLayout, repeatRuns, reverseLayout, scaleLayout, setWireIn } from 
 /** Up 1 m, across 2 m (dark), down 1 m: a little gate. */
 function gate(): PropLayout {
   return {
-    source: "drawn",
+    source: "trace",
     units: "m",
     pitchM: 0.1,
     startOffsetM: 0,
