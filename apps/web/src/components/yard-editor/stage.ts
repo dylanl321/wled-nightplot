@@ -120,6 +120,8 @@ export type Scene = {
   hoverPoint?: string | null;
   /** Run under the pointer: its labels show even when zoomed out or dark. */
   hoverRun?: string | null;
+  /** Prop canvas: the wire path overlay, with the light the scrubber is on. */
+  wirePath?: WirePath | null;
   /** Screen box while dragging a selection. */
   boxSelect?: { x0: number; y0: number; x1: number; y1: number } | null;
   /** Runs in the current selection, so each can show a midpoint handle. */
@@ -137,6 +139,16 @@ export type Scene = {
 };
 
 export type ScreenBox = { x: number; y: number; w: number; h: number };
+
+/**
+ * The whole string in order: arrows along every run, lit and dark, the
+ * first light number where each lit run starts, and the scrubbed light.
+ * Points are in the prop's frame.
+ */
+export type WirePath = {
+  starts: { x: number; y: number; label: string }[];
+  cursor: { x: number; y: number; label: string } | null;
+};
 
 export function boxesOverlap(a: ScreenBox, b: ScreenBox, pad = 0): boolean {
   return a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y;
@@ -384,6 +396,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, view: View, scene: Scen
       ctx.strokeRect(Math.min(box.x0, box.x1), Math.min(box.y0, box.y1), Math.abs(box.x1 - box.x0), Math.abs(box.y1 - box.y0));
       ctx.restore();
     }
+    if (scene.wirePath) for (const p of scene.props) drawWirePath(ctx, view, c, p, scene.wirePath);
     if (scene.dots) drawDots(ctx, view, c, scene.dots);
     if (scene.guide) for (const p of scene.props) drawGuide(ctx, view, c, p, scene.guide);
   } else {
@@ -799,6 +812,57 @@ export function hitRun(view: View, p: DrawProp, px: number, py: number, slop = 1
 
 /** Arrow toward the far end of a dark run, sitting on the line clear of the corner. */
 const MARK_PAD = 8;
+
+/** Chevrons every ~56 px along every run, so the wire's direction reads at a glance. */
+function drawWirePath(ctx: CanvasRenderingContext2D, view: View, c: Colours, p: DrawProp, path: WirePath) {
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  for (const e of p.edges) {
+    const { ax, ay, bx, by } = edgeOnScreen(view, p, e);
+    const seg = Math.hypot(bx - ax, by - ay);
+    if (seg < 14) continue;
+    const ux = (bx - ax) / seg, uy = (by - ay) / seg;
+    const count = Math.max(1, Math.floor(seg / 56));
+    ctx.strokeStyle = e.wire ? c.quiet : c.pick;
+    for (let i = 0; i < count; i += 1) {
+      const d = (seg * (i + 0.5)) / count + 4;
+      const tx = ax + ux * d, ty = ay + uy * d;
+      ctx.beginPath();
+      ctx.moveTo(tx - ux * 7 - uy * 5, ty - uy * 7 + ux * 5);
+      ctx.lineTo(tx, ty);
+      ctx.lineTo(tx - ux * 7 + uy * 5, ty - uy * 7 - ux * 5);
+      ctx.stroke();
+    }
+  }
+  ctx.font = "bold 10px var(--font-plex-mono), 'IBM Plex Mono', monospace";
+  ctx.textBaseline = "middle";
+  for (const start of path.starts) {
+    const x = view.sx(start.x + p.x), y = view.sy(start.y + p.y);
+    const w = ctx.measureText(start.label).width + 8;
+    ctx.fillStyle = c.pick;
+    ctx.beginPath();
+    ctx.roundRect(x + 7, y - 17, w, 14, 7);
+    ctx.fill();
+    ctx.fillStyle = c.canvas;
+    ctx.fillText(start.label, x + 11, y - 10);
+  }
+  if (path.cursor) {
+    const x = view.sx(path.cursor.x + p.x), y = view.sy(path.cursor.y + p.y);
+    ctx.strokeStyle = c.primary;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke();
+    ctx.font = "bold 11px var(--font-plex-sans), 'IBM Plex Sans', sans-serif";
+    const w = ctx.measureText(path.cursor.label).width + 10;
+    const lx = Math.max(4, Math.min(view.W - w - 4, x - w / 2));
+    const ly = y - 30 < 8 ? y + 16 : y - 30;
+    ctx.fillStyle = c.primary;
+    ctx.beginPath(); ctx.roundRect(lx, ly, w, 18, 4); ctx.fill();
+    ctx.fillStyle = c.card;
+    ctx.fillText(path.cursor.label, lx + 5, ly + 9.5);
+  }
+  ctx.restore();
+}
 
 /** The wire-in: a filled plug marked IN, the same size at every zoom. */
 function drawInPlug(ctx: CanvasRenderingContext2D, c: Colours, x: number, y: number) {

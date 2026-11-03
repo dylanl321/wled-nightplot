@@ -138,6 +138,7 @@ import {
   type DrawGuide,
   type DrawProp,
   type LightDot,
+  type WirePath,
   type ScreenBox,
   type RubberBand,
 } from "./stage";
@@ -258,6 +259,10 @@ export function YardEditor(init: YardEditorProps) {
     activeSection: null as string | null,
     lensSection: null as string | null,
     confirmDelete: false,
+    /** Show wire path: arrows on every run, start numbers, and the scrubbed light (0-based in string order). */
+    wirePath: false,
+    scrub: 0,
+    playing: false,
     /** Repeat the picked runs: copies, gap (in the prop's unit) and which way. */
     repeat: null as { count: string; gap: string; dir: RepeatDirection } | null,
     /** Scale the prop, or the picked runs, to a width and height or a percent. */
@@ -469,6 +474,7 @@ export function YardEditor(init: YardEditorProps) {
       guide: inProp() ? drawGuideFor(s.draft) : null,
       dots: inProp() ? lightDots() : null,
       badges: inProp() && s.draft?.shape === "draw",
+      wirePath: inProp() ? wirePathScene() : null,
       selectedPoint: inProp() ? (s.selPoints[0] ?? s.selPoint) : null,
       hoverPoint: inProp() ? s.hoverPoint : null,
       hoverRun: inProp() ? s.hoverRun : null,
@@ -647,6 +653,103 @@ export function YardEditor(init: YardEditorProps) {
       }
     }
     return dots;
+  }
+
+  /** Every light in wiring order: the first string, then the next. */
+  function orderedLights(d: Draft) {
+    const order = new Map(layoutStrings(ensureStrings(d.layout!)).map((x, i) => [x.id, i]));
+    return lightMarks(d).slice().sort((a, b) => (order.get(a.stringId) ?? 0) - (order.get(b.stringId) ?? 0) || a.index - b.index);
+  }
+
+  function wirePathScene(): WirePath | null {
+    const d = s.draft;
+    if (!s.wirePath || !d?.layout) return null;
+    const marks = orderedLights(d);
+    const edges = layoutStrings(ensureStrings(d.layout)).flatMap((x) => x.run);
+    const starts: WirePath["starts"] = [];
+    const seen = new Set<string>();
+    marks.forEach((mark, i) => {
+      if (seen.has(mark.edgeId)) return;
+      seen.add(mark.edgeId);
+      const edge = edges.find((e) => e.id === mark.edgeId);
+      const at = edge ? d.layout!.corners.find((c) => c.id === edge.from) : undefined;
+      if (at) starts.push({ x: at.x, y: at.y, label: String(i + 1) });
+    });
+    const here = marks[Math.min(marks.length - 1, Math.max(0, s.scrub))];
+    return { starts, cursor: here ? { x: here.x, y: here.y, label: `Light ${Math.min(marks.length, s.scrub + 1)}` } : null };
+  }
+
+  const playTimer = useRef<number | null>(null);
+  function stopPlay() {
+    if (playTimer.current != null) window.clearInterval(playTimer.current);
+    playTimer.current = null;
+    s.playing = false;
+  }
+  function togglePlay(total: number) {
+    if (s.playing) {
+      stopPlay();
+      render();
+      return;
+    }
+    if (s.scrub >= total - 1) s.scrub = 0;
+    s.playing = true;
+    // About eight seconds end to end, however long the string.
+    const step = Math.max(1, Math.round(total / 240));
+    playTimer.current = window.setInterval(() => {
+      s.scrub = Math.min(total - 1, s.scrub + step);
+      if (s.scrub >= total - 1) stopPlay();
+      render();
+    }, 33);
+    render();
+  }
+
+  /** The wire path block: a switch, a light 1 → N scrubber with Play, and the whole string as a strip. */
+  function wirePathPanel(d: Draft) {
+    if (!d.layout) return null;
+    const marks = orderedLights(d);
+    const total = marks.length;
+    const rows = drawRows(d);
+    const at = marks[Math.min(total - 1, Math.max(0, s.scrub))];
+    const runName = at ? rows.find((r) => r.edge.id === at.edgeId)?.name.replace(" · dark", "") : null;
+    const sec = at ? sectionOfEdge(d.sections, at.edgeId) : null;
+    // The strip: one block per run, in order, coloured by section, with a gap where a dark jump sits between.
+    const edges = layoutStrings(ensureStrings(d.layout)).flatMap((x) => x.run);
+    const blocks: { edgeId: string | null; first: number; n: number; color: string }[] = [];
+    let i = 0;
+    for (const edge of edges) {
+      if (edge.kind !== "lit") {
+        if (blocks.length && blocks[blocks.length - 1]!.edgeId !== null) blocks.push({ edgeId: null, first: i, n: 0, color: "" });
+        continue;
+      }
+      const n = marks.filter((m) => m.edgeId === edge.id).length;
+      if (n === 0) continue;
+      blocks.push({ edgeId: edge.id, first: i, n, color: sectionOfEdge(d.sections, edge.id)?.color ?? "var(--y-lit)" });
+      i += n;
+    }
+    return (
+      <div>
+        <div className="hrow">
+          <h2>Wire path</h2>
+          <button type="button" className="btn link" aria-pressed={s.wirePath} onClick={() => { s.wirePath = !s.wirePath; if (!s.wirePath) stopPlay(); render(); }}>{s.wirePath ? "Hide on drawing" : "Show wire path"}</button>
+        </div>
+        {s.wirePath && total > 0 ? (
+          <>
+            <div className="scrubrow">
+              <button type="button" className="btn" onClick={() => togglePlay(total)}>{s.playing ? "Pause" : "Play"}</button>
+              <input id="ye-scrub" type="range" min={1} max={total} value={Math.min(total, s.scrub + 1)} aria-label="Light" onChange={(e) => { stopPlay(); s.scrub = Number(e.target.value) - 1; render(); }} />
+            </div>
+            <p className="note" id="ye-scrub-text">Light {Math.min(total, s.scrub + 1)} of {total}{runName ? ` · run ${runName}` : ""}{sec ? ` · ${sec.name}` : ""}</p>
+            <div className="strip" role="img" aria-label={`The string from light 1 to ${total}`}>
+              {blocks.map((b, k) => b.edgeId == null
+                ? <span key={`j${k}`} className="jump" title="Dark jump" />
+                : <button key={b.edgeId} type="button" className="blk" style={{ flexGrow: b.n, background: b.color }} title={`${rows.find((r) => r.edge.id === b.edgeId)?.name ?? ""} · lights ${b.first + 1}–${b.first + b.n}`} onClick={() => { stopPlay(); s.scrub = b.first; render(); }} />)}
+              <span className="cursor" style={{ left: `${(100 * (Math.min(total, s.scrub + 1) - 0.5)) / total}%` }} />
+            </div>
+            <p className="note">Arrows show which way the wire runs, dark jumps included. Numbers mark the first light on each run.</p>
+          </>
+        ) : s.wirePath ? <p className="note">No lights yet.</p> : null}
+      </div>
+    );
   }
 
   function guideShown(d: Draft | null): boolean {
@@ -968,6 +1071,9 @@ export function YardEditor(init: YardEditorProps) {
     s.showTiles = false;
     s.repeat = null;
     s.scale = null;
+    s.wirePath = false;
+    s.scrub = 0;
+    stopPlay();
     s.dpast = [];
     s.dfuture = [];
     s.view = "prop";
@@ -1036,6 +1142,7 @@ export function YardEditor(init: YardEditorProps) {
   }
   function leaveProp() {
     hideHover();
+    stopPlay();
     s.view = "yard";
     if (s.yardCam) s.cam = s.yardCam;
     else requestAnimationFrame(fitYard);
@@ -3222,6 +3329,7 @@ export function YardEditor(init: YardEditorProps) {
                 : d.count != null ? `Fixed at ${d.count}, spread over the runs by length.` : "Counted from length and spacing."} Light 1 is at the wire-in.</p>
             </div>
             {installPanel(d)}
+            {wirePathPanel(d)}
             {nameField}
             <div>
               <h2>Sections</h2>

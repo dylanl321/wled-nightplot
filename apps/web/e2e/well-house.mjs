@@ -155,6 +155,21 @@ try {
   expect("scale halves the width", Math.abs(w2 - w1 / 2) < 1e-6, { w1, w2 });
   expect("keep light count keeps the count", (await page.locator("#ye-count").inputValue()) === lights1, lights1);
 
+  // #187: Show wire path, scrub to the last light, Play.
+  await page.getByRole("button", { name: "Show wire path" }).click();
+  const total = Number(await page.locator("#ye-count").inputValue());
+  await page.locator("#ye-scrub").fill(String(total));
+  const said = await page.locator("#ye-scrub-text").textContent();
+  expect("scrubber reads the last light", said?.startsWith(`Light ${total} of ${total}`), said);
+  const blocks = await page.locator(".strip .blk").count();
+  expect("strip has a block per lit run", blocks > 0, blocks);
+  await page.locator(".strip .blk").first().click();
+  expect("a strip block jumps to its first light", (await page.locator("#ye-scrub-text").textContent())?.startsWith("Light 1 of"), await page.locator("#ye-scrub-text").textContent());
+  await page.getByRole("button", { name: "Play" }).click();
+  await page.waitForFunction(() => window.__yard.scrub > 0);
+  await page.getByRole("button", { name: "Pause" }).click();
+  if (shots) await page.screenshot({ path: `${shots}/well-wirepath.png` });
+
   // Save names it after its shape.
   await page.getByRole("button", { name: "Save and place" }).first().click();
   await page.waitForFunction(() => window.__yard.placing != null);
