@@ -95,7 +95,10 @@ try {
     await page.screenshot({ path: `${shots}/trace-desktop-mid.png` });
     await page.mouse.click(hover.x, hover.y, { button: "right" });
     await page.getByRole("button", { name: "A2 · dark" }).waitFor();
+    // Esc stops tracing (back to Select); T picks it up from the last point.
     await page.keyboard.press("Escape");
+    await page.waitForFunction(() => window.__yard?.tool === "move");
+    await page.keyboard.press("t");
     await page.screenshot({ path: `${shots}/trace-desktop-dark.png` });
     const tail = await corner(page);
     const third = await screenOf(page, box, { x: tail.x - 1, y: tail.y });

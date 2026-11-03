@@ -61,7 +61,7 @@ try {
     await page.mouse.click(at.x, at.y);
     await page.waitForFunction(() => window.__yard?.draft?.layout?.corners?.length === 1);
     const start = await tail(page);
-    const second = await screenOf(page, box, { x: start.x + 1.2, y: start.y });
+    const second = await screenOf(page, box, { x: start.x + 1.25, y: start.y });
     await page.mouse.click(second.x, second.y);
     await page.getByRole("button", { name: "A1" }).waitFor();
     const mid = await tail(page);
@@ -87,7 +87,7 @@ try {
       const b = layout.corners[1];
       return Math.hypot(b.x - a.x, b.y - a.y);
     });
-    expect("pinned run keeps its length", Math.abs(kept - 1.2) < 0.02, kept);
+    expect("pinned run keeps its length", Math.abs(kept - 1.25) < 0.02, kept);
     await page.screenshot({ path: `${shots}/phase4-desktop-pin.png` });
     await page.mouse.up();
 
@@ -175,13 +175,13 @@ try {
     await hand.screenshot({ path: `${shots}/phase4-phone-loupe.png` });
     await touch("touchEnd", moved);
     await hand.getByRole("button", { name: "A1" }).waitFor();
-    await hand.getByRole("button", { name: "Lit" }).click();
+    await hand.getByRole("button", { name: "Dark", exact: true }).click();
     const end = await tail(hand);
     const darkAt = await screenOf(hand, box, { x: end.x, y: end.y + 0.45 });
     await touch("touchStart", darkAt);
     await touch("touchEnd", darkAt);
     await hand.waitForFunction(() => window.__yard.draft.layout.strings[0].run.at(-1).kind === "wire");
-    await hand.getByRole("button", { name: "Dark", exact: true }).click();
+    await hand.getByRole("button", { name: "Lit", exact: true }).click();
     await hand.locator("#ye-nextlen").click();
     await hand.locator("#ye-nextlen").pressSequentially("24L");
     const spot = { x: box.x + box.width * 0.78, y: box.y + Math.min(box.height * 0.42, 300) };

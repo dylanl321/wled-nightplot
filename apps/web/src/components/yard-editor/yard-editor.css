@@ -259,3 +259,7 @@
   .ye .alloff > div > div { width: min(380px, calc(100vw - 24px)); }
 }
 .ye .lightsbox { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+/* Next run: Lit | Dark. The pressed half is the one the next click places. */
+.ye .tools .runseg { display: inline-flex; border: 1px solid var(--y-border); border-radius: 6px; overflow: hidden; }
+.ye .tools .runseg button { border-radius: 0; }
+.ye .tools .runseg button + button { border-left: 1px solid var(--y-border); }
