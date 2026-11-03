@@ -242,6 +242,7 @@ export function YardEditor(init: YardEditorProps) {
     loupe: null as { px: number; py: number; ax: number; ay: number } | null,
     pinRings: [] as { x: number; y: number; r: number }[],
     hoverPoint: null as string | null,
+    hoverRun: null as string | null,
     box: null as { x0: number; y0: number; x1: number; y1: number } | null,
     /** A single light picked on the prop canvas, and where it is while it is dragged. */
     selLight: null as LightPick | null,
@@ -301,6 +302,7 @@ export function YardEditor(init: YardEditorProps) {
   function drawable(id: string, name: string, layout: PropLayout | undefined | null, sections: readonly PropSection[], at: { x: number; y: number }, colour: (edgeId: string) => string | null, typed = false): DrawProp {
     const edges: DrawEdge[] = [];
     let start: { x: number; y: number } | null = null;
+    let end: { x: number; y: number; light: number } | null = null;
     const corners: { id: string; x: number; y: number }[] = [];
     let lights = 0;
     if (layout) {
@@ -311,6 +313,7 @@ export function YardEditor(init: YardEditorProps) {
         if (index === 0 && c0) start = { x: c0.x, y: c0.y };
         used.add(string.startId);
         const letter = index < 26 ? String.fromCharCode(65 + index) : String(index + 1);
+        let stringLights = 0;
         string.run.forEach((edge, runIndex) => {
           const a = layout.corners.find((c) => c.id === edge.from);
           const b = layout.corners.find((c) => c.id === edge.to);
@@ -319,6 +322,8 @@ export function YardEditor(init: YardEditorProps) {
           used.add(b.id);
           const n = counted.get(edge.id)?.lights ?? 0;
           lights += n;
+          stringLights += n;
+          if (index === 0) end = { x: b.x, y: b.y, light: stringLights };
           edges.push({
             id: edge.id, ax: a.x, ay: a.y, bx: b.x, by: b.y, lights: n,
             color: edge.kind === "wire" ? null : colour(edge.id), wire: edge.kind !== "lit", typed: typed && edge.lockedLights != null,
@@ -330,7 +335,7 @@ export function YardEditor(init: YardEditorProps) {
       for (const corner of layout.corners) if (used.has(corner.id)) corners.push(corner);
       assignLanes(edges);
     }
-    return { id, name, x: at.x, y: at.y, edges, corners, start, lights, box: layoutBox(layout ?? undefined) };
+    return { id, name, x: at.x, y: at.y, edges, corners, start, end, lights, box: layoutBox(layout ?? undefined) };
   }
 
   function yardDrawables(): DrawProp[] {
@@ -455,6 +460,7 @@ export function YardEditor(init: YardEditorProps) {
       badges: inProp() && s.draft?.shape === "draw",
       selectedPoint: inProp() ? (s.selPoints[0] ?? s.selPoint) : null,
       hoverPoint: inProp() ? s.hoverPoint : null,
+      hoverRun: inProp() ? s.hoverRun : null,
       boxSelect: inProp() ? s.box : null,
       pickedRuns: inProp() ? s.selRuns : [],
       pickedPoints: inProp() ? s.selPoints : [],
@@ -970,7 +976,7 @@ export function YardEditor(init: YardEditorProps) {
 
   async function saveProp() {
     const d = s.draft;
-    if (!d) return;
+    if (!d || s.savingBusy) return;
     if (!d.layout || countLayout(d.layout).edges.length === 0) {
       s.error = "Give the prop a shape before saving.";
       render();
@@ -1053,14 +1059,33 @@ export function YardEditor(init: YardEditorProps) {
     s.sheet = "half";
     setQuery({ prop: p.id });
     await moveProp(p.id, x, y, false);
-    fitIfOff(p.id);
+    showWhole(p.id);
+  }
+  /** After placing: the whole prop in view. Pan if it fits; zoom out to the yard if it does not. */
+  function showWhole(id: string) {
+    const row = placements().get(id);
+    if (!row) return;
+    const bb = row.box;
+    const v = vis();
+    const vw = view();
+    const inside = vw.sx(bb.minX) >= v.left + 8 && vw.sx(bb.maxX) <= v.right - 8 && vw.sy(bb.maxY) >= v.top + 8 && vw.sy(bb.minY) <= v.bottom - 8;
+    if (inside) return;
+    const fits = (bb.maxX - bb.minX) * s.cam.ppm <= v.right - v.left - 40 && (bb.maxY - bb.minY) * s.cam.ppm <= v.bottom - v.top - 40;
+    if (!fits) {
+      fitYard();
+      return;
+    }
+    const { W, H } = size.current;
+    s.cam = { ...s.cam, x: (bb.minX + bb.maxX) / 2 - ((v.left + v.right) / 2 - W / 2) / s.cam.ppm, y: (bb.minY + bb.maxY) / 2 + ((v.top + v.bottom) / 2 - H / 2) / s.cam.ppm };
+    draw();
   }
   function placeDefault() {
     if (!s.placing) return;
     let right = 0;
     for (const row of placements().values()) right = Math.max(right, row.box.maxX);
     const bb = layoutBox(s.placing.layout);
-    void placeAt(+(right + 1 - bb.minX).toFixed(2), -bb.minY);
+    // Ground level, rounded to the yard step: a corner a hair below the wire-in must not lift it to 0.03 ft.
+    void placeAt(+(right + 1 - bb.minX).toFixed(2), Math.max(0, snap(-bb.minY)));
   }
 
   const snap = (v: number) => {
@@ -1305,7 +1330,10 @@ export function YardEditor(init: YardEditorProps) {
 
   /** The run tooltip is a plain element; nothing else clears it, so every view and tool change does. */
   function hideHover() {
+    const had = s.hoverPoint != null || s.hoverRun != null;
     s.hoverPoint = null;
+    s.hoverRun = null;
+    if (had) requestAnimationFrame(draw);
     const el = document.getElementById("ye-hover");
     if (el) el.hidden = true;
   }
@@ -1481,6 +1509,7 @@ export function YardEditor(init: YardEditorProps) {
     const el = document.getElementById("ye-hover");
     if (!shape || !s.draft?.layout) {
       s.hoverPoint = null;
+      s.hoverRun = null;
       if (el) el.hidden = true;
       return;
     }
@@ -1488,8 +1517,10 @@ export function YardEditor(init: YardEditorProps) {
     const corner = hitCorner(vw, shape, px, py, pointHitSlop(s.phone));
     const run = hitRun(vw, shape, px, py, s.phone ? 22 : 10);
     const nextPoint = corner;
-    if (nextPoint !== s.hoverPoint) {
+    const nextRun = corner ? null : run?.id ?? null;
+    if (nextPoint !== s.hoverPoint || nextRun !== s.hoverRun) {
       s.hoverPoint = nextPoint;
+      s.hoverRun = nextRun;
       draw();
     }
     if (!el) return;
@@ -3173,7 +3204,7 @@ export function YardEditor(init: YardEditorProps) {
         ) : null}
         {rows.length === 0 ? nameField : null}
         <div className="btnrow">
-          <button type="button" className="btn primary" disabled={rows.length === 0} onClick={() => void saveProp()}>{s.draftIsNew ? "Save and place" : "Save"}</button>
+          <button type="button" className="btn primary" disabled={rows.length === 0 || s.savingBusy} aria-busy={s.savingBusy || undefined} onClick={() => void saveProp()}>{s.savingBusy ? "Saving…" : s.draftIsNew ? "Save and place" : "Save"}</button>
           <button type="button" className="btn" onClick={() => cancelProp()}>Cancel</button>
         </div>
         <p className="note keys">Press ? for the keys. T traces, E or V selects, D switches lit and dark.</p>
@@ -3367,7 +3398,7 @@ export function YardEditor(init: YardEditorProps) {
         {inProp() ? (
           <>
             <button type="button" className="btn" onClick={() => cancelProp()}>Cancel</button>
-            <button type="button" className="btn primary" disabled={!d || (d.shape === "draw" ? drawRows(d).length : runRows(d).length) === 0} onClick={() => void saveProp()}>{s.draftIsNew && !s.phone ? "Save and place" : "Save"}</button>
+            <button type="button" className="btn primary" disabled={!d || s.savingBusy || (d.shape === "draw" ? drawRows(d).length : runRows(d).length) === 0} aria-busy={s.savingBusy || undefined} onClick={() => void saveProp()}>{s.savingBusy ? "Saving…" : s.draftIsNew && !s.phone ? "Save and place" : "Save"}</button>
           </>
         ) : null}
         {!editing ? <div className="alloff"><AllOffControl size="bar" lights={init.lightViews} sessions={init.sessions} /></div> : null}

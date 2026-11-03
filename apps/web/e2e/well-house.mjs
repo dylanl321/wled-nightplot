@@ -100,6 +100,9 @@ try {
   expect("saved as a Drawing", /^Drawing \d+$/.test(label), label);
   await page.getByRole("button", { name: "Next to the others" }).click();
   await page.waitForFunction(() => window.__yard.placing == null);
+  // #184: Next to the others puts it on the ground and in view.
+  const placed = await page.evaluate((name) => window.__yard.props.find((p) => p.label === name)?.yard, label);
+  expect("placed at ground level", placed && placed.y === 0, placed);
   expect("tooltip is gone on the yard", await page.evaluate(() => document.getElementById("ye-hover")?.hidden !== false), "tooltip showing");
   console.log("ok well house fixes");
 } catch (error) {
