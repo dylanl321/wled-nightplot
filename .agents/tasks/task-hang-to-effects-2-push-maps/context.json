@@ -1,0 +1,16 @@
+{
+"project_type":"pnpm monorepo, TypeScript: apps/server (Hono), apps/web, packages/shared, docs",
+"language":"TypeScript",
+"build_system":"pnpm. Install with `pnpm install --store-dir /tmp/pnpm-store` (default store is read-only). node_modules already present.",
+"test_framework":"vitest, colocated *.test.ts",
+"build_command":"pnpm typecheck && pnpm lint",
+"test_command":"pnpm test",
+"verification_instructions":"pnpm lint, pnpm typecheck, pnpm test all pass. Map writing and readback exercised against the sim (pnpm sim; apps/server/src/wled-fixture-box.ts) and in tests.",
+"snapshot_or_generated_files":null,
+"setup_instructions":"pnpm install --store-dir /tmp/pnpm-store",
+"environment_constraints":"No hardware. Sim/fixture is not Hardware Done. Cannot push or open PRs. Branch hang-to-effects-2-push-maps stacked on hang-to-effects-1-motion-map (PR #194). PR #192 (LayoutCorner.z) may or may not merge: do not depend on it. No Plane tickets. No em dashes in written content.",
+"contribution_requirements":"One slice per PR. CHANGELOG and docs in same commit. Honesty rules: Preview temporary, Apply persists, readback mismatch is not success, sim is not hardware. Product words: Lights, Segments, Preview, Apply, Blink, All Off, Prop, Look.",
+"key_patterns":"Slice 1 builder packages/shared/src/prop/motion-map.ts: buildMotionMaps({props:[{prop,start,ledCount}],looks:[{id,motions}],ledCount}) -> slot 0 base map, deduped slots, per-Look sections {propId,sectionId,start,stop,rev} in map positions; refusals not throws. Caller must resolve each prop start (afterPropId chains).",
+"relevant_files":["docs/hang-to-effects.md","docs/shape-aware-effects.md","packages/shared/src/look.ts","packages/shared/src/prop/motion-map.ts","packages/shared/src/lights.ts","packages/shared/src/yard.ts","apps/server/src/wled/native-backup.ts","apps/server/src/wireframe-persist.ts","apps/server/src/look-routes.ts","apps/server/src/app.ts","apps/server/src/domain.ts","apps/server/src/wled-fixture-box.ts","apps/server/src/look-sections-push.test.ts","CHANGELOG.md"],
+"directory_structure":"apps/server/src, apps/web, packages/shared/src (prop/ subdir), docs/"
+}

@@ -1,0 +1,34 @@
+{
+ "id": "FEAT-001",
+ "type": "feat",
+ "status": "completed",
+ "description": "Slice 2 of docs/hang-to-effects.md: push motion maps with Looks. Keep general: any prop kind (drawn/traced/custom layouts, wireframe/well house block, props with no drawing), multiple props per Light, with or without LayoutCorner.z.",
+ "steps": [
+  "Environment: pnpm install --store-dir /tmp/pnpm-store if needed; confirm lint/typecheck/test green on the branch first.",
+  "native-backup.ts: WriteWledLedmap and ReadWledLedmap gain a map number (0 -> ledmap.json, N -> ledmapN.json, 0..9). Update createWledLedmapWriter/Reader, callers, and native-backup.test.ts.",
+  "Add a shared helper that resolves each Prop's physical start on a Light (including afterPropId chains, PropAttachment) and ledCount, then calls buildMotionMaps with the Looks' motions. Refuse before any write when drawn vs attached light count mismatches; surface builder notes (e.g. well-house prop with no ledCount).",
+  "look.ts: buildLookPreset sets \"ledmap\": slot and uses map-position segment ranges and rev from the map's sections; buildOffPreset and buildPlaylistPreset set ledmap 0; lookTargets/propSectionPlan/lookTargetsForLook must not assume sections exist (well house reports none; its motion is ignored); remove the 'does not write for sections yet' note at propSectionPlan; keep directionForMotion as fallback for no-map-room.",
+  "wireframe-persist.ts: writeAndVerifyLedmap becomes write-all-maps: write each distinct ledmapN.json, reread and compare each, stop on first failure with the existing 409/503/422 semantics; wireframe prop is no longer special-cased (face map is a block in base map). Update app.ts Apply call site (around line 1431) so Apply still writes the base map.",
+  "Refuse more than nine non-base maps with the builder's plain message, before anything is written; also keep the segment cap check using map-based segment counts.",
+  "lights.ts: lastLedmap becomes a list ({slot,digest,at}[]); migrate legacy single {digest,at} on read (domain.ts line ~62, lights-store). Update app.ts and look-routes.ts writers. Keep yard.ts compareLedmap behaviour working (compare base map, slot 0) without doing slice 6.",
+  "look-routes.ts pushLooksToLight: build maps, write+verify all, then presets with ledmap, reread presets as today.",
+  "Tests: motion-map untested paths flagged by slice 1 review (invalid start, duplicate Look ids, ledCount beyond last prop, wireframe with no count, count-mismatch note); look.ts preset tests (ledmap key, off/playlist ledmap 0, well house); server tests against the fixture box in wled-fixture-box.ts proving ledmapN.json written, reread, mismatch/failed readback not success, >9 maps refused with nothing written, lastLedmap list/legacy migration.",
+  "Docs: docs/shape-aware-effects.md gets the slice 0 bench checklist for Dylan (ESP32 and ESP8266, WLED 0.15 and 16.x: ledmap switching, ledmap 0 with no file clears, 300 to 1000 light maps, grp banding) and marks slice 2 defaults (nine maps, grp banding, map switching behaviour) as pending the bench. Update docs/hang-to-effects.md if statements become outdated; CHANGELOG.md entry; state that sim/fixture is not hardware and real boards are unverified until slice 0.",
+  "Commit locally on branch hang-to-effects-2-push-maps. Do not push."
+ ],
+ "acceptance_criteria": [
+  "pnpm lint, pnpm typecheck, pnpm test pass",
+  "A Look push to a fixture/sim Light writes ledmapN.json per distinct map, rereads each, and each Look preset has \"ledmap\" set; Off and playlist presets have ledmap 0",
+  "More than nine distinct maps refused with nothing written",
+  "Count mismatch refused before any write",
+  "lastLedmap is a list; legacy single value still loads; yard check still works",
+  "Docs checklist and CHANGELOG present; no hardware claims"
+ ],
+ "verification": [
+  "pnpm lint",
+  "pnpm typecheck",
+  "pnpm test"
+ ],
+ "blocked_reason": null,
+ "findings": "Implemented slice 2 only. New packages/shared/src/prop/light-maps.ts (planLightMaps) resolves prop starts (attachment, afterPropId chain, output offset, legacy via Segments), refuses on drawn vs design.ledCount mismatch / prop past Light end, and calls buildMotionMaps. Builder additions (additive): MotionMapLookInput.joined (sections that follow the prop sort as one block) and MotionMapLook.rests. look.ts: buildLookPreset(look,targets,rgbw,ledmap=0) always sets ledmap, LookTarget.mapRev, mapTargetsForLook/lookPresetTargets, buildManagedPresets({maps}); Off and playlist ledmap 0; propSectionPlan note reworded (no ledmap claim). Server: ledmapFileName + map number on read/write, writeAndVerifyLedmap writes all maps (stops at first failure), planLedmapsFor, pushLooksToLight plans first, checks segment cap, then writes maps, then presets; Apply writes base map only. lastLedmap is {slot,digest,at}[] with legacy migration (normalizeLastLedmap, mergeLastLedmap) in lights-store and domain. Yard check passes attachments so expected presets include ledmap (older pushes show as different until re-pushed). Decisions: no map file is written when every Look is wire order and no wireframe; a wireframe prop uses whole Light unless it has design.ledCount (then its attachment start). Preview (look-live-routes) is unchanged and sends no ledmap; /api/looks/now segment counts do not use maps. compareLedmap and season ledmapJson untouched (slice 6). Fixture box now stores ledmap files per number (ledmap(n), ledmapSlots(), setLedmap(raw,n)). Docs: slice 0 bench checklist and pending defaults in docs/shape-aware-effects.md, hang-to-effects.md updated, CHANGELOG entry. Sim/fixture is not hardware; nothing claimed on real boards. pnpm lint (3 pre-existing e2e warnings), typecheck, test all pass. Committed locally, not pushed."
+}
