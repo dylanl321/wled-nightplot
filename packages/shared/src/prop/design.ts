@@ -7,6 +7,7 @@
 import type { Element, Light, LightOutput } from "../lights.ts";
 import { legacyOutputId } from "../outputs.ts";
 import { assignStableRunIds, countLayout, layoutFromMeasurements, layoutStrings, migratePlacedLights, stampEdgeNames, wellHouseEdgeLabel, wellHouseEdgeOrder, windowSideNames, type PropLayout } from "./layout.ts";
+import { splitTreeLayout } from "./split-tree.ts";
 import { defaultSections, isLegacyWellHouseLayout, sectionIndexRanges } from "./sections.ts";
 import { defaultWireframeSpec } from "./wireframe.ts";
 import {
@@ -99,12 +100,24 @@ export function compilePropDesign(input: {
   }
   const params = measurementParams(input.measurements);
   if (!params) return { ok: false, message: "Those measurements could not be saved." };
-  const layout = layoutFromMeasurements({
-    units: input.unit,
-    pitchM: input.pitchMm / 1000,
-    shape: input.measurements.shape,
-    params,
-  });
+  const layout = input.measurements.shape === "split-tree"
+    ? splitTreeLayout({
+        units: input.unit,
+        pitchM: input.pitchMm / 1000,
+        height: input.measurements.height,
+        split: input.measurements.split,
+        spacing: input.measurements.spacing,
+        trunks: input.measurements.trunks,
+        levels: input.measurements.levels,
+        trunkTo: input.measurements.trunkTo,
+        strings: input.measurements.strings,
+      })
+    : layoutFromMeasurements({
+        units: input.unit,
+        pitchM: input.pitchMm / 1000,
+        shape: input.measurements.shape,
+        params,
+      });
   if (!layout) return { ok: false, message: "Those measurements could not be saved." };
   const design = designFromLayout(layout, input.ledProductId, input.measurements);
   if (!isPropDesign(design)) return { ok: false, message: "Those measurements could not be saved." };
@@ -173,6 +186,14 @@ function measurementParams(measurements: PropMeasurements): Record<string, numbe
         passes: measurements.passes,
         ...(measurements.direction === "horizontal" ? { horizontal: 1 } : {}),
       };
+    case "split-tree":
+      return {
+        height: measurements.height,
+        split: measurements.split,
+        spacing: measurements.spacing,
+        trunks: measurements.trunks,
+        levels: measurements.levels,
+      };
     case "custom":
     case "legacy":
       return null;
@@ -200,6 +221,8 @@ function edgeNames(measurements: PropMeasurements, layout: PropLayout): string[]
     case "spiral":
     case "zigzag":
       return layout.run.filter((edge) => edge.kind === "lit").map((edge, index) => edge.name ?? `Run ${index + 1}`);
+    case "split-tree":
+      return layoutStrings(layout).flatMap((string) => string.run).filter((edge) => edge.kind === "lit").map((edge, index) => edge.name ?? `Trunk ${index + 1}`);
     case "custom":
     case "legacy":
       return [];
@@ -230,7 +253,8 @@ function edgesFor(
       return wellHouseEdges(measurements.sides, measurements.side, measurements.height, unit, pitchMm);
     case "spiral":
     case "zigzag":
-      return { ok: false, message: "Spirals and zigzags are counted from their drawing." };
+    case "split-tree":
+      return { ok: false, message: "Spirals, zigzags and split trees are counted from their drawing." };
     case "custom":
       return { ok: false, message: "Custom draw is not ready yet. Pick a template shape." };
     case "legacy":
@@ -678,5 +702,10 @@ export function propShapeChanged(prop: Pick<Prop, "kind" | "layout" | "design">)
   const ids = (value: PropLayout) => layoutStrings(value).flatMap((string) => string.run).filter((edge) => edge.kind !== "wire").map((edge) => edge.id).sort();
   const want = ids(template);
   const have = ids(layout);
+  if (shape === "split-tree") {
+    // A string that shares a trunk adds a piece. The trunk's own run stays.
+    const present = new Set(have);
+    return want.some((id) => !present.has(id));
+  }
   return want.length !== have.length || want.some((id, index) => id !== have[index]);
 }

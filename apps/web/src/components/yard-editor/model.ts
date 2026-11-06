@@ -23,9 +23,12 @@ import {
   edgeLengthM,
   emptyTrace,
   ensureStrings,
+  groupSplitTreeSections,
   layoutFromMeasurements,
   layoutStrings,
   METRES_PER_FOOT,
+  reconcileSections,
+  splitTreeLayout,
   moveCorner,
   propShapeChanged,
   sectionIndexRanges,
@@ -44,12 +47,14 @@ import {
   type PropLayout,
   type PropMeasurements,
   type PropSection,
+  type SplitTreeString,
+  type SplitTreeTrunkEnd,
   type InstallGuide,
   type StringLight,
 } from "@nightplot/shared";
 
 /** The tiles in "Start from". `draw` traces a path by hand. */
-export type ShapeId = "line" | "window" | "triangle" | "tree" | "arch" | "spiral" | "spiralTree" | "zigzag" | "draw";
+export type ShapeId = "line" | "window" | "triangle" | "tree" | "arch" | "spiral" | "spiralTree" | "zigzag" | "splitTree" | "draw";
 
 export const SHAPES: readonly { id: ShapeId; title: string; svg: string }[] = [
   { id: "line", title: "Line", svg: "M3 16 L31 8" },
@@ -60,6 +65,7 @@ export const SHAPES: readonly { id: ShapeId; title: string; svg: string }[] = [
   { id: "spiral", title: "Post wrap", svg: "M12 22 L22 19 L12 16 L22 13 L12 10 L22 7 L12 4 M12 22 V2 M22 22 V2" },
   { id: "spiralTree", title: "Spiral tree", svg: "M6 21 L28 18 L9 15 L25 12 L12 9 L22 6 L17 3" },
   { id: "zigzag", title: "Zigzag", svg: "M4 21 L9 5 L14 21 L19 5 L24 21 L29 5" },
+  { id: "splitTree", title: "Split tree", svg: "M17 22 V12 L6 2 M17 12 L28 2" },
   { id: "draw", title: "Draw it", svg: "M4 19 L12 9 L20 15 L30 5" },
 ];
 
@@ -67,11 +73,11 @@ export const SHAPES: readonly { id: ShapeId; title: string; svg: string }[] = [
  * A size field on a template shape, in the order the panel shows them.
  * `passes` and `horizontal` are counts, not lengths: units do not convert them.
  */
-export type SizeKey = "length" | "width" | "height" | "base" | "around" | "aroundTop" | "gap" | "passes" | "horizontal";
+export type SizeKey = "length" | "width" | "height" | "base" | "around" | "aroundTop" | "gap" | "passes" | "horizontal" | "trunks" | "split" | "spacing";
 
 /** Sizes that are not lengths. */
-export const PLAIN_SIZES: ReadonlySet<SizeKey> = new Set<SizeKey>(["passes", "horizontal"]);
-const SIZE_KEYS: readonly SizeKey[] = ["length", "width", "height", "base", "around", "aroundTop", "gap", "passes", "horizontal"];
+export const PLAIN_SIZES: ReadonlySet<SizeKey> = new Set<SizeKey>(["passes", "horizontal", "trunks"]);
+const SIZE_KEYS: readonly SizeKey[] = ["length", "width", "height", "base", "around", "aroundTop", "gap", "passes", "horizontal", "trunks", "split", "spacing"];
 
 /** Starting sizes, in the unit named. Round numbers in each unit. */
 const DEFAULT_SIZES: Record<Exclude<ShapeId, "draw">, Record<LayoutUnits, Partial<Record<SizeKey, number>>>> = {
@@ -85,6 +91,8 @@ const DEFAULT_SIZES: Record<Exclude<ShapeId, "draw">, Record<LayoutUnits, Partia
   // A 6 ft tree about 3 ft wide at the bottom, to a point. Wraps 6 in apart.
   spiralTree: { m: { height: 1.8, around: 2.8, aroundTop: 0, gap: 0.15 }, ft: { height: 6, around: 9.5, aroundTop: 0, gap: 0.5 } },
   zigzag: { m: { width: 1.2, height: 1, passes: 8 }, ft: { width: 4, height: 3, passes: 8 } },
+  // One trunk to mid-height, then two tips a short walk apart.
+  splitTree: { m: { height: 2.4, split: 1.2, spacing: 1.2, trunks: 2 }, ft: { height: 8, split: 4, spacing: 4, trunks: 2 } },
 };
 
 /**
@@ -110,6 +118,12 @@ export const SIZE_FIELDS: Record<Exclude<ShapeId, "draw">, { key: SizeKey; label
     { key: "aroundTop", label: "Around, top" },
   ],
   zigzag: [{ key: "width", label: "Width" }, { key: "height", label: "Height" }, { key: "passes", label: "Passes", plain: true }],
+  splitTree: [
+    { key: "trunks", label: "Trunks", plain: true },
+    { key: "height", label: "Height" },
+    { key: "split", label: "Split height" },
+    { key: "spacing", label: "Tip spacing" },
+  ],
 };
 
 /** Zigzag up and down (false) or side to side (true). */
@@ -143,7 +157,17 @@ export type Draft = {
   count: number | null;
   /** Kept from a stored prop whose kind this editor does not offer (stake row, well house). */
   keepKind?: PropKind;
+  /** Strings and per-trunk end heights for a split tree. */
+  split?: SplitTreeDraft;
 };
+
+export type SplitTreeDraft = {
+  levels: 1 | 2;
+  trunkTo: SplitTreeTrunkEnd[];
+  strings: SplitTreeString[];
+};
+
+const EMPTY_SPLIT: SplitTreeDraft = { levels: 1, trunkTo: [], strings: [] };
 
 export function shapeOfProp(prop: Pick<Prop, "kind" | "design" | "layout">): ShapeId {
   const m = prop.design?.measurements;
@@ -162,6 +186,8 @@ export function shapeOfProp(prop: Pick<Prop, "kind" | "design" | "layout">): Sha
     }
     case "zigzag":
       return "zigzag";
+    case "split-tree":
+      return "splitTree";
     default:
       return "draw";
   }
@@ -183,6 +209,8 @@ export function kindOfShape(shape: ShapeId): PropKind {
       return "spiral";
     case "zigzag":
       return "zigzag";
+    case "splitTree":
+      return "split-tree";
     case "draw":
       return "custom";
   }
@@ -206,11 +234,18 @@ function templateParams(shape: Exclude<ShapeId, "draw">, sizes: Partial<Record<S
       return { height: sizes.height ?? 0, around: sizes.around ?? 0, aroundTop: sizes.aroundTop ?? sizes.around ?? 0, gap: sizes.gap ?? 0 };
     case "zigzag":
       return { width: sizes.width ?? 0, height: sizes.height ?? 0, passes: Math.round(sizes.passes ?? 0), horizontal: sizes.horizontal === 1 ? 1 : 0 };
+    case "splitTree":
+      return {
+        height: sizes.height ?? 0,
+        split: sizes.split ?? 0,
+        spacing: sizes.spacing ?? 0,
+        trunks: Math.round(sizes.trunks ?? 0),
+      };
   }
 }
 
-function templateShape(shape: Exclude<ShapeId, "draw">): "roofline" | "window" | "arch" | "tree" | "spiral" | "zigzag" {
-  return shape === "line" ? "roofline" : shape === "triangle" ? "tree" : shape === "spiralTree" ? "spiral" : shape;
+function templateShape(shape: Exclude<ShapeId, "draw">): "roofline" | "window" | "arch" | "tree" | "spiral" | "zigzag" | "split-tree" {
+  return shape === "line" ? "roofline" : shape === "triangle" ? "tree" : shape === "spiralTree" ? "spiral" : shape === "splitTree" ? "split-tree" : shape;
 }
 
 export function measurementsOf(draft: Draft): PropMeasurements {
@@ -232,6 +267,17 @@ export function measurementsOf(draft: Draft): PropMeasurements {
       return { shape: "spiral", height: s.height ?? 0, around: s.around ?? 0, aroundTop: s.aroundTop ?? s.around ?? 0, gap: s.gap ?? 0 };
     case "zigzag":
       return { shape: "zigzag", width: s.width ?? 0, height: s.height ?? 0, passes: Math.round(s.passes ?? 0), direction: s.horizontal === 1 ? "horizontal" : "vertical" };
+    case "splitTree":
+      return {
+        shape: "split-tree",
+        height: s.height ?? 0,
+        split: s.split ?? 0,
+        spacing: s.spacing ?? 0,
+        trunks: Math.round(s.trunks ?? 0),
+        levels: draft.split?.levels === 2 ? 2 : 1,
+        ...(draft.split?.trunkTo.length ? { trunkTo: draft.split.trunkTo } : {}),
+        ...(draft.split?.strings.length ? { strings: draft.split.strings } : {}),
+      };
   }
 }
 
@@ -249,6 +295,12 @@ export function draftFromProp(prop: Prop, units: LayoutUnits, pitchM: number): D
   for (const key of SIZE_KEYS) if (typeof params[key] === "number") sizes[key] = params[key];
   const offered = prop.kind !== "stake-row" && prop.kind !== "wireframe";
   const drawn = shape === "draw" || !layout.template || (prop.design?.measurements ? propShapeChanged(prop) : false) || cornersMoved(layout, shape, sizes);
+  const measured = prop.design?.measurements;
+  const split = measured?.shape === "split-tree"
+    ? { levels: measured.levels, trunkTo: measured.trunkTo ?? [], strings: measured.strings ?? [] }
+    : shape === "splitTree"
+      ? { ...EMPTY_SPLIT, levels: params.levels === 2 ? 2 as const : 1 as const }
+      : undefined;
   return {
     id: prop.id,
     label: prop.label,
@@ -259,6 +311,7 @@ export function draftFromProp(prop: Prop, units: LayoutUnits, pitchM: number): D
     sections: prop.sections ?? [],
     count: null,
     ...(offered ? {} : { keepKind: prop.kind }),
+    ...(split ? { split } : {}),
   };
 }
 
@@ -299,7 +352,7 @@ export function startFrom(draft: Draft, shape: ShapeId, units: LayoutUnits, pitc
   const pitch = draft.layout?.pitchM ?? pitchM;
   const unit = draft.layout?.units ?? units;
   if (shape === "draw") {
-    return { ...draft, shape: "draw", drawn: true, sizes: {}, layout: null, sections: [], keepKind: undefined, count: draft.count };
+    return { ...draft, shape: "draw", drawn: true, sizes: {}, layout: null, sections: [], split: undefined, keepKind: undefined, count: draft.count };
   }
   const sizes = { ...DEFAULT_SIZES[shape][unit] };
   const had = draft.layout && draft.layout.corners.length > 1 && draft.shape && draft.shape !== "draw" ? footprint(draft.layout) : null;
@@ -310,14 +363,32 @@ export function startFrom(draft: Draft, shape: ShapeId, units: LayoutUnits, pitc
     else if (isSpiral(shape)) {
       // A spiral's width is the post, not the last shape's: keep only the height.
       if (h > 0) sizes.height = h;
+    } else if (shape === "splitTree") {
+      if (h > 0) sizes.height = h;
+      if (w > 0) sizes.spacing = w;
+      if ((sizes.height ?? 0) > 0) sizes.split = roundSize((sizes.height ?? 0) / 2, unit);
     } else {
       const wideKey: SizeKey = shape === "window" || shape === "arch" || shape === "zigzag" ? "width" : "base";
       if (w > 0) sizes[wideKey] = w;
       if (h > 0) sizes.height = h;
     }
   }
+  if (shape === "splitTree") {
+    const shell = draft.layout ?? emptyTrace(unit, pitch);
+    return refreshSplit({
+      ...draft,
+      shape,
+      drawn: false,
+      sizes,
+      sections: [],
+      count: null,
+      keepKind: undefined,
+      split: { ...EMPTY_SPLIT },
+      layout: { ...shell, units: unit, pitchM: pitch, corners: shell.corners, run: shell.run },
+    });
+  }
   const layout = layoutFromMeasurements({ units: unit, pitchM: pitch, shape: templateShape(shape), params: templateParams(shape, sizes) });
-  return withCount({ ...draft, shape, drawn: false, sizes, layout, sections: [], keepKind: undefined });
+  return withCount({ ...draft, shape, drawn: false, sizes, layout, sections: [], split: undefined, keepKind: undefined });
 }
 
 function footprint(layout: PropLayout): { w: number; h: number } {
@@ -335,6 +406,11 @@ function roundSize(value: number, units: LayoutUnits): number {
 /** Type a template size. The template is drawn again and sections keep their edges. */
 export function setSize(draft: Draft, key: SizeKey, value: number): Draft {
   if (!draft.shape || draft.shape === "draw" || draft.drawn || !(value > 0) || !draft.layout) return draft;
+  if (draft.shape === "splitTree") {
+    const next = key === "trunks" ? Math.round(value) : value;
+    if (key === "trunks" && (next < 2 || next > 8)) return draft;
+    return refreshSplit({ ...draft, sizes: { ...draft.sizes, [key]: next } });
+  }
   const sizes = { ...draft.sizes, [key]: value };
   const layout = layoutFromMeasurements({
     units: draft.layout.units,
@@ -347,10 +423,106 @@ export function setSize(draft: Draft, key: SizeKey, value: number): Draft {
   return withCount({ ...draft, sizes, layout: kept, sections: keepSections(draft.sections, kept) });
 }
 
+function splitState(draft: Draft): SplitTreeDraft {
+  return draft.split ?? { ...EMPTY_SPLIT, trunkTo: [], strings: [] };
+}
+
+/** Draw the split tree again from its numbers. String rows that still name a trunk stay. */
+function refreshSplit(draft: Draft): Draft {
+  if (!draft.layout) return draft;
+  const split = splitState(draft);
+  const sizes = draft.sizes;
+  const layout = splitTreeLayout({
+    units: draft.layout.units,
+    pitchM: draft.layout.pitchM,
+    height: sizes.height ?? 0,
+    split: sizes.split ?? 0,
+    spacing: sizes.spacing ?? 0,
+    trunks: Math.round(sizes.trunks ?? 0),
+    levels: split.levels,
+    trunkTo: split.trunkTo,
+    strings: split.strings,
+  });
+  if (!layout) return draft;
+  const grouped = draft.sections.length === 0
+    ? groupSplitTreeSections(layout, [])
+    : groupSplitTreeSections(layout, reconcileSections(layout, draft.sections, draft.layout).sections);
+  return {
+    ...draft,
+    split,
+    drawn: false,
+    count: null,
+    layout,
+    sections: grouped,
+  };
+}
+
+/** One fork, or a second fork so a branch can split again. Two tips become four when forking again. */
+export function setSplitLevels(draft: Draft, levels: 1 | 2): Draft {
+  if (draft.shape !== "splitTree" || !draft.layout) return draft;
+  const split = splitState(draft);
+  let trunks = Math.round(draft.sizes.trunks ?? 2);
+  if (levels === 2 && trunks < 3) trunks = 4;
+  return refreshSplit({ ...draft, sizes: { ...draft.sizes, trunks }, split: { ...split, levels } });
+}
+
+/** Where one trunk ends, from the ground. The main trunk is the split height. */
+export function setTrunkEnd(draft: Draft, trunkId: string, to: number): Draft {
+  if (draft.shape !== "splitTree" || !(to > 0)) return draft;
+  if (trunkId === "t0") return setSize(draft, "split", to);
+  const split = splitState(draft);
+  const trunkTo = split.trunkTo.filter((row) => row.id !== trunkId);
+  trunkTo.push({ id: trunkId, to });
+  return refreshSplit({ ...draft, split: { ...split, trunkTo } });
+}
+
+/** A new string on one trunk. Spacing is centimetres of the product, starting at 10 cm. */
+export function addSplitString(draft: Draft, trunkId: string): Draft {
+  if (draft.shape !== "splitTree") return draft;
+  const split = splitState(draft);
+  const ids = new Set(split.strings.map((string) => string.id));
+  let n = split.strings.length + 1;
+  while (ids.has(`s${n}`)) n += 1;
+  const string: SplitTreeString = { id: `s${n}`, ledProductId: null, pitchMm: 100, ledCount: null, trunkIds: [trunkId] };
+  return refreshSplit({ ...draft, split: { ...split, strings: [...split.strings, string] } });
+}
+
+export function updateSplitString(draft: Draft, stringId: string, patch: Partial<Pick<SplitTreeString, "ledProductId" | "pitchMm" | "ledCount">>): Draft {
+  if (draft.shape !== "splitTree") return draft;
+  const split = splitState(draft);
+  const strings = split.strings.map((string) => string.id === stringId ? { ...string, ...patch } : string);
+  return refreshSplit({ ...draft, split: { ...split, strings } });
+}
+
+/** Put this string on another trunk after the ones it already covers. A repeat is ignored. */
+export function continueSplitString(draft: Draft, stringId: string, trunkId: string): Draft {
+  if (draft.shape !== "splitTree" || !trunkId) return draft;
+  const split = splitState(draft);
+  const strings = split.strings.map((string) => {
+    if (string.id !== stringId || string.trunkIds.includes(trunkId)) return string;
+    return { ...string, trunkIds: [...string.trunkIds, trunkId] };
+  });
+  return refreshSplit({ ...draft, split: { ...split, strings } });
+}
+
+/** Take the string off one trunk, or drop it when that was its only trunk. */
+export function removeSplitString(draft: Draft, stringId: string, trunkId?: string): Draft {
+  if (draft.shape !== "splitTree") return draft;
+  const split = splitState(draft);
+  const strings = split.strings.flatMap((string) => {
+    if (string.id !== stringId) return [string];
+    if (!trunkId) return [];
+    const trunkIds = string.trunkIds.filter((id) => id !== trunkId);
+    return trunkIds.length > 0 ? [{ ...string, trunkIds }] : [];
+  });
+  return refreshSplit({ ...draft, split: { ...split, strings } });
+}
+
 /** Back to the template sizes after a hand edit. */
 export function resetToTemplate(draft: Draft): Draft {
   if (!draft.shape || draft.shape === "draw" || !draft.layout) return draft;
   const sizes = Object.keys(draft.sizes).length ? draft.sizes : { ...DEFAULT_SIZES[draft.shape][draft.layout.units] };
+  if (draft.shape === "splitTree") return refreshSplit({ ...draft, drawn: false, sizes });
   const layout = layoutFromMeasurements({ units: draft.layout.units, pitchM: draft.layout.pitchM, shape: templateShape(draft.shape), params: templateParams(draft.shape, sizes) });
   if (!layout) return draft;
   return withCount({ ...draft, drawn: false, sizes, layout, sections: keepSections(draft.sections, layout) });
@@ -364,12 +536,16 @@ export function setUnits(draft: Draft, units: LayoutUnits): Draft {
   for (const [key, value] of Object.entries(draft.sizes) as [SizeKey, number][]) sizes[key] = PLAIN_SIZES.has(key) ? value : roundSize(value * factor, units);
   const params = draft.layout.template ? { ...draft.layout.template.params, ...sizes } : undefined;
   const layout: PropLayout = { ...draft.layout, units, ...(params && draft.layout.template ? { template: { ...draft.layout.template, params } } : {}) };
-  return { ...draft, sizes, layout };
+  const split = draft.split
+    ? { ...draft.split, trunkTo: draft.split.trunkTo.map((row) => ({ ...row, to: roundSize(row.to * factor, units) })) }
+    : undefined;
+  return { ...draft, sizes, layout, ...(split ? { split } : {}) };
 }
 
 /** Type how many lights the whole prop has. Spacing follows. */
 export function setCount(draft: Draft, total: number): Draft {
   if (!draft.layout || !Number.isInteger(total) || total < 1) return draft;
+  if (draft.shape === "splitTree") return draft;
   if (isSpiral(draft.shape) && !draft.drawn) return fitSpiral(draft, total) ?? draft;
   return withCount({ ...draft, count: total });
 }
@@ -402,6 +578,7 @@ export function guideFor(draft: Draft, every: number): InstallGuide | null {
 /** Type the spacing. Counts come from length again. */
 export function setSpacing(draft: Draft, pitchM: number): Draft {
   if (!draft.layout) return draft;
+  if (draft.shape === "splitTree") return refreshSplit({ ...draft, count: null, layout: { ...draft.layout, pitchM } });
   const layout = setPitchM(clearAllLocks(draft.layout), pitchM);
   return { ...draft, count: null, layout };
 }
@@ -654,7 +831,7 @@ export function sectionRangeText(layout: PropLayout | null, sections: readonly P
 
 // ---------- naming ----------
 
-const AUTO_NAME = /^(New prop|Line|Window|Triangle|Mini tree|Arch|Post wrap|Spiral tree|Zigzag|Drawing) \d+$/;
+const AUTO_NAME = /^(New prop|Line|Window|Triangle|Mini tree|Arch|Post wrap|Spiral tree|Zigzag|Split tree|Drawing) \d+$/;
 
 export function isAutoName(label: string): boolean {
   return AUTO_NAME.test(label);

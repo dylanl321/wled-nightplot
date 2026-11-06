@@ -105,6 +105,7 @@ import {
   type SizeKey,
 } from "./model";
 import { EditMenu, type EditMenuAction, type EditMenuState } from "./edit-menu";
+import { SplitTreePanel } from "./split-tree-panel";
 import { mergeToast, previewRun, previewTotals } from "@/components/props/trace-preview";
 import { initialTool, LONG_PRESS_MS, reduceTool, type ToolEffect, type ToolHit, type ToolState } from "@/components/props/tool-machine";
 import {
@@ -3027,24 +3028,41 @@ export function YardEditor(init: YardEditorProps) {
                 ? "Measure “around” with a tape: a 4×4 post is 14 in. Set the top to 0 for a tree that comes to a point."
                 : "Measure “around” with a tape at the bottom of the tree. The top is 0 for a point; type more for a flat top."}</p>
             ) : null}
+            {d.shape === "splitTree" && !d.drawn ? (
+              <SplitTreePanel draft={d} onChange={(next) => { edit(() => next); requestAnimationFrame(fitDraft); }} />
+            ) : null}
           </div>
         ) : null}
         {rows.length > 0 ? (
           <>
             <div>
               <h2>Lights</h2>
-              <div className="grid2">
-                <NumRow id="ye-count" label="How many lights" value={String(lightTotal(d.layout))} onCommit={(v) => { if (v >= 1) edit((x) => setCount(x, Math.round(v))); }} />
-                <NumRow
-                  id="ye-pitch"
-                  label={`Spacing (${s.units === "ft" ? "in" : "cm"})`}
-                  value={s.units === "ft" ? (pitch / 0.0254).toFixed(2) : (pitch * 100).toFixed(1)}
-                  onCommit={(v) => { if (v > 0) edit((x) => setSpacing(x, s.units === "ft" ? v * 0.0254 : v / 100)); }}
-                />
-              </div>
-              <p className="note">{isSpiral(d.shape) && !d.drawn
-                ? "Type the count on your string and the wraps are spaced to use all of it."
-                : d.count != null ? `Fixed at ${d.count}, spread over the runs by length.` : "Counted from length and spacing."} Light 1 is at the wire-in.</p>
+              {d.shape === "splitTree" ? (
+                <>
+                  <NumRow
+                    id="ye-pitch"
+                    label="Preview spacing (cm)"
+                    value={(pitch * 100).toFixed(1)}
+                    onCommit={(v) => { if (v > 0) edit((x) => setSpacing(x, v / 100)); }}
+                  />
+                  <p className="note">Trunks with no string use this spacing on the drawing. A string keeps its own spacing in centimetres, and its length in metres.</p>
+                </>
+              ) : (
+                <>
+                  <div className="grid2">
+                    <NumRow id="ye-count" label="How many lights" value={String(lightTotal(d.layout))} onCommit={(v) => { if (v >= 1) edit((x) => setCount(x, Math.round(v))); }} />
+                    <NumRow
+                      id="ye-pitch"
+                      label={`Spacing (${s.units === "ft" ? "in" : "cm"})`}
+                      value={s.units === "ft" ? (pitch / 0.0254).toFixed(2) : (pitch * 100).toFixed(1)}
+                      onCommit={(v) => { if (v > 0) edit((x) => setSpacing(x, s.units === "ft" ? v * 0.0254 : v / 100)); }}
+                    />
+                  </div>
+                  <p className="note">{isSpiral(d.shape) && !d.drawn
+                    ? "Type the count on your string and the wraps are spaced to use all of it."
+                    : d.count != null ? `Fixed at ${d.count}, spread over the runs by length.` : "Counted from length and spacing."} Light 1 is at the wire-in.</p>
+                </>
+              )}
             </div>
             {installPanel(d)}
             {nameField}

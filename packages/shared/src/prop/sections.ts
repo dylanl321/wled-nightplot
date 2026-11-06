@@ -11,6 +11,7 @@
 
 import { rangesOverlap } from "../range.ts";
 import { cornerById, edgeLengthM, edgeLightCount, layoutStrings, lightsOnLength, windowSideNames, type LayoutEdge, type PropLayout } from "./layout.ts";
+import { groupSplitTreeSections } from "./split-tree.ts";
 import {
   isPropSection,
   type PropIndexRange,
@@ -99,6 +100,7 @@ export function defaultSections(layout: PropLayout): PropSection[] {
       color: SECTION_COLOURS[index % SECTION_COLOURS.length],
     }));
   }
+  if (layout.template?.type === "split-tree") return groupSplitTreeSections(layout, []);
   if (layout.template?.type === "spiral" || layout.template?.type === "zigzag") {
     // One colour for the whole wrap. Fifty half turns as fifty sections is noise.
     const edgeIds = layout.run.filter((edge) => edge.kind === "lit").map((edge) => edge.id);

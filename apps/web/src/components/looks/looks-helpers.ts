@@ -62,7 +62,7 @@ export function newPlaylist(doc: Lib): LookPlaylist | null {
 
 const PLURAL: Record<PropKind, string> = {
   roofline: "rooflines", window: "windows", arch: "arches", tree: "trees", "stake-row": "stake rows",
-  custom: "custom props", wireframe: "wireframes", spiral: "spirals", zigzag: "bushes",
+  custom: "custom props", wireframe: "wireframes", spiral: "spirals", zigzag: "bushes", "split-tree": "split trees",
 };
 export function kindPlural(kind: PropKind): string {
   return PLURAL[kind] ?? `${kind}s`;

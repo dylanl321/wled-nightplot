@@ -6,6 +6,7 @@
  * older readers still see it.
  */
 
+import { splitTreeLayout } from "./split-tree.ts";
 import { spiralLayout, zigzagLayout } from "./wraps.ts";
 
 export const LAYOUT_PITCH_M = 0.1;
@@ -1319,7 +1320,7 @@ export function rooflineLayout(input: {
 export function layoutFromMeasurements(input: {
   units: LayoutUnits;
   pitchM: number;
-  shape: "roofline" | "window" | "arch" | "tree" | "stake-row" | "wireframe" | "spiral" | "zigzag";
+  shape: "roofline" | "window" | "arch" | "tree" | "stake-row" | "wireframe" | "spiral" | "zigzag" | "split-tree";
   params: Record<string, number>;
 }): PropLayout | null {
   const { units, pitchM, params } = input;
@@ -1382,6 +1383,17 @@ export function layoutFromMeasurements(input: {
         units,
         pitchM,
         params,
+      });
+      break;
+    case "split-tree":
+      built = splitTreeLayout({
+        units,
+        pitchM,
+        height: params.height ?? 0,
+        split: params.split ?? 0,
+        spacing: params.spacing ?? 0,
+        trunks: params.trunks ?? 0,
+        levels: params.levels === 2 ? 2 : 1,
       });
       break;
     default: {

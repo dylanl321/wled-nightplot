@@ -252,7 +252,8 @@ export function AddPropFlow({
               Pick a shape. Then walk the lit cursor and tap each corner or end. You never type a count. A wireframe is an unfolded box+X — draw one line, or lock from the cursor only.
             </p>
             <div className="grid grid-cols-1 gap-2">
-              {PROP_TEMPLATES.map((template) => (
+              {/* A split tree is measured on the yard. The lit cursor cannot sketch its forks. */}
+              {PROP_TEMPLATES.filter((template) => template.kind !== "split-tree").map((template) => (
                 <button
                   key={template.kind}
                   type="button"
