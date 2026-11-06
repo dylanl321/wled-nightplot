@@ -29,12 +29,12 @@ import {
   type WledSnapshot,
 } from "@nightplot/shared";
 import type { Hono } from "hono";
-import type { FileLightsStore } from "./store/lights-store.ts";
+import type { LightsStore } from "./store/lights-store.ts";
 import type { FileLooksStore } from "./store/looks-store.ts";
 import { persistWireframeOnLight } from "./wireframe-persist.ts";
 
 export type PropSetupDeps = {
-  store: FileLightsStore;
+  store: LightsStore;
   palette: () => readonly { hex: string }[];
   refresh: (stored: Light) => Promise<{ light: Light; live: WledSnapshot | null }>;
   applyDrafts: (
@@ -432,7 +432,7 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
 }
 
 /** Rename a prop and the Segments made for it ("Old · Top" becomes "New · Top"). */
-function renameProp(store: FileLightsStore, prop: Prop, label: string): Prop {
+function renameProp(store: LightsStore, prop: Prop, label: string): Prop {
   const next: Prop = { ...prop, label };
   const lightId = prop.lightId ?? store.loadAttachments().find((row) => row.propId === prop.id)?.lightId;
   if (lightId && prop.elementIds.length > 0) {

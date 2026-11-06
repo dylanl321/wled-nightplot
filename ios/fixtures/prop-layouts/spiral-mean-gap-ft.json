@@ -1,0 +1,274 @@
+{
+  "expectedLightTotal" : 33,
+  "layout" : {
+    "corners" : [
+      {
+        "id" : "c1",
+        "x" : 0,
+        "y" : 0
+      },
+      {
+        "id" : "c2",
+        "x" : 0.299742,
+        "y" : 0.15
+      },
+      {
+        "id" : "c3",
+        "x" : 0.015915,
+        "y" : 0.3
+      },
+      {
+        "id" : "c4",
+        "x" : 0.283826,
+        "y" : 0.45
+      },
+      {
+        "id" : "c5",
+        "x" : 0.031831,
+        "y" : 0.6
+      },
+      {
+        "id" : "c6",
+        "x" : 0.267911,
+        "y" : 0.75
+      },
+      {
+        "id" : "c7",
+        "x" : 0.047746,
+        "y" : 0.9
+      },
+      {
+        "id" : "c8",
+        "x" : 0.251995,
+        "y" : 1.05
+      },
+      {
+        "id" : "c9",
+        "x" : 0.063662,
+        "y" : 1.2
+      }
+    ],
+    "pitchM" : 0.1,
+    "run" : [
+      {
+        "from" : "c1",
+        "id" : "e1",
+        "kind" : "lit",
+        "name" : "Wrap 1 front",
+        "to" : "c2",
+        "wrapLengthM" : 0.4941386166787851
+      },
+      {
+        "from" : "c2",
+        "id" : "e2",
+        "kind" : "lit",
+        "name" : "Wrap 1 back",
+        "to" : "c3",
+        "wrapLengthM" : 0.47038812013243864
+      },
+      {
+        "from" : "c3",
+        "id" : "e3",
+        "kind" : "lit",
+        "name" : "Wrap 2 front",
+        "to" : "c4",
+        "wrapLengthM" : 0.44677357410236607
+      },
+      {
+        "from" : "c4",
+        "id" : "e4",
+        "kind" : "lit",
+        "name" : "Wrap 2 back",
+        "to" : "c5",
+        "wrapLengthM" : 0.4233177501611878
+      },
+      {
+        "from" : "c5",
+        "id" : "e5",
+        "kind" : "lit",
+        "name" : "Wrap 3 front",
+        "to" : "c6",
+        "wrapLengthM" : 0.4000485935310974
+      },
+      {
+        "from" : "c6",
+        "id" : "e6",
+        "kind" : "lit",
+        "name" : "Wrap 3 back",
+        "to" : "c7",
+        "wrapLengthM" : 0.37700070415302184
+      },
+      {
+        "from" : "c7",
+        "id" : "e7",
+        "kind" : "lit",
+        "name" : "Wrap 4 front",
+        "to" : "c8",
+        "wrapLengthM" : 0.3542173221034471
+      },
+      {
+        "from" : "c8",
+        "id" : "e8",
+        "kind" : "lit",
+        "name" : "Wrap 4 back",
+        "to" : "c9",
+        "wrapLengthM" : 0.33175300944008784
+      }
+    ],
+    "source" : "template",
+    "startOffsetM" : 0,
+    "template" : {
+      "params" : {
+        "around" : 3.1714785651793527,
+        "aroundTop" : 1.859142607174103,
+        "gap" : 0.9842519685039369,
+        "height" : 3.9370078740157477
+      },
+      "type" : "spiral"
+    },
+    "units" : "ft"
+  },
+  "litLengthM" : 3.297637690302432,
+  "request" : {
+    "kind" : "spiral",
+    "label" : "Fixture mean gap",
+    "layout" : {
+      "corners" : [
+        {
+          "id" : "c1",
+          "x" : 0,
+          "y" : 0
+        },
+        {
+          "id" : "c2",
+          "x" : 0.299742,
+          "y" : 0.15
+        },
+        {
+          "id" : "c3",
+          "x" : 0.015915,
+          "y" : 0.3
+        },
+        {
+          "id" : "c4",
+          "x" : 0.283826,
+          "y" : 0.45
+        },
+        {
+          "id" : "c5",
+          "x" : 0.031831,
+          "y" : 0.6
+        },
+        {
+          "id" : "c6",
+          "x" : 0.267911,
+          "y" : 0.75
+        },
+        {
+          "id" : "c7",
+          "x" : 0.047746,
+          "y" : 0.9
+        },
+        {
+          "id" : "c8",
+          "x" : 0.251995,
+          "y" : 1.05
+        },
+        {
+          "id" : "c9",
+          "x" : 0.063662,
+          "y" : 1.2
+        }
+      ],
+      "pitchM" : 0.1,
+      "run" : [
+        {
+          "from" : "c1",
+          "id" : "e1",
+          "kind" : "lit",
+          "name" : "Wrap 1 front",
+          "to" : "c2",
+          "wrapLengthM" : 0.4941386166787851
+        },
+        {
+          "from" : "c2",
+          "id" : "e2",
+          "kind" : "lit",
+          "name" : "Wrap 1 back",
+          "to" : "c3",
+          "wrapLengthM" : 0.47038812013243864
+        },
+        {
+          "from" : "c3",
+          "id" : "e3",
+          "kind" : "lit",
+          "name" : "Wrap 2 front",
+          "to" : "c4",
+          "wrapLengthM" : 0.44677357410236607
+        },
+        {
+          "from" : "c4",
+          "id" : "e4",
+          "kind" : "lit",
+          "name" : "Wrap 2 back",
+          "to" : "c5",
+          "wrapLengthM" : 0.4233177501611878
+        },
+        {
+          "from" : "c5",
+          "id" : "e5",
+          "kind" : "lit",
+          "name" : "Wrap 3 front",
+          "to" : "c6",
+          "wrapLengthM" : 0.4000485935310974
+        },
+        {
+          "from" : "c6",
+          "id" : "e6",
+          "kind" : "lit",
+          "name" : "Wrap 3 back",
+          "to" : "c7",
+          "wrapLengthM" : 0.37700070415302184
+        },
+        {
+          "from" : "c7",
+          "id" : "e7",
+          "kind" : "lit",
+          "name" : "Wrap 4 front",
+          "to" : "c8",
+          "wrapLengthM" : 0.3542173221034471
+        },
+        {
+          "from" : "c8",
+          "id" : "e8",
+          "kind" : "lit",
+          "name" : "Wrap 4 back",
+          "to" : "c9",
+          "wrapLengthM" : 0.33175300944008784
+        }
+      ],
+      "source" : "template",
+      "startOffsetM" : 0,
+      "template" : {
+        "params" : {
+          "around" : 3.1714785651793527,
+          "aroundTop" : 1.859142607174103,
+          "gap" : 0.9842519685039369,
+          "height" : 3.9370078740157477
+        },
+        "type" : "spiral"
+      },
+      "units" : "ft"
+    },
+    "ledProductId" : null,
+    "measurements" : {
+      "around" : 3.1714785651793527,
+      "aroundTop" : 1.859142607174103,
+      "gap" : 0.9842519685039369,
+      "height" : 3.9370078740157477,
+      "shape" : "spiral"
+    },
+    "pitchMm" : 100,
+    "unit" : "ft"
+  }
+}

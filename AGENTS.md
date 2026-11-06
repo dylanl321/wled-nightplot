@@ -49,6 +49,8 @@ Layout:
 
 The store is `data/lights.json` (controller → outputs → Segments). Setup profiles are `data/setup-profiles.json`. Looks and the nightly Schedule are `data/looks.json`. Yard Fix undo tokens are `data/yard-undo.json`. A season file is an operator download, not a store.
 
+Deployment note: the server advertises itself over Bonjour as `_nightplot._tcp` (TXT `service=nightplot-configure`) for the iOS Capture app, but only when `NIGHTPLOT_API_HOST` is a LAN bind. A loopback bind (`127.0.0.1`, `localhost`, `::1`) advertises nothing and is unreachable from a phone. The `.deploy/truenas-compose.yml` default is `127.0.0.1`; set `NIGHTPLOT_API_HOST=0.0.0.0` for the phone to find and reach the server.
+
 ## Slices
 
 Work the CONFIG series in order. R6 is Safe settings (the small WledSafeSettings set, fingerprint-gated). Gaps (CONFIG-9, CONFIG-11, …) are not the next R-slice. Do not start the next CONFIG ticket in the same run.

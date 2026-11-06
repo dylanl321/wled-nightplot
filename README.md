@@ -88,6 +88,8 @@ docker compose up --build
 
 Store volume: `lights-store` → `/data` (`lights.json`, `settings.json`, `led-products.json`, `activity.json`, `setup-profiles.json`, `looks.json`, `yard-undo.json`, `backups/`). `pnpm dev` bind stays loopback; compose publishes `0.0.0.0` on purpose.
 
+The server advertises itself over Bonjour as `_nightplot._tcp` (TXT `service=nightplot-configure`) so the iOS Capture app can find it. It advertises only when `NIGHTPLOT_API_HOST` is a LAN bind; a loopback bind (`127.0.0.1`, `localhost`, `::1`) advertises nothing and is unreachable from a phone. For the phone to find and reach the server, set `NIGHTPLOT_API_HOST=0.0.0.0`. The `.deploy/truenas-compose.yml` default is `127.0.0.1`, so change it there if you want phone access.
+
 GHCR build: Actions → Docker → Run workflow, or push to `main` / a `v*` tag. Images push only when GHCR login succeeds. Workflow does not run on pull requests.
 
 Full build / run / multicast caveats: [docs/deploy.md](docs/deploy.md).

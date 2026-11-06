@@ -33,7 +33,7 @@ Copy [`.env.example`](../.env.example). Both apps read process env; there is no 
 | Variable | Default | What |
 | --- | --- | --- |
 | `NIGHTPLOT_API_URL` | `http://127.0.0.1:43181` | Web rewrite + server-side fetch |
-| `NIGHTPLOT_API_HOST` | `127.0.0.1` | API bind |
+| `NIGHTPLOT_API_HOST` | `127.0.0.1` | API bind. A LAN bind (`0.0.0.0`) advertises `_nightplot._tcp` for the iOS Capture app; a loopback bind advertises nothing and is unreachable from a phone. |
 | `NIGHTPLOT_API_PORT` | `43181` | API bind |
 | `NIGHTPLOT_STORE_PATH` | `data/lights.json` | Enrolled Lights + Elements |
 | `NIGHTPLOT_LOOKS_PATH` | beside the Lights store (`looks.json`) | Looks library, playlists, nightly Schedule. Season restore writes this file when the season includes Looks. Yard Fix undo lives beside the Lights store as `yard-undo.json`. |

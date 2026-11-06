@@ -64,6 +64,12 @@ That file is a standalone compose (one service, `all`, `network_mode: host`). It
 
 Docker Desktop / a VM is not a Linux LAN. Host networking there does not make mDNS/SSDP magically work. Type `host:port`.
 
+## Advertising for the phone
+
+The server advertises itself over Bonjour as `_nightplot._tcp` (instance `Nightplot on <hostname>`, TXT `service=nightplot-configure` and `version`), carrying its real listening port, so the iOS Capture app can find it without a typed address. It advertises **only** when `NIGHTPLOT_API_HOST` is a LAN bind. A loopback bind (`127.0.0.1`, `localhost`, `::1`) advertises nothing and is unreachable from a phone — the startup log shows `advert  off (loopback only)`; `0.0.0.0` and `::` count as LAN binds.
+
+[`.deploy/truenas-compose.yml`](../.deploy/truenas-compose.yml) sets `NIGHTPLOT_API_HOST=127.0.0.1`, so that deployment publishes no advert and the phone cannot reach the API. For the phone to find and reach the server, set `NIGHTPLOT_API_HOST=0.0.0.0`. (`docker-compose.yml` and `docker-compose.host.yml` already use `0.0.0.0`.)
+
 ## CORS
 
 API defaults remain `http://127.0.0.1:43180` and `http://localhost:43180` (`apps/server/src/cors-origins.ts`). The browser path uses same-origin `/api` through Next, so CORS is not the usual compose path.

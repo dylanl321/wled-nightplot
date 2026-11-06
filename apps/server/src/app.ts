@@ -152,7 +152,7 @@ import { writeNightplotStoresConsistent } from "./store/nightplot-restore.ts";
 import { FileLedProductsStore } from "./store/led-products-store.ts";
 import { FileSettingsStore } from "./store/settings-store.ts";
 import { StoreUnreadableError } from "./store/store-error.ts";
-import type { FileLightsStore } from "./store/lights-store.ts";
+import type { LightsStore } from "./store/lights-store.ts";
 import { FileLooksStore } from "./store/looks-store.ts";
 import { FileYardSceneStore } from "./store/yard-scene-store.ts";
 import { FileSetupProfilesStore } from "./store/setup-profiles-store.ts";
@@ -185,7 +185,7 @@ import { registerSyncRoutes } from "./sync-routes.ts";
 import { applyRangesWrite, createWledJsonReader, type ReadLiveFn, type ReadWledJsonFn, type WriteStateFn } from "./wled/live.ts";
 
 export type AppDeps = {
-  store: FileLightsStore;
+  store: LightsStore;
   activity?: FileActivityStore;
   backups?: FileBackupStore;
   settings?: FileSettingsStore;
@@ -451,6 +451,8 @@ export function createApp(deps: AppDeps) {
   });
 
   app.post("/api/backups/:id/restore", async (c) => {
+    if (deps.store.path === undefined) return c.json({ error: "restore-unsupported",
+      message: "This Nightplot server keeps Lights in memory, so a backup cannot be restored into it. Nothing was restored." }, 409);
     const id = c.req.param("id");
     const body = await c.req.json().catch(() => null);
     if (!body || body.confirmId !== id || typeof body.expectedDigest !== "string" ||
@@ -613,7 +615,11 @@ export function createApp(deps: AppDeps) {
       await live.end(lightId, "complete");
     },
   });
-  const yardUndo = new FileYardUndoStore(join(dirname(deps.store.path), "yard-undo.json"));
+  const yardUndo = new FileYardUndoStore(
+    deps.store.path === undefined
+      ? join(tmpdir(), `nightplot-yard-undo-${randomUUID()}.json`)
+      : join(dirname(deps.store.path), "yard-undo.json"),
+  );
   registerYardRoutes(app, {
     ...lookDeps,
     undo: yardUndo,

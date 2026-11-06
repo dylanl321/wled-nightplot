@@ -21,7 +21,7 @@ import {
   type PropDesign,
   type WireframeSpec,
 } from "@nightplot/shared";
-import type { FileLightsStore } from "./store/lights-store.ts";
+import type { LightsStore } from "./store/lights-store.ts";
 import { ledmapFileName, type ReadWledLedmap, type WriteWledLedmap } from "./wled/native-backup.ts";
 
 export type PersistWireframeResult =
@@ -65,7 +65,7 @@ export function ledmapRecordAfter(previous: unknown, result: LedmapWriteResult, 
 }
 
 export function persistWireframeOnLight(input: {
-  store: FileLightsStore;
+  store: LightsStore;
   light: Light;
   propId: string;
   label: string;
@@ -246,7 +246,7 @@ export async function staleBaseMapReset(input: {
  * and comes before anything is written.
  */
 export function planLedmapsFor(
-  store: Pick<FileLightsStore, "propsFor" | "loadProps" | "loadAttachments" | "elementsFor">,
+  store: Pick<LightsStore, "propsFor" | "loadProps" | "loadAttachments" | "elementsFor">,
   light: Light,
   looks: readonly Look[],
 ): LightMapsPlan {

@@ -25,12 +25,14 @@ type FileShape = {
   attachments?: PropAttachment[];
 };
 
-type StoreShape = {
+export type LightsStoreShape = {
   lights: Light[];
   elements: Element[];
   props: Prop[];
   attachments: PropAttachment[];
 };
+
+type StoreShape = LightsStoreShape;
 
 type ReadShape = StoreShape & { droppedElements: number; droppedProps: number; droppedAttachments: number };
 
@@ -38,28 +40,54 @@ export type LightsRawLoad =
   | { ok: true; lights: unknown[] }
   | { ok: false; error: "unreadable" | "invalid" };
 
-export class FileLightsStore {
-  constructor(private readonly filePath: string) {}
+/** What createApp and the route modules use. Extracted from FileLightsStore's public methods, unchanged. */
+export interface LightsStore {
+  /** The lights file, for routes that write it directly. Undefined for a store with no file. */
+  readonly path: string | undefined;
+  snapshotForBackup(): LightsStoreShape;
+  restoreBackup(value: LightsStoreShape): void;
+  validBackup(value: { lights: Light[]; elements: Element[]; props?: Prop[]; attachments?: PropAttachment[] }): boolean;
+  load(): Light[];
+  loadElements(): Element[];
+  loadProps(): Prop[];
+  loadAttachments(): PropAttachment[];
+  elementsFor(lightId: string): Element[];
+  propsFor(lightId: string): Prop[];
+  saveDesignedProp(prop: Prop): void;
+  deleteDesignedProp(id: string): { removedSegments: number; movedFollowers: number } | null;
+  attachProp(prop: Prop, attachment: PropAttachment, elements: Element[]): void;
+  findByHostKey(hostKey: string): Light | undefined;
+  findById(id: string): Light | undefined;
+  findByMac(mac: string): Light | undefined;
+  tryLoadRaw(): LightsRawLoad;
+  upsert(next: Light): void;
+  replace(next: Light): void;
+  remove(id: string): boolean;
+  replaceElements(lightId: string, next: Element[]): void;
+  replaceProps(lightId: string, next: Prop[]): void;
+}
 
-  get path(): string {
-    return this.filePath;
-  }
+/** Every rule the file store has: version check, row filters, normalizeProps, readForWrite refusals, JSON on write. */
+export abstract class TextLightsStore implements LightsStore {
+  abstract readonly path: string | undefined;
+  /** The stored document text, or null when nothing is stored yet (a known empty store). Other failures throw. */
+  protected abstract readText(): string | null;
+  protected abstract writeText(text: string): void;
+  /** Name used in StoreUnreadableError: the file path, or "memory". */
+  protected abstract get location(): string;
 
   snapshotForBackup(): StoreShape {
-    try {
-      const parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as FileShape;
-      const elements = parsed.elements ?? [];
-      const props = parsed.props ?? [];
-      const attachments = parsed.attachments ?? [];
-      if (parsed.version !== 1 || !this.validBackup({ lights: parsed.lights, elements, props, attachments }))
-        throw new Error("Invalid Lights store; backup refused.");
-      const lights = parsed.lights.map(normalizeStoredLight);
-      const normalized = normalizeProps(lights, elements, props, attachments);
-      return { lights, elements, props: normalized.props, attachments: normalized.attachments };
-    } catch (error) {
-      if (isEnoent(error)) return { lights: [], elements: [], props: [], attachments: [] };
-      throw error;
-    }
+    const text = this.readText();
+    if (text === null) return { lights: [], elements: [], props: [], attachments: [] };
+    const parsed = JSON.parse(text) as FileShape;
+    const elements = parsed.elements ?? [];
+    const props = parsed.props ?? [];
+    const attachments = parsed.attachments ?? [];
+    if (parsed.version !== 1 || !this.validBackup({ lights: parsed.lights, elements, props, attachments }))
+      throw new Error("Invalid Lights store; backup refused.");
+    const lights = parsed.lights.map(normalizeStoredLight);
+    const normalized = normalizeProps(lights, elements, props, attachments);
+    return { lights, elements, props: normalized.props, attachments: normalized.attachments };
   }
 
   restoreBackup(value: StoreShape): void {
@@ -202,16 +230,14 @@ export class FileLightsStore {
    */
   tryLoadRaw(): LightsRawLoad {
     try {
-      const raw = readFileSync(this.filePath, "utf8");
+      const raw = this.readText();
+      if (raw === null) return { ok: true, lights: [] };
       const parsed = JSON.parse(raw) as FileShape;
       if (parsed.version !== 1 || !Array.isArray(parsed.lights)) {
         return { ok: false, error: "invalid" };
       }
       return { ok: true, lights: parsed.lights };
-    } catch (error) {
-      if (isEnoent(error)) {
-        return { ok: true, lights: [] };
-      }
+    } catch {
       return { ok: false, error: "unreadable" };
     }
   }
@@ -286,18 +312,19 @@ export class FileLightsStore {
   private read(): ReadShape {
     let parsed: FileShape;
     try {
-      parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as FileShape;
-    } catch (error) {
-      if (isEnoent(error)) {
+      const text = this.readText();
+      if (text === null) {
         return { lights: [], elements: [], props: [], attachments: [], droppedElements: 0, droppedProps: 0, droppedAttachments: 0 };
       }
-      throw new StoreUnreadableError("Lights store", this.filePath, error instanceof SyntaxError ? "not JSON" : "unreadable");
+      parsed = JSON.parse(text) as FileShape;
+    } catch (error) {
+      throw new StoreUnreadableError("Lights store", this.location, error instanceof SyntaxError ? "not JSON" : "unreadable");
     }
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.lights) ||
       (parsed.elements !== undefined && !Array.isArray(parsed.elements)) ||
       (parsed.props !== undefined && !Array.isArray(parsed.props)) ||
       (parsed.attachments !== undefined && !Array.isArray(parsed.attachments)))
-      throw new StoreUnreadableError("Lights store", this.filePath, "unexpected shape or version");
+      throw new StoreUnreadableError("Lights store", this.location, "unexpected shape or version");
     const elementRows = parsed.elements ?? [];
     const propRows = parsed.props ?? [];
     const attachmentRows = parsed.attachments ?? [];
@@ -322,20 +349,47 @@ export class FileLightsStore {
   private readForWrite(): StoreShape {
     const shape = this.read();
     if (shape.droppedElements > 0)
-      throw new StoreUnreadableError("Lights store", this.filePath, `${shape.droppedElements} Segment rows Nightplot does not understand`);
+      throw new StoreUnreadableError("Lights store", this.location, `${shape.droppedElements} Segment rows Nightplot does not understand`);
     if (shape.droppedProps > 0)
-      throw new StoreUnreadableError("Lights store", this.filePath, `${shape.droppedProps} Prop rows Nightplot does not understand`);
+      throw new StoreUnreadableError("Lights store", this.location, `${shape.droppedProps} Prop rows Nightplot does not understand`);
     if (shape.droppedAttachments > 0)
-      throw new StoreUnreadableError("Lights store", this.filePath, `${shape.droppedAttachments} Prop attachment rows Nightplot does not understand`);
+      throw new StoreUnreadableError("Lights store", this.location, `${shape.droppedAttachments} Prop attachment rows Nightplot does not understand`);
     return shape;
   }
 
   private write(lights: Light[], elements: Element[], props: Prop[], attachments: PropAttachment[]): void {
+    const body: FileShape = { version: 1, lights, elements, props, attachments };
+    this.writeText(`${JSON.stringify(body, null, 2)}\n`);
+  }
+}
+
+export class FileLightsStore extends TextLightsStore {
+  constructor(private readonly filePath: string) {
+    super();
+  }
+
+  get path(): string {
+    return this.filePath;
+  }
+
+  protected get location(): string {
+    return this.filePath;
+  }
+
+  protected readText(): string | null {
+    try {
+      return readFileSync(this.filePath, "utf8");
+    } catch (error) {
+      if (isEnoent(error)) return null;
+      throw error;
+    }
+  }
+
+  protected writeText(text: string): void {
     mkdirSync(dirname(this.filePath), { recursive: true });
     keepLastGood(this.filePath);
     const tmp = `${this.filePath}.tmp`;
-    const body: FileShape = { version: 1, lights, elements, props, attachments };
-    writeFileSync(tmp, `${JSON.stringify(body, null, 2)}\n`, "utf8");
+    writeFileSync(tmp, text, "utf8");
     renameSync(tmp, this.filePath);
   }
 }

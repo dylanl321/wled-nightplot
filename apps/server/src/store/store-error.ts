@@ -6,8 +6,8 @@ import { copyFileSync, readFileSync } from "node:fs";
  * replace it. The API answers 503 `store-unreadable`.
  */
 export class StoreUnreadableError extends Error {
-  constructor(readonly store: string, readonly filePath: string, detail: string) {
-    super(`${store} at ${filePath} could not be read (${detail}). Nothing was changed. Fix or restore the file, then reload.`);
+  constructor(readonly store: string, readonly location: string, detail: string) {
+    super(`${store} at ${location} could not be read (${detail}). Nothing was changed. Fix or restore the file, then reload.`);
     this.name = "StoreUnreadableError";
   }
 }

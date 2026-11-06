@@ -1,5 +1,7 @@
 import { serve } from "@hono/node-server";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
+import { startAdvert } from "./discovery/advertise.ts";
 import { createCollector } from "./discovery/collect.ts";
 import { createApp } from "./app.ts";
 import { FileActivityStore } from "./store/activity-store.ts";
@@ -59,6 +61,9 @@ const app = createApp({
   }),
 });
 
+const pkg = createRequire(import.meta.url)("../package.json") as { version?: string };
+const serverVersion = pkg.version ?? "0.0.0";
+
 serve({ fetch: app.fetch, port, hostname }, (info) => {
   console.log(`nightplot-configure api  http://${info.address}:${info.port}`);
   console.log(`store  ${storePath}`);
@@ -69,4 +74,9 @@ serve({ fetch: app.fetch, port, hostname }, (info) => {
   console.log(`setup profiles  ${setupProfilesPath}`);
   console.log(`looks  ${looksPath}`);
   console.log(`yard scene  ${yardScenePath}`);
+
+  const advert = startAdvert({ hostname, port: info.port, version: serverVersion });
+  const stopAdvert = () => advert?.stop();
+  process.once("SIGINT", stopAdvert);
+  process.once("SIGTERM", stopAdvert);
 });

@@ -1,0 +1,192 @@
+{
+  "expectedLightTotal" : 40,
+  "layout" : {
+    "corners" : [
+      {
+        "id" : "c1",
+        "x" : 0,
+        "y" : 0
+      },
+      {
+        "id" : "c2",
+        "x" : 1,
+        "y" : 0
+      },
+      {
+        "id" : "c3",
+        "x" : 1,
+        "y" : 1
+      },
+      {
+        "id" : "c4",
+        "x" : 0,
+        "y" : 1
+      }
+    ],
+    "pitchM" : 0.1,
+    "retiredIds" : [
+      "c5"
+    ],
+    "run" : [
+      {
+        "from" : "c1",
+        "id" : "e1",
+        "kind" : "lit",
+        "to" : "c2"
+      },
+      {
+        "from" : "c2",
+        "id" : "e2",
+        "kind" : "lit",
+        "to" : "c3"
+      },
+      {
+        "from" : "c3",
+        "id" : "e3",
+        "kind" : "lit",
+        "to" : "c4"
+      },
+      {
+        "from" : "c4",
+        "id" : "e4",
+        "kind" : "lit",
+        "to" : "c1"
+      }
+    ],
+    "source" : "trace",
+    "startOffsetM" : 0,
+    "strings" : [
+      {
+        "id" : "s1",
+        "run" : [
+          {
+            "from" : "c1",
+            "id" : "e1",
+            "kind" : "lit",
+            "to" : "c2"
+          },
+          {
+            "from" : "c2",
+            "id" : "e2",
+            "kind" : "lit",
+            "to" : "c3"
+          },
+          {
+            "from" : "c3",
+            "id" : "e3",
+            "kind" : "lit",
+            "to" : "c4"
+          },
+          {
+            "from" : "c4",
+            "id" : "e4",
+            "kind" : "lit",
+            "to" : "c1"
+          }
+        ],
+        "startId" : "c1"
+      }
+    ],
+    "units" : "m"
+  },
+  "litLengthM" : 4,
+  "request" : {
+    "kind" : "arch",
+    "label" : "Fixture closed loop",
+    "layout" : {
+      "corners" : [
+        {
+          "id" : "c1",
+          "x" : 0,
+          "y" : 0
+        },
+        {
+          "id" : "c2",
+          "x" : 1,
+          "y" : 0
+        },
+        {
+          "id" : "c3",
+          "x" : 1,
+          "y" : 1
+        },
+        {
+          "id" : "c4",
+          "x" : 0,
+          "y" : 1
+        }
+      ],
+      "pitchM" : 0.1,
+      "retiredIds" : [
+        "c5"
+      ],
+      "run" : [
+        {
+          "from" : "c1",
+          "id" : "e1",
+          "kind" : "lit",
+          "to" : "c2"
+        },
+        {
+          "from" : "c2",
+          "id" : "e2",
+          "kind" : "lit",
+          "to" : "c3"
+        },
+        {
+          "from" : "c3",
+          "id" : "e3",
+          "kind" : "lit",
+          "to" : "c4"
+        },
+        {
+          "from" : "c4",
+          "id" : "e4",
+          "kind" : "lit",
+          "to" : "c1"
+        }
+      ],
+      "source" : "trace",
+      "startOffsetM" : 0,
+      "strings" : [
+        {
+          "id" : "s1",
+          "run" : [
+            {
+              "from" : "c1",
+              "id" : "e1",
+              "kind" : "lit",
+              "to" : "c2"
+            },
+            {
+              "from" : "c2",
+              "id" : "e2",
+              "kind" : "lit",
+              "to" : "c3"
+            },
+            {
+              "from" : "c3",
+              "id" : "e3",
+              "kind" : "lit",
+              "to" : "c4"
+            },
+            {
+              "from" : "c4",
+              "id" : "e4",
+              "kind" : "lit",
+              "to" : "c1"
+            }
+          ],
+          "startId" : "c1"
+        }
+      ],
+      "units" : "m"
+    },
+    "ledProductId" : null,
+    "measurements" : {
+      "shape" : "custom"
+    },
+    "pitchMm" : 100,
+    "unit" : "m"
+  }
+}

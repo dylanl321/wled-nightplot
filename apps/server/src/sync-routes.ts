@@ -28,13 +28,13 @@ import {
 } from "@nightplot/shared";
 import type { Hono } from "hono";
 import type { createLiveEngine } from "./live/engine.ts";
-import type { FileLightsStore } from "./store/lights-store.ts";
+import type { LightsStore } from "./store/lights-store.ts";
 import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
 import type { WriteStateFn } from "./wled/live.ts";
 import type { ReadWledPresets, WriteWledPresets } from "./wled/native-backup.ts";
 
 export type SyncRouteDeps = {
-  store: FileLightsStore;
+  store: LightsStore;
   live: ReturnType<typeof createLiveEngine>;
   write: WriteStateFn;
   readCfg: ReadCfgFn;

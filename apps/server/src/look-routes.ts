@@ -50,13 +50,13 @@ import type { Hono } from "hono";
 import { mapLimit } from "./discovery/map-limit.ts";
 import type { createLiveEngine } from "./live/engine.ts";
 import type { FileLooksStore } from "./store/looks-store.ts";
-import type { FileLightsStore } from "./store/lights-store.ts";
+import type { LightsStore } from "./store/lights-store.ts";
 import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
 import { ledmapFileName, type ReadWledLedmap, type ReadWledPresets, type WriteWledLedmap, type WriteWledPresets } from "./wled/native-backup.ts";
 import { ledmapRecordAfter, planLedmapsFor, staleBaseMapReset, writeAndVerifyLedmap } from "./wireframe-persist.ts";
 
 export type LookRouteDeps = {
-  store: FileLightsStore;
+  store: LightsStore;
   looks: FileLooksStore;
   live: ReturnType<typeof createLiveEngine>;
   readCfg: ReadCfgFn;
@@ -105,7 +105,7 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : "";
 }
 
-function yardFrom(store: FileLightsStore): {
+function yardFrom(store: LightsStore): {
   lights: { id: string; name: string }[];
   props: (Prop & { lightName: string })[];
   elements: { id: string; lightId: string; label: string; start: number; stop: number; lightName: string }[];
@@ -259,7 +259,7 @@ function parseUdp(value: PushBody["udp"]):
 
 /** Where each attached string of a Light's Props starts, so sections land where every string sits. */
 export function stringStartsOnLight(
-  store: Pick<FileLightsStore, "propsFor" | "loadProps" | "loadAttachments" | "elementsFor">,
+  store: Pick<LightsStore, "propsFor" | "loadProps" | "loadAttachments" | "elementsFor">,
   light: Light,
 ): StringStart[] {
   return stringStartsFor({

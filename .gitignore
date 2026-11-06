@@ -15,3 +15,10 @@ agent-tools
 data
 *.json.tmp
 /.cursor
+
+# Xcode (Package.resolved stays tracked)
+xcuserdata/
+*.xcuserstate
+DerivedData/
+.build/
+.swiftpm/

@@ -152,6 +152,13 @@ export function registerSeasonRoutes(app: Hono, deps: SeasonRouteDeps) {
   });
 
   app.post("/api/season/restore", async (c) => {
+    const lightsPath = deps.store.path;
+    if (lightsPath === undefined) {
+      return c.json({
+        error: "restore-unsupported",
+        message: "This Nightplot server keeps Lights in memory, so a season file cannot be restored into it. Nothing was restored.",
+      }, 409);
+    }
     const body = (await c.req.json().catch(() => null)) as {
       document?: unknown;
       expectedDigest?: unknown;
@@ -211,7 +218,7 @@ export function registerSeasonRoutes(app: Hono, deps: SeasonRouteDeps) {
       }
       try {
         writeSeasonStoresConsistent({
-          lights: deps.store.path,
+          lights: lightsPath,
           looks: parsed.document.looks ? deps.looks.path : undefined,
           profiles: deps.profiles.path,
         }, {
