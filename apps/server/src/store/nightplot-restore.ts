@@ -1,6 +1,12 @@
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { BackupData } from "@nightplot/shared";
+import { normalizeLastLedmap, type BackupData } from "@nightplot/shared";
+
+/** An older backup holds one `lastLedmap` value; it is written back as the list (the base map). */
+function withLedmapList<T>(light: T): T {
+  if (!light || typeof light !== "object" || !("lastLedmap" in light) || (light as { lastLedmap?: unknown }).lastLedmap === undefined) return light;
+  return { ...light, lastLedmap: normalizeLastLedmap((light as { lastLedmap?: unknown }).lastLedmap) };
+}
 
 export type NightplotRestorePaths = {
   lights: string;
@@ -31,7 +37,7 @@ export function writeNightplotStoresConsistent(paths: NightplotRestorePaths, dat
   const files = [
     {
       dest: paths.lights,
-      body: `${JSON.stringify({ version: 1, lights: data.lights, elements: data.elements, props: data.props ?? [], attachments: data.attachments ?? [] }, null, 2)}\n`,
+      body: `${JSON.stringify({ version: 1, lights: data.lights.map(withLedmapList), elements: data.elements, props: data.props ?? [], attachments: data.attachments ?? [] }, null, 2)}\n`,
     },
     {
       dest: paths.products,
@@ -86,7 +92,7 @@ export function writeSeasonStoresConsistent(
   const files = [
     {
       dest: paths.lights,
-      body: `${JSON.stringify({ version: 1, lights: data.lights, elements: data.elements, props: data.props, attachments: data.attachments ?? [] }, null, 2)}\n`,
+      body: `${JSON.stringify({ version: 1, lights: data.lights.map(withLedmapList), elements: data.elements, props: data.props, attachments: data.attachments ?? [] }, null, 2)}\n`,
     },
     ...(paths.looks && data.looks
       ? [{ dest: paths.looks, body: `${JSON.stringify(data.looks, null, 2)}\n` }]

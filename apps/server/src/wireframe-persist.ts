@@ -4,6 +4,7 @@ import {
   planLightMaps,
   ledmapDigest,
   ledmapsMatch,
+  mergeLastLedmap,
   normalizeLastLedmap,
   parseLedmapJson,
   parseWireframeSpec,
@@ -12,6 +13,7 @@ import {
   type CompiledWireframe,
   type Element,
   type HostPort,
+  type LastLedmap,
   type Light,
   type LightMapsPlan,
   type Look,
@@ -26,9 +28,41 @@ export type PersistWireframeResult =
   | { ok: true; prop: Prop; elements: Element[]; compiled: CompiledWireframe }
   | { ok: false; message: string };
 
+type LedmapRow = { slot: number; digest: string };
+
+/**
+ * `written` are files that reread as sent. On a failure, `observed` are files
+ * whose reread was a different map (the digest is of what the controller
+ * returned), and `unread` are slots Nightplot cannot vouch for any more (the
+ * write failed or the reread gave nothing usable). The record follows all
+ * three so it says what is on the controller, not what was meant.
+ */
 export type LedmapWriteResult =
-  | { ok: true; written: { slot: number; digest: string }[] }
-  | { ok: false; status: 409 | 422 | 503; error: string; message: string; written: { slot: number; digest: string }[] };
+  | { ok: true; written: LedmapRow[] }
+  | {
+      ok: false;
+      status: 409 | 422 | 503;
+      error: string;
+      message: string;
+      written: LedmapRow[];
+      observed: LedmapRow[];
+      unread: number[];
+    };
+
+/**
+ * The `lastLedmap` list after a write attempt, or undefined when the attempt
+ * changed nothing worth recording. Written files and files that reread as a
+ * different map are recorded as found; slots that could not be read are
+ * dropped from the record rather than left claiming the old map.
+ */
+export function ledmapRecordAfter(previous: unknown, result: LedmapWriteResult, at: string): LastLedmap[] | null | undefined {
+  const found = [...result.written, ...(result.ok ? [] : result.observed)];
+  const unread = result.ok ? [] : result.unread;
+  if (found.length === 0 && unread.length === 0) return undefined;
+  const kept = (normalizeLastLedmap(previous) ?? []).filter((row) => !unread.includes(row.slot));
+  const next = mergeLastLedmap(kept, found.map((file) => ({ ...file, at })));
+  return next.length > 0 ? next : null;
+}
 
 export function persistWireframeOnLight(input: {
   store: FileLightsStore;
@@ -136,6 +170,8 @@ export async function writeAndVerifyLedmap(input: {
         error: "ledmap-failed",
         message: `WLED did not take ${name}. ${error instanceof Error ? error.message : ""} ${writtenSoFar(written)}`.trim(),
         written,
+        observed: [],
+        unread: [file.slot],
       };
     }
     let liveRaw: string | null;
@@ -148,9 +184,12 @@ export async function writeAndVerifyLedmap(input: {
         error: "ledmap-reread-failed",
         message: `Wrote ${name}, but it did not reread. Not treating as success. ${writtenSoFar(written)}`,
         written,
+        observed: [],
+        unread: [file.slot],
       };
     }
-    const matched = ledmapsMatch(file.map, liveRaw === null ? null : parseLedmapJson(liveRaw));
+    const live = liveRaw === null ? null : parseLedmapJson(liveRaw);
+    const matched = ledmapsMatch(file.map, live);
     if (matched === null) {
       return {
         ok: false,
@@ -158,6 +197,8 @@ export async function writeAndVerifyLedmap(input: {
         error: "ledmap-reread-unknown",
         message: `Wrote ${name}, but the controller map was not a map. Not treating as success. ${writtenSoFar(written)}`,
         written,
+        observed: [],
+        unread: [file.slot],
       };
     }
     if (!matched) {
@@ -167,6 +208,8 @@ export async function writeAndVerifyLedmap(input: {
         error: "ledmap-mismatch",
         message: `Wrote ${name}, but the reread differs. Not treating as success. ${writtenSoFar(written)}`,
         written,
+        observed: [{ slot: file.slot, digest: ledmapDigest(live!) }],
+        unread: [],
       };
     }
     written.push({ slot: file.slot, digest: file.digest });

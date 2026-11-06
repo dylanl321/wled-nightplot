@@ -24,6 +24,7 @@ import {
 import type { Hono } from "hono";
 import { mapLimit } from "./discovery/map-limit.ts";
 import { pushLooksToLight, type LookRouteDeps } from "./look-routes.ts";
+import { planLedmapsFor } from "./wireframe-persist.ts";
 import type { FileYardUndoStore } from "./store/yard-undo-store.ts";
 import type { WriteWledNativeFiles } from "./wled/native-backup.ts";
 import type { WriteStateFn } from "./wled/live.ts";
@@ -276,10 +277,16 @@ async function checkYard(deps: YardRouteDeps): Promise<{
       try { presetsRaw = await deps.readPresets(targetOf(light)); }
       catch { presetsRaw = null; }
     }
-    let ledmapRaw: string | null = null;
+    // Every light map file a push would write now is reread, plus ledmap.json (every preset names map 0).
+    // A file that cannot be read is left out of the reads, so it shows as unknown and not as a match.
+    const ledmapReads: Record<number, string | null> = {};
     if (reachable) {
-      try { ledmapRaw = await deps.readLedmap(targetOf(light)); }
-      catch { ledmapRaw = null; }
+      const plan = planLedmapsFor(deps.store, light, document.looks);
+      const slots = [...new Set([0, ...(plan.ok ? plan.writes.map((file) => file.slot) : [])])];
+      for (const slot of slots) {
+        try { ledmapReads[slot] = await deps.readLedmap(targetOf(light), slot); }
+        catch { /* unread */ }
+      }
     }
     return buildYardCheckRow({
       light,
@@ -294,7 +301,7 @@ async function checkYard(deps: YardRouteDeps): Promise<{
       provision,
       presetsRaw,
       cfg,
-      ledmapRaw,
+      ledmapReads,
     });
   });
   return { rows, checkedAt: deps.now(), caption: YARD_CAPTION, undo: deps.undo.read() };

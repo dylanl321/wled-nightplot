@@ -84,15 +84,20 @@ export function registerSeasonRoutes(app: Hono, deps: SeasonRouteDeps) {
         }
         try {
           const files = await deps.readNativeFiles(targetOf(light));
-          let ledmapJson: string | null = null;
+          // Every map file the Light holds, not just ledmap.json. A file that is missing or does not read is left out.
+          const ledmaps: { slot: number; json: string }[] = [];
           if (deps.readLedmap) {
-            try { ledmapJson = await deps.readLedmap(targetOf(light)); }
-            catch { ledmapJson = null; }
+            for (let slot = 0; slot <= 9; slot += 1) {
+              try {
+                const json = await deps.readLedmap(targetOf(light), slot);
+                if (json) ledmaps.push({ slot, json });
+              } catch { /* unread: left out */ }
+            }
           }
           return deviceFilesFromNative({
             light: { ...light, firmware: outcome.snapshot.firmware, mac: outcome.snapshot.mac },
             files,
-            ledmapJson,
+            ledmaps,
           });
         } catch {
           return deviceFilesFromNative({ light, files: null });

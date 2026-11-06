@@ -13,7 +13,6 @@ import {
   mergeFollowingSections,
   lookItemDigests,
   lookItemNames,
-  mergeLastLedmap,
   migrateSectionColours,
   managedLookSlots,
   managedPresetSlotsMatch,
@@ -54,7 +53,7 @@ import type { FileLooksStore } from "./store/looks-store.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
 import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
 import { ledmapFileName, type ReadWledLedmap, type ReadWledPresets, type WriteWledLedmap, type WriteWledPresets } from "./wled/native-backup.ts";
-import { planLedmapsFor, staleBaseMapReset, writeAndVerifyLedmap } from "./wireframe-persist.ts";
+import { ledmapRecordAfter, planLedmapsFor, staleBaseMapReset, writeAndVerifyLedmap } from "./wireframe-persist.ts";
 
 export type LookRouteDeps = {
   store: FileLightsStore;
@@ -336,10 +335,9 @@ export async function pushLooksToLight(
   });
   if (!ledmap.ok) {
     // Files already on the controller stay on the record, so the app and the board agree.
-    if (ledmap.written.length > 0) {
-      const at = new Date().toISOString();
-      deps.store.replace({ ...light, lastLedmap: mergeLastLedmap(light.lastLedmap, ledmap.written.map((file) => ({ ...file, at }))) });
-    }
+    // That includes a file that reread as a different map (recorded as found) and one that could not be read (dropped).
+    const record = ledmapRecordAfter(light.lastLedmap, ledmap, new Date().toISOString());
+    if (record !== undefined) deps.store.replace({ ...light, lastLedmap: record });
     const status = ledmap.status === 422
       ? "refused"
       : ledmap.status === 503
@@ -454,7 +452,7 @@ export async function pushLooksToLight(
       items,
       names: { ...light.lastLookPush?.names, ...lookItemNames(document) },
     },
-    ...(ledmap.written.length > 0 ? { lastLedmap: mergeLastLedmap(light.lastLedmap, ledmap.written.map((file) => ({ ...file, at: pushedAt }))) } : {}),
+    ...(ledmap.written.length > 0 ? { lastLedmap: ledmapRecordAfter(light.lastLedmap, ledmap, pushedAt) } : {}),
   });
   return row(light, "matched", notes.join(" "), safety.id);
 }

@@ -1034,6 +1034,7 @@ export {
   YARD_SWEEP_CAPTION,
   buildYardCheckRow,
   compareFirmware,
+  compareLedmap,
   compareLit,
   compareLooks,
   compareOutputs,
@@ -1045,6 +1046,7 @@ export {
   yardHasDrift,
   yardPushPlan,
   yardSweepSummary,
+  type LedmapReads,
   type YardCheckResult,
   type YardCheckRow,
   type YardCompare,
@@ -1060,6 +1062,7 @@ export {
   applyHostMatch,
   deviceFilesFromNative,
   diffSeason,
+  normalizeSeasonLedmaps,
   parseSeasonDocument,
   rematchSeasonHost,
   seasonDigest,
@@ -1068,6 +1071,7 @@ export {
   type SeasonDiff,
   type SeasonDocument,
   type SeasonHostMatch,
+  type SeasonLedmapFile,
   type SeasonParseResult,
 } from "./season.ts";
 export {
