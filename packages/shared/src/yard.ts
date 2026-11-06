@@ -399,17 +399,19 @@ export function compareLedmap(input: {
   }
   if (input.expected.length === 0) {
     // No map is needed, but every preset names map 0: a leftover ledmap.json would still bend the wire order.
+    // A failed read is unknown, never a match, with or without a record: a map from an earlier install, a restored server or a hand upload would not be in the record.
     if (!input.reachable) {
-      return recordedDigest(0) === null
-        ? { status: "match", detail: "No light map is needed. WLED did not answer, so ledmap.json was not read." }
-        : { status: "unknown", detail: "No light map is needed, but a push left ledmap.json here. WLED did not answer." };
+      return { status: "unknown", detail: "No light map is needed, but WLED did not answer, so ledmap.json was not read. Not treating as a match." };
     }
     const raw = input.reads[0];
     if (raw === null) return { status: "match", detail: "No light map is needed and the controller holds none." };
     if (raw === undefined) {
-      return recordedDigest(0) === null
-        ? { status: "match", detail: "No light map is needed. ledmap.json was not read; Nightplot has no record of writing one." }
-        : { status: "unknown", detail: "No light map is needed, but a push left ledmap.json here and it did not reread. Not treating as a match." };
+      return {
+        status: "unknown",
+        detail: recordedDigest(0) === null
+          ? "No light map is needed, but ledmap.json did not reread, so a leftover map cannot be ruled out. Not treating as a match."
+          : "No light map is needed, but a push left ledmap.json here and it did not reread. Not treating as a match.",
+      };
     }
     const live = parseLedmapJson(raw);
     if (live === null) return { status: "unknown", detail: "No light map is needed, but ledmap.json was not a map. Not treating as a match." };

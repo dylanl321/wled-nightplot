@@ -285,15 +285,41 @@ describe("Yard check compares", () => {
       expect(result.detail).toMatch(/ledmap1\.json, ledmap2\.json are not on the controller.*record lists only ledmap\.json.*before motion maps/);
     });
 
-    it("with no map needed, matches a straight or missing ledmap.json and flags a leftover bent one", () => {
+    describe("with no map needed", () => {
       const none = { expected: [] as never[] };
-      expect(check({ ...none, reads: reads({ 0: null }) }).status).toBe("match");
-      expect(check({ ...none, reads: reads({ 0: base }) }).status).toBe("match");
-      expect(check({ ...none, reads: reads({ 0: up }) }).status).toBe("mismatch");
-      expect(check({ ...none, reads: { 0: "nope" } }).status).toBe("unknown");
-      // Unread: fine when Nightplot never wrote one, unknown when a push left one.
-      expect(check({ ...none, reads: {} }).status).toBe("match");
-      expect(check({ ...none, reads: {}, recorded: [{ slot: 0, digest: "d", at: "x" }] }).status).toBe("unknown");
+      const rec = [{ slot: 0, digest: "d", at: "x" }];
+
+      it("flags a leftover bent ledmap.json as a mismatch", () => {
+        const result = check({ ...none, reads: reads({ 0: up }) });
+        expect(result.status).toBe("mismatch");
+        expect(result.detail).toMatch(/bends the wire order/);
+      });
+
+      it("matches a leftover straight ledmap.json", () => {
+        expect(check({ ...none, reads: reads({ 0: base }) }).status).toBe("match");
+      });
+
+      it("matches a 404, because the controller holds no map", () => {
+        expect(check({ ...none, reads: reads({ 0: null }) }).status).toBe("match");
+        expect(check({ ...none, reads: reads({ 0: null }), recorded: rec }).status).toBe("match");
+      });
+
+      it("is unknown, never a match, when WLED did not answer", () => {
+        expect(check({ ...none, reachable: false, reads: {} }).status).toBe("unknown");
+        expect(check({ ...none, reachable: false, reads: {}, recorded: rec }).status).toBe("unknown");
+      });
+
+      it("is unknown, never a match, when ledmap.json did not read, with or without a record", () => {
+        expect(check({ ...none, reads: {} }).status).toBe("unknown");
+        expect(check({ ...none, reads: {} }).detail).toMatch(/leftover map cannot be ruled out/);
+        const recorded = check({ ...none, reads: {}, recorded: rec });
+        expect(recorded.status).toBe("unknown");
+        expect(recorded.detail).toMatch(/a push left ledmap\.json here/);
+      });
+
+      it("is unknown when ledmap.json is not a map", () => {
+        expect(check({ ...none, reads: { 0: "nope" } }).status).toBe("unknown");
+      });
     });
   });
 

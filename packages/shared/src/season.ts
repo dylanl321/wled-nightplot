@@ -31,7 +31,7 @@ export const SEASON_KIND = "nightplot-season";
 export const SEASON_VERSION = 1;
 
 export const SEASON_CAPTION =
-  "One file for next season: Lights, outputs, Segments, Props (including wireframe path, locks and hidden spans), setup profiles, Looks, playlist and Schedule. Optional WLED cfg/presets and every light map file are extras. Restore shows a diff, then can re-push to controllers matched by MAC. Looks in the file replace the library; a file without Looks leaves the current library. Not Hardware Done.";
+  "One file for next season: Lights, outputs, Segments, Props (including wireframe path, locks and hidden spans), setup profiles, Looks, playlist and Schedule. Optional WLED cfg/presets and every light map file the controller returns are extras (a map file that is missing or did not read is left out). A season file saved by this build still loads in older builds, which restore only the base map. Restore shows a diff, then can re-push to controllers matched by MAC. Looks in the file replace the library; a file without Looks leaves the current library. Not Hardware Done.";
 
 export type SeasonDeviceFiles = {
   lightId: string;
@@ -41,13 +41,15 @@ export type SeasonDeviceFiles = {
   firmware: string | null;
   cfgJson?: string;
   presetsJson?: string;
+  /** `ledmap.json` (slot 0, the base map) as text. Kept as a string so an older build still loads this device row. */
+  ledmapJson?: string;
   /**
    * Every light map file read from the controller: `ledmap.json` is slot 0,
    * `ledmap1.json` to `ledmap9.json` are 1 to 9. A file that was missing or
-   * did not read is left out; missing is not an empty map. Season files saved
-   * before motion maps kept one string, which loads as slot 0.
+   * did not read is left out; missing is not an empty map. A season file
+   * with only `ledmapJson` loads as slot 0.
    */
-  ledmapJson?: SeasonLedmapFile[];
+  ledmaps?: SeasonLedmapFile[];
 };
 
 export type SeasonLedmapFile = { slot: number; json: string };
@@ -136,8 +138,8 @@ export function seasonDigest(document: SeasonDocument): string {
       lightId: row.lightId,
       mac: row.mac,
       hasFiles: Boolean(row.cfgJson && row.presetsJson),
-      hasLedmap: Boolean(row.ledmapJson?.length),
-      ledmapSlots: (row.ledmapJson ?? []).map((file) => file.slot),
+      hasLedmap: Boolean(row.ledmaps?.length),
+      ledmapSlots: (row.ledmaps ?? []).map((file) => file.slot),
     })),
   });
 }
@@ -256,8 +258,15 @@ export function deviceFilesFromNative(input: {
     firmware: input.light.firmware,
     ...(input.files?.cfgJson ? { cfgJson: input.files.cfgJson } : {}),
     ...(input.files?.presetsJson ? { presetsJson: input.files.presetsJson } : {}),
-    ...(input.ledmaps && input.ledmaps.length > 0 ? { ledmapJson: normalizeSeasonLedmaps(input.ledmaps) } : {}),
+    ...ledmapFields(normalizeSeasonLedmaps(input.ledmaps)),
   };
+}
+
+/** The string for slot 0 (older builds read it) and the list of every map. */
+function ledmapFields(maps: SeasonLedmapFile[] | undefined): Pick<SeasonDeviceFiles, "ledmapJson" | "ledmaps"> {
+  if (!maps) return {};
+  const base = maps.find((file) => file.slot === 0);
+  return { ...(base ? { ledmapJson: base.json } : {}), ledmaps: maps };
 }
 
 /** A season file saved before motion maps holds one `lastLedmap` value; it loads as the base map. */
@@ -402,9 +411,9 @@ function isSeasonElement(value: unknown): value is Element {
 }
 
 function migrateDeviceLedmaps(device: SeasonDeviceFiles): SeasonDeviceFiles {
-  const { ledmapJson, ...rest } = device;
-  const maps = normalizeSeasonLedmaps(ledmapJson);
-  return maps ? { ...rest, ledmapJson: maps } : rest;
+  const { ledmapJson, ledmaps, ...rest } = device;
+  const maps = normalizeSeasonLedmaps(ledmaps) ?? normalizeSeasonLedmaps(ledmapJson);
+  return { ...rest, ...ledmapFields(maps) };
 }
 
 function isSeasonDevice(value: unknown): value is SeasonDeviceFiles {
@@ -416,7 +425,8 @@ function isSeasonDevice(value: unknown): value is SeasonDeviceFiles {
     (row.firmware === null || typeof row.firmware === "string") &&
     (row.cfgJson === undefined || typeof row.cfgJson === "string") &&
     (row.presetsJson === undefined || typeof row.presetsJson === "string") &&
-    (row.ledmapJson === undefined || typeof row.ledmapJson === "string" || Array.isArray(row.ledmapJson));
+    (row.ledmapJson === undefined || typeof row.ledmapJson === "string") &&
+    (row.ledmaps === undefined || Array.isArray(row.ledmaps));
 }
 
 function diffNamed(

@@ -110,17 +110,19 @@ describe("Yard check compares every light map file (fixture box)", () => {
     const { box, push, app, lightId } = await yardWithBush();
     await push();
     const exported = (await (await app.request("/api/season/export?includeDevices=1")).json()) as {
-      document: { devices: { lightId: string; ledmapJson?: { slot: number; json: string }[] }[] };
+      document: { devices: { lightId: string; ledmapJson?: string; ledmaps?: { slot: number; json: string }[] }[] };
     };
     const device = exported.document.devices.find((row) => row.lightId === lightId)!;
-    expect(device.ledmapJson?.map((file) => file.slot)).toEqual([0, 1, 2]);
-    expect(device.ledmapJson?.[2]?.json).toBe(box.ledmap(2));
+    expect(device.ledmaps?.map((file) => file.slot)).toEqual([0, 1, 2]);
+    expect(device.ledmaps?.[2]?.json).toBe(box.ledmap(2));
+    // Slot 0 also travels as the string an older build reads.
+    expect(device.ledmapJson).toBe(box.ledmap(0));
     // A file that is not on the controller is left out, not saved as an empty map.
     box.setLedmap(null, 1);
     const later = (await (await app.request("/api/season/export?includeDevices=1")).json()) as typeof exported;
-    expect(later.document.devices.find((row) => row.lightId === lightId)?.ledmapJson?.map((file) => file.slot)).toEqual([0, 2]);
+    expect(later.document.devices.find((row) => row.lightId === lightId)?.ledmaps?.map((file) => file.slot)).toEqual([0, 2]);
     // An older season file (one string) reviews fine and reads as the base map.
-    const old = { ...later.document, devices: later.document.devices.map((row) => ({ ...row, ledmapJson: "{\"map\":[0,1]}" })) };
+    const old = { ...later.document, devices: later.document.devices.map((row) => ({ ...row, ledmaps: undefined, ledmapJson: "{\"map\":[0,1]}" })) };
     const review = await app.request("/api/season/review", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ document: old }),
     });
