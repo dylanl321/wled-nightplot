@@ -18,7 +18,8 @@ import {
   type LookPlaylist,
 } from "./look.ts";
 import type { Element, Light } from "./lights.ts";
-import type { Prop } from "./prop/types.ts";
+import { planLightMaps } from "./prop/light-maps.ts";
+import type { Prop, PropAttachment } from "./prop/types.ts";
 import { compileWireframe, ledmapsMatch, parseLedmapJson } from "./prop/wireframe.ts";
 import type { ProvisionRead } from "./provision.ts";
 import {
@@ -413,6 +414,10 @@ export function buildYardCheckRow(input: {
   live: WledSnapshot | null;
   elements: readonly Element[];
   props: readonly Prop[];
+  /** Where Props sit on Lights. Without them a Prop is placed by its Segments. */
+  attachments?: readonly PropAttachment[];
+  /** Every Prop, so an "after another prop" chain can be followed. Defaults to `props`. */
+  allProps?: readonly Prop[];
   looks: readonly Look[];
   playlists: readonly LookPlaylist[];
   schedule: NightlySchedule | null;
@@ -435,12 +440,22 @@ export function buildYardCheckRow(input: {
     elements: input.elements,
     props: input.props,
   });
+  // Presets name the light maps a push wrote, so what a push would write now includes them.
+  const mapPlan = planLightMaps({
+    light: input.light,
+    props: input.props,
+    ...(input.allProps ? { allProps: input.allProps } : {}),
+    elements: input.elements,
+    attachments: input.attachments ?? [],
+    looks: input.looks,
+  });
   const expected = targets.length > 0
     ? buildManagedPresets({
         looks: input.looks,
         playlists: input.playlists,
         targets,
         rgbw: input.light.rgbw,
+        maps: mapPlan.ok ? mapPlan.plan : null,
       })
     : null;
   const firmware = compareFirmware(input.light.firmware, input.live?.firmware ?? null, reachable);

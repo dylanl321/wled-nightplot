@@ -54,6 +54,23 @@ describe("lights store ledProductId", () => {
     expect(new FileLightsStore(file).findById(base.id)?.ledProductId).toBeNull();
   });
 
+  it("reads a legacy single lastLedmap as the base map and keeps a list as it is", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-lights-"));
+    const file = join(dir, "lights.json");
+    const legacy = { digest: "ledmap1:abc:1k", at: "2026-10-01T00:00:00.000Z" };
+    writeFileSync(file, JSON.stringify({ version: 1, lights: [{ ...base, lastLedmap: legacy }], elements: [] }));
+    const store = new FileLightsStore(file);
+    expect(store.findById(base.id)?.lastLedmap).toEqual([{ slot: 0, ...legacy }]);
+    // Saving the Light writes the list form back.
+    store.replace(store.findById(base.id)!);
+    expect(JSON.parse(readFileSync(file, "utf8")).lights[0].lastLedmap).toEqual([{ slot: 0, ...legacy }]);
+    const list = [{ slot: 0, digest: "a", at: "t" }, { slot: 2, digest: "b", at: "t" }];
+    store.replace({ ...base, lastLedmap: list });
+    expect(new FileLightsStore(file).findById(base.id)?.lastLedmap).toEqual(list);
+    store.replace({ ...base, lastLedmap: null });
+    expect(new FileLightsStore(file).findById(base.id)?.lastLedmap).toBeNull();
+  });
+
   it("tryLoadRaw treats a missing file as empty and refuses corrupt or invalid files", () => {
     const dir = mkdtempSync(join(tmpdir(), "nightplot-lights-"));
     const missing = join(dir, "missing.json");

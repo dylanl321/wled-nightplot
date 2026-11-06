@@ -15,6 +15,7 @@ import { isPropKind, isSharedPostRule, type Prop, type PropKind, type SharedPost
 import { layoutStrings } from "./prop/layout.ts";
 import { sectionIndexRanges } from "./prop/sections.ts";
 import { compileWireframe, wireframeGroupForElement } from "./prop/wireframe.ts";
+import type { MotionMapResult } from "./prop/motion-map.ts";
 import type { NightlySchedule } from "./schedule.ts";
 import { isPresetId, WLED_PRESET_MAX, WLED_PRESET_MIN } from "./sync.ts";
 import { isUdpSyncGroup, type UdpSyncRole } from "./udp-sync.ts";
@@ -387,6 +388,23 @@ export type LookTarget = {
   sectionId?: string;
   /** The colour stored on that section. Used when no override names it. */
   sectionColor?: string;
+  /**
+   * Set when `start` and `stop` are positions in a motion map and the map
+   * already runs the lights in the motion's order. This is the segment's
+   * `rev` (Toward the centre, Downward, Counter-clockwise). It replaces the
+   * Look's direction for this target, which only suits wire order.
+   */
+  mapRev?: boolean;
+};
+
+/**
+ * The motion maps one Light holds (`buildMotionMaps`) and where each prop's
+ * block sits in them, so a Look's targets can be re-ranged into map positions.
+ */
+export type LookMapPlan = {
+  result: Extract<MotionMapResult, { ok: true }>;
+  /** Each mapped prop's lights: first light on the Light and how many. */
+  blocks: readonly { propId: string; start: number; count: number }[];
 };
 
 export type PropSectionPlan = {
@@ -418,7 +436,7 @@ export function propSectionPlan(prop: Prop, own: readonly Element[]): PropSectio
       notes.push(`${prop.label} · ${report.name} has lights on another string. Only the first string is on this Light's segments, so those lights were not sent.`);
     }
     if (onFirst.length > 1) {
-      notes.push(`${prop.label} · ${report.name} is ${onFirst.length} separate ranges, so it is sent as ${onFirst.length} segments and an effect restarts in each. One effect across them needs a ledmap, which Nightplot does not write for sections yet.`);
+      notes.push(`${prop.label} · ${report.name} is ${onFirst.length} separate ranges, so it is sent as ${onFirst.length} segments and an effect restarts in each. Pick a motion for it to run one effect across them in position order.`);
     }
     for (const range of onFirst) pieces.push({ start: range.start, stop: range.stop, report });
     for (const warning of report.warnings) {
@@ -587,6 +605,80 @@ export function lookTargetsForLook(look: Look, input: {
   return [...base, ...extras];
 }
 
+/**
+ * A Look's targets in the positions its motion map uses. A prop whose block
+ * in the Look's map is the base block keeps its physical targets. Any other
+ * prop gets one target per section (map positions, with the motion's `rev`)
+ * plus its unsectioned lights, and the preset names the Look's map. A
+ * well-house block is the same in every map, so it is never re-ranged. With
+ * no plan every target stays physical and the slot is 0.
+ */
+export function mapTargetsForLook(
+  look: Look,
+  targets: readonly LookTarget[],
+  plan: LookMapPlan | null | undefined,
+): { targets: LookTarget[]; slot: number } {
+  const entry = plan?.result.looks.find((row) => row.lookId === look.id);
+  if (!plan || !entry) return { targets: [...targets], slot: 0 };
+  const base = plan.result.maps.find((row) => row.slot === 0)!.map;
+  const own = plan.result.maps.find((row) => row.slot === entry.slot)!.map;
+  let out = [...targets];
+  for (const block of plan.blocks) {
+    let same = true;
+    for (let at = block.start; at < block.start + block.count; at += 1) {
+      if (own[at] !== base[at]) {
+        same = false;
+        break;
+      }
+    }
+    if (same) continue;
+    const prop = targets.find((row) => row.prop?.id === block.propId)?.prop;
+    if (!prop) continue;
+    const mapped: LookTarget[] = [];
+    const sections = entry.sections.filter((row) => row.propId === block.propId);
+    for (const section of sections) {
+      const color = prop.sections?.find((row) => row.id === section.sectionId)?.color;
+      mapped.push({
+        start: section.start,
+        stop: section.stop,
+        prop,
+        sectionId: section.sectionId,
+        ...(color ? { sectionColor: color } : {}),
+        ...(section.motion !== "wire" ? { mapRev: section.rev } : {}),
+      });
+    }
+    const rest = entry.rests.find((row) => row.propId === block.propId);
+    let cursor = block.start;
+    for (const section of [...sections].sort((a, b) => a.start - b.start)) {
+      if (section.start > cursor) mapped.push(restTarget(prop, cursor, section.start, rest));
+      cursor = Math.max(cursor, section.stop);
+    }
+    if (cursor < block.start + block.count) mapped.push(restTarget(prop, cursor, block.start + block.count, rest));
+    mapped.sort((x, y) => x.start - y.start);
+    let placed = false;
+    out = out.flatMap((row) => {
+      if (row.prop?.id !== block.propId) return [row];
+      if (placed) return [];
+      placed = true;
+      return mapped;
+    });
+  }
+  return { targets: out, slot: entry.slot };
+}
+
+function restTarget(prop: Prop, start: number, stop: number, rest: { motion: ShapeMotion; rev: boolean } | undefined): LookTarget {
+  return { start, stop, prop, ...(rest && rest.motion !== "wire" ? { mapRev: rest.rev } : {}) };
+}
+
+/** Targets and map slot for one Look as they will be sent: physical ranges, or map positions. */
+export function lookPresetTargets(
+  look: Look,
+  geometry: { ledCount: number; elements: readonly Element[]; props: readonly Prop[] },
+  plan?: LookMapPlan | null,
+): { targets: LookTarget[]; slot: number } {
+  return mapTargetsForLook(look, lookTargetsForLook(look, geometry), plan);
+}
+
 export function styleColours(style: LookStyle, rgbw: boolean): number[][] {
   const primary = hexToRgb(style.color) ?? [255, 160, 0];
   const secondary = style.color2 ? hexToRgb(style.color2) ?? [0, 0, 0] : [0, 0, 0];
@@ -595,10 +687,15 @@ export function styleColours(style: LookStyle, rgbw: boolean): number[][] {
   return [pad(primary), pad(secondary as [number, number, number]), pad(tertiary as [number, number, number])];
 }
 
-export function buildLookPreset(look: Look, targets: readonly LookTarget[], rgbw: boolean): Record<string, unknown> {
+/**
+ * `ledmap` is the map file the Look runs on (0 is `ledmap.json`). It is always
+ * written, so a Look never inherits whichever map was loaded last.
+ */
+export function buildLookPreset(look: Look, targets: readonly LookTarget[], rgbw: boolean, ledmap = 0): Record<string, unknown> {
   return {
     n: look.name.slice(0, LOOK_NAME_MAX),
     on: true,
+    ledmap,
     bri: look.style.bri,
     ...(look.transitionTenths !== undefined ? { transition: look.transitionTenths } : {}),
     mainseg: 0,
@@ -615,8 +712,8 @@ export function buildLookPreset(look: Look, targets: readonly LookTarget[], rgbw
         sx: style.sx,
         ix: style.ix,
         pal: style.pal,
-        rev: style.dir === "rev" || style.dir === "mirror-rev",
-        mi: style.dir === "mirror" || style.dir === "mirror-rev",
+        rev: target.mapRev ?? (style.dir === "rev" || style.dir === "mirror-rev"),
+        mi: target.mapRev !== undefined ? false : style.dir === "mirror" || style.dir === "mirror-rev",
       };
     }),
   };
@@ -634,7 +731,7 @@ export function mergeFollowingSections(look: Look, targets: readonly LookTarget[
     const last = out[out.length - 1];
     const mergeable = (row: LookTarget | undefined) =>
       row?.prop && row.sectionId && !row.wireframeGroup && !ownSections.has(row.prop.id);
-    if (last && mergeable(last) && mergeable(target) && last.prop!.id === target.prop!.id && last.stop === target.start) {
+    if (last && mergeable(last) && mergeable(target) && last.prop!.id === target.prop!.id && last.stop === target.start && last.mapRev === target.mapRev) {
       out[out.length - 1] = { ...last, stop: target.stop };
       continue;
     }
@@ -644,7 +741,7 @@ export function mergeFollowingSections(look: Look, targets: readonly LookTarget[
 }
 
 export function buildOffPreset(): Record<string, unknown> {
-  return { n: "Off", on: false };
+  return { n: "Off", on: false, ledmap: 0 };
 }
 
 export function buildPlaylistPreset(playlist: LookPlaylist, looks: readonly Look[]): Record<string, unknown> | null {
@@ -656,6 +753,7 @@ export function buildPlaylistPreset(playlist: LookPlaylist, looks: readonly Look
   return {
     n: playlist.name.slice(0, LOOK_NAME_MAX),
     on: true,
+    ledmap: 0,
     playlist: {
       ps: entries.map((row) => row.slot),
       dur: entries.map((row) => row.dur),
@@ -676,11 +774,14 @@ export function buildManagedPresets(input: {
   targets: readonly LookTarget[];
   rgbw: boolean;
   geometry?: { ledCount: number; elements: readonly Element[]; props: readonly Prop[] };
+  /** The Light's motion maps. Without it every Look runs on map 0 in physical ranges. */
+  maps?: LookMapPlan | null;
 }): Record<string, unknown> {
   const out: Record<string, unknown> = { "0": {}, [String(LOOK_OFF_SLOT)]: buildOffPreset() };
   for (const row of input.looks) {
-    const targets = input.geometry ? lookTargetsForLook(row, input.geometry) : input.targets;
-    out[String(row.slot)] = buildLookPreset(row, targets, input.rgbw);
+    const base = input.geometry ? lookTargetsForLook(row, input.geometry) : input.targets;
+    const { targets, slot } = mapTargetsForLook(row, base, input.maps);
+    out[String(row.slot)] = buildLookPreset(row, targets, input.rgbw, slot);
   }
   for (const row of input.playlists) {
     const preset = buildPlaylistPreset(row, input.looks);

@@ -4691,7 +4691,7 @@ describe("fleet setup", () => {
     expect(body.prop.kind).toBe("wireframe");
     expect(body.elements).toHaveLength(4);
     expect(body.elements[0]?.id).toBe(faceElementId(body.prop.id, 0));
-    expect(store.findById(id)?.lastLedmap?.digest).toMatch(/^ledmap1:/);
+    expect(store.findById(id)?.lastLedmap?.[0]?.digest).toMatch(/^ledmap1:/);
     const second = await app.request(`/api/lights/${id}/props`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -5605,7 +5605,7 @@ describe("Looks library and nightly Schedule", () => {
     const porchPresets = JSON.parse(live.presets()) as Record<string, { n?: string; seg?: { fx: number; start: number }[] }>;
     expect(porchPresets["1"]?.n).toBe("Warm white");
     expect(porchPresets["1"]?.seg?.[0]).toMatchObject({ fx: 13, start: 0 });
-    expect(porchPresets[String(LOOK_OFF_SLOT)]).toEqual({ n: "Off", on: false });
+    expect(porchPresets[String(LOOK_OFF_SLOT)]).toEqual({ n: "Off", on: false, ledmap: 0 });
     expect(live.cfg.if.ntp).toMatchObject({ en: true, tz: 8, lt: 42.3, ln: -83.7 });
     // WLED 0.15.x: slot 8 is sunrise, slot 9 is sunset.
     expect(live.cfg.timers.ins[9]).toMatchObject({ en: true, hour: 255, macro: 16 });

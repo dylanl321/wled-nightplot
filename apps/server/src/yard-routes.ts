@@ -286,6 +286,8 @@ async function checkYard(deps: YardRouteDeps): Promise<{
       live,
       elements: deps.store.elementsFor(light.id),
       props: deps.store.propsFor(light.id),
+      attachments: deps.store.loadAttachments(),
+      allProps: deps.store.loadProps(),
       looks: document.looks,
       playlists: document.playlists,
       schedule: document.schedule,

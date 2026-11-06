@@ -76,14 +76,41 @@ export type Light = {
   lastApply?: LastApply | null;
   /** Last matched Looks / Schedule / sync push. Missing is not “in sync”. */
   lastLookPush?: LastLookPush | null;
-  /** Last matched WLED ledmap write. Missing is not “in sync”. */
-  lastLedmap?: LastLedmap | null;
+  /**
+   * Last matched WLED ledmap writes, one per map file (`ledmap.json` is slot 0).
+   * Missing is not “in sync”. Older stores kept one `{ digest, at }`; readers migrate it.
+   */
+  lastLedmap?: LastLedmap[] | null;
 };
 
 export type LastLedmap = {
+  /** 0 is `ledmap.json`; 1 to 9 are `ledmap1.json` to `ledmap9.json`. */
+  slot: number;
   digest: string;
   at: string;
 };
+
+/** The list form of `lastLedmap`. A legacy single `{ digest, at }` is the base map (slot 0). Anything unreadable is null. */
+export function normalizeLastLedmap(value: unknown): LastLedmap[] | null {
+  if (value === null || value === undefined) return null;
+  const rows = Array.isArray(value) ? value : [{ slot: 0, ...(typeof value === "object" ? (value as object) : {}) }];
+  const out: LastLedmap[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const item = row as Partial<LastLedmap>;
+    if (!Number.isInteger(item.slot) || item.slot! < 0 || item.slot! > 9) continue;
+    if (typeof item.digest !== "string" || typeof item.at !== "string") continue;
+    if (out.some((other) => other.slot === item.slot)) continue;
+    out.push({ slot: item.slot!, digest: item.digest, at: item.at });
+  }
+  return out.length > 0 ? out.sort((a, b) => a.slot - b.slot) : null;
+}
+
+/** Replace the rows for the slots just written; rows for other slots stay. */
+export function mergeLastLedmap(previous: unknown, written: readonly LastLedmap[]): LastLedmap[] {
+  const keep = (normalizeLastLedmap(previous) ?? []).filter((row) => !written.some((item) => item.slot === row.slot));
+  return [...keep, ...written].sort((a, b) => a.slot - b.slot);
+}
 
 /** Missing or blank store values are manual fields. */
 export function normalizeLightLedProductId(value: unknown): string | null {

@@ -6,6 +6,7 @@ import {
   isProp,
   isPropAttachment,
   macsMatch,
+  normalizeLastLedmap,
   normalizeLightLedProductId,
   withMigratedOutputs,
   type Element,
@@ -362,6 +363,7 @@ function normalizeStoredLight(light: Light): Light {
   return withMigratedOutputs({
     ...light,
     ledProductId: normalizeLightLedProductId(light.ledProductId),
+    ...(light.lastLedmap !== undefined ? { lastLedmap: normalizeLastLedmap(light.lastLedmap) } : {}),
   });
 }
 

@@ -67,6 +67,12 @@ export type MotionChoice = {
 export type MotionMapLookInput = {
   id: string;
   motions: readonly MotionChoice[];
+  /**
+   * Props whose sections all follow the prop in this Look. Their lights are
+   * sorted as one block, so a fill runs across the whole prop, and none of
+   * their sections is reported. Absent keeps each section its own block.
+   */
+  joined?: readonly string[];
 };
 
 export type MotionMapInput = {
@@ -89,6 +95,15 @@ export type MotionMapSection = {
   rev: boolean;
 };
 
+/** The lights of a prop that no section names, in map positions. A prop with no sections, or a joined prop, is all rest. */
+export type MotionMapRest = {
+  propId: string;
+  start: number;
+  stop: number;
+  motion: ShapeMotion;
+  rev: boolean;
+};
+
 export type MotionMapSlot = {
   /** 0 is `ledmap.json`, 1 to 9 are `ledmap1.json` to `ledmap9.json`. */
   slot: number;
@@ -101,6 +116,7 @@ export type MotionMapLook = {
   /** Which `ledmapN` this Look's preset names. */
   slot: number;
   sections: MotionMapSection[];
+  rests: MotionMapRest[];
 };
 
 export type MotionMapResult =
@@ -202,9 +218,14 @@ function sortBlock(locals: readonly number[], lights: readonly ShapeLight[], sor
   });
 }
 
-function buildMap(plans: readonly PropPlan[], total: number, look: MotionMapLookInput | null): { map: number[]; sections: MotionMapSection[] } {
+function buildMap(
+  plans: readonly PropPlan[],
+  total: number,
+  look: MotionMapLookInput | null,
+): { map: number[]; sections: MotionMapSection[]; rests: MotionMapRest[] } {
   const map = Array.from({ length: total }, (_, index) => index);
   const sections: MotionMapSection[] = [];
+  const rests: MotionMapRest[] = [];
   for (const plan of plans) {
     const base = plan.item.start;
     if (plan.kind === "block") {
@@ -214,7 +235,9 @@ function buildMap(plans: readonly PropPlan[], total: number, look: MotionMapLook
       continue;
     }
     let cursor = base;
-    for (const group of plan.groups) {
+    const joined = look?.joined?.includes(plan.item.prop.id) === true;
+    const groups: Group[] = joined ? [{ sectionId: null, locals: plan.lights.map((_, local) => local) }] : plan.groups;
+    for (const group of groups) {
       const motion = look ? choiceFor(look, plan.item.prop.id, group.sectionId) : "wire";
       const { sort, rev } = motionSort(motion);
       const ordered = sortBlock(group.locals, plan.lights, sort);
@@ -225,10 +248,12 @@ function buildMap(plans: readonly PropPlan[], total: number, look: MotionMapLook
       }
       if (group.sectionId !== null) {
         sections.push({ propId: plan.item.prop.id, sectionId: group.sectionId, start, stop: cursor, motion, rev });
+      } else {
+        rests.push({ propId: plan.item.prop.id, start, stop: cursor, motion, rev });
       }
     }
   }
-  return { map, sections };
+  return { map, sections, rests };
 }
 
 function sameMap(left: readonly number[], right: readonly number[]): boolean {
@@ -289,7 +314,7 @@ export function buildMotionMaps(input: MotionMapInput): MotionMapResult {
       slot = { slot: maps.length, digest, map: built.map };
       maps.push(slot);
     }
-    looks.push({ lookId: look.id, slot: slot.slot, sections: built.sections });
+    looks.push({ lookId: look.id, slot: slot.slot, sections: built.sections, rests: built.rests });
   }
   return { ok: true, ledCount: total, maps, looks, notes };
 }

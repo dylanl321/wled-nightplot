@@ -1,7 +1,10 @@
 import {
   compileWireframe,
   formatLedmapJson,
+  planLightMaps,
+  ledmapDigest,
   ledmapsMatch,
+  normalizeLastLedmap,
   parseLedmapJson,
   parseWireframeSpec,
   segmentsForWireframeProp,
@@ -10,20 +13,22 @@ import {
   type Element,
   type HostPort,
   type Light,
+  type LightMapsPlan,
+  type Look,
   type Prop,
   type PropDesign,
   type WireframeSpec,
 } from "@nightplot/shared";
 import type { FileLightsStore } from "./store/lights-store.ts";
-import type { ReadWledLedmap, WriteWledLedmap } from "./wled/native-backup.ts";
+import { ledmapFileName, type ReadWledLedmap, type WriteWledLedmap } from "./wled/native-backup.ts";
 
 export type PersistWireframeResult =
   | { ok: true; prop: Prop; elements: Element[]; compiled: CompiledWireframe }
   | { ok: false; message: string };
 
 export type LedmapWriteResult =
-  | { ok: true; digest: string | null }
-  | { ok: false; status: 409 | 422 | 503; error: string; message: string };
+  | { ok: true; written: { slot: number; digest: string }[] }
+  | { ok: false; status: 409 | 422 | 503; error: string; message: string; written: { slot: number; digest: string }[] };
 
 export function persistWireframeOnLight(input: {
   store: FileLightsStore;
@@ -96,55 +101,118 @@ export function specFromBody(value: unknown, fallback?: WireframeSpec | null): W
   return parseWireframeSpec(value);
 }
 
+/** One map file to put on a Light: the slot (0 is `ledmap.json`), its list and digest. */
+export type LedmapFile = { slot: number; map: readonly number[]; digest: string };
+
+/**
+ * Write every map file, rereading and comparing each one. Stops at the first
+ * file that fails to write, reread or match, and says which. A file that
+ * does not reread the same is not success, and nothing after it is sent.
+ * An empty list writes nothing.
+ */
+/** What a failed multi-file write says about files already put on the controller. */
+function writtenSoFar(written: readonly { slot: number }[]): string {
+  return written.length === 0
+    ? "Nothing else was sent."
+    : `Already written and left in place: ${written.map((file) => ledmapFileName(file.slot)).join(", ")}. No presets were sent.`;
+}
+
 export async function writeAndVerifyLedmap(input: {
   light: Light;
-  props: readonly Prop[];
+  maps: readonly LedmapFile[];
   readLedmap: ReadWledLedmap;
   writeLedmap: WriteWledLedmap;
 }): Promise<LedmapWriteResult> {
-  const prop = input.props.find((row) => row.kind === "wireframe" && row.wireframe);
-  if (!prop?.wireframe) return { ok: true, digest: null };
-  const refuse = wireframeRefuseReason(prop.wireframe, input.light.ledCount);
-  if (refuse) return { ok: false, status: 422, error: "invalid-wireframe", message: refuse };
-  const compiled = compileWireframe(prop.wireframe, input.light.ledCount);
   const dest: HostPort = { hostname: input.light.hostname, port: input.light.port };
-  try {
-    await input.writeLedmap(dest, formatLedmapJson(compiled.ledmap));
-  } catch (error) {
-    return {
-      ok: false,
-      status: 503,
-      error: "ledmap-failed",
-      message: `WLED did not take ledmap.json. ${error instanceof Error ? error.message : ""} Nothing else was sent.`.trim(),
-    };
+  const written: { slot: number; digest: string }[] = [];
+  for (const file of input.maps) {
+    const name = ledmapFileName(file.slot);
+    try {
+      await input.writeLedmap(dest, formatLedmapJson(file.map), file.slot);
+    } catch (error) {
+      return {
+        ok: false,
+        status: 503,
+        error: "ledmap-failed",
+        message: `WLED did not take ${name}. ${error instanceof Error ? error.message : ""} ${writtenSoFar(written)}`.trim(),
+        written,
+      };
+    }
+    let liveRaw: string | null;
+    try {
+      liveRaw = await input.readLedmap(dest, file.slot);
+    } catch {
+      return {
+        ok: false,
+        status: 409,
+        error: "ledmap-reread-failed",
+        message: `Wrote ${name}, but it did not reread. Not treating as success. ${writtenSoFar(written)}`,
+        written,
+      };
+    }
+    const matched = ledmapsMatch(file.map, liveRaw === null ? null : parseLedmapJson(liveRaw));
+    if (matched === null) {
+      return {
+        ok: false,
+        status: 409,
+        error: "ledmap-reread-unknown",
+        message: `Wrote ${name}, but the controller map was not a map. Not treating as success. ${writtenSoFar(written)}`,
+        written,
+      };
+    }
+    if (!matched) {
+      return {
+        ok: false,
+        status: 409,
+        error: "ledmap-mismatch",
+        message: `Wrote ${name}, but the reread differs. Not treating as success. ${writtenSoFar(written)}`,
+        written,
+      };
+    }
+    written.push({ slot: file.slot, digest: file.digest });
   }
-  let liveRaw: string | null;
+  return { ok: true, written };
+}
+
+/**
+ * A push that needs no map still names map 0 in every preset. If this Light
+ * may hold a `ledmap.json` from an earlier push (the record says so, or the
+ * controller returns one that is not a straight pass-through), return the
+ * identity base map to write over it. Otherwise nothing.
+ */
+export async function staleBaseMapReset(input: {
+  light: Light;
+  readLedmap: ReadWledLedmap;
+}): Promise<LedmapFile[]> {
+  const identity = Array.from({ length: input.light.ledCount }, (_, index) => index);
+  const reset = [{ slot: 0, map: identity, digest: ledmapDigest(identity) }];
+  if (normalizeLastLedmap(input.light.lastLedmap)?.some((row) => row.slot === 0)) return reset;
   try {
-    liveRaw = await input.readLedmap(dest);
+    const raw = await input.readLedmap({ hostname: input.light.hostname, port: input.light.port }, 0);
+    if (raw === null) return [];
+    const live = parseLedmapJson(raw);
+    return live !== null && ledmapsMatch(identity, live) === true ? [] : reset;
   } catch {
-    return {
-      ok: false,
-      status: 409,
-      error: "ledmap-reread-failed",
-      message: "Wrote ledmap.json, but it did not reread. Not treating as success.",
-    };
+    return [];
   }
-  const matched = ledmapsMatch(compiled.ledmap, liveRaw === null ? null : parseLedmapJson(liveRaw));
-  if (matched === null) {
-    return {
-      ok: false,
-      status: 409,
-      error: "ledmap-reread-unknown",
-      message: "Wrote ledmap.json, but the controller map was not a map. Not treating as success.",
-    };
-  }
-  if (!matched) {
-    return {
-      ok: false,
-      status: 409,
-      error: "ledmap-mismatch",
-      message: "Wrote ledmap.json, but the reread differs. Not treating as success.",
-    };
-  }
-  return { ok: true, digest: compiled.ledmapDigest };
+}
+
+/**
+ * The maps this Light needs for the Looks library (or just the base map with
+ * no Looks), from its Props and where they are attached. A refusal is plain
+ * and comes before anything is written.
+ */
+export function planLedmapsFor(
+  store: Pick<FileLightsStore, "propsFor" | "loadProps" | "loadAttachments" | "elementsFor">,
+  light: Light,
+  looks: readonly Look[],
+): LightMapsPlan {
+  return planLightMaps({
+    light,
+    props: store.propsFor(light.id),
+    allProps: store.loadProps(),
+    elements: store.elementsFor(light.id),
+    attachments: store.loadAttachments(),
+    looks,
+  });
 }

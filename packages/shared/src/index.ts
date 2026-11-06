@@ -181,6 +181,8 @@ export {
 } from "./drift.ts";
 export {
   emptyLightsPayload,
+  mergeLastLedmap,
+  normalizeLastLedmap,
   normalizeLightLedProductId,
   type Element,
   type LastLedmap,
@@ -613,11 +615,13 @@ export {
   type MotionMapLook,
   type MotionMapLookInput,
   type MotionMapProp,
+  type MotionMapRest,
   type MotionMapResult,
   type MotionMapSection,
   type MotionMapSlot,
   type MotionSort,
 } from "./prop/motion-map.ts";
+export { planLightMaps, type LightMapsPlan } from "./prop/light-maps.ts";
 export { parseTraceLength, type TraceLength, type TraceLengthResult } from "./prop/trace-length.ts";
 export { snap, traceAim, SNAP_ALIGN_PX, SNAP_POINT_PX, type SnapContext, type SnapHit, type SnapPoint, type TraceGuide } from "./prop/snap.ts";
 export {
@@ -886,6 +890,8 @@ export {
   lookPushSummaryFor,
   lookTargets,
   lookTargetsForLook,
+  lookPresetTargets,
+  mapTargetsForLook,
   lookSectionNotes,
   propSectionPlan,
   resolveLookTarget,
@@ -908,6 +914,7 @@ export {
   type LookPalette,
   type LookPlaylist,
   type LookStyle,
+  type LookMapPlan,
   type LookTarget,
   type PropSectionPlan,
   type LooksDocument,
