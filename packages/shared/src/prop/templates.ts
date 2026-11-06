@@ -117,7 +117,7 @@ export const PROP_TEMPLATES: readonly PropTemplate[] = [
   {
     kind: "split-tree",
     label: "Split tree",
-    summary: "A trunk that forks. On the yard, set the height, the split and the tip spacing, then put strings on each trunk.",
+    summary: "A trunk that forks, with lights wrapped up each branch. On the yard, set the tips, the height, where it splits and how far the tips spread, then put strings on the trunks.",
     minTaps: 2,
     maxTaps: 2,
     pairing: "polyline",

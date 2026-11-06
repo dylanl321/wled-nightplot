@@ -262,5 +262,7 @@
 .ye .split-tree { display: flex; flex-direction: column; gap: 10px; }
 .ye .split-tree .trunk, .ye .split-tree .string { border: 1px solid var(--y-border); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 8px; background: var(--y-card); }
 .ye .split-tree .string { background: color-mix(in srgb, var(--y-pick) 5%, var(--y-card)); }
-.ye .split-tree .btn, .ye .split-tree select, .ye .split-tree input { min-height: 44px; }
+.ye .split-tree label.f input, .ye .split-tree label.f select, .ye .split-tree .btn,
+.ye .split-sizes label.f input, .ye .split-seg button { min-height: 44px; }
+.ye .split-seg button { padding: 10px 14px; }
 .ye .split-tree .meta { color: var(--y-muted); font-size: 13px; }

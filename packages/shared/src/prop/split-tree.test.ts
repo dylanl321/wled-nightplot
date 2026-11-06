@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { compilePropDesign } from "./design.ts";
-import { countLayout, layoutStrings } from "./layout.ts";
+import { countLayout, layoutStrings, METRES_PER_FOOT } from "./layout.ts";
 import { defaultSections, pathEdgeIndexRanges, reconcileSections } from "./sections.ts";
-import { groupSplitTreeSections, splitTreeCoverage, splitTreeLayout, splitTreeTrunks, type SplitTreeSpec } from "./split-tree.ts";
+import { groupSplitTreeSections, splitTreeCoverage, splitTreeLayout, splitTreeTrunks, trunkIdFromEdge, type SplitTreeSpec } from "./split-tree.ts";
 import { isProp, type SplitTreeString } from "./types.ts";
 
 const y: SplitTreeSpec = { units: "m", height: 2, split: 1, spacing: 2, trunks: 2, levels: 1 };
@@ -11,28 +11,36 @@ function string(partial: Partial<SplitTreeString> & Pick<SplitTreeString, "id" |
   return { ledProductId: null, pitchMm: 100, ledCount: null, ...partial };
 }
 
-function litRuns(spec: SplitTreeSpec & { pitchM?: number }) {
+function corner(spec: SplitTreeSpec, id: string) {
   const layout = splitTreeLayout({ pitchM: 0.1, ...spec })!;
-  return layoutStrings(layout).flatMap((row) => row.run.filter((edge) => edge.kind === "lit").map((edge) => ({ ...edge, stringId: row.id })));
+  return layout.corners.find((row) => row.id === id)!;
 }
 
 describe("split tree", () => {
-  it("builds a trunk that splits into two", () => {
+  it("builds a thick trunk that splits into two", () => {
     const trunks = splitTreeTrunks(y)!;
     expect(trunks.map((trunk) => trunk.id)).toEqual(["t0", "t0.0", "t0.1"]);
+    expect(trunks[0]!.radius0).toBeGreaterThan(trunks[1]!.radius0);
+    expect(trunks[1]!.x1).toBeLessThan(0);
+    expect(trunks[2]!.x1).toBeGreaterThan(0);
+    expect(trunks[0]!.lengthM).toBeGreaterThan(trunks[0]!.woodM);
     const layout = splitTreeLayout({ ...y, pitchM: 0.1 })!;
-    const base = layout.corners.find((corner) => corner.id === "c-base")!;
-    const fork = layout.corners.find((corner) => corner.id === "c-t0")!;
-    const left = layout.corners.find((corner) => corner.id === "c-t0.0")!;
-    const right = layout.corners.find((corner) => corner.id === "c-t0.1")!;
+    const base = layout.corners.find((row) => row.id === "c-base")!;
+    const fork = layout.corners.find((row) => row.id === "c-t0")!;
+    const left = layout.corners.find((row) => row.id === "c-t0.0")!;
+    const right = layout.corners.find((row) => row.id === "c-t0.1")!;
     expect(base).toMatchObject({ x: 0, y: 0 });
     expect(fork).toMatchObject({ x: 0, y: 1 });
     expect(left.y).toBeCloseTo(2);
     expect(right.y).toBeCloseTo(2);
     expect(right.x - left.x).toBeCloseTo(2);
-    const root = layoutStrings(layout).flatMap((row) => row.run).find((edge) => edge.id === "e-t0")!;
-    expect(root.wrapLengthM).toBeCloseTo(1);
-    expect(root.kind).toBe("lit");
+    const body = layout.bodies?.find((row) => row.id === "t0");
+    expect(body && body.r0).toBeGreaterThan(0.1);
+    const coil = layoutStrings(layout).flatMap((row) => row.run).filter((edge) => edge.id === "e-t0" || edge.id.startsWith("e-t0-"));
+    const xs = coil.flatMap((edge) => [corner(y, edge.from).x, corner(y, edge.to).x]);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(body!.r0 * 0.7);
+    expect(coil[0]!.kind).toBe("lit");
+    expect(coil[0]!.wrapLengthM).toBeGreaterThan(0.05);
   });
 
   it("builds a 3-trunk tree with even tip spacing", () => {
@@ -41,16 +49,31 @@ describe("split tree", () => {
     expect(trunks[2]!.x1 - trunks[1]!.x1).toBeCloseTo(2);
     expect(trunks[3]!.x1 - trunks[2]!.x1).toBeCloseTo(2);
     const layout = splitTreeLayout({ ...y, trunks: 3, pitchM: 0.1 })!;
-    expect(layoutStrings(layout).flatMap((row) => row.run).filter((edge) => edge.kind === "lit")).toHaveLength(4);
+    const ids = new Set(layoutStrings(layout).flatMap((row) => row.run).filter((edge) => edge.kind === "lit").map((edge) => trunkIdFromEdge(edge.id)));
+    expect([...ids].sort()).toEqual(["t0", "t0.0", "t0.1", "t0.2"]);
   });
 
   it("nests a second fork when asked", () => {
     const trunks = splitTreeTrunks({ ...y, trunks: 4, levels: 2 })!;
     expect(trunks.map((trunk) => trunk.id)).toEqual(["t0", "t0.0", "t0.0.0", "t0.0.1", "t0.1", "t0.1.0", "t0.1.1"]);
     expect(trunks.find((trunk) => trunk.id === "t0.0")!.to).toBeCloseTo(1.5);
+    const left = trunks.find((trunk) => trunk.id === "t0.0.0")!;
+    const right = trunks.find((trunk) => trunk.id === "t0.0.1")!;
+    expect(left.x1).toBeLessThan(right.x1);
+    expect(left.radius0).toBeLessThan(trunks[0]!.radius0);
     const uneven = splitTreeTrunks({ ...y, trunks: 3, levels: 2 })!;
     expect(uneven.some((trunk) => trunk.id === "t0.0.0")).toBe(true);
     expect(uneven.filter((trunk) => trunk.to === 2)).toHaveLength(3);
+    const strings = [string({ id: "s1", trunkIds: ["t0.0.0", "t0.1"], ledCount: 400 })];
+    const nested = splitTreeLayout({ ...y, trunks: 4, levels: 2, pitchM: 0.1, strings })!;
+    const run = layoutStrings(nested).find((row) => row.id === "s1")!.run;
+    const back = run.findIndex((edge) => edge.id === "e-t0.0.0-back");
+    const branch = run.findIndex((edge) => edge.id === "e-t0.0-back");
+    const up = run.findIndex((edge) => trunkIdFromEdge(edge.id) === "t0.1");
+    expect(back).toBeGreaterThan(0);
+    expect(branch).toBeGreaterThan(back);
+    expect(up).toBeGreaterThan(branch);
+    expect(run.some((edge) => edge.kind === "wire")).toBe(false);
   });
 
   it("keeps string assignments when spacing or split height changes", () => {
@@ -78,19 +101,19 @@ describe("split tree", () => {
       string({ id: "s2", trunkIds: ["t0.0"], ledCount: 20, pitchMm: 100 }),
     ];
     const layout = splitTreeLayout({ ...y, pitchM: 0.1, strings })!;
-    const runs = litRuns({ ...y, strings });
-    const root = runs.find((edge) => edge.id === "e-t0")!;
-    const left = runs.find((edge) => edge.id === "e-t0.0")!;
-    expect(root.stringId).toBe("s1");
-    expect(left.stringId).toBe("s2");
-    expect(countLayout(layout).edges.find((edge) => edge.id === "e-t0")!.lights).toBe(10);
-    expect(countLayout(layout).edges.find((edge) => edge.id === "e-t0.0")!.lights).toBe(14);
     const ranges = pathEdgeIndexRanges(layout);
-    expect(ranges.find((range) => range.edgeId === "e-t0")).toMatchObject({ stringId: "s1", start: 0, stop: 10 });
-    expect(ranges.find((range) => range.edgeId === "e-t0.0")).toMatchObject({ stringId: "s2", start: 0, stop: 14 });
+    const root = ranges.filter((range) => range.stringId === "s1" && range.lights > 0);
+    const left = ranges.filter((range) => range.stringId === "s2" && range.lights > 0);
+    expect(root[0]).toMatchObject({ edgeId: "e-t0", start: 0 });
+    expect(root.reduce((sum, range) => sum + range.lights, 0)).toBe(10);
+    expect(left[0]!.start).toBe(0);
+    expect(left.reduce((sum, range) => sum + range.lights, 0)).toBe(20);
+    expect(left.every((range) => trunkIdFromEdge(range.edgeId) === "t0.0")).toBe(true);
     const cover = splitTreeCoverage({ ...y, strings })!;
-    expect(cover.cover.find((row) => row.trunkId === "t0")!.openM).toBeCloseTo(0);
-    expect(cover.cover.find((row) => row.trunkId === "t0.0")!.strings[0]!.remainingM).toBeCloseTo(0.6);
+    expect(cover.cover.find((row) => row.trunkId === "t0")!.openM).toBeGreaterThan(0);
+    expect(cover.cover.find((row) => row.trunkId === "t0")!.strings[0]!.remainingM).toBeCloseTo(0);
+    expect(cover.cover.find((row) => row.trunkId === "t0.0")!.openM).toBeGreaterThan(0);
+    expect(countLayout(layout).edges.find((edge) => edge.id === "e-t0")!.lights).toBeGreaterThan(0);
   });
 
   it("puts two strings end to end on one trunk", () => {
@@ -100,29 +123,94 @@ describe("split tree", () => {
     ];
     const layout = splitTreeLayout({ ...y, pitchM: 0.1, strings })!;
     const ranges = pathEdgeIndexRanges(layout);
-    expect(ranges.find((range) => range.edgeId === "e-t0")).toMatchObject({ stringId: "s1", start: 0, stop: 4 });
-    expect(ranges.find((range) => range.edgeId === "e-t0-2")).toMatchObject({ stringId: "s2", start: 0, stop: 6 });
+    const first = ranges.filter((range) => range.stringId === "s1" && range.lights > 0);
+    const second = ranges.filter((range) => range.stringId === "s2" && range.lights > 0);
+    expect(first[0]).toMatchObject({ edgeId: "e-t0", start: 0 });
+    expect(first.reduce((sum, range) => sum + range.lights, 0)).toBe(4);
+    expect(second.reduce((sum, range) => sum + range.lights, 0)).toBe(6);
+    expect(second.every((range) => trunkIdFromEdge(range.edgeId) === "t0")).toBe(true);
     expect(layoutStrings(layout).find((row) => row.id === "s1")!.run.some((edge) => edge.kind === "wire")).toBe(false);
   });
 
-  it("draws a dark jump when one string hops between trunks that do not meet", () => {
-    const strings = [string({ id: "s1", trunkIds: ["t0.0", "t0.1"], ledCount: 100 })];
+  it("wraps up a trunk, back down the far side, then up the sibling", () => {
+    const strings = [string({ id: "s1", trunkIds: ["t0.0", "t0.1"], ledCount: 400 })];
     const layout = splitTreeLayout({ ...y, pitchM: 0.1, strings })!;
     const run = layoutStrings(layout).find((row) => row.id === "s1")!.run;
-    expect(run.map((edge) => edge.kind)).toEqual(["lit", "wire", "lit"]);
-    const ranges = pathEdgeIndexRanges(layout).filter((range) => range.stringId === "s1" && range.lights > 0);
-    expect(ranges[1]!.start).toBe(ranges[0]!.stop);
+    const backAt = run.findIndex((edge) => edge.id === "e-t0.0-back");
+    expect(backAt).toBeGreaterThan(0);
+    expect(run.slice(0, backAt).some((edge) => edge.id.startsWith("e-t0.0"))).toBe(true);
+    expect(run.slice(0, backAt).every((edge) => !edge.id.includes("t0.1"))).toBe(true);
+    expect(run.slice(backAt + 1).some((edge) => trunkIdFromEdge(edge.id) === "t0.1")).toBe(true);
+    expect(run.some((edge) => edge.kind === "wire")).toBe(false);
+    const from = layout.corners.find((row) => row.id === run[backAt]!.from)!;
+    const to = layout.corners.find((row) => row.id === run[backAt]!.to)!;
+    expect(from.y).toBeGreaterThan(to.y + 0.2);
+    const trunk = splitTreeTrunks(y)!.find((row) => row.id === "t0.0")!;
+    const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+    const ax = trunk.x0;
+    const ay = trunk.from;
+    const bx = trunk.x1;
+    const by = trunk.to;
+    const span = Math.hypot(bx - ax, by - ay) || 1;
+    const off = Math.abs((mid.x - ax) * (by - ay) - (mid.y - ay) * (bx - ax)) / span;
+    expect(off).toBeGreaterThan(trunk.radius0 * 0.9);
     expect(splitTreeCoverage({ ...y, strings })!.hops).toEqual([
-      { stringId: "s1", fromId: "t0.0", toId: "t0.1", dark: true },
+      { stringId: "s1", fromId: "t0.0", toId: "t0.1", dark: false, back: true },
+    ]);
+    const ranges = pathEdgeIndexRanges(layout).filter((range) => range.stringId === "s1" && range.lights > 0);
+    for (let index = 1; index < ranges.length; index += 1) expect(ranges[index]!.start).toBe(ranges[index - 1]!.stop);
+  });
+
+  it("draws a dark jump when two pieces do not meet", () => {
+    const strings = [string({ id: "s1", trunkIds: ["t0.0.0", "t0.1.0"], ledCount: 400 })];
+    const spec = { ...y, trunks: 4, levels: 2 as const, strings };
+    const layout = splitTreeLayout({ ...spec, pitchM: 0.1 })!;
+    const run = layoutStrings(layout).find((row) => row.id === "s1")!.run;
+    expect(run.map((edge) => edge.kind)).toContain("wire");
+    expect(run.some((edge) => edge.id.endsWith("-back"))).toBe(false);
+    const ranges = pathEdgeIndexRanges(layout).filter((range) => range.stringId === "s1" && range.lights > 0);
+    const wireAt = run.findIndex((edge) => edge.kind === "wire");
+    const before = run.slice(0, wireAt).filter((edge) => edge.kind === "lit").length;
+    expect(ranges[before]!.start).toBe(ranges[before - 1]!.stop);
+    expect(splitTreeCoverage(spec)!.hops).toEqual([
+      { stringId: "s1", fromId: "t0.0.0", toId: "t0.1.0", dark: true, back: false },
     ]);
   });
 
-  it("does not draw a dark jump when a string continues from the trunk into a branch", () => {
-    const strings = [string({ id: "s1", trunkIds: ["t0", "t0.0"], ledCount: 100 })];
+  it("does not draw a dark jump when a wrap continues from the trunk into a branch", () => {
+    const strings = [string({ id: "s1", trunkIds: ["t0", "t0.0"], ledCount: 400 })];
     const layout = splitTreeLayout({ ...y, pitchM: 0.1, strings })!;
     const run = layoutStrings(layout).find((row) => row.id === "s1")!.run;
     expect(run.every((edge) => edge.kind === "lit")).toBe(true);
-    expect(splitTreeCoverage({ ...y, strings })!.hops[0]!.dark).toBe(false);
+    expect(run.some((edge) => edge.name === "Onto the branch")).toBe(true);
+    expect(splitTreeCoverage({ ...y, strings })!.hops[0]).toEqual({ stringId: "s1", fromId: "t0", toId: "t0.0", dark: false, back: false });
+  });
+
+  it("keeps geometry in the prop unit and string spacing in centimetres", () => {
+    const feet = splitTreeTrunks({ units: "ft", height: 8, split: 4, spacing: 4, trunks: 2, levels: 1 })!;
+    expect(feet[0]!.to).toBeCloseTo(4);
+    expect(feet[0]!.riseM).toBeCloseTo(4 * METRES_PER_FOOT);
+    expect(feet[1]!.x1).toBeCloseTo(-2);
+    expect(feet[0]!.lengthM).toBeGreaterThan(feet[0]!.woodM);
+    const metres = splitTreeLayout({
+      units: "m",
+      height: 8 * METRES_PER_FOOT,
+      split: 4 * METRES_PER_FOOT,
+      spacing: 4 * METRES_PER_FOOT,
+      trunks: 2,
+      levels: 1,
+      pitchM: 0.1,
+    })!;
+    const imperial = splitTreeLayout({ units: "ft", height: 8, split: 4, spacing: 4, trunks: 2, levels: 1, pitchM: 0.1 })!;
+    const forkM = metres.corners.find((row) => row.id === "c-t0")!;
+    const forkF = imperial.corners.find((row) => row.id === "c-t0")!;
+    expect(forkF.y).toBeCloseTo(forkM.y);
+    const strings = [string({ id: "s1", trunkIds: ["t0"], ledCount: 10, pitchMm: 100 })];
+    const cover = splitTreeCoverage({ units: "ft", height: 8, split: 4, spacing: 4, trunks: 2, levels: 1, strings })!;
+    const row = cover.cover.find((item) => item.trunkId === "t0")!;
+    expect(row.strings[0]!.coveredM).toBeCloseTo(1);
+    expect(row.strings[0]!.remainingM).toBeCloseTo(0);
+    expect(row.lengthM).toBeGreaterThan(1);
   });
 
   it("saves as a prop", () => {

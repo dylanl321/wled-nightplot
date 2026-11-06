@@ -65,7 +65,7 @@ export const SHAPES: readonly { id: ShapeId; title: string; svg: string }[] = [
   { id: "spiral", title: "Post wrap", svg: "M12 22 L22 19 L12 16 L22 13 L12 10 L22 7 L12 4 M12 22 V2 M22 22 V2" },
   { id: "spiralTree", title: "Spiral tree", svg: "M6 21 L28 18 L9 15 L25 12 L12 9 L22 6 L17 3" },
   { id: "zigzag", title: "Zigzag", svg: "M4 21 L9 5 L14 21 L19 5 L24 21 L29 5" },
-  { id: "splitTree", title: "Split tree", svg: "M17 22 V12 L6 2 M17 12 L28 2" },
+  { id: "splitTree", title: "Split tree", svg: "M13 22 L12 13 L5 2 M21 22 L22 13 L29 2 M12 13 H22 M16 22 V14 M18 22 V14" },
   { id: "draw", title: "Draw it", svg: "M4 19 L12 9 L20 15 L30 5" },
 ];
 
@@ -119,7 +119,7 @@ export const SIZE_FIELDS: Record<Exclude<ShapeId, "draw">, { key: SizeKey; label
   ],
   zigzag: [{ key: "width", label: "Width" }, { key: "height", label: "Height" }, { key: "passes", label: "Passes", plain: true }],
   splitTree: [
-    { key: "trunks", label: "Trunks", plain: true },
+    { key: "trunks", label: "Tips", plain: true },
     { key: "height", label: "Height" },
     { key: "split", label: "Split height" },
     { key: "spacing", label: "Tip spacing" },

@@ -76,9 +76,10 @@ export type PropMeasurements =
   | { shape: "zigzag"; width: number; height: number; passes: number; direction: "vertical" | "horizontal" }
   /**
    * A trunk that forks, drawn as a street-facing elevation.
-   * Lengths are in the prop's unit. `spacing` is the distance between
-   * neighbouring tips. `levels` 1 is one fork; 2 lets those branches fork again.
-   * Strings keep their own spacing in millimetres.
+   * The main trunk stands on the ground. Branches leave it, and can fork again.
+   * Lengths are in the prop's unit. `spacing` is the distance along the ground
+   * between neighbouring tips. `levels` 1 is one fork; 2 lets those branches fork again.
+   * Lights wrap up each trunk. Strings keep their own spacing in millimetres.
    */
   | {
       shape: "split-tree";
@@ -105,7 +106,7 @@ export type SplitTreeTrunkEnd = {
 
 /**
  * One physical string on a split tree. Spacing and length stay metric.
- * `trunkIds` is the order the string is put up; a hop between trunks is a dark run.
+ * `trunkIds` is the order the string is put up. A sibling is a back path down the far side. A hop that does not meet is a dark run.
  */
 export type SplitTreeString = {
   id: string;

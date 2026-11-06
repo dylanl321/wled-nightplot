@@ -319,16 +319,26 @@ export function YardEditor(init: YardEditorProps) {
           lights += n;
           edges.push({
             id: edge.id, ax: a.x, ay: a.y, bx: b.x, by: b.y, lights: n,
-            color: edge.kind === "wire" ? null : colour(edge.id), wire: edge.kind !== "lit", typed: typed && edge.lockedLights != null,
+            color: edge.kind === "wire" ? null : edge.id.endsWith("-back") ? "#f4f0e6" : colour(edge.id), wire: edge.kind !== "lit", typed: typed && edge.lockedLights != null,
             badge: `${letter}${runIndex + 1}`,
+            coil: /^e-t\d/.test(edge.id) && !edge.id.endsWith("-back"),
+            back: edge.id.endsWith("-back"),
             ...(edge.wrapLengthM != null ? { lengthM: counted.get(edge.id)?.lengthM ?? edge.wrapLengthM } : {}),
           });
         });
       });
-      for (const corner of layout.corners) if (used.has(corner.id)) corners.push(corner);
+      for (const corner of layout.corners) {
+        if (!used.has(corner.id)) continue;
+        // Wrap samples and the far-side return are the string, not handles to drag.
+        if (layout.template?.type === "split-tree" && (/-w\d+$/.test(corner.id) || /-down/.test(corner.id))) continue;
+        corners.push(corner);
+      }
       assignLanes(edges);
     }
-    return { id, name, x: at.x, y: at.y, edges, corners, start, lights, box: layoutBox(layout ?? undefined) };
+    return {
+      id, name, x: at.x, y: at.y, edges, corners, start, lights, box: layoutBox(layout ?? undefined),
+      ...(layout?.bodies?.length ? { bodies: layout.bodies.map((body) => ({ x0: body.x0, y0: body.y0, x1: body.x1, y1: body.y1, r0: body.r0, r1: body.r1 })) } : {}),
+    };
   }
 
   function yardDrawables(): DrawProp[] {
@@ -2978,7 +2988,7 @@ export function YardEditor(init: YardEditorProps) {
           <div>
             <div className="hrow">
               <h2>Size</h2>
-              <span className="seg" role="group" aria-label="Unit">
+              <span className={d.shape === "splitTree" ? "seg split-seg" : "seg"} role="group" aria-label="Unit">
                 {(["ft", "m"] as const).map((u) => (
                   <button key={u} type="button" aria-pressed={s.units === u} onClick={() => { s.units = u; writeStored(UNIT_KEY, u); edit((x) => setUnits(x, u)); }}>{u === "ft" ? "Feet" : "Metres"}</button>
                 ))}
@@ -2993,7 +3003,7 @@ export function YardEditor(init: YardEditorProps) {
                   : "Drawn by hand. Use Trace to add runs and drag corners to reshape. Tap a run to type its length."}
               </p>
             ) : (
-              <div className="grid2">
+              <div className={d.shape === "splitTree" ? "grid2 split-sizes" : "grid2"}>
                 {SIZE_FIELDS[d.shape].map((field) => {
                   // Small sizes read the way a tape does: inches, or centimetres.
                   const k = field.small ? (s.units === "ft" ? 12 : 100) : 1;

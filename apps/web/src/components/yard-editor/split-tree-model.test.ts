@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countLayout, layoutStrings, pathEdgeIndexRanges } from "@nightplot/shared";
+import { countLayout, layoutStrings, pathEdgeIndexRanges, trunkIdFromEdge } from "@nightplot/shared";
 import {
   addSplitString,
   draftFromProp,
@@ -14,7 +14,9 @@ describe("split tree draft", () => {
   it("starts from a Y and keeps string assignments when the spacing changes", () => {
     let draft = startFrom(newDraft("Split tree 1"), "splitTree", "m", 0.1);
     expect(measurementsOf(draft)).toMatchObject({ shape: "split-tree", height: 2.4, split: 1.2, spacing: 1.2, trunks: 2, levels: 1 });
-    expect(layoutStrings(draft.layout!).flatMap((row) => row.run).filter((edge) => edge.kind === "lit")).toHaveLength(3);
+    const lit = layoutStrings(draft.layout!).flatMap((row) => row.run).filter((edge) => edge.kind === "lit");
+    expect(lit.length).toBeGreaterThan(3);
+    expect([...new Set(lit.map((edge) => trunkIdFromEdge(edge.id)))].sort()).toEqual(["t0", "t0.0", "t0.1"]);
     draft = addSplitString(draft, "t0");
     draft = addSplitString(draft, "t0.0");
     draft = updateSplitString(draft, "s1", { ledCount: 12, pitchMm: 100 });
