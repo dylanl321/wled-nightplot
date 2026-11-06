@@ -34,7 +34,6 @@ import {
   honestySource,
   manageCaption,
   macsMatch,
-  mergeLastLedmap,
   normalizeHostKey,
   normalizeMac,
   parseHexColor,
@@ -181,7 +180,7 @@ import {
   type WriteWledNativeFiles,
   type WriteWledPresets,
 } from "./wled/native-backup.ts";
-import { persistWireframeOnLight, planLedmapsFor, specFromBody, writeAndVerifyLedmap } from "./wireframe-persist.ts";
+import { ledmapRecordAfter, persistWireframeOnLight, planLedmapsFor, specFromBody, writeAndVerifyLedmap } from "./wireframe-persist.ts";
 import { registerSyncRoutes } from "./sync-routes.ts";
 import { applyRangesWrite, createWledJsonReader, type ReadLiveFn, type ReadWledJsonFn, type WriteStateFn } from "./wled/live.ts";
 
@@ -1442,6 +1441,8 @@ export function createApp(deps: AppDeps) {
       writeLedmap,
     });
     if (!ledmap.ok) {
+      const record = ledmapRecordAfter(light.lastLedmap, ledmap, nowIso());
+      if (record !== undefined) deps.store.replace({ ...light, lastLedmap: record });
       return { status: ledmap.status, body: { error: ledmap.error, message: ledmap.message } };
     }
     const written = await deps.write(dest, planned.body);
@@ -1509,7 +1510,7 @@ export function createApp(deps: AppDeps) {
         ...(reread.snapshot.segmentColors ? { colors } : {}) } : null;
       if (ledmap.written.length > 0) {
         const at = next.lastSeenAt ?? nowIso();
-        next.lastLedmap = mergeLastLedmap(next.lastLedmap, ledmap.written.map((file) => ({ ...file, at })));
+        next.lastLedmap = ledmapRecordAfter(next.lastLedmap, ledmap, at) ?? next.lastLedmap;
       }
       deps.store.replace(next);
       const elements = persistDrafts(light.id, drafts);

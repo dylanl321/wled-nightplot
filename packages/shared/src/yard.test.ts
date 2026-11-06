@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultWireframeSpec, formatLedmapJson, compileWireframe } from "./prop/wireframe.ts";
+import { formatLedmapJson, ledmapDigest } from "./prop/wireframe.ts";
 import type { Light } from "./lights.ts";
 import { buildManagedPresets, lookPushDigest, type LastLookPush, type Look } from "./look.ts";
 import type { ProvisionRead } from "./provision.ts";
@@ -227,24 +227,100 @@ describe("Yard check compares", () => {
     expect(matched.canFix).toBe(false);
   });
 
-  it("compares a wireframe ledmap and does not treat a missing reread as a match", () => {
-    const spec = defaultWireframeSpec({ sides: 4 });
-    const compiled = compileWireframe(spec, 60);
-    const prop = { id: "well", lightId: "porch", label: "Well", kind: "wireframe" as const, elementIds: ["well-face-0"], wireframe: spec };
-    expect(compareLedmap({ props: [], ledCount: 60, liveRaw: null, reachable: true }).status).toBe("match");
-    expect(compareLedmap({ props: [prop], ledCount: 60, liveRaw: null, reachable: true }).status).toBe("unknown");
-    expect(compareLedmap({
-      props: [prop],
-      ledCount: 60,
-      liveRaw: formatLedmapJson(compiled.ledmap),
-      reachable: true,
-    }).status).toBe("match");
-    expect(compareLedmap({
-      props: [prop],
-      ledCount: 60,
-      liveRaw: formatLedmapJson(compiled.ledmap.slice().reverse()),
-      reachable: true,
-    }).status).toBe("mismatch");
+  describe("compareLedmap compares every map file", () => {
+    const wire = (n: number) => Array.from({ length: n }, (_, index) => index);
+    const file = (slot: number, map: number[]) => ({ slot, map, digest: ledmapDigest(map) });
+    const base = wire(6);
+    const up = [5, 4, 3, 2, 1, 0];
+    const out = [2, 3, 0, 1, 4, 5];
+    const expected = [file(0, base), file(1, up), file(2, out)];
+    const reads = (list: Record<number, number[] | null | undefined>) =>
+      Object.fromEntries(Object.entries(list).map(([slot, map]) => [slot, map ? formatLedmapJson(map) : map]));
+    const check = (over: Partial<Parameters<typeof compareLedmap>[0]> = {}) =>
+      compareLedmap({ expected, ledCount: 6, reads: reads({ 0: base, 1: up, 2: out }), reachable: true, ...over });
+
+    it("matches only when every file matches", () => {
+      expect(check().status).toBe("match");
+      expect(check().detail).toMatch(/All 3 light maps \(ledmap\.json, ledmap1\.json, ledmap2\.json\)/);
+    });
+
+    it("reports a mismatch in a non-zero slot even when ledmap.json matches", () => {
+      const result = check({ reads: reads({ 0: base, 1: up, 2: up }) });
+      expect(result.status).toBe("mismatch");
+      expect(result.detail).toMatch(/ledmap2\.json differs/);
+      expect(result.detail).not.toMatch(/ledmap1\.json/);
+    });
+
+    it("says a file that is not on the controller is a mismatch", () => {
+      const result = check({ reads: reads({ 0: base, 1: up, 2: null }) });
+      expect(result.status).toBe("mismatch");
+      expect(result.detail).toMatch(/ledmap2\.json is not on the controller/);
+    });
+
+    it("never treats a file that did not read, or is not a map, as a match", () => {
+      expect(check({ reads: reads({ 0: base, 1: up }) }).status).toBe("unknown");
+      expect(check({ reads: { 0: formatLedmapJson(base), 1: formatLedmapJson(up), 2: "not json" } }).status).toBe("unknown");
+      expect(check({ reachable: false }).status).toBe("unknown");
+      expect(check({ expected: null, refused: "A Prop does not fit." }).detail).toMatch(/does not fit/);
+    });
+
+    it("a mismatch beats an unread file", () => {
+      expect(check({ reads: reads({ 0: out, 1: up }) }).status).toBe("mismatch");
+    });
+
+    it("says when the controller still holds what the last push wrote", () => {
+      const result = check({
+        reads: reads({ 0: base, 1: up, 2: up }),
+        recorded: [{ slot: 2, digest: ledmapDigest(up), at: "x" }],
+      });
+      expect(result.detail).toMatch(/ledmap2\.json is what the last push wrote, but the drawing or the Looks have changed/);
+    });
+
+    it("gives a clear reason for a Light pushed before motion maps (single legacy record)", () => {
+      const result = check({
+        reads: reads({ 0: base, 1: null, 2: null }),
+        recorded: { digest: ledmapDigest(base), at: "x" },
+      });
+      expect(result.status).toBe("mismatch");
+      expect(result.detail).toMatch(/ledmap1\.json, ledmap2\.json are not on the controller.*record lists only ledmap\.json.*before motion maps/);
+    });
+
+    describe("with no map needed", () => {
+      const none = { expected: [] as never[] };
+      const rec = [{ slot: 0, digest: "d", at: "x" }];
+
+      it("flags a leftover bent ledmap.json as a mismatch", () => {
+        const result = check({ ...none, reads: reads({ 0: up }) });
+        expect(result.status).toBe("mismatch");
+        expect(result.detail).toMatch(/bends the wire order/);
+      });
+
+      it("matches a leftover straight ledmap.json", () => {
+        expect(check({ ...none, reads: reads({ 0: base }) }).status).toBe("match");
+      });
+
+      it("matches a 404, because the controller holds no map", () => {
+        expect(check({ ...none, reads: reads({ 0: null }) }).status).toBe("match");
+        expect(check({ ...none, reads: reads({ 0: null }), recorded: rec }).status).toBe("match");
+      });
+
+      it("is unknown, never a match, when WLED did not answer", () => {
+        expect(check({ ...none, reachable: false, reads: {} }).status).toBe("unknown");
+        expect(check({ ...none, reachable: false, reads: {}, recorded: rec }).status).toBe("unknown");
+      });
+
+      it("is unknown, never a match, when ledmap.json did not read, with or without a record", () => {
+        expect(check({ ...none, reads: {} }).status).toBe("unknown");
+        expect(check({ ...none, reads: {} }).detail).toMatch(/leftover map cannot be ruled out/);
+        const recorded = check({ ...none, reads: {}, recorded: rec });
+        expect(recorded.status).toBe("unknown");
+        expect(recorded.detail).toMatch(/a push left ledmap\.json here/);
+      });
+
+      it("is unknown when ledmap.json is not a map", () => {
+        expect(check({ ...none, reads: { 0: "nope" } }).status).toBe("unknown");
+      });
+    });
   });
 
   it("plans a fix that writes the current Schedule only when it is enabled", () => {

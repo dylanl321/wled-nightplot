@@ -17,10 +17,10 @@ import {
   type Look,
   type LookPlaylist,
 } from "./look.ts";
-import type { Element, Light } from "./lights.ts";
+import { normalizeLastLedmap, type Element, type Light } from "./lights.ts";
 import { planLightMaps, stringStartsFor } from "./prop/light-maps.ts";
 import type { Prop, PropAttachment } from "./prop/types.ts";
-import { compileWireframe, ledmapsMatch, parseLedmapJson } from "./prop/wireframe.ts";
+import { ledmapDigest, ledmapsMatch, parseLedmapJson } from "./prop/wireframe.ts";
 import type { ProvisionRead } from "./provision.ts";
 import {
   buildScheduleWrite,
@@ -360,35 +360,105 @@ export function compareSync(input: {
   return { status: "match", detail: `WLED sync group ${udp.group} (${udp.role}).` };
 }
 
+/** What one reread of a light map file gave: the text, null when the controller has no such file, undefined when it could not be read. */
+export type LedmapReads = Readonly<Record<number, string | null | undefined>>;
+
+function ledmapLabel(slot: number): string {
+  return slot === 0 ? "ledmap.json" : `ledmap${slot}.json`;
+}
+
+function joinLabels(slots: readonly number[]): string {
+  return slots.map(ledmapLabel).join(", ");
+}
+
+/**
+ * Compare every light map file this Light should hold, one by one. The
+ * expected files are what a push would write now (`planLightMaps`), the
+ * record is what Nightplot last put there, and `reads` is what the controller
+ * returned just now. A file that differs in any slot is a mismatch, a file
+ * that could not be read is unknown, never a match. A mismatch says which
+ * files, and whether the controller still holds what the last push wrote.
+ */
 export function compareLedmap(input: {
-  props: readonly Prop[];
+  /** What a push would write now. Null when it cannot be worked out (the reason is `refused`). */
+  expected: readonly { slot: number; map: readonly number[]; digest: string }[] | null;
+  refused?: string;
   ledCount: number;
-  liveRaw: string | null;
+  /** `lastLedmap`, in either form. */
+  recorded?: unknown;
+  reads: LedmapReads;
   reachable: boolean;
 }): YardCompare {
-  const wireframes = input.props.filter((prop) => prop.wireframe);
-  if (wireframes.length === 0) {
-    return { status: "match", detail: "No wireframe Prop. Ledmap is not compared." };
+  const recorded = normalizeLastLedmap(input.recorded) ?? [];
+  const recordedDigest = (slot: number) => recorded.find((row) => row.slot === slot)?.digest ?? null;
+  if (input.expected === null) {
+    return {
+      status: "unknown",
+      detail: `Nightplot cannot work out the light maps this Light needs. ${input.refused ?? ""} Not treating as a match.`.replace(/\s+/g, " ").trim(),
+    };
   }
+  if (input.expected.length === 0) {
+    // No map is needed, but every preset names map 0: a leftover ledmap.json would still bend the wire order.
+    // A failed read is unknown, never a match, with or without a record: a map from an earlier install, a restored server or a hand upload would not be in the record.
+    if (!input.reachable) {
+      return { status: "unknown", detail: "No light map is needed, but WLED did not answer, so ledmap.json was not read. Not treating as a match." };
+    }
+    const raw = input.reads[0];
+    if (raw === null) return { status: "match", detail: "No light map is needed and the controller holds none." };
+    if (raw === undefined) {
+      return {
+        status: "unknown",
+        detail: recordedDigest(0) === null
+          ? "No light map is needed, but ledmap.json did not reread, so a leftover map cannot be ruled out. Not treating as a match."
+          : "No light map is needed, but a push left ledmap.json here and it did not reread. Not treating as a match.",
+      };
+    }
+    const live = parseLedmapJson(raw);
+    if (live === null) return { status: "unknown", detail: "No light map is needed, but ledmap.json was not a map. Not treating as a match." };
+    const straight = Array.from({ length: input.ledCount }, (_, index) => index);
+    if (ledmapsMatch(straight, live) === true) return { status: "match", detail: "No light map is needed; ledmap.json passes the wire order straight through." };
+    return { status: "mismatch", detail: "No light map is needed, but ledmap.json on the controller bends the wire order and every Look names map 0. Push the Looks again." };
+  }
+  const files = joinLabels(input.expected.map((file) => file.slot));
   if (!input.reachable) {
-    return { status: "unknown", detail: "A wireframe Prop expects a ledmap. WLED did not answer." };
+    return { status: "unknown", detail: `${files} expected. WLED did not answer.` };
   }
-  if (input.liveRaw === null) {
-    return { status: "unknown", detail: "A wireframe Prop expects a ledmap. /ledmap.json did not reread. Not treating as a match." };
+  const mismatched: string[] = [];
+  const unread: number[] = [];
+  const unreadable: number[] = [];
+  const missing: number[] = [];
+  const differ: number[] = [];
+  for (const file of input.expected) {
+    const raw = input.reads[file.slot];
+    if (raw === undefined) { unread.push(file.slot); continue; }
+    if (raw === null) { missing.push(file.slot); continue; }
+    const live = parseLedmapJson(raw);
+    if (live === null) { unreadable.push(file.slot); continue; }
+    if (ledmapsMatch(file.map, live) === true) continue;
+    differ.push(file.slot);
+    const last = recordedDigest(file.slot);
+    mismatched.push(
+      last !== null && last === ledmapDigest(live)
+        ? `${ledmapLabel(file.slot)} is what the last push wrote, but the drawing or the Looks have changed since`
+        : `${ledmapLabel(file.slot)} differs from what Nightplot would write now`,
+    );
   }
-  const live = parseLedmapJson(input.liveRaw);
-  if (live === null) {
-    return { status: "unknown", detail: "A wireframe Prop expects a ledmap. /ledmap.json was not a map. Not treating as a match." };
+  const bad = [...differ, ...missing];
+  if (bad.length > 0) {
+    const parts = [...mismatched, ...(missing.length > 0 ? [`${joinLabels(missing)} ${missing.length === 1 ? "is" : "are"} not on the controller`] : [])];
+    const old = recorded.length > 0 && recorded.every((row) => row.slot === 0) && input.expected.length > 1
+      ? " Nightplot's record lists only ledmap.json, so this Light was pushed before motion maps. Push the Looks again."
+      : " Push the Looks again.";
+    return { status: "mismatch", detail: `${parts.join(". ")}.${old}` };
   }
-  const expected = compileWireframe(wireframes[0]!.wireframe!, input.ledCount).ledmap;
-  const matched = ledmapsMatch(expected, live);
-  if (matched === null) {
-    return { status: "unknown", detail: "A wireframe Prop expects a ledmap. The controller map was not read. Not treating as a match." };
+  if (unread.length > 0 || unreadable.length > 0) {
+    const names = joinLabels([...unread, ...unreadable].sort((a, b) => a - b));
+    return { status: "unknown", detail: `${names} did not reread as a map. Not treating as a match.` };
   }
-  if (!matched) {
-    return { status: "mismatch", detail: "Ledmap differs from the wireframe Nightplot would write now." };
-  }
-  return { status: "match", detail: "Ledmap matches the wireframe." };
+  return {
+    status: "match",
+    detail: input.expected.length === 1 ? `${files} matches what Nightplot would write.` : `All ${input.expected.length} light maps (${files}) match what Nightplot would write.`,
+  };
 }
 
 export function compareLit(input: { reachable: boolean; on: boolean | null; preset: number | null }): YardCheckRow["lit"] {
@@ -424,7 +494,8 @@ export function buildYardCheckRow(input: {
   provision: ProvisionRead | null;
   presetsRaw: string | null;
   cfg: unknown;
-  ledmapRaw?: string | null;
+  /** What each expected light map file reread as, by slot. A slot left out was not read. */
+  ledmapReads?: LedmapReads;
 }): YardCheckRow {
   const reachable = input.light.reachability === "online" && input.live !== null;
   const lastPush = input.light.lastLookPush ?? null;
@@ -491,9 +562,11 @@ export function buildYardCheckRow(input: {
   });
   const sync = compareSync({ lastPush, cfg: input.cfg, reachable });
   const ledmap = compareLedmap({
-    props: input.props,
+    expected: mapPlan.ok ? mapPlan.writes : null,
+    ...(mapPlan.ok ? {} : { refused: mapPlan.message }),
     ledCount: input.light.ledCount,
-    liveRaw: input.ledmapRaw ?? null,
+    recorded: input.light.lastLedmap,
+    reads: input.ledmapReads ?? {},
     reachable,
   });
   const lit = compareLit({

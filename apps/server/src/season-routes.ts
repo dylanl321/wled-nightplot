@@ -76,6 +76,8 @@ export function registerSeasonRoutes(app: Hono, deps: SeasonRouteDeps) {
   app.get("/api/season/export", async (c) => {
     const includeDevices = c.req.query("includeDevices") === "1" || c.req.query("includeDevices") === "true";
     const document = snapshotSeason(deps);
+    // Light maps that could not be read (as opposed to not being on the controller), by Light.
+    const unreadMaps: { lightId: string; lightName: string; files: string[] }[] = [];
     if (includeDevices) {
       document.devices = await mapLimit(document.lights, FLEET_YARD_CONCURRENCY, async (light) => {
         const outcome = await deps.probe(targetOf(light));
@@ -84,15 +86,26 @@ export function registerSeasonRoutes(app: Hono, deps: SeasonRouteDeps) {
         }
         try {
           const files = await deps.readNativeFiles(targetOf(light));
-          let ledmapJson: string | null = null;
+          // Every map file the Light holds, not just ledmap.json. A file that is missing or does not read is left out.
+          const ledmaps: { slot: number; json: string }[] = [];
           if (deps.readLedmap) {
-            try { ledmapJson = await deps.readLedmap(targetOf(light)); }
-            catch { ledmapJson = null; }
+            // In parallel, so a half-dead controller costs one read timeout, not ten.
+            const unread: string[] = [];
+            const reads = await Promise.all(Array.from({ length: 10 }, async (_, slot) => {
+              try {
+                return { slot, json: await deps.readLedmap!(targetOf(light), slot) };
+              } catch {
+                unread.push(slot === 0 ? "ledmap.json" : `ledmap${slot}.json`);
+                return { slot, json: null };
+              }
+            }));
+            for (const read of reads) if (read.json) ledmaps.push({ slot: read.slot, json: read.json });
+            if (unread.length > 0) unreadMaps.push({ lightId: light.id, lightName: light.name, files: unread });
           }
           return deviceFilesFromNative({
             light: { ...light, firmware: outcome.snapshot.firmware, mac: outcome.snapshot.mac },
             files,
-            ledmapJson,
+            ledmaps,
           });
         } catch {
           return deviceFilesFromNative({ light, files: null });
@@ -103,6 +116,14 @@ export function registerSeasonRoutes(app: Hono, deps: SeasonRouteDeps) {
       document,
       digest: seasonDigest(document),
       caption: SEASON_CAPTION,
+      ...(includeDevices
+        ? {
+            ledmapUnread: unreadMaps,
+            message: unreadMaps.length > 0
+              ? `A light map file that is missing from a controller or did not read is left out of the season file. Did not read: ${unreadMaps.map((row) => `${row.lightName} (${row.files.join(", ")})`).join("; ")}.`
+              : "A light map file that is missing from a controller or did not read is left out of the season file.",
+          }
+        : {}),
     });
   });
 

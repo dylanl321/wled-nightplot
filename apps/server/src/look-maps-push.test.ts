@@ -5,6 +5,7 @@ import {
   defaultSections,
   defaultWireframeSpec,
   layoutFromMeasurements,
+  ledmapDigest,
   parseLedmapJson,
   propStrings,
   type PropLayout,
@@ -180,8 +181,13 @@ describe("pushing Looks with motion maps to a fixture Light", () => {
     expect(box.ledmapSlots()).toEqual([0, 1]);
     expect(box.presets()).toBe(before);
     expect(replace).toHaveBeenCalledTimes(1);
+    // The record says what is on the controller: ledmap.json as sent, and ledmap1.json as it reread (not the map that was meant).
     const saved = replace.mock.calls[0]![0] as Light;
-    expect(saved.lastLedmap?.map((row) => row.slot)).toEqual([0]);
+    expect(saved.lastLedmap?.map((row) => row.slot)).toEqual([0, 1]);
+    const asRead = parseLedmapJson(box.ledmap(1)!.replace(/\d+/, "9999"))!;
+    const asSent = parseLedmapJson(box.ledmap(1)!)!;
+    expect(saved.lastLedmap?.[1]?.digest).toBe(ledmapDigest(asRead));
+    expect(saved.lastLedmap?.[1]?.digest).not.toBe(ledmapDigest(asSent));
     expect(saved.lastLookPush).toBeUndefined();
   });
 
@@ -200,6 +206,24 @@ describe("pushing Looks with motion maps to a fixture Light", () => {
     expect(result.status).toBe("unknown");
     expect(result.detail).toMatch(/ledmap2\.json.*did not reread/);
     expect(box.presets()).toBe(before);
+    expect((replace.mock.calls[0]![0] as Light).lastLedmap?.map((row) => row.slot)).toEqual([0, 1]);
+  });
+
+  it("a file that was written but cannot be reread is dropped from the record, not left claiming the old map", async () => {
+    const { box, light, snap } = await boxLight(BUSH_LIGHTS);
+    const { prop, elements } = bushOn(light);
+    const stale = { slot: 2, digest: "ledmap1:old", at: "2026-01-01T00:00:00.000Z" };
+    const { value, replace } = deps({
+      props: [prop],
+      elements,
+      readLedmap: async (target, map) => {
+        if (map === 2) throw new Error("timeout");
+        return createWledLedmapReader()(target, map);
+      },
+    });
+    const result = await push(value, { ...light, lastLedmap: [stale] }, snap, documentOf([look("up", 1, "bush", "up"), look("out", 2, "bush", "outward")]));
+    expect(result.status).toBe("unknown");
+    expect(box.ledmapSlots()).toEqual([0, 1, 2]);
     expect((replace.mock.calls[0]![0] as Light).lastLedmap?.map((row) => row.slot)).toEqual([0, 1]);
   });
 

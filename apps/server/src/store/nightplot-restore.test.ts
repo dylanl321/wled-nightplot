@@ -28,6 +28,26 @@ describe("crash-consistent Nightplot restore", () => {
     expect(JSON.parse(readFileSync(paths.activity, "utf8")).entries).toEqual([]);
   });
 
+  it("writes an older single lastLedmap back as the list (the base map), and keeps a list as it is", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-restore-ledmap-"));
+    const paths = { lights: join(dir, "lights.json"), products: join(dir, "p.json"), activity: join(dir, "a.json") };
+    const old = { digest: "ledmap1:aaa", at: "2026-10-01T00:00:00.000Z" };
+    const list = [{ slot: 0, digest: "ledmap1:bbb", at: "x" }, { slot: 2, digest: "ledmap1:ccc", at: "x" }];
+    writeNightplotStoresConsistent(paths, {
+      lights: [{ id: "porch", lastLedmap: old } as never, { id: "eave", lastLedmap: list } as never, { id: "yard" } as never],
+      elements: [],
+      products: [],
+      activity: [],
+    });
+    const lights = JSON.parse(readFileSync(paths.lights, "utf8")).lights;
+    expect(lights[0].lastLedmap).toEqual([{ slot: 0, ...old }]);
+    expect(lights[1].lastLedmap).toEqual(list);
+    expect("lastLedmap" in lights[2]).toBe(false);
+
+    writeSeasonStoresConsistent({ lights: paths.lights }, { lights: [{ id: "porch", lastLedmap: old }], elements: [], props: [] });
+    expect(JSON.parse(readFileSync(paths.lights, "utf8")).lights[0].lastLedmap).toEqual([{ slot: 0, ...old }]);
+  });
+
   it("replaces preferences only when the backup carried them", () => {
     const dir = mkdtempSync(join(tmpdir(), "nightplot-restore-settings-"));
     const settings = join(dir, "settings.json");

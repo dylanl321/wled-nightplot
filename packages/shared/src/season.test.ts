@@ -3,8 +3,10 @@ import type { Light } from "./lights.ts";
 import { DEFAULT_LOOKS, DEFAULT_PLAYLIST, defaultLooksDocument } from "./look.ts";
 import { defaultWireframeSpec } from "./prop/wireframe.ts";
 import {
+  deviceFilesFromNative,
   applyHostMatch,
   diffSeason,
+  normalizeSeasonLedmaps,
   parseSeasonDocument,
   rematchSeasonHost,
   seasonDigest,
@@ -161,6 +163,47 @@ describe("season file", () => {
     expect(lost.how).toBe("unresolved");
   });
 
+  it("loads an older season file with one ledmap string and one lastLedmap value as the base map", () => {
+    const file = season({
+      lights: [{ ...porch, lastLedmap: { digest: "ledmap1:abc", at: "2026-10-31T12:00:00.000Z" } } as unknown as Light],
+      devices: [{
+        lightId: "porch", mac: porch.mac, hostname: porch.hostname, port: porch.port, firmware: porch.firmware,
+        ledmapJson: "{\"map\":[0,1,2]}\n",
+      } as unknown as SeasonDocument["devices"][number]],
+    });
+    const parsed = parseSeasonDocument(file);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.document.devices[0]?.ledmaps).toEqual([{ slot: 0, json: "{\"map\":[0,1,2]}\n" }]);
+    expect(parsed.document.devices[0]?.ledmapJson).toBe("{\"map\":[0,1,2]}\n");
+    expect(parsed.document.lights[0]?.lastLedmap).toEqual([{ slot: 0, digest: "ledmap1:abc", at: "2026-10-31T12:00:00.000Z" }]);
+  });
+
+  it("writes slot 0 as a string beside the list, so an older build keeps the device row", () => {
+    const device = deviceFilesFromNative({
+      light: porch,
+      files: { cfgJson: "{}", presetsJson: "{}" },
+      ledmaps: [{ slot: 2, json: "two" }, { slot: 0, json: "base" }],
+    });
+    expect(device.ledmapJson).toBe("base");
+    expect(device.ledmaps).toEqual([{ slot: 0, json: "base" }, { slot: 2, json: "two" }]);
+    // The older device filter needs ledmapJson to be a string and ignores unknown fields.
+    expect(typeof device.ledmapJson).toBe("string");
+    const noBase = deviceFilesFromNative({ light: porch, files: null, ledmaps: [{ slot: 1, json: "one" }] });
+    expect(noBase.ledmapJson).toBeUndefined();
+    expect(noBase.ledmaps).toEqual([{ slot: 1, json: "one" }]);
+    const parsed = parseSeasonDocument(season({ devices: [device, noBase] }));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.document.devices[0]?.cfgJson).toBe("{}");
+    expect(parsed.document.devices[0]?.ledmaps?.length).toBe(2);
+  });
+
+  it("drops map files with a bad slot or no text instead of keeping them", () => {
+    expect(normalizeSeasonLedmaps([{ slot: 12, json: "x" }, { slot: 1, json: "" }, { slot: 3, json: "a" }, { slot: 3, json: "b" }])).toEqual([{ slot: 3, json: "a" }]);
+    expect(normalizeSeasonLedmaps(undefined)).toBeUndefined();
+  });
+
   it("keeps a wireframe Prop and an optional ledmap extra", () => {
     const spec = defaultWireframeSpec({ sides: 8 });
     const file = season({
@@ -180,13 +223,15 @@ describe("season file", () => {
         port: porch.port,
         firmware: porch.firmware,
         ledmapJson: "{\"map\":[0,1,2]}\n",
+        ledmaps: [{ slot: 0, json: "{\"map\":[0,1,2]}\n" }, { slot: 2, json: "{\"map\":[2,1,0]}\n" }],
       }],
     });
     const parsed = parseSeasonDocument(file);
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
     expect(parsed.document.props[0]?.wireframe?.sides).toBe(8);
-    expect(parsed.document.devices[0]?.ledmapJson).toMatch(/map/);
+    expect(parsed.document.devices[0]?.ledmaps?.map((file) => file.slot)).toEqual([0, 2]);
+    expect(parsed.document.devices[0]?.ledmaps?.[1]?.json).toMatch(/2,1,0/);
     const changed = season({
       props: [{
         id: "well",

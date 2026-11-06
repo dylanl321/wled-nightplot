@@ -4713,6 +4713,88 @@ describe("fleet setup", () => {
     expect(parseLedmapJson(JSON.stringify({ map: compiled.ledmap }))).toEqual(compiled.ledmap);
   });
 
+  describe("a failed Apply records what the controller holds for the base map", () => {
+    async function wireframeLight(mode: { write: "ok" | "fail"; read: "same" | "other" | "throw" }) {
+      let held: string | null = null;
+      const writes: string[] = [];
+      const ctx = testApp({
+        writeLedmap: async (_target, json) => {
+          writes.push(json);
+          if (mode.write === "fail") throw new Error("no space");
+          held = json;
+        },
+        readLedmap: async () => {
+          if (mode.read === "throw") throw new Error("timeout");
+          return mode.read === "other" ? "{\"map\":[0,0,0]}" : held;
+        },
+      });
+      const enroll = await ctx.app.request("/api/lights", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: "192.168.1.80" }),
+      });
+      const id = ((await enroll.json()) as { light: { id: string } }).light.id;
+      const spec = defaultWireframeSpec({ sides: 4 });
+      spec.locks = [{ role: "top.0.end", physicalIndex: 8 }];
+      const created = await ctx.app.request(`/api/lights/${id}/props`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "wireframe", label: "Well house", wireframe: spec, apply: true }),
+      });
+      expect(created.status).toBe(200);
+      const prop = ((await created.json()) as { prop: { id: string } }).prop;
+      const first = ctx.store.findById(id)!.lastLedmap;
+      expect(first?.[0]?.digest).toMatch(/^ledmap1:/);
+      // Change the drawing so Apply wants a different base map.
+      const patched = await ctx.app.request(`/api/lights/${id}/props/${prop.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wireframe: { ...spec, locks: [...spec.locks, { role: "bottom.0.end", physicalIndex: 20 }] } }),
+      });
+      expect(patched.status).toBe(200);
+      const detail = (await (await ctx.app.request(`/api/lights/${id}`)).json()) as { elements: unknown[] };
+      const apply = () => ctx.app.request(`/api/lights/${id}/apply`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ elements: detail.elements }),
+      });
+      return { ...ctx, id, first, apply, writes, held: () => held };
+    }
+
+    it("records the digest it read when the reread is a different map", async () => {
+      const mode = { write: "ok", read: "same" } as { write: "ok" | "fail"; read: "same" | "other" | "throw" };
+      const t = await wireframeLight(mode);
+      mode.read = "other";
+      const res = await t.apply();
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as { error: string }).error).toBe("ledmap-mismatch");
+      const record = t.store.findById(t.id)!.lastLedmap;
+      expect(record).toHaveLength(1);
+      expect(record?.[0]?.slot).toBe(0);
+      expect(record?.[0]?.digest).toMatch(/^ledmap1:/);
+      expect(record?.[0]?.digest).not.toBe(t.first?.[0]?.digest);
+    });
+
+    it("drops slot 0 from the record when the write fails", async () => {
+      const mode = { write: "ok", read: "same" } as { write: "ok" | "fail"; read: "same" | "other" | "throw" };
+      const t = await wireframeLight(mode);
+      mode.write = "fail";
+      const res = await t.apply();
+      expect(res.status).toBe(503);
+      expect(t.store.findById(t.id)!.lastLedmap ?? null).toBeNull();
+    });
+
+    it("drops slot 0 from the record when the reread fails", async () => {
+      const mode = { write: "ok", read: "same" } as { write: "ok" | "fail"; read: "same" | "other" | "throw" };
+      const t = await wireframeLight(mode);
+      mode.read = "throw";
+      const res = await t.apply();
+      expect(res.status).toBe(409);
+      expect(t.store.findById(t.id)!.lastLedmap ?? null).toBeNull();
+    });
+
+    it("records nothing when a failed write names no file", async () => {
+      // The route stores a record only when this is not undefined (see applyDraftsToController).
+      const { ledmapRecordAfter } = await import("./wireframe-persist.ts");
+      const none = { ok: false as const, status: 409 as const, error: "x", message: "x", written: [], observed: [], unread: [] };
+      expect(ledmapRecordAfter([{ slot: 0, digest: "ledmap1:a", at: "t" }], none, "2026-09-26T18:00:00.000Z")).toBeUndefined();
+    });
+  });
+
   it("applies a setup profile to online Lights and lists a dead one", async () => {
     const live = await liveApp(createFixtureBox({ name: "Online", ledCount: 60 }));
     const enroll = await live.app.request("/api/lights", {
