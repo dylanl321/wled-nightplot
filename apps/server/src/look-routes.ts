@@ -11,6 +11,7 @@ import {
   mergeFollowingSections,
   lookItemDigests,
   lookItemNames,
+  mergeLastLedmap,
   migrateSectionColours,
   managedLookSlots,
   managedPresetSlotsMatch,
@@ -51,7 +52,7 @@ import type { FileLooksStore } from "./store/looks-store.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
 import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
 import { ledmapFileName, type ReadWledLedmap, type ReadWledPresets, type WriteWledLedmap, type WriteWledPresets } from "./wled/native-backup.ts";
-import { planLedmapsFor, writeAndVerifyLedmap } from "./wireframe-persist.ts";
+import { planLedmapsFor, staleBaseMapReset, writeAndVerifyLedmap } from "./wireframe-persist.ts";
 
 export type LookRouteDeps = {
   store: FileLightsStore;
@@ -309,13 +310,20 @@ export async function pushLooksToLight(
       safety.id,
     );
   }
+  // No map needed, but every preset names map 0: an older ledmap.json must not stay and apply.
+  const maps = mapPlan.writes.length > 0 ? mapPlan.writes : await staleBaseMapReset({ light, readLedmap: deps.readLedmap });
   const ledmap = await writeAndVerifyLedmap({
     light,
-    maps: mapPlan.writes,
+    maps,
     readLedmap: deps.readLedmap,
     writeLedmap: deps.writeLedmap,
   });
   if (!ledmap.ok) {
+    // Files already on the controller stay on the record, so the app and the board agree.
+    if (ledmap.written.length > 0) {
+      const at = new Date().toISOString();
+      deps.store.replace({ ...light, lastLedmap: mergeLastLedmap(light.lastLedmap, ledmap.written.map((file) => ({ ...file, at }))) });
+    }
     const status = ledmap.status === 422
       ? "refused"
       : ledmap.status === 503
@@ -430,7 +438,7 @@ export async function pushLooksToLight(
       items,
       names: { ...light.lastLookPush?.names, ...lookItemNames(document) },
     },
-    ...(ledmap.written.length > 0 ? { lastLedmap: ledmap.written.map((file) => ({ ...file, at: pushedAt })) } : {}),
+    ...(ledmap.written.length > 0 ? { lastLedmap: mergeLastLedmap(light.lastLedmap, ledmap.written.map((file) => ({ ...file, at: pushedAt }))) } : {}),
   });
   return row(light, "matched", notes.join(" "), safety.id);
 }

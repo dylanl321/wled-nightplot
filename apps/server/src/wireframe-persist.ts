@@ -2,7 +2,9 @@ import {
   compileWireframe,
   formatLedmapJson,
   planLightMaps,
+  ledmapDigest,
   ledmapsMatch,
+  normalizeLastLedmap,
   parseLedmapJson,
   parseWireframeSpec,
   segmentsForWireframeProp,
@@ -26,7 +28,7 @@ export type PersistWireframeResult =
 
 export type LedmapWriteResult =
   | { ok: true; written: { slot: number; digest: string }[] }
-  | { ok: false; status: 409 | 422 | 503; error: string; message: string };
+  | { ok: false; status: 409 | 422 | 503; error: string; message: string; written: { slot: number; digest: string }[] };
 
 export function persistWireframeOnLight(input: {
   store: FileLightsStore;
@@ -108,6 +110,13 @@ export type LedmapFile = { slot: number; map: readonly number[]; digest: string 
  * does not reread the same is not success, and nothing after it is sent.
  * An empty list writes nothing.
  */
+/** What a failed multi-file write says about files already put on the controller. */
+function writtenSoFar(written: readonly { slot: number }[]): string {
+  return written.length === 0
+    ? "Nothing else was sent."
+    : `Already written and left in place: ${written.map((file) => ledmapFileName(file.slot)).join(", ")}. No presets were sent.`;
+}
+
 export async function writeAndVerifyLedmap(input: {
   light: Light;
   maps: readonly LedmapFile[];
@@ -125,7 +134,8 @@ export async function writeAndVerifyLedmap(input: {
         ok: false,
         status: 503,
         error: "ledmap-failed",
-        message: `WLED did not take ${name}. ${error instanceof Error ? error.message : ""} Nothing else was sent.`.trim(),
+        message: `WLED did not take ${name}. ${error instanceof Error ? error.message : ""} ${writtenSoFar(written)}`.trim(),
+        written,
       };
     }
     let liveRaw: string | null;
@@ -136,7 +146,8 @@ export async function writeAndVerifyLedmap(input: {
         ok: false,
         status: 409,
         error: "ledmap-reread-failed",
-        message: `Wrote ${name}, but it did not reread. Not treating as success.`,
+        message: `Wrote ${name}, but it did not reread. Not treating as success. ${writtenSoFar(written)}`,
+        written,
       };
     }
     const matched = ledmapsMatch(file.map, liveRaw === null ? null : parseLedmapJson(liveRaw));
@@ -145,7 +156,8 @@ export async function writeAndVerifyLedmap(input: {
         ok: false,
         status: 409,
         error: "ledmap-reread-unknown",
-        message: `Wrote ${name}, but the controller map was not a map. Not treating as success.`,
+        message: `Wrote ${name}, but the controller map was not a map. Not treating as success. ${writtenSoFar(written)}`,
+        written,
       };
     }
     if (!matched) {
@@ -153,12 +165,36 @@ export async function writeAndVerifyLedmap(input: {
         ok: false,
         status: 409,
         error: "ledmap-mismatch",
-        message: `Wrote ${name}, but the reread differs. Not treating as success.`,
+        message: `Wrote ${name}, but the reread differs. Not treating as success. ${writtenSoFar(written)}`,
+        written,
       };
     }
     written.push({ slot: file.slot, digest: file.digest });
   }
   return { ok: true, written };
+}
+
+/**
+ * A push that needs no map still names map 0 in every preset. If this Light
+ * may hold a `ledmap.json` from an earlier push (the record says so, or the
+ * controller returns one that is not a straight pass-through), return the
+ * identity base map to write over it. Otherwise nothing.
+ */
+export async function staleBaseMapReset(input: {
+  light: Light;
+  readLedmap: ReadWledLedmap;
+}): Promise<LedmapFile[]> {
+  const identity = Array.from({ length: input.light.ledCount }, (_, index) => index);
+  const reset = [{ slot: 0, map: identity, digest: ledmapDigest(identity) }];
+  if (normalizeLastLedmap(input.light.lastLedmap)?.some((row) => row.slot === 0)) return reset;
+  try {
+    const raw = await input.readLedmap({ hostname: input.light.hostname, port: input.light.port }, 0);
+    if (raw === null) return [];
+    const live = parseLedmapJson(raw);
+    return live !== null && ledmapsMatch(identity, live) === true ? [] : reset;
+  } catch {
+    return [];
+  }
 }
 
 /**

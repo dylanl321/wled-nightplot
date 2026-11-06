@@ -160,7 +160,7 @@ describe("pushing Looks with motion maps to a fixture Light", () => {
     expect((replace.mock.calls[0]![0] as Light).lastLedmap).toBeUndefined();
   });
 
-  it("a map that rereads different is a mismatch: stops there, writes no presets, records nothing", async () => {
+  it("a map that rereads different is a mismatch: stops there, writes no presets, records the files already written", async () => {
     const { box, light, snap, before } = await boxLight(BUSH_LIGHTS);
     const { prop, elements } = bushOn(light);
     const reader = createWledLedmapReader();
@@ -174,10 +174,13 @@ describe("pushing Looks with motion maps to a fixture Light", () => {
     });
     const result = await push(value, light, snap, documentOf([look("up", 1, "bush", "up"), look("out", 2, "bush", "outward")]));
     expect(result.status).toBe("mismatch");
-    expect(result.detail).toMatch(/ledmap1\.json.*reread differs/);
+    expect(result.detail).toMatch(/ledmap1\.json.*reread differs.*left in place: ledmap\.json\. No presets were sent/);
     expect(box.ledmapSlots()).toEqual([0, 1]);
     expect(box.presets()).toBe(before);
-    expect(replace).not.toHaveBeenCalled();
+    expect(replace).toHaveBeenCalledTimes(1);
+    const saved = replace.mock.calls[0]![0] as Light;
+    expect(saved.lastLedmap?.map((row) => row.slot)).toEqual([0]);
+    expect(saved.lastLookPush).toBeUndefined();
   });
 
   it("a map that does not reread is unknown, not success", async () => {
@@ -195,7 +198,7 @@ describe("pushing Looks with motion maps to a fixture Light", () => {
     expect(result.status).toBe("unknown");
     expect(result.detail).toMatch(/ledmap2\.json.*did not reread/);
     expect(box.presets()).toBe(before);
-    expect(replace).not.toHaveBeenCalled();
+    expect((replace.mock.calls[0]![0] as Light).lastLedmap?.map((row) => row.slot)).toEqual([0, 1]);
   });
 
   it("a map the controller refuses is a failure and nothing else is sent", async () => {
@@ -212,9 +215,53 @@ describe("pushing Looks with motion maps to a fixture Light", () => {
     });
     const result = await push(value, light, snap, documentOf([look("up", 1, "bush", "up")]));
     expect(result.status).toBe("failed");
-    expect(result.detail).toMatch(/did not take ledmap1\.json.*Nothing else was sent/);
+    expect(result.detail).toMatch(/did not take ledmap1\.json.*left in place: ledmap\.json/);
     expect(box.ledmapSlots()).toEqual([0]);
     expect(box.presets()).toBe(before);
+  });
+
+  it("a later push that needs no map replaces the old base map with a straight one", async () => {
+    const { box, light, snap } = await boxLight(60);
+    const house: Prop = { id: "house", lightId: light.id, label: "Well house", kind: "wireframe", elementIds: ["face0"], wireframe: defaultWireframeSpec({ sides: 4 }) };
+    const faces: Element[] = [{ id: "face0", lightId: light.id, label: "Face", start: 0, stop: 60 }];
+    const first = deps({ props: [house], elements: faces });
+    expect((await push(first.value, light, snap, documentOf([look("plain", 1, null, null)]))).status).toBe("matched");
+    expect(parseLedmapJson(box.ledmap(0)!)!.every((value, index) => value === index)).toBe(false);
+    const recorded = first.replace.mock.calls[0]![0] as Light;
+
+    // The well house is gone, so nothing needs a map; the old base map must not stay.
+    const second = deps({ props: [], elements: [] });
+    const result = await push(second.value, recorded, snap, documentOf([look("plain", 1, null, null)]));
+    expect(result.status).toBe("matched");
+    expect(parseLedmapJson(box.ledmap(0)!)).toEqual(Array.from({ length: 60 }, (_, index) => index));
+    expect(presetsOn(box)["1"]!.ledmap).toBe(0);
+    const after = second.replace.mock.calls[0]![0] as Light;
+    expect(after.lastLedmap?.map((row) => row.slot)).toEqual([0]);
+    expect(after.lastLedmap?.[0]!.digest).not.toBe(recorded.lastLedmap?.[0]!.digest);
+  });
+
+  it("finds an old base map on the board even when the app has no record of it", async () => {
+    const { box, light, snap } = await boxLight(BUSH_LIGHTS);
+    const { prop, elements } = bushOn(light);
+    box.setLedmap(JSON.stringify({ map: Array.from({ length: BUSH_LIGHTS }, (_, index) => BUSH_LIGHTS - 1 - index) }), 0);
+    const { value } = deps({ props: [prop], elements });
+    const result = await push(value, light, snap, documentOf([look("plain", 1, null, null)]));
+    expect(result.status).toBe("matched");
+    expect(parseLedmapJson(box.ledmap(0)!)).toEqual(Array.from({ length: BUSH_LIGHTS }, (_, index) => index));
+  });
+
+  it("a second push with fewer maps leaves unused slots alone and keeps their record", async () => {
+    const { box, light, snap } = await boxLight(BUSH_LIGHTS);
+    const { prop, elements } = bushOn(light);
+    const { value, replace } = deps({ props: [prop], elements });
+    await push(value, light, snap, documentOf([look("up", 1, "bush", "up"), look("out", 2, "bush", "outward")]));
+    const recorded = replace.mock.calls[0]![0] as Light;
+    const second = await push(value, recorded, snap, documentOf([look("up", 1, "bush", "up")]));
+    expect(second.status).toBe("matched");
+    const after = replace.mock.calls[1]![0] as Light;
+    expect(after.lastLedmap?.map((row) => row.slot)).toEqual([0, 1, 2]);
+    expect(box.ledmapSlots()).toEqual([0, 1, 2]);
+    expect(presetsOn(box)["1"]!.ledmap).toBe(1);
   });
 
   it("refuses more than nine different light orders before anything is written", async () => {
