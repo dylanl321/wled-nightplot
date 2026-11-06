@@ -410,6 +410,10 @@ export {
   type PropKind,
   type PropLengthUnit,
   type PropMeasurements,
+  type SplitTreeString,
+  type SplitTreeTrunkEnd,
+  SPLIT_TREE_TRUNKS_MIN,
+  SPLIT_TREE_TRUNKS_MAX,
   type PropSection,
   type PropSegmentDraft,
   type PropTap,
@@ -622,6 +626,20 @@ export {
   type ZigzagDirection,
   type ZigzagInput,
 } from "./prop/wraps.ts";
+export {
+  groupSplitTreeSections,
+  splitTreeCoverage,
+  splitTreeLayout,
+  splitTreeTrunks,
+  splitTrunkLabel,
+  trunkIdFromEdge,
+  type SplitHop,
+  type SplitTreeLevels,
+  type SplitTreeSpec,
+  type SplitTrunk,
+  type TrunkCover,
+  type TrunkStringCover,
+} from "./prop/split-tree.ts";
 export {
   defaultSections,
   describeIndexRange,

@@ -114,6 +114,15 @@ export const PROP_TEMPLATES: readonly PropTemplate[] = [
     tapRoles: ["Start", "Next turn or end"],
     moreRole: "Next turn or end",
   },
+  {
+    kind: "split-tree",
+    label: "Split tree",
+    summary: "A trunk that forks. On the yard, set the height, the split and the tip spacing, then put strings on each trunk.",
+    minTaps: 2,
+    maxTaps: 2,
+    pairing: "polyline",
+    tapRoles: ["Base of the trunk", "A tip"],
+  },
 ];
 
 export function propTemplate(kind: PropKind): PropTemplate {
@@ -126,7 +135,8 @@ export function propTemplate(kind: PropKind): PropTemplate {
     case "custom":
     case "wireframe":
     case "spiral":
-    case "zigzag": {
+    case "zigzag":
+    case "split-tree": {
       const found = PROP_TEMPLATES.find((row) => row.kind === kind);
       if (found) return found;
       throw new Error(`Prop template ${kind} is missing`);
@@ -318,6 +328,8 @@ function sideNames(kind: PropKind, count: number): string[] {
       return Array.from({ length: count }, (_, index) => `run ${index + 1}`);
     case "zigzag":
       return Array.from({ length: count }, (_, index) => `pass ${index + 1}`);
+    case "split-tree":
+      return Array.from({ length: count }, (_, index) => `trunk ${index + 1}`);
     default: {
       const _never: never = kind;
       return _never;

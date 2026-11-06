@@ -8,7 +8,7 @@ import { isPropLayout, type PropLayout } from "./layout.ts";
 import type { ShapeOverride } from "./shape.ts";
 import { SPIRAL_MAX_TURNS, ZIGZAG_MAX_PASSES } from "./wraps.ts";
 
-export const PROP_KINDS = ["roofline", "window", "arch", "tree", "stake-row", "custom", "wireframe", "spiral", "zigzag"] as const;
+export const PROP_KINDS = ["roofline", "window", "arch", "tree", "stake-row", "custom", "wireframe", "spiral", "zigzag", "split-tree"] as const;
 export type PropKind = (typeof PROP_KINDS)[number];
 
 export const SHARED_POST_RULES = ["half", "left", "right", "own"] as const;
@@ -74,8 +74,51 @@ export type PropMeasurements =
   | { shape: "spiral"; height: number; around: number; aroundTop?: number; gap: number }
   /** Folded back and forth over a bush. `passes` straight runs. */
   | { shape: "zigzag"; width: number; height: number; passes: number; direction: "vertical" | "horizontal" }
+  /**
+   * A trunk that forks, drawn as a street-facing elevation.
+   * Lengths are in the prop's unit. `spacing` is the distance between
+   * neighbouring tips. `levels` 1 is one fork; 2 lets those branches fork again.
+   * Strings keep their own spacing in millimetres.
+   */
+  | {
+      shape: "split-tree";
+      /** Tips that reach the top. At least 2. */
+      trunks: number;
+      height: number;
+      /** Height of the first fork, from the ground. */
+      split: number;
+      spacing: number;
+      levels: 1 | 2;
+      /** End heights, in the prop's unit, kept when that trunk id still exists. */
+      trunkTo?: SplitTreeTrunkEnd[];
+      /** Strings on the trunks. Absent until one is assigned. */
+      strings?: SplitTreeString[];
+    }
   | { shape: "custom" }
   | { shape: "legacy" };
+
+/** How high one trunk ends, measured from the ground in the prop's unit. */
+export type SplitTreeTrunkEnd = {
+  id: string;
+  to: number;
+};
+
+/**
+ * One physical string on a split tree. Spacing and length stay metric.
+ * `trunkIds` is the order the string is put up; a hop between trunks is a dark run.
+ */
+export type SplitTreeString = {
+  id: string;
+  ledProductId: string | null;
+  /** Centre-to-centre spacing, millimetres. */
+  pitchMm: number;
+  /** Lights on the string. Null until the count is known. */
+  ledCount: number | null;
+  trunkIds: string[];
+};
+
+export const SPLIT_TREE_TRUNKS_MIN = 2;
+export const SPLIT_TREE_TRUNKS_MAX = 8;
 
 export type PropEdge = {
   id: string;
@@ -281,6 +324,43 @@ function isPositive(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
+function isSplitTreeMeasurements(row: { shape?: unknown }): boolean {
+  const trunks = (row as { trunks?: unknown }).trunks;
+  const levels = (row as { levels?: unknown }).levels;
+  const height = (row as { height?: unknown }).height;
+  const split = (row as { split?: unknown }).split;
+  if (!Number.isInteger(trunks) || (trunks as number) < SPLIT_TREE_TRUNKS_MIN || (trunks as number) > SPLIT_TREE_TRUNKS_MAX) return false;
+  if (levels !== 1 && levels !== 2) return false;
+  if (!isPositive(height) || !isPositive(split) || !isPositive((row as { spacing?: unknown }).spacing)) return false;
+  if ((split as number) >= (height as number)) return false;
+  const ends = (row as { trunkTo?: unknown }).trunkTo;
+  if (ends !== undefined && (!Array.isArray(ends) || ends.length > 32 || !ends.every(isSplitTreeTrunkEnd))) return false;
+  const strings = (row as { strings?: unknown }).strings;
+  if (strings !== undefined && (!Array.isArray(strings) || strings.length > 24 || !strings.every(isSplitTreeString))) return false;
+  if (Array.isArray(strings)) {
+    const ids = strings.map((item) => (item as SplitTreeString).id);
+    if (new Set(ids).size !== ids.length) return false;
+  }
+  return true;
+}
+
+function isSplitTreeTrunkEnd(value: unknown): value is SplitTreeTrunkEnd {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Partial<SplitTreeTrunkEnd>;
+  return typeof row.id === "string" && row.id.length > 0 && row.id.length <= 32 && isPositive(row.to) && row.to < 10000;
+}
+
+function isSplitTreeString(value: unknown): value is SplitTreeString {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Partial<SplitTreeString>;
+  if (typeof row.id !== "string" || row.id.length === 0 || row.id.length > 32) return false;
+  if (row.ledProductId !== null && (typeof row.ledProductId !== "string" || row.ledProductId.length === 0 || row.ledProductId.length > 80)) return false;
+  if (typeof row.pitchMm !== "number" || !(row.pitchMm > 0) || row.pitchMm > 10_000 || !Number.isFinite(row.pitchMm)) return false;
+  if (row.ledCount !== null && (!Number.isInteger(row.ledCount) || (row.ledCount ?? -1) < 0 || (row.ledCount ?? 0) > 100_000)) return false;
+  if (!Array.isArray(row.trunkIds) || row.trunkIds.length < 1 || row.trunkIds.length > 16) return false;
+  return row.trunkIds.every((id) => typeof id === "string" && id.length > 0 && id.length <= 32);
+}
+
 function isPropMeasurements(value: unknown): value is PropMeasurements {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const row = value as { shape?: unknown };
@@ -317,6 +397,8 @@ function isPropMeasurements(value: unknown): value is PropMeasurements {
         Number.isInteger(passes) && (passes as number) >= 1 && (passes as number) <= ZIGZAG_MAX_PASSES &&
         (direction === "vertical" || direction === "horizontal");
     }
+    case "split-tree":
+      return isSplitTreeMeasurements(row);
     case "custom":
     case "legacy":
       return true;
