@@ -4,6 +4,8 @@ import {
   formatLength,
   formatPhysicalLength,
   ledProductSpacing,
+  METRES_PER_FOOT,
+  parseLength,
   splitTreeCoverage,
   splitTrunkLabel,
   type LedProduct,
@@ -15,22 +17,31 @@ import { useEffect, useState } from "react";
 import { fetchJson } from "@/lib/api";
 import { CommitField } from "./fields";
 import {
+  addSplitBranch,
   addSplitString,
   continueSplitString,
+  forkSplitBranch,
+  moveSplitMeet,
+  moveSplitTurn,
   removeSplitString,
-  setSplitLevels,
+  setSize,
+  resetToTemplate,
   setTrunkEnd,
+  setTrunkOut,
   updateSplitString,
   type Draft,
 } from "./model";
 
 /**
- * After the general numbers: each trunk, then the strings on it.
- * Geometry stays in the prop's unit. A string's spacing and length stay metric.
+ * Numbers for the tree on the canvas. Dragging a joint updates these;
+ * typing one moves the drawing. Geometry stays in the prop's unit.
+ * A string's spacing and length stay metric.
  */
-export function SplitTreePanel({ draft, onChange }: {
+export function SplitTreePanel({ draft, selection, onChange, onSelect }: {
   draft: Draft;
+  selection: string | null;
   onChange: (next: Draft) => void;
+  onSelect: (id: string) => void;
 }) {
   const [products, setProducts] = useState<LedProduct[]>([]);
   useEffect(() => {
@@ -52,27 +63,58 @@ export function SplitTreePanel({ draft, onChange }: {
     levels: split.levels,
     trunkTo: split.trunkTo,
     strings: split.strings,
+    ...(split.pose ? { pose: split.pose } : {}),
   });
   if (!planned) return null;
   const unit = layout.units;
+  const selectedTrunk = trunkOfSelection(selection);
+  const selected = planned.trunks.find((trunk) => trunk.id === selectedTrunk);
+  const selectedIsFork = Boolean(selected && planned.trunks.some((trunk) => trunk.parentId === selected.id));
+  const forkTarget = selected && !selectedIsFork ? selected.id : rightmostTip(planned.trunks);
   return (
     <div className="split-tree">
+      <p className="note">
+        Drag a circle to move where the trunks meet. Drag a diamond to aim that tip, or drag the trunk to carry what grows from it. The ring is where the wraps meet — pull it off the wood. + forks that tip.
+      </p>
+      <div className="grid2 split-sizes">
+        <LengthField
+          id="ye-size-height"
+          label={`Height (${unit === "ft" ? "ft" : "m"})`}
+          units={unit}
+          value={draft.sizes.height ?? 0}
+          onCommit={(value) => { if (value > 0) onChange(setSize(draft, "height", value)); }}
+        />
+        <LengthField
+          id="ye-size-split"
+          label={`Split height (${unit === "ft" ? "ft" : "m"})`}
+          units={unit}
+          value={draft.sizes.split ?? 0}
+          onCommit={(value) => { if (value > 0) onChange(setSize(draft, "split", value)); }}
+        />
+        <LengthField
+          id="ye-size-spacing"
+          label={`Tip spacing (${unit === "ft" ? "ft" : "m"})`}
+          units={unit}
+          value={draft.sizes.spacing ?? 0}
+          onCommit={(value) => { if (value > 0) onChange(setSize(draft, "spacing", value)); }}
+        />
+      </div>
+      {draft.split?.pose ? (
+        <button type="button" className="btn link" onClick={() => onChange(resetToTemplate(draft))}>Even tips again</button>
+      ) : null}
       <div className="hrow">
         <h2>Trunks</h2>
         <button
           type="button"
           className="btn"
-          aria-pressed={split.levels === 2}
-          onClick={() => onChange(setSplitLevels(draft, split.levels === 2 ? 1 : 2))}
+          onClick={() => {
+            if (selected && selectedIsFork) onChange(addSplitBranch(draft, selected.id));
+            else if (forkTarget) onChange(forkSplitBranch(draft, forkTarget));
+          }}
         >
-          {split.levels === 2 ? "Forks again" : "Fork again"}
+          {selected && selectedIsFork ? "Add branch" : "Fork again"}
         </button>
       </div>
-      <p className="note">
-        {split.levels === 2
-          ? "The main trunk stands on the ground and forks. Each of those branches forks again. Lights wrap up a trunk. Tip spacing is how far apart the tips are, along the ground."
-          : "The main trunk stands on the ground and forks. Lights wrap up each trunk. A string that continues onto the next trunk runs back down the far side, then up that one. Tip spacing is the distance along the ground between neighbouring tips."}
-      </p>
       {planned.trunks.map((trunk) => (
         <TrunkCard
           key={trunk.id}
@@ -83,14 +125,16 @@ export function SplitTreePanel({ draft, onChange }: {
           unit={unit}
           cover={planned.cover.find((row) => row.trunkId === trunk.id)}
           hops={planned.hops}
+          selected={selectedTrunk === trunk.id}
           onChange={onChange}
+          onSelect={onSelect}
         />
       ))}
     </div>
   );
 }
 
-function TrunkCard({ trunk, trunks, draft, products, unit, cover, hops, onChange }: {
+function TrunkCard({ trunk, trunks, draft, products, unit, cover, hops, selected, onChange, onSelect }: {
   trunk: SplitTrunk;
   trunks: readonly SplitTrunk[];
   draft: Draft;
@@ -98,28 +142,88 @@ function TrunkCard({ trunk, trunks, draft, products, unit, cover, hops, onChange
   unit: "ft" | "m";
   cover: TrunkCover | undefined;
   hops: { stringId: string; fromId: string; toId: string; dark: boolean; back: boolean }[];
+  selected: boolean;
   onChange: (next: Draft) => void;
+  onSelect: (id: string) => void;
 }) {
   const label = splitTrunkLabel(trunk, trunks);
   const strings = (draft.split?.strings ?? []).filter((string) => string.trunkIds.includes(trunk.id));
   const open = cover && cover.openM > 0.02 ? ` · ${formatLength(cover.openM, unit)} still open` : "";
+  const fork = trunks.some((row) => row.parentId === trunk.id);
+  const per = unit === "ft" ? METRES_PER_FOOT : 1;
+  const layout = draft.layout;
+  const forkCorner = layout?.corners.find((corner) => corner.id === `c-${trunk.id}`);
+  const meetCorner = layout?.corners.find((corner) => corner.id === `c-meet-${trunk.id}`);
+  const meetOut = forkCorner && meetCorner ? (meetCorner.x - forkCorner.x) / per : 0;
+  const meetUp = forkCorner && meetCorner ? (meetCorner.y - forkCorner.y) / per : 0;
+  const leaving = hops.find((hop) => hop.back && hop.fromId === trunk.id);
+  const knee = leaving ? layout?.corners.find((corner) => corner.id === `c-${trunk.id}-down`) : undefined;
   return (
-    <div className="trunk">
+    <div className={selected ? "trunk on" : "trunk"} data-trunk={trunk.id}>
       <div className="hrow">
-        <strong>{label}</strong>
-        <span className="meta">{formatLength(trunk.lengthM, unit)} of wrap{open}</span>
+        <button type="button" className="btn link" onClick={() => onSelect(`joint:${trunk.id}`)}>{label}</button>
+        <span className="meta">{formatLength(cover?.lengthM ?? trunk.lengthM, unit)} of wrap{open}</span>
       </div>
-      <label className="f">Ends at ({unit === "ft" ? "ft" : "m"})
-        <CommitField
+      <div className="grid2">
+        <LengthField
           id={`ye-trunk-${trunk.id}`}
-          inputMode="decimal"
-          value={String(+trunk.to.toFixed(2))}
-          onCommit={(text) => {
-            const value = Number.parseFloat(text);
-            if (value > 0) onChange(setTrunkEnd(draft, trunk.id, value));
-          }}
+          label={`Height (${unit === "ft" ? "ft" : "m"})`}
+          units={unit}
+          value={trunk.to}
+          onCommit={(value) => { if (value > 0) onChange(setTrunkEnd(draft, trunk.id, value)); }}
         />
-      </label>
+        <LengthField
+          id={`ye-trunk-${trunk.id}-out`}
+          label={`Out (${unit === "ft" ? "ft" : "m"})`}
+          units={unit}
+          value={trunk.x1}
+          signed
+          onCommit={(value) => onChange(setTrunkOut(draft, trunk.id, value))}
+        />
+      </div>
+      {fork && forkCorner ? (
+        <div className="grid2">
+          <LengthField
+            id={`ye-meet-${trunk.id}-up`}
+            label={`Wraps meet, up (${unit === "ft" ? "ft" : "m"})`}
+            units={unit}
+            value={meetUp}
+            signed
+            onCommit={(value) => onChange(moveSplitMeet(draft, trunk.id, trunk.x1 + meetOut, trunk.to + value))}
+          />
+          <LengthField
+            id={`ye-meet-${trunk.id}-out`}
+            label={`Wraps meet, out (${unit === "ft" ? "ft" : "m"})`}
+            units={unit}
+            value={meetOut}
+            signed
+            onCommit={(value) => onChange(moveSplitMeet(draft, trunk.id, trunk.x1 + value, trunk.to + meetUp))}
+          />
+        </div>
+      ) : null}
+      {leaving && knee ? (
+        <div className="grid2">
+          <LengthField
+            id={`ye-turn-${leaving.stringId}-height`}
+            label={`Back path turns, height (${unit === "ft" ? "ft" : "m"})`}
+            units={unit}
+            value={knee.y / per}
+            onCommit={(value) => {
+              if (leaving.toId) onChange(moveSplitTurn(draft, leaving.stringId, leaving.fromId, leaving.toId, knee.x / per, value));
+            }}
+          />
+          <LengthField
+            id={`ye-turn-${leaving.stringId}-out`}
+            label={`Back path turns, out (${unit === "ft" ? "ft" : "m"})`}
+            units={unit}
+            value={knee.x / per}
+            signed
+            onCommit={(value) => {
+              if (leaving.toId) onChange(moveSplitTurn(draft, leaving.stringId, leaving.fromId, leaving.toId, value, knee.y / per));
+            }}
+          />
+        </div>
+      ) : null}
       {strings.map((string) => (
         <StringRow
           key={string.id}
@@ -259,6 +363,69 @@ function hopSentenceFor(hop: { dark: boolean; back: boolean }, label: string, le
   if (hop.back) return leaving ? ` Wraps back down the far side, then up ${label}.` : ` Comes back down the far side from ${label}.`;
   if (hop.dark) return leaving ? ` Dark jump to ${label}. These trunks do not meet.` : ` Dark jump from ${label}.`;
   return leaving ? ` The wrap continues up ${label}.` : "";
+}
+
+function LengthField({ id, label, units, value, signed, onCommit }: {
+  id: string;
+  label: string;
+  units: "ft" | "m";
+  value: number;
+  signed?: boolean;
+  onCommit: (value: number) => void;
+}) {
+  return (
+    <label className="f">{label}
+      <CommitField
+        id={id}
+        inputMode="decimal"
+        value={formatProp(value, units)}
+        onCommit={(text) => {
+          const next = parseProp(text, units);
+          if (next == null) return;
+          if (!signed && !(next > 0)) return;
+          onCommit(next);
+        }}
+      />
+    </label>
+  );
+}
+
+function formatProp(value: number, units: "ft" | "m"): string {
+  if (!Number.isFinite(value)) return "";
+  if (units === "m") return value.toFixed(2);
+  const sign = value < 0 ? "-" : "";
+  return `${sign}${formatLength(Math.abs(value) * METRES_PER_FOOT, "ft")}`;
+}
+
+function parseProp(text: string, units: "ft" | "m"): number | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const negative = trimmed.startsWith("-");
+  const body = negative ? trimmed.slice(1).trim() : trimmed;
+  if (!body) return null;
+  if (units === "m" || /^\d+(?:\.\d+)?$/.test(body)) {
+    const number = Number(body);
+    if (!Number.isFinite(number)) return null;
+    return (negative ? -1 : 1) * number;
+  }
+  const metres = parseLength(body, "ft");
+  if (metres == null) return null;
+  return (negative ? -1 : 1) * (metres / METRES_PER_FOOT);
+}
+
+function trunkOfSelection(selection: string | null): string | null {
+  if (!selection) return null;
+  const parts = selection.split(":");
+  if (parts[0] === "turn") return parts[2] ?? null;
+  const id = parts[1];
+  if (!id || id === "base") return "t0";
+  return id;
+}
+
+function rightmostTip(trunks: readonly SplitTrunk[]): string | null {
+  const leaves = trunks.filter((trunk) => trunk.parentId && !trunks.some((row) => row.parentId === trunk.id));
+  if (leaves.length === 0) return null;
+  return leaves.reduce((best, trunk) => (trunk.x1 > best.x1 ? trunk : best)).id;
 }
 
 function coverNote(cover: { coveredM: number; remainingM: number | null } | undefined): string {

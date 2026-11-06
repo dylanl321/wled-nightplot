@@ -3,7 +3,10 @@ import { countLayout, layoutStrings, pathEdgeIndexRanges, trunkIdFromEdge } from
 import {
   addSplitString,
   draftFromProp,
+  forkSplitBranch,
   measurementsOf,
+  moveSplitJoint,
+  moveSplitMeet,
   newDraft,
   setSize,
   startFrom,
@@ -41,5 +44,44 @@ describe("split tree draft", () => {
     }, "m", 0.1);
     expect(again.drawn).toBe(false);
     expect(again.split?.strings).toHaveLength(2);
+  });
+
+  it("drags the crotch, aims one tip, places the wrap meet, and forks that tip", () => {
+    let draft = startFrom(newDraft("Split tree 1"), "splitTree", "ft", 0.1);
+    draft = moveSplitJoint(draft, "t0", 1, 3, false);
+    expect(draft.sizes.split).toBeCloseTo(3);
+    const fork = draft.layout!.corners.find((corner) => corner.id === "c-t0")!;
+    expect(fork.x).toBeGreaterThan(0.2);
+    const rightBefore = draft.split!.pose!.nodes.find((node) => node.id === "t0.1");
+    draft = moveSplitJoint(draft, "t0.0", -5, 7, false);
+    expect(draft.split!.pose!.nodes.find((node) => node.id === "t0.1")).toEqual(rightBefore);
+    expect(draft.split!.pose!.nodes.find((node) => node.id === "t0.0")).toMatchObject({ x: -5, y: 7 });
+    expect(draft.sizes.height).toBeGreaterThan(7);
+    draft = setSize(draft, "split", 3.5);
+    expect(draft.split!.pose!.nodes.find((node) => node.id === "t0")!.y).toBeCloseTo(3.5);
+    const left = draft.split!.pose!.nodes.find((node) => node.id === "t0.0")!;
+    expect(left.x).toBeCloseTo(-5);
+    draft = moveSplitMeet(draft, "t0", left.x, 3.5);
+    expect(draft.split!.pose!.meets.find((meet) => meet.forkId === "t0")).toBeTruthy();
+    expect(draft.layout!.corners.find((corner) => corner.id === "c-meet-t0")).toBeTruthy();
+    draft = forkSplitBranch(draft, "t0.1");
+    expect(draft.split!.pose!.nodes.some((node) => node.id === "t0.1.0")).toBe(true);
+    expect(draft.split!.pose!.nodes.some((node) => node.id === "t0.0.0")).toBe(false);
+    expect(draft.layout!.bodies?.some((body) => body.id === "t0.1.0")).toBe(true);
+    const saved = measurementsOf(draft);
+    expect(saved.shape).toBe("split-tree");
+    if (saved.shape !== "split-tree") return;
+    expect(saved.pose?.nodes.some((node) => node.id === "t0.1.0")).toBe(true);
+    const reopened = draftFromProp({
+      id: "p1",
+      label: "Split tree 1",
+      kind: "split-tree",
+      elementIds: [],
+      layout: draft.layout!,
+      sections: draft.sections,
+      design: { unit: "ft", pitchMm: 100, ledProductId: null, measurements: saved, ledCount: null, edges: [] },
+    }, "ft", 0.1);
+    expect(reopened.drawn).toBe(false);
+    expect(reopened.split?.pose?.nodes.find((node) => node.id === "t0.0")?.x).toBeCloseTo(-5);
   });
 });

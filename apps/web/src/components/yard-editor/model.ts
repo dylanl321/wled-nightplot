@@ -23,11 +23,23 @@ import {
   edgeLengthM,
   emptyTrace,
   ensureStrings,
+  addPoseBranch,
+  defaultSplitPose,
+  forkPoseNode,
   groupSplitTreeSections,
   layoutFromMeasurements,
   layoutStrings,
   METRES_PER_FOOT,
+  movePoseJoint,
+  movePoseMeet,
+  movePoseTurn,
+  poseSummary,
   reconcileSections,
+  scalePoseHeight,
+  scalePoseSpacing,
+  setPoseSplit,
+  SPLIT_TREE_TRUNKS_MAX,
+  SPLIT_TREE_TRUNKS_MIN,
   splitTreeLayout,
   moveCorner,
   propShapeChanged,
@@ -47,6 +59,8 @@ import {
   type PropLayout,
   type PropMeasurements,
   type PropSection,
+  type SplitPose,
+  type SplitTreeSpec,
   type SplitTreeString,
   type SplitTreeTrunkEnd,
   type InstallGuide,
@@ -165,6 +179,8 @@ export type SplitTreeDraft = {
   levels: 1 | 2;
   trunkTo: SplitTreeTrunkEnd[];
   strings: SplitTreeString[];
+  /** Joints, wrap meets, and back-path turns. Absent until the tree is moved or forked by hand. */
+  pose?: SplitPose;
 };
 
 const EMPTY_SPLIT: SplitTreeDraft = { levels: 1, trunkTo: [], strings: [] };
@@ -277,6 +293,7 @@ export function measurementsOf(draft: Draft): PropMeasurements {
         levels: draft.split?.levels === 2 ? 2 : 1,
         ...(draft.split?.trunkTo.length ? { trunkTo: draft.split.trunkTo } : {}),
         ...(draft.split?.strings.length ? { strings: draft.split.strings } : {}),
+        ...(draft.split?.pose ? { pose: draft.split.pose } : {}),
       };
   }
 }
@@ -297,7 +314,12 @@ export function draftFromProp(prop: Prop, units: LayoutUnits, pitchM: number): D
   const drawn = shape === "draw" || !layout.template || (prop.design?.measurements ? propShapeChanged(prop) : false) || cornersMoved(layout, shape, sizes);
   const measured = prop.design?.measurements;
   const split = measured?.shape === "split-tree"
-    ? { levels: measured.levels, trunkTo: measured.trunkTo ?? [], strings: measured.strings ?? [] }
+    ? {
+        levels: measured.levels,
+        trunkTo: measured.trunkTo ?? [],
+        strings: measured.strings ?? [],
+        ...(measured.pose ? { pose: measured.pose } : {}),
+      }
     : shape === "splitTree"
       ? { ...EMPTY_SPLIT, levels: params.levels === 2 ? 2 as const : 1 as const }
       : undefined;
@@ -305,7 +327,7 @@ export function draftFromProp(prop: Prop, units: LayoutUnits, pitchM: number): D
     id: prop.id,
     label: prop.label,
     shape,
-    drawn,
+    drawn: shape === "splitTree" ? false : drawn,
     sizes,
     layout,
     sections: prop.sections ?? [],
@@ -408,7 +430,8 @@ export function setSize(draft: Draft, key: SizeKey, value: number): Draft {
   if (!draft.shape || draft.shape === "draw" || draft.drawn || !(value > 0) || !draft.layout) return draft;
   if (draft.shape === "splitTree") {
     const next = key === "trunks" ? Math.round(value) : value;
-    if (key === "trunks" && (next < 2 || next > 8)) return draft;
+    if (key === "trunks" && (next < SPLIT_TREE_TRUNKS_MIN || next > SPLIT_TREE_TRUNKS_MAX)) return draft;
+    if (draft.split?.pose) return resizePosedSplit(draft, key, next);
     return refreshSplit({ ...draft, sizes: { ...draft.sizes, [key]: next } });
   }
   const sizes = { ...draft.sizes, [key]: value };
@@ -442,6 +465,7 @@ function refreshSplit(draft: Draft): Draft {
     levels: split.levels,
     trunkTo: split.trunkTo,
     strings: split.strings,
+    ...(split.pose ? { pose: split.pose } : {}),
   });
   if (!layout) return draft;
   const grouped = draft.sections.length === 0
@@ -460,6 +484,7 @@ function refreshSplit(draft: Draft): Draft {
 /** One fork, or a second fork so a branch can split again. Two tips become four when forking again. */
 export function setSplitLevels(draft: Draft, levels: 1 | 2): Draft {
   if (draft.shape !== "splitTree" || !draft.layout) return draft;
+  if (draft.split?.pose) return draft;
   const split = splitState(draft);
   let trunks = Math.round(draft.sizes.trunks ?? 2);
   if (levels === 2 && trunks < 3) trunks = 4;
@@ -469,11 +494,157 @@ export function setSplitLevels(draft: Draft, levels: 1 | 2): Draft {
 /** Where one trunk ends, from the ground. The main trunk is the split height. */
 export function setTrunkEnd(draft: Draft, trunkId: string, to: number): Draft {
   if (draft.shape !== "splitTree" || !(to > 0)) return draft;
-  if (trunkId === "t0") return setSize(draft, "split", to);
+  if (!draft.split?.pose && trunkId === "t0") return setSize(draft, "split", to);
+  if (!draft.split?.pose) {
+    const split = splitState(draft);
+    const trunkTo = split.trunkTo.filter((row) => row.id !== trunkId);
+    trunkTo.push({ id: trunkId, to });
+    return refreshSplit({ ...draft, split: { ...split, trunkTo } });
+  }
+  return moveSplitJoint(draft, trunkId, draft.split.pose.nodes.find((node) => node.id === trunkId)?.x ?? 0, to, false);
+}
+
+/** Move one joint across the ground line. The main trunk's end is the crotch. */
+export function setTrunkOut(draft: Draft, trunkId: string, x: number): Draft {
+  if (draft.shape !== "splitTree" || !Number.isFinite(x)) return draft;
+  const ready = ensureSplitPose(draft);
+  const y = ready.split?.pose?.nodes.find((node) => node.id === trunkId)?.y ?? 0;
+  return moveSplitJoint(ready, trunkId, x, y, false);
+}
+
+function scalePose(pose: SplitPose, factor: number): SplitPose {
+  const scale = (value: number) => roundSize(value * factor, "m");
+  return {
+    nodes: pose.nodes.map((node) => ({ ...node, x: scale(node.x), y: scale(node.y) })),
+    meets: pose.meets.map((meet) => ({ ...meet, x: scale(meet.x), y: scale(meet.y) })),
+    turns: pose.turns.map((turn) => ({ ...turn, x: scale(turn.x), y: scale(turn.y) })),
+  };
+}
+
+/** The numbers the split-tree drawing is built from, including a placed skeleton. */
+export function splitSpecOf(draft: Draft): SplitTreeSpec | null {
+  if (draft.shape !== "splitTree" || !draft.layout) return null;
   const split = splitState(draft);
-  const trunkTo = split.trunkTo.filter((row) => row.id !== trunkId);
-  trunkTo.push({ id: trunkId, to });
-  return refreshSplit({ ...draft, split: { ...split, trunkTo } });
+  return {
+    units: draft.layout.units,
+    height: draft.sizes.height ?? 0,
+    split: draft.sizes.split ?? 0,
+    spacing: draft.sizes.spacing ?? 0,
+    trunks: Math.round(draft.sizes.trunks ?? 0),
+    levels: split.levels,
+    trunkTo: split.trunkTo,
+    strings: split.strings,
+    ...(split.pose ? { pose: split.pose } : {}),
+  };
+}
+
+/** Remember the current joints so the next drag does not snap back to an even Y. */
+export function ensureSplitPose(draft: Draft): Draft {
+  if (draft.shape !== "splitTree" || draft.split?.pose) return draft;
+  const spec = splitSpecOf(draft);
+  if (!spec) return draft;
+  const pose = defaultSplitPose(spec);
+  if (!pose) return draft;
+  return { ...draft, split: { ...splitState(draft), pose } };
+}
+
+function applySplitPose(draft: Draft, pose: SplitPose): Draft {
+  const summary = poseSummary(pose);
+  if (!summary) return draft;
+  const trunkTo = pose.nodes
+    .filter((node) => node.id !== "base" && node.id !== "t0")
+    .map((node) => ({ id: node.id, to: node.y }));
+  return refreshSplit({
+    ...draft,
+    sizes: {
+      ...draft.sizes,
+      height: summary.height,
+      split: summary.split,
+      spacing: summary.spacing,
+      trunks: summary.trunks,
+    },
+    split: { ...splitState(draft), pose, levels: summary.levels, trunkTo },
+  });
+}
+
+function resizePosedSplit(draft: Draft, key: SizeKey, value: number): Draft {
+  const pose = draft.split?.pose;
+  if (!pose) return draft;
+  if (key === "trunks") return setPosedTips(draft, value);
+  const moved = key === "height" ? scalePoseHeight(pose, value)
+    : key === "split" ? setPoseSplit(pose, value)
+    : key === "spacing" ? scalePoseSpacing(pose, value)
+    : null;
+  if (!moved) return draft;
+  return applySplitPose(draft, moved);
+}
+
+function setPosedTips(draft: Draft, count: number): Draft {
+  let pose = draft.split?.pose;
+  if (!pose) return draft;
+  let guard = 0;
+  while (poseSummary(pose)?.trunks !== count && guard < 8) {
+    guard += 1;
+    const have = poseSummary(pose)?.trunks ?? 0;
+    if (have >= count) return draft;
+    const added = addPoseBranch(pose, "t0");
+    if (!added) return applySplitPose(draft, pose);
+    pose = added;
+  }
+  return applySplitPose(draft, pose);
+}
+
+/**
+ * Move a joint. `subtree` carries the branches that grow from it.
+ * Coordinates are prop units.
+ */
+export function moveSplitJoint(draft: Draft, id: string, x: number, y: number, subtree: boolean): Draft {
+  const ready = ensureSplitPose(draft);
+  const pose = ready.split?.pose;
+  if (!pose) return draft;
+  const moved = movePoseJoint(pose, id, x, y, subtree);
+  if (!moved) return draft;
+  return applySplitPose(ready, moved);
+}
+
+/** Put the wrap junction on an absolute point, in prop units. */
+export function moveSplitMeet(draft: Draft, forkId: string, x: number, y: number): Draft {
+  const ready = ensureSplitPose(draft);
+  const pose = ready.split?.pose;
+  if (!pose) return draft;
+  const moved = movePoseMeet(pose, forkId, x, y);
+  if (!moved) return draft;
+  return applySplitPose(ready, moved);
+}
+
+/** Put the back-path knee on an absolute point, in prop units. */
+export function moveSplitTurn(draft: Draft, stringId: string, fromId: string, toId: string, x: number, y: number): Draft {
+  const ready = ensureSplitPose(draft);
+  const pose = ready.split?.pose;
+  if (!pose) return draft;
+  const moved = movePoseTurn(pose, stringId, fromId, toId, x, y);
+  if (!moved) return draft;
+  return applySplitPose(ready, moved);
+}
+
+/** The selected tip becomes a fork. The other branches stay where they are. */
+export function forkSplitBranch(draft: Draft, trunkId: string): Draft {
+  const ready = ensureSplitPose(draft);
+  const pose = ready.split?.pose;
+  if (!pose) return draft;
+  const forked = forkPoseNode(pose, trunkId);
+  if (!forked) return draft;
+  return applySplitPose(ready, forked);
+}
+
+/** Another branch from a fork, aimed off to one side of the ones already there. */
+export function addSplitBranch(draft: Draft, forkId: string): Draft {
+  const ready = ensureSplitPose(draft);
+  const pose = ready.split?.pose;
+  if (!pose) return draft;
+  const added = addPoseBranch(pose, forkId);
+  if (!added) return draft;
+  return applySplitPose(ready, added);
 }
 
 /** A new string on one trunk. Spacing is centimetres of the product, starting at 10 cm. */
@@ -522,7 +693,9 @@ export function removeSplitString(draft: Draft, stringId: string, trunkId?: stri
 export function resetToTemplate(draft: Draft): Draft {
   if (!draft.shape || draft.shape === "draw" || !draft.layout) return draft;
   const sizes = Object.keys(draft.sizes).length ? draft.sizes : { ...DEFAULT_SIZES[draft.shape][draft.layout.units] };
-  if (draft.shape === "splitTree") return refreshSplit({ ...draft, drawn: false, sizes });
+  if (draft.shape === "splitTree") {
+    return refreshSplit({ ...draft, drawn: false, sizes, split: { ...splitState(draft), pose: undefined, trunkTo: [] } });
+  }
   const layout = layoutFromMeasurements({ units: draft.layout.units, pitchM: draft.layout.pitchM, shape: templateShape(draft.shape), params: templateParams(draft.shape, sizes) });
   if (!layout) return draft;
   return withCount({ ...draft, drawn: false, sizes, layout, sections: keepSections(draft.sections, layout) });
@@ -537,7 +710,11 @@ export function setUnits(draft: Draft, units: LayoutUnits): Draft {
   const params = draft.layout.template ? { ...draft.layout.template.params, ...sizes } : undefined;
   const layout: PropLayout = { ...draft.layout, units, ...(params && draft.layout.template ? { template: { ...draft.layout.template, params } } : {}) };
   const split = draft.split
-    ? { ...draft.split, trunkTo: draft.split.trunkTo.map((row) => ({ ...row, to: roundSize(row.to * factor, units) })) }
+    ? {
+        ...draft.split,
+        trunkTo: draft.split.trunkTo.map((row) => ({ ...row, to: roundSize(row.to * factor, units) })),
+        ...(draft.split.pose ? { pose: scalePose(draft.split.pose, factor) } : {}),
+      }
     : undefined;
   return { ...draft, sizes, layout, ...(split ? { split } : {}) };
 }

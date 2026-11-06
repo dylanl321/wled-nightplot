@@ -261,6 +261,7 @@
 .ye .lightsbox { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
 .ye .split-tree { display: flex; flex-direction: column; gap: 10px; }
 .ye .split-tree .trunk, .ye .split-tree .string { border: 1px solid var(--y-border); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 8px; background: var(--y-card); }
+.ye .split-tree .trunk.on { border-color: var(--y-pick); box-shadow: inset 0 0 0 1px var(--y-pick); }
 .ye .split-tree .string { background: color-mix(in srgb, var(--y-pick) 5%, var(--y-card)); }
 .ye .split-tree label.f input, .ye .split-tree label.f select, .ye .split-tree .btn,
 .ye .split-sizes label.f input, .ye .split-seg button { min-height: 44px; }

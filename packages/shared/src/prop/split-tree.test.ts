@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { compilePropDesign } from "./design.ts";
 import { countLayout, layoutStrings, METRES_PER_FOOT } from "./layout.ts";
 import { defaultSections, pathEdgeIndexRanges, reconcileSections } from "./sections.ts";
-import { groupSplitTreeSections, splitTreeCoverage, splitTreeLayout, splitTreeTrunks, trunkIdFromEdge, type SplitTreeSpec } from "./split-tree.ts";
+import { forkPoseNode, movePoseJoint, movePoseMeet, movePoseTurn } from "./split-pose.ts";
+import { defaultSplitPose, groupSplitTreeSections, splitMeetPoint, splitTreeCoverage, splitTreeLayout, splitTreeTrunks, trunkIdFromEdge, type SplitTreeSpec } from "./split-tree.ts";
 import { isProp, type SplitTreeString } from "./types.ts";
 
 const y: SplitTreeSpec = { units: "m", height: 2, split: 1, spacing: 2, trunks: 2, levels: 1 };
@@ -226,5 +227,83 @@ describe("split tree", () => {
     expect(isProp({ id: "p1", label: "Front tree", kind: "split-tree", elementIds: [], design: compiled.design, layout: compiled.layout, sections: compiled.sections })).toBe(true);
     const bad = { ...compiled.design, measurements: { shape: "split-tree" as const, height: 8, split: 8, spacing: 4, trunks: 2, levels: 1 as const } };
     expect(isProp({ id: "p2", label: "Bad", kind: "split-tree", elementIds: [], design: bad })).toBe(false);
+  });
+
+  it("moves the crotch without taking the tips with it", () => {
+    const pose = defaultSplitPose(y);
+    expect(pose).not.toBeNull();
+    const moved = movePoseJoint(pose!, "t0", 0.4, 1.3, false);
+    expect(moved).not.toBeNull();
+    const spec = { ...y, pose: moved! };
+    const trunks = splitTreeTrunks(spec)!;
+    const fork = trunks.find((trunk) => trunk.id === "t0")!;
+    const left = trunks.find((trunk) => trunk.id === "t0.0")!;
+    const right = trunks.find((trunk) => trunk.id === "t0.1")!;
+    expect(fork.x1).toBeCloseTo(0.4);
+    expect(fork.to).toBeCloseTo(1.3);
+    expect(left.x1).toBeCloseTo(-1);
+    expect(right.x1).toBeCloseTo(1);
+    expect(left.x0).toBeCloseTo(0.4);
+    expect(right.x0).toBeCloseTo(0.4);
+    const layout = splitTreeLayout({ ...spec, pitchM: 0.1 })!;
+    expect(layout.corners.find((corner) => corner.id === "c-t0")).toMatchObject({ x: expect.closeTo(0.4), y: expect.closeTo(1.3) });
+  });
+
+  it("aims one tip on its own, so the tree is no longer a symmetric Y", () => {
+    const pose = defaultSplitPose({ ...y, units: "ft", height: 8, split: 4, spacing: 4 })!;
+    const moved = movePoseJoint(pose, "t0.0", -3.5, 7, false)!;
+    const trunks = splitTreeTrunks({ units: "ft", height: 8, split: 4, spacing: 4, trunks: 2, levels: 1, pose: moved })!;
+    const left = trunks.find((trunk) => trunk.id === "t0.0")!;
+    const right = trunks.find((trunk) => trunk.id === "t0.1")!;
+    expect(left.x1).toBeCloseTo(-3.5);
+    expect(left.to).toBeCloseTo(7);
+    expect(right.x1).toBeCloseTo(2);
+    expect(right.to).toBeCloseTo(8);
+    expect(left.x1).not.toBeCloseTo(-right.x1);
+  });
+
+  it("places the wrap junction off the wood, and keeps the coils short of the crotch", () => {
+    const pose = defaultSplitPose(y)!;
+    const placed = movePoseMeet(pose, "t0", 0.35, 1.15)!;
+    const spec = { ...y, pose: placed };
+    const trunks = splitTreeTrunks(spec)!;
+    const fork = trunks.find((trunk) => trunk.id === "t0")!;
+    const meet = splitMeetPoint(fork, spec);
+    const layout = splitTreeLayout({ ...spec, pitchM: 0.1 })!;
+    const joint = layout.corners.find((corner) => corner.id === "c-t0")!;
+    const meetCorner = layout.corners.find((corner) => corner.id === "c-meet-t0")!;
+    expect(meetCorner.x).toBeCloseTo(meet.x);
+    expect(Math.hypot(meetCorner.x - joint.x, meetCorner.y - joint.y)).toBeGreaterThan(fork.radius1);
+    const coil = layout.corners.filter((corner) => /^c-t0\.0-w\d+$/.test(corner.id) || /^c-t0\.1-w\d+$/.test(corner.id) || /^c-t0-w\d+$/.test(corner.id));
+    for (const sample of coil) {
+      expect(Math.hypot(sample.x - joint.x, sample.y - joint.y)).toBeGreaterThan(fork.radius1 * 0.8);
+    }
+    expect(layoutStrings(layout).flatMap((row) => row.run).some((edge) => edge.id === "e-t0-meet")).toBe(true);
+  });
+
+  it("forks one tip and leaves the other branch a single tip", () => {
+    const pose = forkPoseNode(defaultSplitPose(y)!, "t0.1");
+    expect(pose).not.toBeNull();
+    const trunks = splitTreeTrunks({ ...y, pose: pose! })!;
+    expect(trunks.map((trunk) => trunk.id)).toEqual(["t0", "t0.0", "t0.1", "t0.1.0", "t0.1.1"]);
+    const kept = trunks.find((trunk) => trunk.id === "t0.0")!;
+    expect(trunks.some((trunk) => trunk.parentId === "t0.0")).toBe(false);
+    expect(kept.x1).toBeLessThan(0);
+    const nested = trunks.filter((trunk) => trunk.parentId === "t0.1");
+    expect(nested).toHaveLength(2);
+    expect(nested[0]!.x1).not.toBeCloseTo(nested[1]!.x1);
+  });
+
+  it("moves the back-path knee where a string turns onto the next branch", () => {
+    const pose = defaultSplitPose(y)!;
+    const turned = movePoseTurn(pose, "s1", "t0.0", "t0.1", -0.45, 0.7)!;
+    const strings = [string({ id: "s1", trunkIds: ["t0.0", "t0.1"], ledCount: 400 })];
+    const layout = splitTreeLayout({ ...y, pitchM: 0.1, strings, pose: turned })!;
+    const run = layoutStrings(layout).find((row) => row.id === "s1")!.run;
+    const back = run.find((edge) => edge.id === "e-t0.0-back")!;
+    const knee = layout.corners.find((corner) => corner.id === back.to)!;
+    expect(knee.x).toBeCloseTo(-0.45);
+    expect(knee.y).toBeCloseTo(0.7);
+    expect(run.some((edge) => edge.kind === "wire")).toBe(false);
   });
 });
