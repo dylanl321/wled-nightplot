@@ -26,7 +26,6 @@ import {
   setLengthPin,
   METRES_PER_FOOT,
   parseTraceLength,
-  splitTreeCoverage,
   splitTreeTrunks,
   planPropPlacement,
   propAttachmentLabel,
@@ -89,8 +88,6 @@ import {
   setUnits,
   splitSpecOf,
   moveSplitJoint,
-  moveSplitMeet,
-  moveSplitTurn,
   forkSplitBranch,
   SHAPE_TITLES,
   SHAPES,
@@ -296,7 +293,7 @@ export function YardEditor(init: YardEditorProps) {
     focusName: false,
     phone: false,
     started: false,
-    /** The split-tree handle last touched: a crotch, tip, meet, or back-path knee. */
+    /** The split-tree handle last touched: a crotch, a tip, or a limb. */
     splitSel: null as string | null,
   }).current;
   const s = st;
@@ -344,10 +341,12 @@ export function YardEditor(init: YardEditorProps) {
           lights += n;
           edges.push({
             id: edge.id, ax: a.x, ay: a.y, bx: b.x, by: b.y, lights: n,
-            color: edge.kind === "wire" ? null : edge.id.endsWith("-back") ? "#f4f0e6" : colour(edge.id), wire: edge.kind !== "lit", typed: typed && edge.lockedLights != null,
+            color: edge.kind === "wire" ? null : colour(edge.id), wire: edge.kind !== "lit", typed: typed && edge.lockedLights != null,
             badge: `${letter}${runIndex + 1}`,
-            coil: /^e-t\d/.test(edge.id) && !edge.id.endsWith("-back") && !edge.id.endsWith("-meet") && !edge.id.endsWith("-in"),
-            back: edge.id.endsWith("-back"),
+            coil: /^e-t\d/.test(edge.id) && !/-back(?:-\d+)?$/.test(edge.id),
+            back: /^e-t\d.*-back(?:-\d+)?$/.test(edge.id),
+            // Round the back of a trunk: drawn fainter so the front of the coil reads.
+            far: ((a.z ?? 0) + (b.z ?? 0)) / 2 < -1e-4,
             ...(edge.wrapLengthM != null ? { lengthM: counted.get(edge.id)?.lengthM ?? edge.wrapLengthM } : {}),
           });
         });
@@ -1108,9 +1107,8 @@ export function YardEditor(init: YardEditorProps) {
     const spec = splitSpecOf(d);
     if (!spec) return [];
     const trunks = splitTreeTrunks(spec);
-    const planned = splitTreeCoverage(spec);
-    if (!trunks || !planned) return [];
-    return collectSplitHandles(view(), d.layout, trunks, planned.hops, s.phone);
+    if (!trunks) return [];
+    return collectSplitHandles(view(), d.layout, trunks, s.phone);
   }
 
   function splitPropPoint(px: number, py: number, origin: { x: number; y: number; wx: number; wy: number }): { x: number; y: number } {
@@ -1130,10 +1128,7 @@ export function YardEditor(init: YardEditorProps) {
     const d = s.draft;
     if (!d?.layout) return null;
     const per = s.units === "ft" ? METRES_PER_FOOT : 1;
-    const cornerId = handle.kind === "base" ? "c-base"
-      : handle.kind === "meet" ? `c-meet-${handle.trunkId}`
-        : handle.kind === "turn" ? `c-${handle.fromId}-down`
-          : `c-${handle.trunkId}`;
+    const cornerId = handle.kind === "base" ? "c-base" : `c-${handle.trunkId}`;
     const corner = d.layout.corners.find((row) => row.id === cornerId);
     if (!corner) return null;
     return { x: corner.x / per, y: corner.y / per };
@@ -1141,7 +1136,7 @@ export function YardEditor(init: YardEditorProps) {
 
   type Drag =
     | { kind: "pan"; cam: Camera; px: number; py: number; moved: boolean; onTap?: () => void; deselect?: boolean; button?: number; noPan?: boolean }
-    | { kind: "split"; action: "joint" | "subtree" | "meet" | "turn" | "sprout"; handle: SplitHandle; px: number; py: number; moved: boolean; ox: number; oy: number; wx: number; wy: number }
+    | { kind: "split"; action: "joint" | "subtree" | "sprout"; handle: SplitHandle; px: number; py: number; moved: boolean; ox: number; oy: number; wx: number; wy: number }
     | { kind: "prop"; id: string; ox: number; oy: number; wx: number; wy: number; px: number; py: number; moved: boolean; pushed: boolean }
     | { kind: "corner"; id: string; px: number; py: number; moved: boolean }
     | { kind: "run"; id: string; fromId: string; toId: string; fx: number; fy: number; tx: number; ty: number; wx: number; wy: number; px: number; py: number; moved: boolean; pushed: boolean; shift?: boolean }
@@ -1833,10 +1828,7 @@ export function YardEditor(init: YardEditorProps) {
     s.dpast.push(JSON.stringify(d));
     s.dfuture.length = 0;
     s.splitSel = handle.id;
-    const action = handle.kind === "branch" ? "subtree" as const
-      : handle.kind === "meet" ? "meet" as const
-        : handle.kind === "turn" ? "turn" as const
-          : "joint" as const;
+    const action = handle.kind === "branch" ? "subtree" as const : "joint" as const;
     dragRef.current = { kind: "split", action, handle, px, py, moved: false, ox: origin.x, oy: origin.y, wx: vw.wx(px), wy: vw.wy(py) };
     return true;
   }
@@ -2076,10 +2068,7 @@ export function YardEditor(init: YardEditorProps) {
     if (!drag.moved) return;
     if (drag.kind === "split" && s.draft && drag.action !== "sprout") {
       const point = splitPropPoint(px, py, { x: drag.ox, y: drag.oy, wx: drag.wx, wy: drag.wy });
-      if (drag.action === "meet") s.draft = moveSplitMeet(s.draft, drag.handle.trunkId, point.x, point.y);
-      else if (drag.action === "turn" && drag.handle.stringId && drag.handle.fromId && drag.handle.toId) {
-        s.draft = moveSplitTurn(s.draft, drag.handle.stringId, drag.handle.fromId, drag.handle.toId, point.x, point.y);
-      } else if (drag.action === "subtree") s.draft = moveSplitJoint(s.draft, drag.handle.trunkId, point.x, point.y, true);
+      if (drag.action === "subtree") s.draft = moveSplitJoint(s.draft, drag.handle.trunkId, point.x, point.y, true);
       else s.draft = moveSplitJoint(s.draft, drag.handle.kind === "base" ? "base" : drag.handle.trunkId, point.x, drag.handle.kind === "base" ? 0 : point.y, false);
       s.draftDirty = true;
       const per = s.units === "ft" ? METRES_PER_FOOT : 1;

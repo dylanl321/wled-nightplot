@@ -55,6 +55,8 @@ export type LayoutLightPoint = {
   edgeId: string;
   x: number;
   y: number;
+  /** Metres toward the street from the drawing. 0 on a flat drawing. */
+  z: number;
 };
 
 /**
@@ -77,6 +79,8 @@ export function layoutLightPoints(layout: PropLayout): LayoutLightPoint[] {
         index += count;
         continue;
       }
+      const z0 = from.z ?? 0;
+      const z1 = to.z ?? 0;
       for (let light = 0; light < count; light += 1) {
         const along = light / count;
         points.push({
@@ -85,6 +89,7 @@ export function layoutLightPoints(layout: PropLayout): LayoutLightPoint[] {
           edgeId: edge.id,
           x: from.x + (to.x - from.x) * along,
           y: from.y + (to.y - from.y) * along,
+          z: z0 + (z1 - z0) * along,
         });
         index += 1;
       }
@@ -98,24 +103,30 @@ export type YardLight = LayoutLightPoint & {
   z: number;
 };
 
-/** Turn one drawing point into a yard point. */
-export function placeYardLight(local: { x: number; y: number }, pose: YardPose): { x: number; y: number; z: number } {
+/**
+ * Turn one drawing point into a yard point. `local.z` is toward the street
+ * from the drawing: on an upright prop that is toward the road (smaller
+ * yard z when it faces the street), and on a flat prop it is up.
+ */
+export function placeYardLight(local: { x: number; y: number; z?: number }, pose: YardPose): { x: number; y: number; z: number } {
   const rad = (pose.facing * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
+  const out = local.z ?? 0;
   switch (pose.mount) {
     case "flat":
       return {
         x: round3(pose.x + local.x * cos - local.y * sin),
-        y: round3(pose.heightM),
+        y: round3(pose.heightM + out),
         z: round3(pose.depth + local.x * sin + local.y * cos),
       };
     case "upright":
       return {
-        x: round3(pose.x + local.x * cos),
+        // Facing 0 looks at the street, which is toward smaller yard z.
+        x: round3(pose.x + local.x * cos + out * sin),
         // heightM is how high the prop stands. An older point has no heightM, so y is that height.
         y: round3((pose.heightM > 0 ? pose.heightM : pose.y) + local.y),
-        z: round3(pose.depth + local.x * sin),
+        z: round3(pose.depth + local.x * sin - out * cos),
       };
     default: {
       const _never: never = pose.mount;

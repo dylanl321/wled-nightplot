@@ -150,7 +150,7 @@ export type ReadShapeOptions = {
   overrides?: readonly ShapeOverride[];
 };
 
-type Vec = { x: number; y: number };
+type Vec = { x: number; y: number; z?: number };
 
 type Segment = {
   edgeId: string;
@@ -185,15 +185,18 @@ export function shapeWeldToleranceM(pitchM: number): number {
 
 export function readPropShape(layout: PropLayout, options: ReadShapeOptions = {}): ShapeProfile {
   const pitch = layout.pitchM > 0 ? layout.pitchM : 0.1;
-  const tol = shapeWeldToleranceM(pitch);
+  // A template's corners are exact, so only a traced drawing needs a loose weld.
+  // A coil round a thin branch has corners closer than a light spacing.
+  const tol = layout.source === "template" ? 1e-3 : shapeWeldToleranceM(pitch);
   const strings = layoutStrings(layout);
 
   // Points: corners welded within the tolerance, plus places where runs cross.
-  const pointRows: { id: string; x: number; y: number; cornerIds: string[] }[] = [];
-  const pointAt = (x: number, y: number, cornerId?: string): string => {
-    let found = pointRows.find((row) => Math.hypot(row.x - x, row.y - y) <= tol + EPS);
+  // Depth (z) keeps the front and back of a coil apart where they cross on the drawing.
+  const pointRows: { id: string; x: number; y: number; z: number; cornerIds: string[] }[] = [];
+  const pointAt = (x: number, y: number, cornerId?: string, z = 0): string => {
+    let found = pointRows.find((row) => Math.hypot(row.x - x, row.y - y) <= tol + EPS && Math.abs(row.z - z) <= tol + EPS);
     if (!found) {
-      found = { id: `p${pointRows.length + 1}`, x, y, cornerIds: [] };
+      found = { id: `p${pointRows.length + 1}`, x, y, z, cornerIds: [] };
       pointRows.push(found);
     }
     if (cornerId && !found.cornerIds.includes(cornerId)) found.cornerIds.push(cornerId);
@@ -207,8 +210,8 @@ export function readPropShape(layout: PropLayout, options: ReadShapeOptions = {}
       const to = cornerById(layout, edge.to);
       if (!from || !to) continue;
       const lengthM = Math.hypot(to.x - from.x, to.y - from.y);
-      pointAt(from.x, from.y, from.id);
-      pointAt(to.x, to.y, to.id);
+      pointAt(from.x, from.y, from.id, from.z ?? 0);
+      pointAt(to.x, to.y, to.id, to.z ?? 0);
       if (lengthM < EPS) continue;
       segments.push({ edgeId: edge.id, kind: edge.kind, a: from, b: to, lengthM, cornerFrom: from.id, cornerTo: to.id });
     }
@@ -225,7 +228,7 @@ export function readPropShape(layout: PropLayout, options: ReadShapeOptions = {}
     const b = pointRows.find((row) => row.id === to)!;
     const existing = links.get(key);
     if (!existing) {
-      links.set(key, { key, from, to, lengthM: Math.hypot(b.x - a.x, b.y - a.y), kind: segment.kind, onBorder: false });
+      links.set(key, { key, from, to, lengthM: Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z), kind: segment.kind, onBorder: false });
     } else if (existing.kind === "wire" && segment.kind !== "wire") {
       existing.kind = segment.kind;
     }
@@ -238,10 +241,13 @@ export function readPropShape(layout: PropLayout, options: ReadShapeOptions = {}
       if (other === segment) continue;
       for (const end of [other.a, other.b]) {
         const t = projectOnto(segment, end);
-        if (t !== null && t > tol && t < segment.lengthM - tol && distanceToSegment(end, segment.a, segment.b) <= tol) cuts.push(t);
+        if (t !== null && t > tol && t < segment.lengthM - tol && distanceToSegment(end, segment.a, segment.b) <= tol &&
+          Math.abs(depthAt(segment, t) - (end.z ?? 0)) <= tol) cuts.push(t);
       }
       const cross = crossingT(segment, other);
-      if (cross !== null && cross > tol && cross < segment.lengthM - tol) cuts.push(cross);
+      const across = cross === null ? null : crossingT(other, segment);
+      if (cross !== null && across !== null && cross > tol && cross < segment.lengthM - tol &&
+        Math.abs(depthAt(segment, cross) - depthAt(other, across)) <= tol) cuts.push(cross);
     }
     cuts.sort((left, right) => left - right);
     const merged: number[] = [];
@@ -251,10 +257,10 @@ export function readPropShape(layout: PropLayout, options: ReadShapeOptions = {}
     }
     if (merged[merged.length - 1] !== segment.lengthM) merged.push(segment.lengthM);
     const ids = merged.map((t, index) => {
-      if (index === 0) return pointAt(segment.a.x, segment.a.y, segment.cornerFrom);
-      if (index === merged.length - 1) return pointAt(segment.b.x, segment.b.y, segment.cornerTo);
+      if (index === 0) return pointAt(segment.a.x, segment.a.y, segment.cornerFrom, segment.a.z ?? 0);
+      if (index === merged.length - 1) return pointAt(segment.b.x, segment.b.y, segment.cornerTo, segment.b.z ?? 0);
       const at = lerp(segment, t);
-      return pointAt(at.x, at.y);
+      return pointAt(at.x, at.y, undefined, depthAt(segment, t));
     });
     for (let index = 0; index < merged.length - 1; index += 1) {
       addPiece(segment, merged[index]!, merged[index + 1]!, ids[index]!, ids[index + 1]!);
@@ -262,7 +268,7 @@ export function readPropShape(layout: PropLayout, options: ReadShapeOptions = {}
   }
   for (const segment of segments) {
     if (segment.kind !== "wire") continue;
-    addPiece(segment, 0, segment.lengthM, pointAt(segment.a.x, segment.a.y, segment.cornerFrom), pointAt(segment.b.x, segment.b.y, segment.cornerTo));
+    addPiece(segment, 0, segment.lengthM, pointAt(segment.a.x, segment.a.y, segment.cornerFrom, segment.a.z ?? 0), pointAt(segment.b.x, segment.b.y, segment.cornerTo, segment.b.z ?? 0));
   }
 
   const pointById = new Map(pointRows.map((row) => [row.id, row]));
@@ -715,6 +721,13 @@ function boundsOf(rows: readonly Vec[]): { minX: number; minY: number; maxX: num
     maxY = Math.max(maxY, row.y);
   }
   return { minX, minY, maxX, maxY };
+}
+
+/** Depth toward the street at `t` metres along the drawn segment. 0 on a flat drawing. */
+function depthAt(segment: Segment, t: number): number {
+  const a = segment.a.z ?? 0;
+  const b = segment.b.z ?? 0;
+  return segment.lengthM > 0 ? a + (b - a) * (t / segment.lengthM) : a;
 }
 
 function lerp(segment: Segment, t: number): Vec {

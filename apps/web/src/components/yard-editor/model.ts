@@ -31,8 +31,6 @@ import {
   layoutStrings,
   METRES_PER_FOOT,
   movePoseJoint,
-  movePoseMeet,
-  movePoseTurn,
   poseSummary,
   reconcileSections,
   scalePoseHeight,
@@ -105,8 +103,8 @@ const DEFAULT_SIZES: Record<Exclude<ShapeId, "draw">, Record<LayoutUnits, Partia
   // A 6 ft tree about 3 ft wide at the bottom, to a point. Wraps 6 in apart.
   spiralTree: { m: { height: 1.8, around: 2.8, aroundTop: 0, gap: 0.15 }, ft: { height: 6, around: 9.5, aroundTop: 0, gap: 0.5 } },
   zigzag: { m: { width: 1.2, height: 1, passes: 8 }, ft: { width: 4, height: 3, passes: 8 } },
-  // One trunk to mid-height, then two tips a short walk apart.
-  splitTree: { m: { height: 2.4, split: 1.2, spacing: 1.2, trunks: 2 }, ft: { height: 8, split: 4, spacing: 4, trunks: 2 } },
+  // One trunk to mid-height, then two tips a short walk apart. A foot round the trunk, wrapped every 6 in.
+  splitTree: { m: { height: 2.4, split: 1.2, spacing: 1.2, trunks: 2, around: 0.3, gap: 0.15 }, ft: { height: 8, split: 4, spacing: 4, trunks: 2, around: 1, gap: 0.5 } },
 };
 
 /**
@@ -137,6 +135,8 @@ export const SIZE_FIELDS: Record<Exclude<ShapeId, "draw">, { key: SizeKey; label
     { key: "height", label: "Height" },
     { key: "split", label: "Split height" },
     { key: "spacing", label: "Tip spacing" },
+    { key: "around", label: "Around the trunk", small: true },
+    { key: "gap", label: "Wrap every", small: true },
   ],
 };
 
@@ -256,6 +256,8 @@ function templateParams(shape: Exclude<ShapeId, "draw">, sizes: Partial<Record<S
         split: sizes.split ?? 0,
         spacing: sizes.spacing ?? 0,
         trunks: Math.round(sizes.trunks ?? 0),
+        ...(sizes.around ? { around: sizes.around } : {}),
+        ...(sizes.gap ? { gap: sizes.gap } : {}),
       };
   }
 }
@@ -291,6 +293,8 @@ export function measurementsOf(draft: Draft): PropMeasurements {
         spacing: s.spacing ?? 0,
         trunks: Math.round(s.trunks ?? 0),
         levels: draft.split?.levels === 2 ? 2 : 1,
+        ...(s.around ? { around: s.around } : {}),
+        ...(s.gap ? { gap: s.gap } : {}),
         ...(draft.split?.trunkTo.length ? { trunkTo: draft.split.trunkTo } : {}),
         ...(draft.split?.strings.length ? { strings: draft.split.strings } : {}),
         ...(draft.split?.pose ? { pose: draft.split.pose } : {}),
@@ -431,7 +435,8 @@ export function setSize(draft: Draft, key: SizeKey, value: number): Draft {
   if (draft.shape === "splitTree") {
     const next = key === "trunks" ? Math.round(value) : value;
     if (key === "trunks" && (next < SPLIT_TREE_TRUNKS_MIN || next > SPLIT_TREE_TRUNKS_MAX)) return draft;
-    if (draft.split?.pose) return resizePosedSplit(draft, key, next);
+    // Thickness and wrap gap change the coil, not the joints.
+    if (draft.split?.pose && key !== "around" && key !== "gap") return resizePosedSplit(draft, key, next);
     return refreshSplit({ ...draft, sizes: { ...draft.sizes, [key]: next } });
   }
   const sizes = { ...draft.sizes, [key]: value };
@@ -463,6 +468,8 @@ function refreshSplit(draft: Draft): Draft {
     spacing: sizes.spacing ?? 0,
     trunks: Math.round(sizes.trunks ?? 0),
     levels: split.levels,
+    ...(sizes.around ? { around: sizes.around } : {}),
+    ...(sizes.gap ? { gap: sizes.gap } : {}),
     trunkTo: split.trunkTo,
     strings: split.strings,
     ...(split.pose ? { pose: split.pose } : {}),
@@ -514,11 +521,7 @@ export function setTrunkOut(draft: Draft, trunkId: string, x: number): Draft {
 
 function scalePose(pose: SplitPose, factor: number): SplitPose {
   const scale = (value: number) => roundSize(value * factor, "m");
-  return {
-    nodes: pose.nodes.map((node) => ({ ...node, x: scale(node.x), y: scale(node.y) })),
-    meets: pose.meets.map((meet) => ({ ...meet, x: scale(meet.x), y: scale(meet.y) })),
-    turns: pose.turns.map((turn) => ({ ...turn, x: scale(turn.x), y: scale(turn.y) })),
-  };
+  return { nodes: pose.nodes.map((node) => ({ ...node, x: scale(node.x), y: scale(node.y) })) };
 }
 
 /** The numbers the split-tree drawing is built from, including a placed skeleton. */
@@ -532,6 +535,8 @@ export function splitSpecOf(draft: Draft): SplitTreeSpec | null {
     spacing: draft.sizes.spacing ?? 0,
     trunks: Math.round(draft.sizes.trunks ?? 0),
     levels: split.levels,
+    ...(draft.sizes.around ? { around: draft.sizes.around } : {}),
+    ...(draft.sizes.gap ? { gap: draft.sizes.gap } : {}),
     trunkTo: split.trunkTo,
     strings: split.strings,
     ...(split.pose ? { pose: split.pose } : {}),
@@ -603,26 +608,6 @@ export function moveSplitJoint(draft: Draft, id: string, x: number, y: number, s
   const pose = ready.split?.pose;
   if (!pose) return draft;
   const moved = movePoseJoint(pose, id, x, y, subtree);
-  if (!moved) return draft;
-  return applySplitPose(ready, moved);
-}
-
-/** Put the wrap junction on an absolute point, in prop units. */
-export function moveSplitMeet(draft: Draft, forkId: string, x: number, y: number): Draft {
-  const ready = ensureSplitPose(draft);
-  const pose = ready.split?.pose;
-  if (!pose) return draft;
-  const moved = movePoseMeet(pose, forkId, x, y);
-  if (!moved) return draft;
-  return applySplitPose(ready, moved);
-}
-
-/** Put the back-path knee on an absolute point, in prop units. */
-export function moveSplitTurn(draft: Draft, stringId: string, fromId: string, toId: string, x: number, y: number): Draft {
-  const ready = ensureSplitPose(draft);
-  const pose = ready.split?.pose;
-  if (!pose) return draft;
-  const moved = movePoseTurn(pose, stringId, fromId, toId, x, y);
   if (!moved) return draft;
   return applySplitPose(ready, moved);
 }

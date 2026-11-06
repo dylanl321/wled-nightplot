@@ -31,6 +31,13 @@ export type LayoutCorner = {
   /** Metres. */
   x: number;
   y: number;
+  /**
+   * Metres toward the street from the drawing, for a point that wraps round
+   * to the front or back of something (a coil up a trunk). Absent is 0: the
+   * drawing plane. The editor draws front-on and ignores it; the street view
+   * and the shape reader use it.
+   */
+  z?: number;
   physicalId?: string;
 };
 
@@ -186,7 +193,8 @@ function isCorner(value: unknown): value is LayoutCorner {
   const row = value as Partial<LayoutCorner>;
   return typeof row.id === "string" && row.id.length > 0 &&
     typeof row.x === "number" && Number.isFinite(row.x) &&
-    typeof row.y === "number" && Number.isFinite(row.y);
+    typeof row.y === "number" && Number.isFinite(row.y) &&
+    (row.z === undefined || (typeof row.z === "number" && Number.isFinite(row.z)));
 }
 
 function isEdge(value: unknown, ids: Set<string>): value is LayoutEdge {
@@ -1422,6 +1430,8 @@ export function layoutFromMeasurements(input: {
         spacing: params.spacing ?? 0,
         trunks: params.trunks ?? 0,
         levels: params.levels === 2 ? 2 : 1,
+        ...(params.around ? { around: params.around } : {}),
+        ...(params.gap ? { gap: params.gap } : {}),
       });
       break;
     default: {

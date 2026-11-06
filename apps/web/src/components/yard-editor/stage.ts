@@ -25,8 +25,10 @@ export type DrawEdge = {
   lengthM?: number;
   /** A half-turn of a wrap climbing a trunk. Drawn lightly so the trunk stays visible. */
   coil?: boolean;
-  /** The string coming back down the far side of a trunk. */
+  /** The string coming back down the back of a trunk. */
   back?: boolean;
+  /** Behind the thing it wraps (negative depth). Drawn fainter, lights too. */
+  far?: boolean;
   /**
    * Runs that lie on the same line (up a roof edge and back down it) are
    * drawn side by side so each one can be seen and picked. `lane` is how
@@ -492,11 +494,10 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
         ctx.globalAlpha = alpha * 0.85;
         ctx.lineWidth = isSel ? 4 : 2.4;
       }
+      if (e.far) ctx.globalAlpha = alpha * (e.back ? 0.5 : 0.3);
       if (e.back) {
-        ctx.strokeStyle = "#f4f0e6";
-        ctx.globalAlpha = alpha;
-        ctx.lineWidth = isSel ? 7 : 4.5;
-        ctx.setLineDash([12, 8]);
+        ctx.lineWidth = isSel ? 5 : 2.4;
+        ctx.setLineDash([6, 5]);
       }
       if (e.wire) { ctx.setLineDash([3, 4]); ctx.lineWidth = 1.5; }
       if (isSel) { ctx.strokeStyle = c.pick; ctx.globalAlpha = alpha; }
@@ -508,7 +509,7 @@ function drawProp(ctx: CanvasRenderingContext2D, view: View, scene: Scene, c: Co
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke(); ctx.setLineDash([]);
     }
     const n = e.lights;
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = e.far && !isSel ? alpha * 0.4 : alpha;
     const segLen = Math.max(1, Math.hypot(bx - ax, by - ay));
     if (n > 0) {
       const rpx = Math.max(1.2, Math.min(scoped ? 4 : 3, ppm * 0.025));

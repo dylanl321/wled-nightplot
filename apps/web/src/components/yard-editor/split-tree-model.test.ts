@@ -6,7 +6,6 @@ import {
   forkSplitBranch,
   measurementsOf,
   moveSplitJoint,
-  moveSplitMeet,
   newDraft,
   setSize,
   startFrom,
@@ -16,7 +15,7 @@ import {
 describe("split tree draft", () => {
   it("starts from a Y and keeps string assignments when the spacing changes", () => {
     let draft = startFrom(newDraft("Split tree 1"), "splitTree", "m", 0.1);
-    expect(measurementsOf(draft)).toMatchObject({ shape: "split-tree", height: 2.4, split: 1.2, spacing: 1.2, trunks: 2, levels: 1 });
+    expect(measurementsOf(draft)).toMatchObject({ shape: "split-tree", height: 2.4, split: 1.2, spacing: 1.2, trunks: 2, levels: 1, around: 0.3, gap: 0.15 });
     const lit = layoutStrings(draft.layout!).flatMap((row) => row.run).filter((edge) => edge.kind === "lit");
     expect(lit.length).toBeGreaterThan(3);
     expect([...new Set(lit.map((edge) => trunkIdFromEdge(edge.id)))].sort()).toEqual(["t0", "t0.0", "t0.1"]);
@@ -46,7 +45,7 @@ describe("split tree draft", () => {
     expect(again.split?.strings).toHaveLength(2);
   });
 
-  it("drags the crotch, aims one tip, places the wrap meet, and forks that tip", () => {
+  it("drags the crotch, aims one tip, sets the wrap, and forks that tip", () => {
     let draft = startFrom(newDraft("Split tree 1"), "splitTree", "ft", 0.1);
     draft = moveSplitJoint(draft, "t0", 1, 3, false);
     expect(draft.sizes.split).toBeCloseTo(3);
@@ -61,9 +60,13 @@ describe("split tree draft", () => {
     expect(draft.split!.pose!.nodes.find((node) => node.id === "t0")!.y).toBeCloseTo(3.5);
     const left = draft.split!.pose!.nodes.find((node) => node.id === "t0.0")!;
     expect(left.x).toBeCloseTo(-5);
-    draft = moveSplitMeet(draft, "t0", left.x, 3.5);
-    expect(draft.split!.pose!.meets.find((meet) => meet.forkId === "t0")).toBeTruthy();
-    expect(draft.layout!.corners.find((corner) => corner.id === "c-meet-t0")).toBeTruthy();
+    // Thickness and wrap gap redraw the coil and leave the joints where they were dragged.
+    const lights = countLayout(draft.layout!).total;
+    draft = setSize(draft, "gap", 0.25);
+    draft = setSize(draft, "around", 1.5);
+    expect(draft.split!.pose!.nodes.find((node) => node.id === "t0.0")!.x).toBeCloseTo(-5);
+    expect(countLayout(draft.layout!).total).toBeGreaterThan(lights * 2);
+    expect(measurementsOf(draft)).toMatchObject({ around: 1.5, gap: 0.25 });
     draft = forkSplitBranch(draft, "t0.1");
     expect(draft.split!.pose!.nodes.some((node) => node.id === "t0.1.0")).toBe(true);
     expect(draft.split!.pose!.nodes.some((node) => node.id === "t0.0.0")).toBe(false);

@@ -8,6 +8,7 @@ import {
   parseLength,
   splitTreeCoverage,
   splitTrunkLabel,
+  splitWrapDefaults,
   type LedProduct,
   type SplitTreeString,
   type SplitTrunk,
@@ -21,13 +22,12 @@ import {
   addSplitString,
   continueSplitString,
   forkSplitBranch,
-  moveSplitMeet,
-  moveSplitTurn,
   removeSplitString,
   setSize,
   resetToTemplate,
   setTrunkEnd,
   setTrunkOut,
+  splitSpecOf,
   updateSplitString,
   type Draft,
 } from "./model";
@@ -54,18 +54,10 @@ export function SplitTreePanel({ draft, selection, onChange, onSelect }: {
   const layout = draft.layout;
   const split = draft.split;
   if (!layout || !split) return null;
-  const planned = splitTreeCoverage({
-    units: layout.units,
-    height: draft.sizes.height ?? 0,
-    split: draft.sizes.split ?? 0,
-    spacing: draft.sizes.spacing ?? 0,
-    trunks: Math.round(draft.sizes.trunks ?? 0),
-    levels: split.levels,
-    trunkTo: split.trunkTo,
-    strings: split.strings,
-    ...(split.pose ? { pose: split.pose } : {}),
-  });
+  const spec = splitSpecOf(draft);
+  const planned = spec ? splitTreeCoverage(spec) : null;
   if (!planned) return null;
+  const wrap = splitWrapDefaults(layout.units);
   const unit = layout.units;
   const selectedTrunk = trunkOfSelection(selection);
   const selected = planned.trunks.find((trunk) => trunk.id === selectedTrunk);
@@ -74,7 +66,7 @@ export function SplitTreePanel({ draft, selection, onChange, onSelect }: {
   return (
     <div className="split-tree">
       <p className="note">
-        Drag a circle to move where the trunks meet. Drag a diamond to aim that tip, or drag the trunk to carry what grows from it. The ring is where the wraps meet — pull it off the wood. + forks that tip.
+        Drag a circle to move where the trunks meet. Drag a diamond to aim that tip, or drag a branch to carry what grows from it. + forks that tip. The lights wrap round each trunk; the ones on the back are drawn fainter.
       </p>
       <div className="grid2 split-sizes">
         <LengthField
@@ -98,7 +90,22 @@ export function SplitTreePanel({ draft, selection, onChange, onSelect }: {
           value={draft.sizes.spacing ?? 0}
           onCommit={(value) => { if (value > 0) onChange(setSize(draft, "spacing", value)); }}
         />
+        <SmallField
+          id="ye-size-around"
+          label="Around the trunk"
+          units={unit}
+          value={draft.sizes.around ?? wrap.around}
+          onCommit={(value) => onChange(setSize(draft, "around", value))}
+        />
+        <SmallField
+          id="ye-size-gap"
+          label="Wrap every"
+          units={unit}
+          value={draft.sizes.gap ?? wrap.gap}
+          onCommit={(value) => onChange(setSize(draft, "gap", value))}
+        />
       </div>
+      <p className="note">Around is a tape round the trunk at the ground. Branches are thinner than the trunk they grow from.</p>
       {draft.split?.pose ? (
         <button type="button" className="btn link" onClick={() => onChange(resetToTemplate(draft))}>Even tips again</button>
       ) : null}
@@ -149,20 +156,12 @@ function TrunkCard({ trunk, trunks, draft, products, unit, cover, hops, selected
   const label = splitTrunkLabel(trunk, trunks);
   const strings = (draft.split?.strings ?? []).filter((string) => string.trunkIds.includes(trunk.id));
   const open = cover && cover.openM > 0.02 ? ` · ${formatLength(cover.openM, unit)} still open` : "";
-  const fork = trunks.some((row) => row.parentId === trunk.id);
-  const per = unit === "ft" ? METRES_PER_FOOT : 1;
-  const layout = draft.layout;
-  const forkCorner = layout?.corners.find((corner) => corner.id === `c-${trunk.id}`);
-  const meetCorner = layout?.corners.find((corner) => corner.id === `c-meet-${trunk.id}`);
-  const meetOut = forkCorner && meetCorner ? (meetCorner.x - forkCorner.x) / per : 0;
-  const meetUp = forkCorner && meetCorner ? (meetCorner.y - forkCorner.y) / per : 0;
-  const leaving = hops.find((hop) => hop.back && hop.fromId === trunk.id);
-  const knee = leaving ? layout?.corners.find((corner) => corner.id === `c-${trunk.id}-down`) : undefined;
+  const around = trunk.radius0 * 2 * Math.PI;
   return (
     <div className={selected ? "trunk on" : "trunk"} data-trunk={trunk.id}>
       <div className="hrow">
         <button type="button" className="btn link" onClick={() => onSelect(`joint:${trunk.id}`)}>{label}</button>
-        <span className="meta">{formatLength(cover?.lengthM ?? trunk.lengthM, unit)} of wrap{open}</span>
+        <span className="meta">{formatSmall(around, unit)} around · {formatLength(cover?.lengthM ?? trunk.lengthM, unit)} of wrap{open}</span>
       </div>
       <div className="grid2">
         <LengthField
@@ -181,49 +180,6 @@ function TrunkCard({ trunk, trunks, draft, products, unit, cover, hops, selected
           onCommit={(value) => onChange(setTrunkOut(draft, trunk.id, value))}
         />
       </div>
-      {fork && forkCorner ? (
-        <div className="grid2">
-          <LengthField
-            id={`ye-meet-${trunk.id}-up`}
-            label={`Wraps meet, up (${unit === "ft" ? "ft" : "m"})`}
-            units={unit}
-            value={meetUp}
-            signed
-            onCommit={(value) => onChange(moveSplitMeet(draft, trunk.id, trunk.x1 + meetOut, trunk.to + value))}
-          />
-          <LengthField
-            id={`ye-meet-${trunk.id}-out`}
-            label={`Wraps meet, out (${unit === "ft" ? "ft" : "m"})`}
-            units={unit}
-            value={meetOut}
-            signed
-            onCommit={(value) => onChange(moveSplitMeet(draft, trunk.id, trunk.x1 + value, trunk.to + meetUp))}
-          />
-        </div>
-      ) : null}
-      {leaving && knee ? (
-        <div className="grid2">
-          <LengthField
-            id={`ye-turn-${leaving.stringId}-height`}
-            label={`Back path turns, height (${unit === "ft" ? "ft" : "m"})`}
-            units={unit}
-            value={knee.y / per}
-            onCommit={(value) => {
-              if (leaving.toId) onChange(moveSplitTurn(draft, leaving.stringId, leaving.fromId, leaving.toId, knee.x / per, value));
-            }}
-          />
-          <LengthField
-            id={`ye-turn-${leaving.stringId}-out`}
-            label={`Back path turns, out (${unit === "ft" ? "ft" : "m"})`}
-            units={unit}
-            value={knee.x / per}
-            signed
-            onCommit={(value) => {
-              if (leaving.toId) onChange(moveSplitTurn(draft, leaving.stringId, leaving.fromId, leaving.toId, value, knee.y / per));
-            }}
-          />
-        </div>
-      ) : null}
       {strings.map((string) => (
         <StringRow
           key={string.id}
@@ -360,7 +316,7 @@ function formatCm(pitchMm: number): string {
 }
 
 function hopSentenceFor(hop: { dark: boolean; back: boolean }, label: string, leaving: boolean): string {
-  if (hop.back) return leaving ? ` Wraps back down the far side, then up ${label}.` : ` Comes back down the far side from ${label}.`;
+  if (hop.back) return leaving ? ` Runs back down the back of this branch, then wraps up ${label}.` : ` Comes back down the back of ${label} first.`;
   if (hop.dark) return leaving ? ` Dark jump to ${label}. These trunks do not meet.` : ` Dark jump from ${label}.`;
   return leaving ? ` The wrap continues up ${label}.` : "";
 }
@@ -390,6 +346,35 @@ function LengthField({ id, label, units, value, signed, onCommit }: {
   );
 }
 
+/** Inches or centimetres, the way a tape round a trunk reads. `value` is in the prop's unit. */
+function SmallField({ id, label, units, value, onCommit }: {
+  id: string;
+  label: string;
+  units: "ft" | "m";
+  value: number;
+  onCommit: (value: number) => void;
+}) {
+  const k = units === "ft" ? 12 : 100;
+  return (
+    <label className="f">{label} ({units === "ft" ? "in" : "cm"})
+      <CommitField
+        id={id}
+        inputMode="decimal"
+        value={String(+(value * k).toFixed(1))}
+        onCommit={(text) => {
+          const next = Number.parseFloat(text);
+          if (Number.isFinite(next) && next > 0) onCommit(next / k);
+        }}
+      />
+    </label>
+  );
+}
+
+/** Metres as inches or centimetres. */
+function formatSmall(metres: number, units: "ft" | "m"): string {
+  return units === "ft" ? `${+(metres / METRES_PER_FOOT * 12).toFixed(1)} in` : `${+(metres * 100).toFixed(1)} cm`;
+}
+
 function formatProp(value: number, units: "ft" | "m"): string {
   if (!Number.isFinite(value)) return "";
   if (units === "m") return value.toFixed(2);
@@ -416,7 +401,6 @@ function parseProp(text: string, units: "ft" | "m"): number | null {
 function trunkOfSelection(selection: string | null): string | null {
   if (!selection) return null;
   const parts = selection.split(":");
-  if (parts[0] === "turn") return parts[2] ?? null;
   const id = parts[1];
   if (!id || id === "base") return "t0";
   return id;

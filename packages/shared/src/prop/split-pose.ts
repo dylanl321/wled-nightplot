@@ -1,8 +1,6 @@
 /**
  * The split tree as joints you can move. Coordinates are prop units:
- * x across the ground joint, y up from the ground. A meet is an offset
- * from its fork, so the wraps can join somewhere other than the wood.
- * A turn is an offset from the fork a string is leaving.
+ * x across from the ground joint, y up from the ground.
  */
 
 import type { SplitPose, SplitPoseNode } from "./types.ts";
@@ -14,12 +12,9 @@ function round(value: number): number {
   return Math.round(value * 1e6) / 1e6;
 }
 
+/** A copy with only the joints. Older saves also carried wrap meets and back-path knees; those are dropped here. */
 function copy(pose: SplitPose): SplitPose {
-  return {
-    nodes: pose.nodes.map((node) => ({ ...node })),
-    meets: pose.meets.map((meet) => ({ ...meet })),
-    turns: pose.turns.map((turn) => ({ ...turn })),
-  };
+  return { nodes: pose.nodes.map((node) => ({ ...node })) };
 }
 
 export function poseTips(nodes: readonly SplitPoseNode[]): SplitPoseNode[] {
@@ -113,46 +108,6 @@ export function movePoseJoint(pose: SplitPose, id: string, x: number, y: number,
   return separated(next.nodes) ? next : null;
 }
 
-/** Put the wrap junction at an absolute point. Stored as an offset from the fork. */
-export function movePoseMeet(pose: SplitPose, forkId: string, x: number, y: number): SplitPose | null {
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  const fork = pose.nodes.find((node) => node.id === forkId);
-  if (!fork || !pose.nodes.some((node) => node.parentId === forkId)) return null;
-  let ox = x - fork.x;
-  let oy = y - fork.y;
-  const reach = Math.hypot(ox, oy);
-  const cap = 6;
-  if (reach > cap) {
-    ox *= cap / reach;
-    oy *= cap / reach;
-  }
-  const next = copy(pose);
-  next.meets = next.meets.filter((meet) => meet.forkId !== forkId);
-  next.meets.push({ forkId, x: round(ox), y: round(oy) });
-  return next;
-}
-
-/** Put the back-path knee at an absolute point. Stored as an offset from the fork it leaves. */
-export function movePoseTurn(pose: SplitPose, stringId: string, fromId: string, toId: string, x: number, y: number): SplitPose | null {
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  const from = pose.nodes.find((node) => node.id === fromId);
-  if (!from?.parentId) return null;
-  const fork = pose.nodes.find((node) => node.id === from.parentId);
-  if (!fork) return null;
-  let ox = x - fork.x;
-  let oy = y - fork.y;
-  const reach = Math.hypot(ox, oy);
-  const cap = 8;
-  if (reach > cap) {
-    ox *= cap / reach;
-    oy *= cap / reach;
-  }
-  const next = copy(pose);
-  next.turns = next.turns.filter((turn) => !(turn.stringId === stringId && turn.fromId === fromId && turn.toId === toId));
-  next.turns.push({ stringId, fromId, toId, x: round(ox), y: round(oy) });
-  return next;
-}
-
 function childLength(parent: SplitPoseNode, node: SplitPoseNode): { ux: number; uy: number; px: number; py: number; len: number } {
   const dx = node.x - parent.x;
   const dy = node.y - parent.y;
@@ -225,10 +180,6 @@ export function scalePoseHeight(pose: SplitPose, height: number): SplitPose | nu
   const factor = height / summary.height;
   const next = copy(pose);
   for (const node of next.nodes) if (node.id !== "base") node.y = round(node.y * factor);
-  for (const meet of next.meets) {
-    meet.x = round(meet.x * factor);
-    meet.y = round(meet.y * factor);
-  }
   return separated(next.nodes) ? next : null;
 }
 
@@ -239,8 +190,6 @@ export function scalePoseSpacing(pose: SplitPose, spacing: number): SplitPose | 
   const factor = spacing / summary.spacing;
   const next = copy(pose);
   for (const node of next.nodes) node.x = round(node.x * factor);
-  for (const meet of next.meets) meet.x = round(meet.x * factor);
-  for (const turn of next.turns) turn.x = round(turn.x * factor);
   return separated(next.nodes) ? next : null;
 }
 
