@@ -111,6 +111,7 @@ export function compilePropDesign(input: {
         levels: input.measurements.levels,
         trunkTo: input.measurements.trunkTo,
         strings: input.measurements.strings,
+        pose: input.measurements.pose,
       })
     : layoutFromMeasurements({
         units: input.unit,

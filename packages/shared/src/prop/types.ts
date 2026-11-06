@@ -94,6 +94,13 @@ export type PropMeasurements =
       trunkTo?: SplitTreeTrunkEnd[];
       /** Strings on the trunks. Absent until one is assigned. */
       strings?: SplitTreeString[];
+      /**
+       * The tree as placed by hand. Joints are where trunks meet and where
+       * tips end. Meets are where the wraps join, off the wood. Turns are
+       * where a string leaves one branch for the next. Absent on a tree that
+       * is still the even starting shape.
+       */
+      pose?: SplitPose;
     }
   | { shape: "custom" }
   | { shape: "legacy" };
@@ -119,7 +126,47 @@ export type SplitTreeString = {
 };
 
 export const SPLIT_TREE_TRUNKS_MIN = 2;
-export const SPLIT_TREE_TRUNKS_MAX = 8;
+export const SPLIT_TREE_TRUNKS_MAX = 16;
+
+/** One joint of a split tree, in the prop's unit. `base` is on the ground. */
+export type SplitPoseNode = {
+  id: string;
+  /** `base` for the ground joint, or the trunk whose end this is. */
+  parentId: string | null;
+  /** Across from the ground joint. Negative is to the left. */
+  x: number;
+  /** Up from the ground. */
+  y: number;
+};
+
+/**
+ * Where the wraps meet at a fork, as an offset from that fork.
+ * (0, 0) would sit on the wood. A placed meet keeps the coils from piling up there.
+ */
+export type SplitPoseMeet = {
+  forkId: string;
+  x: number;
+  y: number;
+};
+
+/**
+ * Where a string turns off one trunk toward the next, as an offset from the
+ * fork it is leaving. The back path runs to this point, then onto the next branch.
+ */
+export type SplitPoseTurn = {
+  stringId: string;
+  fromId: string;
+  toId: string;
+  x: number;
+  y: number;
+};
+
+/** A split tree someone has moved, forked, or whose wrap junctions they have placed. */
+export type SplitPose = {
+  nodes: SplitPoseNode[];
+  meets: SplitPoseMeet[];
+  turns: SplitPoseTurn[];
+};
 
 export type PropEdge = {
   id: string;
@@ -342,6 +389,8 @@ function isSplitTreeMeasurements(row: { shape?: unknown }): boolean {
     const ids = strings.map((item) => (item as SplitTreeString).id);
     if (new Set(ids).size !== ids.length) return false;
   }
+  const pose = (row as { pose?: unknown }).pose;
+  if (pose !== undefined && !isSplitPose(pose)) return false;
   return true;
 }
 
@@ -360,6 +409,57 @@ function isSplitTreeString(value: unknown): value is SplitTreeString {
   if (row.ledCount !== null && (!Number.isInteger(row.ledCount) || (row.ledCount ?? -1) < 0 || (row.ledCount ?? 0) > 100_000)) return false;
   if (!Array.isArray(row.trunkIds) || row.trunkIds.length < 1 || row.trunkIds.length > 16) return false;
   return row.trunkIds.every((id) => typeof id === "string" && id.length > 0 && id.length <= 32);
+}
+
+const SPLIT_NODE_ID = /^(?:base|t0(?:\.\d+){0,6})$/;
+
+function isSplitCoord(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && Math.abs(value) < 10000;
+}
+
+function isSplitPose(value: unknown): value is SplitPose {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Partial<SplitPose>;
+  if (!Array.isArray(row.nodes) || row.nodes.length < 3 || row.nodes.length > 48) return false;
+  if (!row.nodes.every(isSplitPoseNode)) return false;
+  const ids = row.nodes.map((node) => node.id);
+  if (new Set(ids).size !== ids.length) return false;
+  const have = new Set(ids);
+  const base = row.nodes.find((node) => node.id === "base");
+  const root = row.nodes.find((node) => node.id === "t0");
+  if (!base || base.parentId !== null || !root || root.parentId !== "base") return false;
+  for (const node of row.nodes) {
+    if (node.id === "base") continue;
+    if (!node.parentId || !have.has(node.parentId)) return false;
+  }
+  const tips = row.nodes.filter((node) => node.id !== "base" && !row.nodes!.some((other) => other.parentId === node.id));
+  if (tips.length < SPLIT_TREE_TRUNKS_MIN || tips.length > SPLIT_TREE_TRUNKS_MAX) return false;
+  if (!Array.isArray(row.meets) || row.meets.length > 24 || !row.meets.every((meet) => isSplitPoseMeet(meet, have))) return false;
+  if (!Array.isArray(row.turns) || row.turns.length > 24 || !row.turns.every((turn) => isSplitPoseTurn(turn, have))) return false;
+  return true;
+}
+
+function isSplitPoseNode(value: unknown): value is SplitPoseNode {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Partial<SplitPoseNode>;
+  if (typeof row.id !== "string" || !SPLIT_NODE_ID.test(row.id)) return false;
+  if (row.parentId !== null && (typeof row.parentId !== "string" || !SPLIT_NODE_ID.test(row.parentId))) return false;
+  return isSplitCoord(row.x) && isSplitCoord(row.y);
+}
+
+function isSplitPoseMeet(value: unknown, ids: Set<string>): value is SplitPoseMeet {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Partial<SplitPoseMeet>;
+  return typeof row.forkId === "string" && ids.has(row.forkId) && isSplitCoord(row.x) && isSplitCoord(row.y);
+}
+
+function isSplitPoseTurn(value: unknown, ids: Set<string>): value is SplitPoseTurn {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Partial<SplitPoseTurn>;
+  return typeof row.stringId === "string" && row.stringId.length > 0 && row.stringId.length <= 32 &&
+    typeof row.fromId === "string" && ids.has(row.fromId) &&
+    typeof row.toId === "string" && ids.has(row.toId) &&
+    isSplitCoord(row.x) && isSplitCoord(row.y);
 }
 
 function isPropMeasurements(value: unknown): value is PropMeasurements {
