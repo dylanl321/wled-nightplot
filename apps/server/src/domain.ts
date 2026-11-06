@@ -4,6 +4,7 @@ import {
   buildRangeDisplay,
   displayHost,
   knownStripKind,
+  normalizeLastLedmap,
   ledProductSpacing,
   normalizeHostKey,
   resolveLightName,
@@ -59,7 +60,7 @@ export function lightFromSnapshot(
     lastSnapshotAt: existing?.lastSnapshotAt ?? null,
     lastApply: existing?.lastApply ?? null,
     lastLookPush: existing?.lastLookPush ?? null,
-    lastLedmap: existing?.lastLedmap ?? null,
+    lastLedmap: normalizeLastLedmap(existing?.lastLedmap),
   };
 }
 

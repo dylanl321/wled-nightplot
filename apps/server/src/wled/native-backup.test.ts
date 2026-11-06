@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { createWledConfigExportReader, createWledNativeFilesReader, createWledNativeFilesWriter } from "./native-backup.ts";
+import {
+  createWledConfigExportReader,
+  createWledLedmapReader,
+  createWledLedmapWriter,
+  createWledNativeFilesReader,
+  createWledNativeFilesWriter,
+  ledmapFileName,
+} from "./native-backup.ts";
 
 describe("WLED native backup", () => {
   it("reads one fresh cfg.json without touching presets or sending a write", async () => {
@@ -46,5 +53,41 @@ describe("WLED native backup", () => {
       { url: "http://192.168.1.20:8080/upload", filename: "presets.json" },
       { url: "http://192.168.1.20:8080/upload", filename: "cfg.json" },
     ]);
+  });
+
+  it("names a light map file by its number, 0 to 9, and refuses any other number", () => {
+    expect(ledmapFileName()).toBe("ledmap.json");
+    expect(ledmapFileName(0)).toBe("ledmap.json");
+    expect(ledmapFileName(1)).toBe("ledmap1.json");
+    expect(ledmapFileName(9)).toBe("ledmap9.json");
+    for (const bad of [-1, 10, 1.5, Number.NaN]) expect(() => ledmapFileName(bad)).toThrow(/maps 0 to 9/);
+  });
+
+  it("reads and uploads each light map under its own file name", async () => {
+    const urls: string[] = [];
+    const names: string[] = [];
+    const fetchFn = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        names.push(((init.body as FormData).get("data") as File).name);
+        return new Response("File Uploaded!");
+      }
+      urls.push(url);
+      return url.endsWith("ledmap2.json") ? new Response("nope", { status: 404 }) : new Response('{"map":[0]}');
+    });
+    const target = { hostname: "192.168.1.20", port: 8080 };
+    const write = createWledLedmapWriter(fetchFn as unknown as typeof fetch);
+    await write(target, '{"map":[0]}');
+    await write(target, '{"map":[0]}', 3);
+    expect(names).toEqual(["ledmap.json", "ledmap3.json"]);
+    const read = createWledLedmapReader(fetchFn as unknown as typeof fetch);
+    expect(await read(target)).toBe('{"map":[0]}');
+    expect(await read(target, 1)).toBe('{"map":[0]}');
+    expect(await read(target, 2)).toBeNull();
+    expect(urls).toEqual([
+      "http://192.168.1.20:8080/ledmap.json",
+      "http://192.168.1.20:8080/ledmap1.json",
+      "http://192.168.1.20:8080/ledmap2.json",
+    ]);
+    await expect(write(target, "{}", 10)).rejects.toThrow(/maps 0 to 9/);
   });
 });

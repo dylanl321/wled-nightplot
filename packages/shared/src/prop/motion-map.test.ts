@@ -289,3 +289,87 @@ describe("motion map: maps across Looks", () => {
     expect(other.maps[1]!.digest).not.toBe(first.maps[1]!.digest);
   });
 });
+
+describe("motion map: input the builder refuses or notes", () => {
+  it("refuses a prop that does not start at a whole light", () => {
+    const bush = prop("bush", zigzag());
+    for (const start of [-1, 2.5, Number.NaN]) {
+      const result = buildMotionMaps({ props: [placed(bush, start)], looks: [] });
+      expect(result.ok).toBe(false);
+      expect(result.maps).toEqual([]);
+      if (!result.ok) expect(result.message).toMatch(/does not start at a whole light/);
+    }
+  });
+
+  it("uses the first of two Looks with the same id and says so", () => {
+    const result = ok(buildMotionMaps({
+      props: [placed(prop("bush", zigzag()), 0)],
+      looks: [look("same", "bush", "up"), look("same", "bush", "outward")],
+    }));
+    expect(result.looks).toHaveLength(1);
+    expect(result.looks[0]!.slot).toBe(1);
+    expect(result.maps).toHaveLength(2);
+    expect(result.notes.join(" ")).toMatch(/Look same appears twice/);
+  });
+
+  it("keeps lights past the last prop where they are when the Light is longer", () => {
+    const bush = prop("bush", zigzag());
+    const count = readPropShape(bush.layout!).lights.length;
+    const result = ok(buildMotionMaps({ props: [placed(bush, 0)], looks: [look("up", "bush", "up")], ledCount: count + 20 }));
+    expect(result.ledCount).toBe(count + 20);
+    for (const row of result.maps) {
+      expect(row.map).toHaveLength(count + 20);
+      expect(row.map.slice(count)).toEqual(Array.from({ length: 20 }, (_, index) => count + index));
+    }
+  });
+
+  it("leaves a wireframe with no light count as wired and says so", () => {
+    const house: MotionMapProp["prop"] = { id: "house", label: "House", wireframe: defaultWireframeSpec({ sides: 4 }) };
+    const result = ok(buildMotionMaps({ props: [{ prop: house, start: 0 }], looks: [], ledCount: 12 }));
+    expect(result.maps[0]!.map).toEqual(Array.from({ length: 12 }, (_, index) => index));
+    expect(result.notes.join(" ")).toMatch(/House has no light count/);
+  });
+
+  it("packs a wireframe's face map as a block of the base map, beside a drawn prop", () => {
+    const spec = defaultWireframeSpec({ sides: 4 });
+    const house: MotionMapProp["prop"] = { id: "house", label: "House", wireframe: spec };
+    const faces = compileWireframe(spec, 40).ledmap;
+    const bush = prop("bush", zigzag());
+    const count = readPropShape(bush.layout!).lights.length;
+    const result = ok(buildMotionMaps({
+      props: [{ prop: house, start: 0, ledCount: 40 }, placed(bush, 40)],
+      looks: [look("up", "bush", "up")],
+    }));
+    expect(result.maps[0]!.map.slice(0, 40)).toEqual(faces);
+    expect(result.maps[0]!.map.slice(40)).toEqual(Array.from({ length: count }, (_, index) => 40 + index));
+    // The well house does not move between maps.
+    expect(result.maps[1]!.map.slice(0, 40)).toEqual(faces);
+    expect(result.looks[0]!.sections.every((row) => row.propId === "bush")).toBe(true);
+  });
+
+  it("notes a drawing and an attachment that disagree and uses the drawing", () => {
+    const bush = prop("bush", zigzag());
+    const count = readPropShape(bush.layout!).lights.length;
+    const result = ok(buildMotionMaps({ props: [{ prop: bush, start: 0, ledCount: count + 7 }], looks: [] }));
+    expect(result.ledCount).toBe(count);
+    expect(result.notes.join(" ")).toMatch(new RegExp(`drawn with ${count} lights but attached with ${count + 7}`));
+  });
+
+  it("sorts a prop's sections as one block for a Look that lists it as joined", () => {
+    const sections: PropSection[] = [
+      { id: "left", name: "Left", edgeIds: ["e1", "e2"], pinnedRanges: [] },
+      { id: "right", name: "Right", edgeIds: ["e3", "e5"], pinnedRanges: [] },
+    ];
+    const tree = prop("tree", TWO_STRING_TREE, sections);
+    const shape = readPropShape(TWO_STRING_TREE);
+    const result = ok(buildMotionMaps({
+      props: [placed(tree, 0)],
+      looks: [{ id: "up", motions: [{ propId: "tree", motion: "up" }], joined: ["tree"] }],
+    }));
+    const look = result.looks[0]!;
+    expect(look.sections).toEqual([]);
+    expect(look.rests).toEqual([{ propId: "tree", start: 0, stop: shape.lights.length, motion: "up", rev: false }]);
+    const heights = result.maps[look.slot]!.map.map((physical) => shape.lights[physical]!.fields.h);
+    expect(heights.every((value, index) => index === 0 || value >= heights[index - 1]! - 1e-6)).toBe(true);
+  });
+});

@@ -114,6 +114,20 @@ describe("buildLookPreset", () => {
     expect(segs[2]).toMatchObject({ start: 50, stop: 80, fx: 0 });
   });
 
+  it("always names the map it runs on, 0 unless told", () => {
+    const targets = [{ start: 0, stop: 10, prop: null }];
+    expect(buildLookPreset(look(), targets, false)).toMatchObject({ ledmap: 0 });
+    expect(buildLookPreset(look(), targets, false, 3)).toMatchObject({ ledmap: 3 });
+  });
+
+  it("takes rev from the map when a target is in map positions, and not mi", () => {
+    const seg = buildLookPreset(look({ style: { ...style, dir: "mirror" } }), [
+      { start: 0, stop: 5, prop: null, mapRev: true },
+      { start: 5, stop: 10, prop: null },
+    ], false, 2).seg as { rev: boolean; mi: boolean }[];
+    expect(seg.map((row) => [row.rev, row.mi])).toEqual([[true, false], [false, true]]);
+  });
+
   it("pads white for an RGBW Light", () => {
     const preset = buildLookPreset(look(), [{ start: 0, stop: 10, prop: null }], true);
     expect((preset.seg as { col: number[][] }[])[0]!.col[0]).toEqual([255, 160, 0, 0]);
@@ -131,7 +145,7 @@ describe("mergeWledPresets", () => {
     const merged = JSON.parse(mergeWledPresets(JSON.stringify({ "0": {}, "9": { n: "Mine" }, "1": { n: "Old" } }), managed)) as Record<string, { n?: string }>;
     expect(merged["9"]?.n).toBe("Mine");
     expect(merged["1"]?.n).toBe("Warm white");
-    expect(merged[String(LOOK_OFF_SLOT)]).toEqual({ n: "Off", on: false });
+    expect(merged[String(LOOK_OFF_SLOT)]).toEqual({ n: "Off", on: false, ledmap: 0 });
     expect(merged["16"]?.n).toBe("Nightly");
   });
 

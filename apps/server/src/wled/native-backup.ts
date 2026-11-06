@@ -105,24 +105,33 @@ export function createWledPresetsWriter(fetchFn: typeof fetch = fetch): WriteWle
   return (target, presetsJson) => uploadNativeFile(fetchFn, advertisedHost(target), target.port, "presets.json", presetsJson);
 }
 
-export type ReadWledLedmap = (target: HostPort) => Promise<string | null>;
-export type WriteWledLedmap = (target: HostPort, ledmapJson: string) => Promise<void>;
+/** Map 0 is `ledmap.json`; 1 to 9 are `ledmap1.json` to `ledmap9.json`. */
+export type ReadWledLedmap = (target: HostPort, map?: number) => Promise<string | null>;
+export type WriteWledLedmap = (target: HostPort, ledmapJson: string, map?: number) => Promise<void>;
 
-/** Fresh `/ledmap.json`. Missing file is null — not an empty match. */
+/** The file WLED loads for a map number. Anything outside 0 to 9 is refused, so a name never comes from a bad number. */
+export function ledmapFileName(map = 0): string {
+  if (!Number.isInteger(map) || map < 0 || map > 9) throw new Error(`WLED holds light maps 0 to 9, not ${map}.`);
+  return map === 0 ? "ledmap.json" : `ledmap${map}.json`;
+}
+
+/** Fresh `/ledmap.json` or `/ledmapN.json`. Missing file is null, not an empty match. */
 export function createWledLedmapReader(fetchFn: typeof fetch = fetch): ReadWledLedmap {
-  return async (target) => {
-    const response = await fetchFn(`http://${advertisedHost(target)}:${target.port}/ledmap.json`, {
+  return async (target, map = 0) => {
+    const name = ledmapFileName(map);
+    const response = await fetchFn(`http://${advertisedHost(target)}:${target.port}/${name}`, {
       signal: AbortSignal.timeout(5000), headers: { Accept: "application/json" },
     });
     if (response.status === 404) return null;
-    if (!response.ok) throw new Error(`WLED ledmap.json returned HTTP ${response.status}.`);
+    if (!response.ok) throw new Error(`WLED ${name} returned HTTP ${response.status}.`);
     const raw = await response.text();
-    if (raw.length > 2_000_000) throw new Error("WLED ledmap.json exceeds the size limit.");
+    if (raw.length > 2_000_000) throw new Error(`WLED ${name} exceeds the size limit.`);
     return raw;
   };
 }
 
-/** Upload `ledmap.json` through the same WLED /upload path as presets. */
+/** Upload `ledmap.json` or `ledmapN.json` through the same WLED /upload path as presets. */
 export function createWledLedmapWriter(fetchFn: typeof fetch = fetch): WriteWledLedmap {
-  return (target, ledmapJson) => uploadNativeFile(fetchFn, advertisedHost(target), target.port, "ledmap.json", ledmapJson);
+  return async (target, ledmapJson, map = 0) =>
+    uploadNativeFile(fetchFn, advertisedHost(target), target.port, ledmapFileName(map), ledmapJson);
 }

@@ -7,7 +7,7 @@ import {
   lookPushSummaryFor,
   lookSectionNotes,
   lookTargets,
-  lookTargetsForLook,
+  lookPresetTargets,
   mergeFollowingSections,
   lookItemDigests,
   lookItemNames,
@@ -50,8 +50,8 @@ import type { createLiveEngine } from "./live/engine.ts";
 import type { FileLooksStore } from "./store/looks-store.ts";
 import type { FileLightsStore } from "./store/lights-store.ts";
 import type { ReadCfgFn, WriteCfgFn } from "./wled/cfg.ts";
-import type { ReadWledLedmap, ReadWledPresets, WriteWledLedmap, WriteWledPresets } from "./wled/native-backup.ts";
-import { writeAndVerifyLedmap } from "./wireframe-persist.ts";
+import { ledmapFileName, type ReadWledLedmap, type ReadWledPresets, type WriteWledLedmap, type WriteWledPresets } from "./wled/native-backup.ts";
+import { planLedmapsFor, writeAndVerifyLedmap } from "./wireframe-persist.ts";
 
 export type LookRouteDeps = {
   store: FileLightsStore;
@@ -269,6 +269,11 @@ export async function pushLooksToLight(
 ): Promise<SyncRow> {
   const { light, snap } = input;
   const document = migrateSectionColours(input.document, deps.store.propsFor(light.id));
+  const elements = deps.store.elementsFor(light.id);
+  const props = deps.store.propsFor(light.id);
+  // Every map this Light needs is worked out first, so a Look that cannot be mapped refuses before anything is written.
+  const mapPlan = planLedmapsFor(deps.store, light, document.looks);
+  if (!mapPlan.ok) return row(light, "refused", mapPlan.message);
   let safety: BackupDocument;
   try {
     safety = await deps.captureDevice(input.reason ?? "pre-sync", light, snap);
@@ -287,11 +292,26 @@ export async function pushLooksToLight(
     return row(light, "failed", `${parsedPresets.message} Nothing was sent.`, safety.id);
   }
 
-  const elements = deps.store.elementsFor(light.id);
-  const props = deps.store.propsFor(light.id);
+  const geometry = { ledCount: light.ledCount, elements, props };
+  const targets = lookTargets(geometry);
+  if (targets.length === 0) {
+    return row(light, "refused", "This Light has no LEDs to address. Find the strip length first. Nothing was sent.", safety.id);
+  }
+  const most = Math.max(
+    ...document.looks.map((look) => mergeFollowingSections(look, lookPresetTargets(look, geometry, mapPlan.plan).targets).length),
+    0,
+  );
+  if (typeof snap.maxSegments === "number" && most > snap.maxSegments) {
+    return row(
+      light,
+      "refused",
+      `A Look needs ${most} segments on this Light and this controller holds ${snap.maxSegments}. Merge sections or Segments first. Nothing was sent.`,
+      safety.id,
+    );
+  }
   const ledmap = await writeAndVerifyLedmap({
     light,
-    props,
+    maps: mapPlan.writes,
     readLedmap: deps.readLedmap,
     writeLedmap: deps.writeLedmap,
   });
@@ -306,23 +326,6 @@ export async function pushLooksToLight(
     return row(light, status, ledmap.message, safety.id);
   }
 
-  const geometry = { ledCount: light.ledCount, elements, props };
-  const targets = lookTargets(geometry);
-  if (targets.length === 0) {
-    return row(light, "refused", "This Light has no LEDs to address. Find the strip length first. Nothing was sent.", safety.id);
-  }
-  const most = Math.max(
-    ...document.looks.map((look) => mergeFollowingSections(look, lookTargetsForLook(look, geometry)).length),
-    0,
-  );
-  if (typeof snap.maxSegments === "number" && most > snap.maxSegments) {
-    return row(
-      light,
-      "refused",
-      `A Look needs ${most} segments on this Light and this controller holds ${snap.maxSegments}. Merge sections or Segments first. Nothing was sent.`,
-      safety.id,
-    );
-  }
   const sectionNotes = lookSectionNotes(geometry);
   const managed = buildManagedPresets({
     looks: document.looks,
@@ -330,6 +333,7 @@ export async function pushLooksToLight(
     targets,
     rgbw: light.rgbw,
     geometry,
+    maps: mapPlan.plan,
   });
   const merged = mergeWledPresets(existing, managed);
   try {
@@ -351,7 +355,11 @@ export async function pushLooksToLight(
     return row(light, "mismatch", "Uploaded Looks, but presets.json reads back different. Not treating as a match.", safety.id);
   }
 
-  const notes: string[] = [`Reports the ${document.looks.length} Looks as the same preset numbers.`, ...sectionNotes];
+  const notes: string[] = [`Reports the ${document.looks.length} Looks as the same preset numbers.`];
+  if (ledmap.written.length > 0) {
+    notes.push(`Reports ${ledmap.written.length} light map file${ledmap.written.length === 1 ? "" : "s"} (${ledmap.written.map((file) => ledmapFileName(file.slot)).join(", ")}).`);
+  }
+  notes.push(...sectionNotes, ...mapPlan.notes);
 
   if (input.includeSchedule && document.schedule && input.runSlot !== null) {
     // Every Schedule, rows or not, goes through the planner, with this Light's sunrise / sunset layout.
@@ -422,7 +430,7 @@ export async function pushLooksToLight(
       items,
       names: { ...light.lastLookPush?.names, ...lookItemNames(document) },
     },
-    ...(ledmap.digest ? { lastLedmap: { digest: ledmap.digest, at: pushedAt } } : {}),
+    ...(ledmap.written.length > 0 ? { lastLedmap: ledmap.written.map((file) => ({ ...file, at: pushedAt })) } : {}),
   });
   return row(light, "matched", notes.join(" "), safety.id);
 }

@@ -122,7 +122,7 @@ describe("a Look on a Prop with sections", () => {
       [0, 10, "ends"],
       [20, 30, "ends"],
     ]);
-    expect(lookSectionNotes(geometry).join(" ")).toMatch(/Ends is 2 separate ranges.*ledmap/);
+    expect(lookSectionNotes(geometry).join(" ")).toMatch(/Ends is 2 separate ranges.*motion/);
   });
 
   it("says so when the sections changed after Attach, and keeps the Prop's other lights", () => {

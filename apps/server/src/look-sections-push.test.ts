@@ -71,7 +71,7 @@ function deps(options: { corrupt?: boolean; maxSegments?: number } = {}) {
   let presets = "{}";
   const replace = vi.fn();
   const value = {
-    store: { elementsFor: () => elements, propsFor: () => [prop], replace },
+    store: { elementsFor: () => elements, propsFor: () => [prop], loadProps: () => [prop], loadAttachments: () => [], replace },
     readPresets: async () => presets,
     writePresets: async (_target: unknown, raw: string) => {
       presets = options.corrupt ? raw.replace("#ff00ff", "x").replace(/"fx":13/, '"fx":0') : raw;

@@ -4,7 +4,7 @@ Effects that follow a prop's shape instead of light 1, 2, 3: chase the well's bo
 
 ## The plan
 
-0. A one-day bench test (ESP32 and ESP8266, WLED 0.15 and 16.x) of ledmap switching, missing maps, bucket grids and interleaving with grouping. It gates steps 3 and 4 only.
+0. A one-day bench test (ESP32 and ESP8266, WLED 0.15 and 16.x) of ledmap switching, missing maps, bucket grids and interleaving with grouping. It gates steps 3 and 4 only. **Not run.** The checklist is in "Slice 0 bench checklist" below.
 1. **Shape reader** — `packages/shared/src/prop/shape.ts`. This slice.
 2. **Shape on the Looks page** — the Shape panel (`apps/web/src/components/looks/shape-panel.tsx`, `packages/shared/src/prop/shape-design.ts`). Sections from the shape, a motion per section, and copying a design to sections and props of the same kind. Saves an ordinary Look.
 3. Recipes on ledmaps: one combined map per Look per controller, face map included.
@@ -52,3 +52,30 @@ Pick one prop on a Look. Under its sections, **Shape** shows the reader's summar
 - **Use the design on similar props.** On the whole prop, props with the same pieces are listed, and their sections get the matching section's style.
 
 `pnpm --filter @nightplot/web test:shape` walks this in a browser at 1440×900 and 390×844.
+
+## Slice 0 bench checklist (for Dylan)
+
+Nothing here has been run. Slice 2 of `docs/hang-to-effects.md` pushes a light map per motion with the Looks, and the sim and fixture (`apps/server/src/wled-fixture-box.ts`) only check that Nightplot writes and rereads the files it means to. They are not WLED, so **no real board has been tried and every default below is pending this bench.** Until it is done, a Look push with maps is not Hardware Done.
+
+Run each row on an **ESP32** and an **ESP8266**, on **WLED 0.15.x** and on **16.x**. Use a strip of at least 300 lights (and a 1000-light strip for the size row), pushed from a branch with slice 2. Write what you see in the Result column, with the board, WLED version and date.
+
+| # | Check | How | What Nightplot assumes | Result |
+| --- | --- | --- | --- | --- |
+| 1 | Maps load | Push two Looks with different motions. Open `http://<light>/ledmap.json` and `/ledmap1.json`. | Each file is there and is the map Nightplot reread. | |
+| 2 | Switching | Recall the Look on map 1, then the Look on map 2, then the one on map 0 (preset numbers, from the Now bar or the WLED page). | Each preset changes the light order at once, with no reboot and no stale order from the last map. | |
+| 3 | Map 0 with no file | Delete `ledmap.json` on the board (WLED `/edit`), then recall a Look that sets `"ledmap": 0`. | Map 0 with no file clears the map back to wire order. If it keeps the last map, the Off preset and playlists need another answer. | |
+| 4 | Missing map file | Delete `ledmap2.json`, then recall the Look that names it. | The Look runs in wire order and nothing crashes. If it does not, Nightplot must refuse a preset whose file it cannot reread. | |
+| 5 | Nine maps | Push ten Looks that need nine different orders. | Maps 1 to 9 all load and the tenth is refused by Nightplot. | |
+| 6 | 300 and 1000 lights | Push a map of 300, then of 1000 lights. | Both load without a watchdog reset or a slow first frame. Note the free heap on the WLED info page. | |
+| 7 | Map length | Push a map shorter than the strip, then longer. | WLED copes. Nightplot only writes a map the length of the Light. | |
+| 8 | Group banding | In a Look on a height-sorted map set `grp` to the typical lights per ring and run Chase. | Each step lights a whole band. Write the `grp` that worked. | |
+| 9 | Interleaving | Use `grp` and `spc` on a sorted map beside a segment with none. | They band as expected and the other segment is unchanged. | |
+| 10 | Segments on a map | Run a Look with three segments in map positions, one with `rev`. | The segment ranges are map positions, and `rev` reverses inside that range. | |
+| 11 | Preview over a map | While a Look on map 1 is saved, Preview another Look. | Preview ignores the saved map (Preview does not send `ledmap`) and runs along the wire. Say what it does. | |
+| 12 | Survive a reboot | Power-cycle the board. | The maps and the Look's map are still there. | |
+
+Slice 2 defaults that wait on this bench:
+
+- **Nine maps** per Light beside the base map (checks 1, 5, 6).
+- **`grp` banding** instead of a band map (checks 8 and 9). If it fails, slice 7 (band maps) is needed.
+- **Map switching behaviour**: a preset names its map with `"ledmap"`, every Look sets it, and Off and playlists set `"ledmap": 0` (checks 2 to 4, 11).

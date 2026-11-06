@@ -34,6 +34,7 @@ import {
   honestySource,
   manageCaption,
   macsMatch,
+  mergeLastLedmap,
   normalizeHostKey,
   normalizeMac,
   parseHexColor,
@@ -180,7 +181,7 @@ import {
   type WriteWledNativeFiles,
   type WriteWledPresets,
 } from "./wled/native-backup.ts";
-import { persistWireframeOnLight, specFromBody, writeAndVerifyLedmap } from "./wireframe-persist.ts";
+import { persistWireframeOnLight, planLedmapsFor, specFromBody, writeAndVerifyLedmap } from "./wireframe-persist.ts";
 import { registerSyncRoutes } from "./sync-routes.ts";
 import { applyRangesWrite, createWledJsonReader, type ReadLiveFn, type ReadWledJsonFn, type WriteStateFn } from "./wled/live.ts";
 
@@ -1428,9 +1429,15 @@ export function createApp(deps: AppDeps) {
     }
     try { await captureDevice("pre-apply", light, snap!); }
     catch (error) { return { status: 503, body: backupFailure(error) }; }
+    // Apply writes the base map (`ledmap.json`): the well house's face map, or nothing when the lights run in wire order.
+    // A Look push writes the rest. A Prop that cannot be placed only stops Apply when a wireframe needs its map.
+    const mapPlan = planLedmapsFor(deps.store, light, []);
+    if (!mapPlan.ok && mapPlan.wireframe) {
+      return { status: 422, body: { error: "invalid-wireframe", message: mapPlan.message } };
+    }
     const ledmap = await writeAndVerifyLedmap({
       light,
-      props: deps.store.propsFor(light.id),
+      maps: mapPlan.ok ? mapPlan.writes.filter((file) => file.slot === 0) : [],
       readLedmap,
       writeLedmap,
     });
@@ -1500,7 +1507,10 @@ export function createApp(deps: AppDeps) {
       next.lastApply = next.mac ? { at: next.lastSeenAt ?? nowIso(), mac: next.mac,
         ledCount: next.ledCount, ranges: sent.map(({ start, stop }) => ({ start, stop })), color,
         ...(reread.snapshot.segmentColors ? { colors } : {}) } : null;
-      if (ledmap.digest) next.lastLedmap = { digest: ledmap.digest, at: next.lastSeenAt ?? nowIso() };
+      if (ledmap.written.length > 0) {
+        const at = next.lastSeenAt ?? nowIso();
+        next.lastLedmap = mergeLastLedmap(next.lastLedmap, ledmap.written.map((file) => ({ ...file, at })));
+      }
       deps.store.replace(next);
       const elements = persistDrafts(light.id, drafts);
       record(next, "apply", "match", `Applied ${sentDescription}; reported ranges match. ${outcome.caption}`);
