@@ -403,14 +403,21 @@ export function paletteColourAt(style: LookStyle, position: number): Rgb {
  * An approximate colour for light `index` of `count` at `t` seconds. Effects
  * Nightplot does not draw show their colours drifting slowly; the caller says
  * the drawing is approximate.
+ *
+ * Without `order`, `index` is the light's place along the wire and the
+ * style's `dir` applies, as WLED does with no map. With `order`, `index` is the
+ * light's place in the order a motion map visits the section (see
+ * `lookPreviewOrder`). The map already runs the lights in the motion's order,
+ * so only the segment's `rev` applies; `dir` is ignored, as the push does.
  */
-export function sampleLookStyle(style: LookStyle, index: number, count: number, t: number): Rgb {
+export function sampleLookStyle(style: LookStyle, index: number, count: number, t: number, order?: { rev: boolean }): Rgb {
   let i = index;
   let u = count > 1 ? index / (count - 1) : 0;
-  if (style.dir === "rev") { u = 1 - u; i = count - 1 - index; }
-  if (style.dir === "mirror" || style.dir === "mirror-rev") {
+  const dir = order ? (order.rev ? "rev" : "fwd") : style.dir;
+  if (dir === "rev") { u = 1 - u; i = count - 1 - index; }
+  if (dir === "mirror" || dir === "mirror-rev") {
     u = u < 0.5 ? u * 2 : (1 - u) * 2;
-    if (style.dir === "mirror-rev") u = 1 - u;
+    if (dir === "mirror-rev") u = 1 - u;
     i = Math.round((u * (count - 1)) / 2);
   }
   const c1 = rgb(style.color), c2 = rgb(style.color2);

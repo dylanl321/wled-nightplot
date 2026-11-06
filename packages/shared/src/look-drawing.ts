@@ -6,6 +6,7 @@
  */
 import { lookIncludesProp, type Look, type LookStyle } from "./look.ts";
 import { propStyle, sampleLookStyle, sectionStyle, sectionsFollow } from "./look-design.ts";
+import { lookPreviewOrder, type PreviewOrder } from "./look-order.ts";
 import { layoutStrings } from "./prop/layout.ts";
 import { sectionIndexRanges } from "./prop/sections.ts";
 import { yardLightPositions } from "./prop/space.ts";
@@ -36,12 +37,35 @@ export function drawnYard(props: readonly Prop[]): DrawnProp[] {
   });
 }
 
-/** The style that lights one light, or null when it is off in this Look. */
-export function drawnLightStyle(look: Look, prop: Pick<Prop, "id" | "kind">, drawn: DrawnProp, index: number):
-  { style: LookStyle; at: number; of: number } | null {
+/**
+ * The order the controller visits this Prop's lights in this Look, from the
+ * motion map the push would write. Work it out once per Look and Prop (not per
+ * light per frame) and pass it to `drawnLightStyle` and `drawnLightColour`.
+ * Null runs the drawing along the wire with the style's `dir`.
+ */
+export function drawnOrder(look: Look, prop: Prop, drawn: DrawnProp): PreviewOrder | null {
+  const order = lookPreviewOrder(look, prop);
+  return order && order.lights.length === drawn.lights.length ? order : null;
+}
+
+/**
+ * The style that lights one light, or null when it is off in this Look.
+ * `at` and `of` are the light's place and count in the order the effect runs:
+ * along the wire, or in map order when `order` is given. `rev` is set when the
+ * place is in map order and the segment runs reversed; `ordered` says the map's
+ * order applies, so the style's `dir` does not.
+ */
+export function drawnLightStyle(look: Look, prop: Pick<Prop, "id" | "kind">, drawn: DrawnProp, index: number, order?: PreviewOrder | null):
+  { style: LookStyle; at: number; of: number; ordered?: { rev: boolean } } | null {
   if (!lookIncludesProp(look, prop.id)) return null;
   const light = drawn.lights[index];
   if (!light) return null;
+  const placed = order?.lights[index];
+  if (placed) {
+    const style = placed.sectionId === null ? propStyle(look, prop) : sectionStyle(look, prop, placed.sectionId);
+    if (!style) return null;
+    return { style, at: placed.at, of: placed.of, ...(placed.mapped ? { ordered: { rev: placed.rev } } : {}) };
+  }
   if (!drawn.sections.length || sectionsFollow(look, prop.id)) {
     return { style: propStyle(look, prop), at: index, of: drawn.lights.length };
   }
@@ -52,10 +76,10 @@ export function drawnLightStyle(look: Look, prop: Pick<Prop, "id" | "kind">, dra
 }
 
 /** RGB for one light at `t` seconds, scaled by the Look's brightness. Null when off. */
-export function drawnLightColour(look: Look, prop: Pick<Prop, "id" | "kind">, drawn: DrawnProp, index: number, t: number): [number, number, number] | null {
-  const lit = drawnLightStyle(look, prop, drawn, index);
+export function drawnLightColour(look: Look, prop: Pick<Prop, "id" | "kind">, drawn: DrawnProp, index: number, t: number, order?: PreviewOrder | null): [number, number, number] | null {
+  const lit = drawnLightStyle(look, prop, drawn, index, order);
   if (!lit) return null;
-  const c = sampleLookStyle(lit.style, lit.at, lit.of, t);
+  const c = sampleLookStyle(lit.style, lit.at, lit.of, t, lit.ordered);
   const k = 0.35 + 0.65 * (look.style.bri / 255);
   return [c[0] * k, c[1] * k, c[2] * k];
 }

@@ -1094,6 +1094,7 @@ export {
   type YardPose,
   type YardView,
 } from "./prop/space.ts";
+export { lookPreviewOrder, type PreviewLight, type PreviewOrder } from "./look-order.ts";
 export {
   approximateWledColours,
   lookFrame,
@@ -1121,6 +1122,7 @@ export { STREET_EYE_M, STREET_FOCAL_M, fitStreet, streetProject, type FlatView, 
 export {
   drawnLightColour,
   drawnLightStyle,
+  drawnOrder,
   drawnYard,
   type DrawnLight,
   type DrawnProp,

@@ -1,6 +1,6 @@
 "use client";
 
-import { drawnLightColour, fitStreet, sampleLookStyle, streetProject, type DrawnProp, type FlatView, type Look, type LookStyle, type Prop } from "@nightplot/shared";
+import { drawnLightColour, drawnOrder, fitStreet, sampleLookStyle, streetProject, type DrawnProp, type FlatView, type Look, type LookStyle, type PreviewOrder, type Prop } from "@nightplot/shared";
 import { useEffect, useRef } from "react";
 
 /** One clock for every canvas on the page, so thumbnails and strips move together. */
@@ -24,6 +24,20 @@ function reducedMotion() {
 
 export type YardView = { s: number; ox: number; oy: number };
 
+/**
+ * The order the controller visits a prop's lights in this Look, worked out once per
+ * drawing, Look and prop rather than for every light on every frame. The yard
+ * samples in this order so the drawing matches the motion map the push writes.
+ */
+const orders = new WeakMap<DrawnProp, { look: Look; prop: Prop; order: PreviewOrder | null }>();
+function orderFor(look: Look, prop: Prop, drawn: DrawnProp): PreviewOrder | null {
+  const kept = orders.get(drawn);
+  if (kept && kept.look === look && kept.prop === prop) return kept.order;
+  const order = drawnOrder(look, prop, drawn);
+  orders.set(drawn, { look, prop, order });
+  return order;
+}
+
 function bounds(drawn: readonly DrawnProp[]) {
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const prop of drawn) for (const light of prop.lights) {
@@ -45,7 +59,7 @@ const toScreen = (view: YardView, x: number, y: number): [number, number] => [vi
 
 type Props = {
   drawn: readonly DrawnProp[];
-  props: readonly Pick<Prop, "id" | "kind">[];
+  props: readonly Prop[];
   look: Look | null;
   className?: string;
   small?: boolean;
@@ -108,11 +122,12 @@ export function YardCanvas({ drawn, props, look, className, small, labels, selec
         const k = selected?.length && !isSel && dim ? 0.35 : 1;
         g.globalCompositeOperation = "lighter";
         const gap = neighbourGap(drawnProp, place);
+        const lightOrder = look && !neutral ? orderFor(look, prop, drawnProp) : null;
         drawnProp.lights.forEach((light, index) => {
           const at = place(light.x, light.y, light.z);
           const x = at.x, y = at.y;
           const dot = Math.min(Math.max(1.15, r * at.scale), Number.isFinite(gap) ? gap * 0.34 : r * at.scale);
-          const c = neutral ? [212, 165, 116] : look ? drawnLightColour(look, prop, drawnProp, index, time) : null;
+          const c = neutral ? [212, 165, 116] : look ? drawnLightColour(look, prop, drawnProp, index, time, lightOrder) : null;
           if (!c || c[0] + c[1] + c[2] < 6) {
             g.globalCompositeOperation = "source-over";
             g.fillStyle = "#262a33"; g.beginPath(); g.arc(x, y, Math.max(1, dot * 0.7), 0, 7); g.fill();
