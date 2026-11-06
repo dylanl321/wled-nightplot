@@ -452,6 +452,12 @@ export {
   MM_PER_FOOT,
   archLengthMm,
   attachmentForLegacy,
+  attachmentStringId,
+  attachmentsOfProp,
+  isAttachmentFor,
+  propStrings,
+  unattachedStrings,
+  type PropStringInfo,
   compilePropDesign,
   designFromLayout,
   designFromLegacy,
@@ -621,7 +627,7 @@ export {
   type MotionMapSlot,
   type MotionSort,
 } from "./prop/motion-map.ts";
-export { planLightMaps, type LightMapsPlan } from "./prop/light-maps.ts";
+export { planLightMaps, stringStartsFor, type LightMapsPlan } from "./prop/light-maps.ts";
 export { parseTraceLength, type TraceLength, type TraceLengthResult } from "./prop/trace-length.ts";
 export { snap, traceAim, SNAP_ALIGN_PX, SNAP_POINT_PX, type SnapContext, type SnapHit, type SnapPoint, type TraceGuide } from "./prop/snap.ts";
 export {
@@ -894,6 +900,7 @@ export {
   mapTargetsForLook,
   lookSectionNotes,
   propSectionPlan,
+  type StringStart,
   resolveLookTarget,
   lookIncludesProp,
   pinLookProps,

@@ -6,6 +6,8 @@ import {
   lookPushDigest,
   lookPushSummaryFor,
   lookSectionNotes,
+  stringStartsFor,
+  type StringStart,
   lookTargets,
   lookPresetTargets,
   mergeFollowingSections,
@@ -256,6 +258,20 @@ function parseUdp(value: PushBody["udp"]):
   return { group: value.group, roles: Object.fromEntries(roles) as Record<string, UdpSyncRole> };
 }
 
+/** Where each attached string of a Light's Props starts, so sections land where every string sits. */
+export function stringStartsOnLight(
+  store: Pick<FileLightsStore, "propsFor" | "loadProps" | "loadAttachments" | "elementsFor">,
+  light: Light,
+): StringStart[] {
+  return stringStartsFor({
+    light,
+    props: store.propsFor(light.id),
+    allProps: store.loadProps(),
+    elements: store.elementsFor(light.id),
+    attachments: store.loadAttachments(),
+  });
+}
+
 export async function pushLooksToLight(
   deps: LookRouteDeps,
   input: {
@@ -293,7 +309,7 @@ export async function pushLooksToLight(
     return row(light, "failed", `${parsedPresets.message} Nothing was sent.`, safety.id);
   }
 
-  const geometry = { ledCount: light.ledCount, elements, props };
+  const geometry = { ledCount: light.ledCount, elements, props, stringStarts: stringStartsOnLight(deps.store, light) };
   const targets = lookTargets(geometry);
   if (targets.length === 0) {
     return row(light, "refused", "This Light has no LEDs to address. Find the strip length first. Nothing was sent.", safety.id);

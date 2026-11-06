@@ -229,3 +229,108 @@ describe("prop canvas behaviour", () => {
     expect(document.querySelector(`[data-run="${run.dataset.run}"]`)).toBeNull();
   });
 });
+
+describe("YardEditor attach, one string at a time", () => {
+  const s1 = [
+    { id: "e1", from: "c1", to: "c2", kind: "lit" as const },
+    { id: "e2", from: "c2", to: "c3", kind: "lit" as const },
+  ];
+  const s2 = [
+    { id: "e3", from: "c4", to: "c5", kind: "lit" as const },
+    { id: "e5", from: "c5", to: "c6", kind: "lit" as const },
+  ];
+  const tree: Prop = {
+    id: "tree",
+    label: "Tree",
+    kind: "custom",
+    elementIds: [],
+    layout: {
+      source: "trace", units: "m", pitchM: 0.1, startOffsetM: 0,
+      corners: [
+        { id: "c1", x: 0, y: 0 }, { id: "c2", x: 0, y: 1 }, { id: "c3", x: -0.5, y: 1.5 },
+        { id: "c4", x: 0.6, y: 0.2 }, { id: "c5", x: 0.6, y: 1.2 }, { id: "c6", x: 1, y: 1.8 },
+      ],
+      run: s1,
+      strings: [{ id: "s1", startId: "c1", run: s1 }, { id: "s2", startId: "c4", run: s2 }],
+    },
+    design: { unit: "m", pitchMm: 100, ledProductId: null, measurements: { shape: "custom" }, ledCount: 34, edges: [{ id: "e1", label: "Side 1", lengthMm: 1000, ledCount: 10 }, { id: "e2", label: "Side 2", lengthMm: 707, ledCount: 7 }, { id: "e3", label: "Side 3", lengthMm: 1000, ledCount: 10 }, { id: "e5", label: "Side 4", lengthMm: 721, ledCount: 7 }] },
+    sections: [
+      { id: "left", name: "Left", edgeIds: ["e1", "e2"], pinnedRanges: [] },
+      { id: "right", name: "Right", edgeIds: ["e3", "e5"], pinnedRanges: [] },
+    ],
+    yard: { x: 1, y: 0 },
+  };
+  const lights = [{
+    id: "porch", name: "Porch", ledCount: 100, lastSnapshot: null,
+    outputs: [
+      { id: "out-a", index: 0, start: 0, ledCount: 50, stripKind: "ws281x", gpio: null, nativeType: null, nativeOrder: null, colorOrder: null },
+      { id: "out-b", index: 1, start: 50, ledCount: 50, stripKind: "ws281x", gpio: null, nativeType: null, nativeOrder: null, colorOrder: null },
+    ],
+  }] as YardEditorProps["lights"];
+
+  let posts: { url: string; body: Record<string, unknown> }[];
+  beforeEach(() => {
+    posts = [];
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : {};
+      if (String(url).endsWith("/attach")) {
+        posts.push({ url: String(url), body });
+        return new Response(JSON.stringify({ prop: { ...tree, lightId: "porch" }, apply: { matched: true, message: "Read back." } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }));
+  });
+
+  function open(attachments: YardEditorProps["attachments"] = []) {
+    return render(
+      <YardEditor props={[tree]} attachments={attachments} lights={lights} lightViews={[]} sessions={[]} looks={looks} looksReady={false} yardClear={false} query={{ prop: "tree", fold: "controller" }} />,
+    );
+  }
+
+  it("asks per string, sends the string id, and moves on to the string still waiting", async () => {
+    open();
+    const pick = screen.getByLabelText("String") as HTMLSelectElement;
+    expect(Array.from(pick.options).map((o) => o.textContent)).toEqual([
+      "String 1 · 17 lights · not attached",
+      "String 2 · 17 lights · not attached",
+    ]);
+    fireEvent.change(screen.getByLabelText("Controller"), { target: { value: "porch" } });
+    expect(screen.getByText(/string 1 of 2, 17 lights on Porch/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]!.body).toMatchObject({ lightId: "porch", outputId: "out-a", startIndex: 0, stringId: "s1", apply: true });
+    // The next string waiting is picked, and it can sit on the other output.
+    await waitFor(() => expect((screen.getByLabelText("String") as HTMLSelectElement).value).toBe("s2"));
+    expect(Array.from((screen.getByLabelText("String") as HTMLSelectElement).options).map((o) => o.textContent)[0]).toMatch(/String 1 .* attached$/);
+    fireEvent.change(screen.getByLabelText("Output"), { target: { value: "out-b" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts[1]!.body).toMatchObject({ outputId: "out-b", startIndex: 0, stringId: "s2" });
+  });
+
+  it("lets a string follow another string of its own prop on the same output", async () => {
+    open([{ propId: "tree", lightId: "porch", outputId: "out-a", startIndex: 3, afterPropId: null, stringId: "s1" }]);
+    expect((screen.getByLabelText("String") as HTMLSelectElement).value).toBe("s2");
+    const where = screen.getByLabelText(/Where on this output/) as HTMLSelectElement;
+    expect(Array.from(where.options).map((o) => o.textContent)).toEqual(["From the first light", "After string 1"]);
+    fireEvent.change(where, { target: { value: "tree\u0000s1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]!.body).toMatchObject({ stringId: "s2", startIndex: null, afterPropId: "tree", afterStringId: "s1" });
+  });
+
+  it("sends no string id for a prop with one string", async () => {
+    render(<YardEditor props={[triangleOne()]} attachments={[]} lights={lights} lightViews={[]} sessions={[]} looks={looks} looksReady={false} yardClear={false} query={{ prop: "peak", fold: "controller" }} />);
+    expect(screen.queryByLabelText("String")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Controller"), { target: { value: "porch" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]!.body).not.toHaveProperty("stringId");
+  });
+});
+
+function triangleOne(): Prop {
+  return { ...triangleProp(), design: { ...triangleProp().design!, ledCount: 20, edges: [{ id: "a", label: "Side", lengthMm: 2000, ledCount: 20 }] } };
+}

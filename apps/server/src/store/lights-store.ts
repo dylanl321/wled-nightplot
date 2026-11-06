@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import {
   attachmentForLegacy,
+  attachmentStringId,
   enrichStoredProp,
   isProp,
   isPropAttachment,
@@ -80,7 +81,7 @@ export class FileLightsStore {
       new Set(value.lights.map((light) => light.hostKey)).size === value.lights.length &&
       new Set(value.elements.map((element) => element.id)).size === value.elements.length &&
       new Set(props.map((prop) => prop.id)).size === props.length &&
-      new Set(attachments.map((row) => row.propId)).size === attachments.length &&
+      new Set(attachments.map((row) => `${row.propId}\u0000${row.stringId ?? ""}`)).size === attachments.length &&
       value.elements.every((element) => value.lights.some((light) => light.id === element.lightId)) &&
       props.every((prop) => propFits(prop, value.lights, value.elements)) &&
       attachments.every((row) =>
@@ -137,7 +138,7 @@ export class FileLightsStore {
     const state = this.readForWrite();
     const prop = state.props.find((row) => row.id === id);
     if (!prop) return null;
-    const own = state.attachments.find((row) => row.propId === id) ?? null;
+    const ownRows = state.attachments.filter((row) => row.propId === id);
     const drop = new Set(prop.elementIds);
     const elements = state.elements.filter((element) => !drop.has(element.id));
     let movedFollowers = 0;
@@ -146,9 +147,20 @@ export class FileLightsStore {
       .map((row) => {
         if (row.afterPropId !== id) return row;
         movedFollowers += 1;
-        return own
-          ? { ...row, startIndex: own.startIndex, afterPropId: own.afterPropId }
-          : { ...row, startIndex: 0, afterPropId: null };
+        // Take the place of the string it followed, else of the one on its output that started first.
+        const { afterStringId, ...rest } = row;
+        const followed = afterStringId
+          ? ownRows.find((item) => attachmentStringId(item, prop) === afterStringId)
+          : undefined;
+        const own = followed ?? ownRows.find((item) => item.outputId === row.outputId) ?? ownRows[0] ?? null;
+        if (!own) return { ...rest, startIndex: 0, afterPropId: null };
+        const { afterStringId: ownAfterString } = own;
+        return {
+          ...rest,
+          startIndex: own.startIndex,
+          afterPropId: own.afterPropId,
+          ...(own.afterPropId && ownAfterString ? { afterStringId: ownAfterString } : {}),
+        };
       });
     this.write(state.lights, elements, state.props.filter((row) => row.id !== id), attachments);
     return { removedSegments: state.elements.length - elements.length, movedFollowers };
@@ -161,8 +173,12 @@ export class FileLightsStore {
     const props = [...state.props.filter((row) => row.id !== prop.id), nextProp];
     const keptElements = state.elements.filter((element) => !drop.has(element.id) && element.lightId !== attachment.lightId);
     const sameLight = elements.filter((element) => element.lightId === attachment.lightId);
+    // One attachment per string. Re-attaching a string replaces only its own row, so the other strings keep theirs.
+    // A prop lives on one Light, so rows on another Light are the old home and go.
+    const string = attachmentStringId(attachment, nextProp);
     const attachments = [
-      ...state.attachments.filter((row) => row.propId !== prop.id),
+      ...state.attachments.filter((row) =>
+        row.propId !== prop.id || (row.lightId === attachment.lightId && attachmentStringId(row, nextProp) !== string)),
       attachment,
     ];
     this.write(state.lights, [...keptElements, ...sameLight], props, attachments);
@@ -288,7 +304,7 @@ export class FileLightsStore {
     const elements = elementRows.filter(isElement);
     const parsedProps = propRows.filter(isProp);
     const parsedAttachments = attachmentRows.filter(isPropAttachment);
-    const duplicateAttachment = new Set(parsedAttachments.map((row) => row.propId)).size !== parsedAttachments.length;
+    const duplicateAttachment = new Set(parsedAttachments.map((row) => `${row.propId}\u0000${row.stringId ?? ""}`)).size !== parsedAttachments.length;
     const lights = parsed.lights.map(normalizeStoredLight);
     const normalized = normalizeProps(lights, elements, parsedProps, parsedAttachments);
     return {
@@ -352,8 +368,8 @@ function normalizeProps(
     const light = lights.find((row) => row.id === prop.lightId);
     const enriched = enrichStoredProp(prop, elements, light);
     nextProps.push(enriched.prop);
-    const listed = attachments.find((row) => row.propId === prop.id);
-    if (listed) nextAttachments.push(listed);
+    const listed = attachments.filter((row) => row.propId === prop.id);
+    if (listed.length > 0) nextAttachments.push(...listed);
     else if (enriched.attachment) nextAttachments.push(enriched.attachment);
   }
   return { props: nextProps, attachments: nextAttachments };

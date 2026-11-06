@@ -3,14 +3,20 @@ import type { Element, Light } from "../lights.ts";
 import { legacyOutputId } from "../outputs.ts";
 import {
   attachmentForLegacy,
+  attachmentStringId,
   compilePropDesign,
+  designFromLayout,
+  outputStartForAttachment,
+  propStrings,
+  unattachedStrings,
   designFromLegacy,
   lightsAlong,
   migrateDesignedProp,
   planPropPlacement,
   yardSetupSteps,
 } from "./design.ts";
-import { isProp } from "./types.ts";
+import type { PropLayout } from "./layout.ts";
+import { isProp, isPropAttachment, type Prop, type PropAttachment } from "./types.ts";
 
 const pitch = 100;
 
@@ -333,6 +339,155 @@ describe("placement", () => {
     const sill = allowed.segments.filter((segment) => segment.label === "Front window · Sill");
     expect(sill.length).toBeGreaterThan(0);
     expect(sill.every((segment) => segment.color === "#ff2d2d")).toBe(true);
+  });
+});
+
+function twoStringProp(id = "tree"): Prop {
+  const s1 = [
+    { id: "e1", from: "c1", to: "c2", kind: "lit" as const },
+    { id: "e2", from: "c2", to: "c3", kind: "lit" as const },
+  ];
+  const s2 = [
+    { id: "e3", from: "c4", to: "c5", kind: "lit" as const },
+    { id: "e4", from: "c5", to: "c6", kind: "hidden" as const },
+    { id: "e5", from: "c6", to: "c7", kind: "lit" as const },
+  ];
+  const layout: PropLayout = {
+    source: "trace",
+    units: "m",
+    pitchM: 0.1,
+    startOffsetM: 0,
+    corners: [
+      { id: "c1", x: 0, y: 0 }, { id: "c2", x: 0, y: 1 }, { id: "c3", x: -0.5, y: 1.5 },
+      { id: "c4", x: 0.6, y: 0.2 }, { id: "c5", x: 0.6, y: 1.2 }, { id: "c6", x: 1, y: 1.2 }, { id: "c7", x: 1, y: 1.8 },
+    ],
+    run: s1,
+    strings: [{ id: "s1", startId: "c1", run: s1 }, { id: "s2", startId: "c4", run: s2 }],
+  };
+  return {
+    id,
+    label: "Tree",
+    kind: "custom",
+    elementIds: [],
+    layout,
+    design: designFromLayout(layout, null, { shape: "custom" }),
+    sections: [
+      { id: "left", name: "Left", edgeIds: ["e1", "e2"], pinnedRanges: [] },
+      { id: "right", name: "Right", edgeIds: ["e3", "e5"], pinnedRanges: [] },
+    ],
+  };
+}
+
+describe("attaching every string", () => {
+  const tree = twoStringProp();
+  const [one, two] = propStrings(tree).map((row) => row.ledCount!) as [number, number];
+  const out = { id: "out", index: 0, start: 0, ledCount: 100 };
+
+  it("counts each string's own lights", () => {
+    expect(propStrings(tree).map((row) => row.id)).toEqual(["s1", "s2"]);
+    expect(one + two).toBe(tree.design!.ledCount);
+    expect(two).toBeGreaterThan(0);
+  });
+
+  it("checks fit per string, not for the whole prop", () => {
+    // The whole tree would not fit 30 lights, but each string does.
+    const small = { ...out, ledCount: Math.max(one, two) + 2 };
+    expect(one + two).toBeGreaterThan(small.ledCount);
+    for (const stringId of ["s1", "s2"]) {
+      const plan = planPropPlacement({ prop: tree, output: small, lightName: "Yard", stringId, place: { startIndex: 0, afterPropId: null }, props: [tree], attachments: [] });
+      expect(plan.ok).toBe(true);
+    }
+    const tooFar = planPropPlacement({ prop: tree, output: small, lightName: "Yard", stringId: "s2", place: { startIndex: small.ledCount - 1, afterPropId: null }, props: [tree], attachments: [] });
+    expect(tooFar.ok).toBe(false);
+    if (!tooFar.ok) expect(tooFar.message).toMatch(/string 2.*needs/);
+  });
+
+  it("writes only that string's segments, from that string's first light", () => {
+    const first = planPropPlacement({ prop: tree, output: out, lightName: "Yard", stringId: "s1", place: { startIndex: 3, afterPropId: null }, props: [tree], attachments: [] });
+    const second = planPropPlacement({ prop: tree, output: { ...out, id: "o2", index: 1, start: 100 }, lightName: "Yard", stringId: "s2", place: { startIndex: 7, afterPropId: null }, props: [tree], attachments: [] });
+    if (!first.ok || !second.ok) throw new Error("expected both to fit");
+    expect(first.segments.map((row) => row.label)).toEqual(["Tree · Left"]);
+    expect(first.segments).toMatchObject([{ start: 3, stop: 3 + one }]);
+    expect(second.segments.map((row) => row.label)).toEqual(["Tree · Right"]);
+    expect(second.absoluteStart).toBe(107);
+    expect(second.segments[0]!.start).toBe(107);
+    expect(Math.max(...second.segments.map((row) => row.stop))).toBe(107 + two);
+    expect(second.segments.every((row) => row.outputId === "o2")).toBe(true);
+  });
+
+  it("says which strings are still waiting, and stops once none are", () => {
+    const waiting = planPropPlacement({ prop: tree, output: out, lightName: "Yard", stringId: "s1", place: { startIndex: 0, afterPropId: null }, props: [tree], attachments: [] });
+    if (!waiting.ok) throw new Error(waiting.message);
+    expect(waiting.summary).toMatch(/Another string stays on the prop/);
+    const done = planPropPlacement({
+      prop: tree, output: out, lightName: "Yard", stringId: "s1", place: { startIndex: 0, afterPropId: null }, props: [tree],
+      attachments: [{ propId: "tree", lightId: "l", outputId: "out", startIndex: 50, afterPropId: null, stringId: "s2" }],
+    });
+    if (!done.ok) throw new Error(done.message);
+    expect(done.summary).not.toMatch(/stays on the prop/);
+  });
+
+  it("lets a string follow another string of its own prop, counting that string's lights", () => {
+    const attachments: PropAttachment[] = [{ propId: "tree", lightId: "l", outputId: "out", startIndex: 4, afterPropId: null, stringId: "s1" }];
+    const plan = planPropPlacement({ prop: tree, output: out, lightName: "Yard", stringId: "s2", place: { startIndex: null, afterPropId: "tree", afterStringId: "s1" }, props: [tree], attachments });
+    if (!plan.ok) throw new Error(plan.message);
+    expect(plan.absoluteStart).toBe(4 + one);
+    const defaulted = planPropPlacement({ prop: tree, output: out, lightName: "Yard", stringId: "s2", place: { startIndex: null, afterPropId: "tree" }, props: [tree], attachments });
+    expect(defaulted.ok && defaulted.absoluteStart).toBe(4 + one);
+  });
+
+  it("follows the string that ends furthest when none is named, and a named one when it is", () => {
+    const other = { ...twoStringProp("other"), label: "Other" };
+    const attachments: PropAttachment[] = [
+      { propId: "tree", lightId: "l", outputId: "out", startIndex: 0, afterPropId: null, stringId: "s1" },
+      { propId: "tree", lightId: "l", outputId: "out", startIndex: 40, afterPropId: null, stringId: "s2" },
+    ];
+    const after = (afterStringId?: string) => planPropPlacement({
+      prop: other, output: out, lightName: "Yard", stringId: "s1",
+      place: { startIndex: null, afterPropId: "tree", ...(afterStringId ? { afterStringId } : {}) },
+      props: [tree, other], attachments,
+    });
+    const furthest = after();
+    expect(furthest.ok && furthest.absoluteStart).toBe(40 + two);
+    const named = after("s1");
+    expect(named.ok && named.absoluteStart).toBe(one);
+  });
+
+  it("refuses a loop between strings and an unknown string", () => {
+    const attachments: PropAttachment[] = [
+      { propId: "tree", lightId: "l", outputId: "out", startIndex: null, afterPropId: "tree", stringId: "s1", afterStringId: "s2" },
+      { propId: "tree", lightId: "l", outputId: "out", startIndex: null, afterPropId: "tree", stringId: "s2", afterStringId: "s1" },
+    ];
+    expect(outputStartForAttachment({ attachment: attachments[0]!, props: [tree], attachments })).toBeNull();
+    const missing = planPropPlacement({ prop: tree, output: out, lightName: "Yard", stringId: "s9", place: { startIndex: 0, afterPropId: null }, props: [tree], attachments: [] });
+    expect(missing.ok).toBe(false);
+  });
+
+  it("reads an attachment saved before strings had ids as the first string", () => {
+    const legacy: PropAttachment = { propId: "tree", lightId: "l", outputId: "out", startIndex: 12, afterPropId: null };
+    expect(isPropAttachment(legacy)).toBe(true);
+    expect(attachmentStringId(legacy, tree)).toBe("s1");
+    expect(unattachedStrings(tree, [legacy]).map((row) => row.id)).toEqual(["s2"]);
+    expect(outputStartForAttachment({ attachment: legacy, props: [tree], attachments: [legacy] })).toBe(12);
+    // A follower of the old row lands after the first string only.
+    const follower = planPropPlacement({ prop: tree, output: out, lightName: "Yard", stringId: "s2", place: { startIndex: null, afterPropId: "tree" }, props: [tree], attachments: [legacy] });
+    expect(follower.ok && follower.absoluteStart).toBe(12 + one);
+  });
+
+  it("keeps a single-string prop exactly as before", () => {
+    const built = compilePropDesign({ kind: "roofline", unit: "m", pitchMm: pitch, ledProductId: null, measurements: { shape: "roofline", length: 1 } });
+    if (!built.ok) throw new Error("design");
+    const roof: Prop = { id: "roof", label: "Roof", kind: "roofline", elementIds: [], design: built.design };
+    expect(propStrings(roof)).toEqual([{ id: "s1", ledCount: built.design.ledCount }]);
+    const plan = planPropPlacement({ prop: roof, output: out, lightName: "Yard", place: { startIndex: 2, afterPropId: null }, props: [roof], attachments: [] });
+    if (!plan.ok) throw new Error(plan.message);
+    expect(plan.summary).toBe(`${built.design.ledCount} lights on Yard · output 1, from the first light.`);
+  });
+
+  it("rejects malformed string ids", () => {
+    expect(isPropAttachment({ propId: "a", lightId: "l", outputId: "o", startIndex: 0, afterPropId: null, stringId: "" })).toBe(false);
+    expect(isPropAttachment({ propId: "a", lightId: "l", outputId: "o", startIndex: 0, afterPropId: null, stringId: 3 })).toBe(false);
+    expect(isPropAttachment({ propId: "a", lightId: "l", outputId: "o", startIndex: null, afterPropId: "b", afterStringId: "s2" })).toBe(true);
   });
 });
 

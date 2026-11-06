@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Element, Light } from "../lights.ts";
 import { buildManagedPresets, buildPlaylistPreset, lookTargetsForLook, mergeFollowingSections, type Look, type LookStyle, type ShapeMotion } from "../look.ts";
 import { countLayout, layoutFromMeasurements, type PropLayout } from "./layout.ts";
-import { planLightMaps } from "./light-maps.ts";
+import { propStrings } from "./design.ts";
+import { planLightMaps, stringStartsFor } from "./light-maps.ts";
 import { defaultSections } from "./sections.ts";
 import type { Prop, PropAttachment, PropDesign } from "./types.ts";
 import { compileWireframe, defaultWireframeSpec } from "./wireframe.ts";
@@ -208,19 +209,112 @@ describe("planLightMaps", () => {
 
   it("keeps a section its own segment, in map positions, when a Look styles that section", () => {
     const bush = twoStringTree();
+    const total = countLayout(bush.layout!).total;
     const elements = [element(bush, 0)];
+    const attachments: PropAttachment[] = [
+      { propId: "tree", lightId: "light-1", outputId: "out-a", startIndex: 0, afterPropId: null, stringId: "s1" },
+      { propId: "tree", lightId: "light-1", outputId: "out-a", startIndex: null, afterPropId: "tree", stringId: "s2", afterStringId: "s1" },
+    ];
     const own = look("own", 1, [{ propId: "tree", sectionId: "right", style: { ...style, motion: "outward" } }]);
-    const plan = planLightMaps({ light, props: [bush], elements, attachments: [], looks: [own] });
+    const withOutputs = { ...light, outputs: [{ id: "out-a", start: 0, ledCount: 400 }] as Light["outputs"] };
+    const plan = planLightMaps({ light: withOutputs, props: [bush], elements, attachments, looks: [own] });
     if (!plan.ok) throw new Error(plan.message);
-    const geometry = { ledCount: 400, elements, props: [bush] };
+    const geometry = { ledCount: 400, elements, props: [bush], stringStarts: stringStartsFor({ light: withOutputs, props: [bush], elements, attachments }) };
     const presets = buildManagedPresets({ looks: [own], playlists: [], targets: [], rgbw: false, geometry, maps: plan.plan }) as Record<string, { ledmap: number; seg: { start: number; stop: number }[] }>;
     expect(presets["1"]!.ledmap).toBe(1);
     // Every light of the prop is addressed once, and no two segments overlap.
     const seg = presets["1"]!.seg.map((row) => [row.start, row.stop] as const).sort((a, b) => a[0] - b[0]);
     expect(seg[0]![0]).toBe(0);
-    expect(seg.at(-1)![1]).toBe(countLayout(bush.layout!).total);
+    expect(seg.at(-1)![1]).toBe(total);
     seg.forEach((row, index) => {
       if (index > 0) expect(row[0]).toBe(seg[index - 1]![1]);
+    });
+  });
+
+  describe("a split tree with every string attached", () => {
+    const tree = twoStringTree();
+    const [one, two] = propStrings(tree).map((row) => row.ledCount!) as [number, number];
+    const outputs = [
+      { id: "out-a", index: 0, start: 0, ledCount: 100 },
+      { id: "out-b", index: 1, start: 100, ledCount: 100 },
+    ] as Light["outputs"];
+    const twoOutputs = { ...light, ledCount: 200, outputs };
+    const up = look("up", 1, moves("tree", "up"));
+
+    it("maps both strings on different outputs, each from its own start", () => {
+      const attachments: PropAttachment[] = [
+        { propId: "tree", lightId: "light-1", outputId: "out-a", startIndex: 5, afterPropId: null, stringId: "s1" },
+        { propId: "tree", lightId: "light-1", outputId: "out-b", startIndex: 10, afterPropId: null, stringId: "s2" },
+      ];
+      const placed: Prop = { ...tree, elementIds: ["ta", "tb"] };
+      const elements: Element[] = [
+        { id: "ta", lightId: "light-1", label: "tree", start: 5, stop: 5 + one },
+        { id: "tb", lightId: "light-1", label: "tree", start: 110, stop: 110 + two },
+      ];
+      const plan = planLightMaps({ light: twoOutputs, props: [placed], elements, attachments, looks: [up] });
+      if (!plan.ok) throw new Error(plan.message);
+      expect(plan.plan!.blocks).toEqual([
+        { propId: "tree", start: 5, count: one },
+        { propId: "tree", start: 110, count: two },
+      ]);
+      const map = plan.writes.find((row) => row.slot === 1)!.map;
+      const physical = new Set([...Array.from({ length: one }, (_, i) => 5 + i), ...Array.from({ length: two }, (_, i) => 110 + i)]);
+      // Lights outside both strings keep their place and each string's lights stay on that string.
+      map.forEach((value, index) => {
+        if (!physical.has(index)) expect(value).toBe(index);
+        else expect(physical.has(value)).toBe(true);
+      });
+      expect(new Set(map).size).toBe(map.length);
+      // The right branch's lights are in the map, so the motion map reaches the second string.
+      expect(map.slice(110, 110 + two).some((value, i) => value !== 110 + i)).toBe(true);
+      const geometry = { ledCount: 200, elements, props: [placed], stringStarts: stringStartsFor({ light: twoOutputs, props: [placed], elements, attachments }) };
+      const presets = buildManagedPresets({ looks: [up], playlists: [], targets: [], rgbw: false, geometry, maps: plan.plan }) as Record<string, { ledmap: number; seg: { start: number; stop: number }[] }>;
+      expect(presets["1"]!.ledmap).toBe(1);
+      for (const row of presets["1"]!.seg) {
+        const inFirst = row.start >= 5 && row.stop <= 5 + one;
+        const inSecond = row.start >= 110 && row.stop <= 110 + two;
+        expect(inFirst || inSecond).toBe(true);
+      }
+    });
+
+    it("sorts across both strings as one prop when they sit side by side", () => {
+      const attachments: PropAttachment[] = [
+        { propId: "tree", lightId: "light-1", outputId: "out-a", startIndex: 0, afterPropId: null, stringId: "s1" },
+        { propId: "tree", lightId: "light-1", outputId: "out-a", startIndex: null, afterPropId: "tree", stringId: "s2", afterStringId: "s1" },
+      ];
+      const plan = planLightMaps({ light: twoOutputs, props: [tree], elements: [], attachments, looks: [up] });
+      if (!plan.ok) throw new Error(plan.message);
+      expect(plan.plan!.blocks).toEqual([{ propId: "tree", start: 0, count: one + two }]);
+    });
+
+    it("leaves an unattached string out and says so", () => {
+      const attachments: PropAttachment[] = [
+        { propId: "tree", lightId: "light-1", outputId: "out-a", startIndex: 0, afterPropId: null },
+      ];
+      const plan = planLightMaps({ light: twoOutputs, props: [tree], elements: [], attachments, looks: [up] });
+      if (!plan.ok) throw new Error(plan.message);
+      expect(plan.plan!.blocks).toEqual([{ propId: "tree", start: 0, count: one }]);
+      expect(plan.notes.join(" ")).toMatch(/one string is not attached/);
+    });
+
+    it("refuses a string that runs past the end of the Light, naming the string", () => {
+      const attachments: PropAttachment[] = [
+        { propId: "tree", lightId: "light-1", outputId: "out-a", startIndex: 0, afterPropId: null, stringId: "s1" },
+        { propId: "tree", lightId: "light-1", outputId: "out-b", startIndex: 95, afterPropId: null, stringId: "s2" },
+      ];
+      const plan = planLightMaps({ light: twoOutputs, props: [tree], elements: [], attachments, looks: [up] });
+      expect(plan.ok).toBe(false);
+      if (!plan.ok) expect(plan.message).toMatch(/string 2.*this Light has 200/);
+    });
+
+    it("refuses two strings that land on the same lights", () => {
+      const attachments: PropAttachment[] = [
+        { propId: "tree", lightId: "light-1", outputId: "out-a", startIndex: 0, afterPropId: null, stringId: "s1" },
+        { propId: "tree", lightId: "light-1", outputId: "out-a", startIndex: 2, afterPropId: null, stringId: "s2" },
+      ];
+      const plan = planLightMaps({ light: twoOutputs, props: [tree], elements: [], attachments, looks: [up] });
+      expect(plan.ok).toBe(false);
+      if (!plan.ok) expect(plan.message).toMatch(/strings that share lights/);
     });
   });
 });

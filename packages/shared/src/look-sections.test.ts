@@ -163,3 +163,40 @@ describe("props in a Look", () => {
     expect(pinned.looks[1]).toBe(look);
   });
 });
+
+describe("a Look on a Prop with several strings", () => {
+  const s1 = [{ id: "e1", from: "c1", to: "c2", kind: "lit" as const }, { id: "e2", from: "c2", to: "c3", kind: "lit" as const }];
+  const s2 = [{ id: "e3", from: "c4", to: "c5", kind: "lit" as const }];
+  const two: Prop = {
+    id: "tree", lightId: "light-1", label: "Tree", kind: "custom", elementIds: ["ta", "tb"],
+    layout: {
+      source: "trace", units: "m", pitchM: 0.1, startOffsetM: 0,
+      corners: [{ id: "c1", x: 0, y: 0 }, { id: "c2", x: 1, y: 0 }, { id: "c3", x: 1, y: 1 }, { id: "c4", x: 3, y: 0 }, { id: "c5", x: 3, y: 1 }],
+      run: s1,
+      strings: [{ id: "s1", startId: "c1", run: s1 }, { id: "s2", startId: "c4", run: s2 }],
+    },
+    sections: [
+      { id: "left", name: "Left", edgeIds: ["e1", "e2"], pinnedRanges: [] },
+      { id: "right", name: "Right", edgeIds: ["e3"], pinnedRanges: [] },
+    ],
+  };
+  const placed: Element[] = [
+    { id: "ta", lightId: "light-1", label: "Tree · Left", start: 5, stop: 25 },
+    { id: "tb", lightId: "light-1", label: "Tree · Right", start: 60, stop: 70 },
+  ];
+
+  it("puts each string's sections at that string's own start and has no note once every string is attached", () => {
+    const stringStarts = [{ propId: "tree", stringId: "s1", start: 5 }, { propId: "tree", stringId: "s2", start: 60 }];
+    const targets = lookTargets({ ledCount: 100, elements: placed, props: [two], stringStarts });
+    expect(targets.filter((t) => t.sectionId).map((t) => [t.sectionId, t.start, t.stop])).toEqual([["left", 5, 25], ["right", 60, 70]]);
+    expect(lookSectionNotes({ ledCount: 100, elements: placed, props: [two], stringStarts })).toEqual([]);
+  });
+
+  it("names a string that is not attached, and still sends the ones that are", () => {
+    const stringStarts = [{ propId: "tree", stringId: "s1", start: 5 }];
+    const notes = lookSectionNotes({ ledCount: 100, elements: [placed[0]!], props: [{ ...two, elementIds: ["ta"] }], stringStarts });
+    expect(notes.join(" ")).toMatch(/Tree · Right has lights on a string that is not attached/);
+    const targets = lookTargets({ ledCount: 100, elements: [placed[0]!], props: [{ ...two, elementIds: ["ta"] }], stringStarts });
+    expect(targets.filter((t) => t.sectionId).map((t) => t.sectionId)).toEqual(["left"]);
+  });
+});

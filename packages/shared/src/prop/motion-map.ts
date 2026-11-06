@@ -55,6 +55,14 @@ export type MotionMapProp = {
   start: number;
   /** Lights the prop owns. Needed for a well house and for a prop with no drawing. A drawn prop counts its own. */
   ledCount?: number;
+  /**
+   * Where each attached string of a drawn prop with several strings starts on the
+   * Light, whatever its output. Absent means the prop is one run from `start`.
+   * Only the listed strings are mapped; their lights keep string order. The map
+   * orders them as one prop, and a section split by a gap between strings is
+   * reported once per run, so no segment covers another prop's lights.
+   */
+  strings?: readonly { stringId: string; start: number }[];
 };
 
 /** A motion for one section, or for the whole prop when `sectionId` is absent. A section falls back to its prop's, then to along the wire. */
@@ -130,8 +138,8 @@ type Group = {
 };
 
 type PropPlan =
-  | { kind: "drawn"; item: MotionMapProp; count: number; lights: ShapeLight[]; groups: Group[] }
-  | { kind: "block"; item: MotionMapProp; count: number; local: number[] };
+  | { kind: "drawn"; item: MotionMapProp; count: number; positions: number[]; lights: ShapeLight[]; groups: Group[] }
+  | { kind: "block"; item: MotionMapProp; count: number; positions: number[]; local: number[] };
 
 const SORT_EPS = 1e6;
 
@@ -183,19 +191,30 @@ function planProp(item: MotionMapProp, notes: string[]): PropPlan {
     if (given === null) notes.push(`${prop.label} has no light count, so it is left as wired.`);
     const compiled = count > 0 ? compileWireframe(prop.wireframe, count) : null;
     const local = compiled && compiled.ledmap.length === count ? compiled.ledmap.slice() : Array.from({ length: count }, (_, index) => index);
-    return { kind: "block", item, count, local };
+    return { kind: "block", item, count, positions: Array.from({ length: count }, (_, index) => item.start + index), local };
   }
   if (prop.layout) {
     const shape = readPropShape(prop.layout, { overrides: prop.shapeRoles ?? [] });
-    const lights = shape.lights;
+    let lights = shape.lights;
+    let positions = lights.map((_, index) => item.start + index);
+    if (item.strings && layoutStrings(prop.layout).length > 1) {
+      const starts = new Map(item.strings.map((row) => [row.stringId, row.start]));
+      const seen = new Map<string, number>();
+      lights = shape.lights.filter((light) => starts.has(light.stringId));
+      positions = lights.map((light) => {
+        const ordinal = seen.get(light.stringId) ?? 0;
+        seen.set(light.stringId, ordinal + 1);
+        return starts.get(light.stringId)! + ordinal;
+      });
+    }
     if (given !== null && given !== lights.length) {
       notes.push(`${prop.label} is drawn with ${lights.length} lights but attached with ${given}. The drawing's count is used.`);
     }
-    return { kind: "drawn", item, count: lights.length, lights, groups: groupLights(item, lights, notes) };
+    return { kind: "drawn", item, count: lights.length, positions, lights, groups: groupLights(item, lights, notes) };
   }
   const count = given ?? 0;
   if (given === null) notes.push(`${prop.label} has no drawing or light count, so it is left as wired.`);
-  return { kind: "block", item, count, local: Array.from({ length: count }, (_, index) => index) };
+  return { kind: "block", item, count, positions: Array.from({ length: count }, (_, index) => item.start + index), local: Array.from({ length: count }, (_, index) => index) };
 }
 
 function choiceFor(look: MotionMapLookInput, propId: string, sectionId: string | null): ShapeMotion {
@@ -227,29 +246,39 @@ function buildMap(
   const sections: MotionMapSection[] = [];
   const rests: MotionMapRest[] = [];
   for (const plan of plans) {
-    const base = plan.item.start;
+    // The prop's own physical lights, lowest first. They are the map positions it fills.
+    const slots = plan.positions.slice().sort((x, y) => x - y);
     if (plan.kind === "block") {
       plan.local.forEach((local, offset) => {
-        map[base + offset] = base + local;
+        map[slots[offset]!] = plan.positions[local]!;
       });
       continue;
     }
-    let cursor = base;
+    let cursor = 0;
     const joined = look?.joined?.includes(plan.item.prop.id) === true;
     const groups: Group[] = joined ? [{ sectionId: null, locals: plan.lights.map((_, local) => local) }] : plan.groups;
     for (const group of groups) {
       const motion = look ? choiceFor(look, plan.item.prop.id, group.sectionId) : "wire";
       const { sort, rev } = motionSort(motion);
       const ordered = sortBlock(group.locals, plan.lights, sort);
-      const start = cursor;
+      const first = cursor;
       for (const local of ordered) {
-        map[cursor] = base + local;
+        map[slots[cursor]!] = plan.positions[local]!;
         cursor += 1;
       }
-      if (group.sectionId !== null) {
-        sections.push({ propId: plan.item.prop.id, sectionId: group.sectionId, start, stop: cursor, motion, rev });
-      } else {
-        rests.push({ propId: plan.item.prop.id, start, stop: cursor, motion, rev });
+      // A gap between strings splits a group into runs. Each run is its own segment.
+      let runStart = first;
+      for (let at = first; at < cursor; at += 1) {
+        const last = at + 1 === cursor || slots[at + 1] !== slots[at]! + 1;
+        if (!last) continue;
+        const start = slots[runStart]!;
+        const stop = slots[at]! + 1;
+        if (group.sectionId !== null) {
+          sections.push({ propId: plan.item.prop.id, sectionId: group.sectionId, start, stop, motion, rev });
+        } else {
+          rests.push({ propId: plan.item.prop.id, start, stop, motion, rev });
+        }
+        runStart = at + 1;
       }
     }
   }
@@ -278,15 +307,30 @@ export function buildMotionMaps(input: MotionMapInput): MotionMapResult {
       return refuse(`${item.prop.label} does not start at a whole light on this Light, so no motion map was built.`, notes);
     }
   }
-  const plans = ordered.map((item) => planProp(item, notes));
-  let end = 0;
-  let previous: PropPlan | null = null;
-  for (const plan of plans) {
-    if (previous && plan.item.start < end) {
-      return refuse(`${previous.item.prop.label} and ${plan.item.prop.label} share lights on this Light, so no motion map was built.`, notes);
+  for (const item of input.props) {
+    for (const row of item.strings ?? []) {
+      if (!Number.isInteger(row.start) || row.start < 0) {
+        return refuse(`${item.prop.label} does not start at a whole light on this Light, so no motion map was built.`, notes);
+      }
     }
-    end = plan.item.start + plan.count;
-    previous = plan;
+  }
+  const plans = ordered.map((item) => planProp(item, notes));
+  const owner = new Map<number, PropPlan>();
+  let end = 0;
+  for (const plan of plans) {
+    for (const position of plan.positions) {
+      const other = owner.get(position);
+      if (other) {
+        return refuse(
+          other === plan
+            ? `${plan.item.prop.label} has strings that share lights on this Light, so no motion map was built.`
+            : `${other.item.prop.label} and ${plan.item.prop.label} share lights on this Light, so no motion map was built.`,
+          notes,
+        );
+      }
+      owner.set(position, plan);
+      end = Math.max(end, position + 1);
+    }
   }
   const total = Math.max(end, Number.isInteger(input.ledCount) ? input.ledCount! : 0);
   if (total === 0) return refuse("This Light has no lights to map.", notes);

@@ -29,6 +29,11 @@ import {
   splitTreeCoverage,
   splitTreeTrunks,
   planPropPlacement,
+  attachmentStringId,
+  attachmentsOfProp,
+  isAttachmentFor,
+  propStrings,
+  unattachedStrings,
   propAttachmentLabel,
   setEdgeLights,
   snap as aimSnap,
@@ -291,7 +296,7 @@ export function YardEditor(init: YardEditorProps) {
     future: [] as Snapshot[],
     dpast: [] as string[],
     dfuture: [] as string[],
-    ctrl: { lightId: "", outputId: "", afterPropId: null as string | null, busy: false, notice: null as string | null, applied: false, blinking: false },
+    ctrl: { lightId: "", outputId: "", afterPropId: null as string | null, afterStringId: null as string | null, stringId: null as string | null, busy: false, notice: null as string | null, applied: false, blinking: false },
     coords: null as { x: number; y: number; text: string } | null,
     focusName: false,
     phone: false,
@@ -2873,40 +2878,100 @@ export function YardEditor(init: YardEditorProps) {
   }
 
   function controllerFold(p: Prop) {
-    const attachment = s.attachments.find((a) => a.propId === p.id) ?? null;
-    const attachedLight = attachment ? init.lights.find((l) => l.id === attachment.lightId) : undefined;
-    const attachedOutput = attachedLight?.outputs?.find((o) => o.id === attachment?.outputId);
-    const meta = !attachment ? "Not attached" : !attachedLight ? "Controller missing" : propAttachmentLabel(attachment, attachedLight.name, attachedOutput?.index ?? null);
+    const strings = propStrings(p);
+    const many = strings.length > 1;
+    const own = attachmentsOfProp(s.attachments, p.id);
     const c = s.ctrl;
-    const lightId = c.lightId || attachment?.lightId || "";
+    // The string being attached: the one picked, else the first still waiting, else the first.
+    const waiting = unattachedStrings(p, s.attachments);
+    const stringId = strings.some((x) => x.id === c.stringId) ? c.stringId! : (waiting[0] ?? strings[0])!.id;
+    const stringNo = strings.findIndex((x) => x.id === stringId) + 1;
+    const attachment = own.find((a) => isAttachmentFor(a, p, stringId)) ?? null;
+    // A prop lives on one controller, so a string with no row of its own starts from where its prop already is.
+    const home = attachment ?? own[0] ?? null;
+    const attachedLight = home ? init.lights.find((l) => l.id === home.lightId) : undefined;
+    const attachedOutput = attachedLight?.outputs?.find((o) => o.id === home?.outputId);
+    const meta = own.length === 0
+      ? "Not attached"
+      : !attachedLight
+        ? "Controller missing"
+        : many
+          ? `${own.length} of ${strings.length} strings · ${attachedLight.name}`
+          : propAttachmentLabel(own[0]!, attachedLight.name, attachedOutput?.index ?? null);
+    const lightId = c.lightId || home?.lightId || "";
     const light = init.lights.find((l) => l.id === lightId) ?? null;
     const outputs = light?.outputs ?? [];
-    const output = outputs.find((o) => o.id === (c.outputId || attachment?.outputId)) ?? outputs[0] ?? null;
+    const output = outputs.find((o) => o.id === (c.outputId || attachment?.outputId || home?.outputId)) ?? outputs[0] ?? null;
     const followers = s.props.filter((q) => q.id !== p.id && s.attachments.some((a) => a.propId === q.id && a.lightId === lightId && a.outputId === output?.id));
-    const after = c.afterPropId ?? (attachment && attachment.lightId === lightId ? attachment.afterPropId : null);
+    const siblings = own.filter((a) => !isAttachmentFor(a, p, stringId) && a.lightId === lightId && a.outputId === output?.id);
+    const chosenAfter = c.afterPropId !== null
+      ? { propId: c.afterPropId, stringId: c.afterStringId }
+      : attachment && attachment.lightId === lightId && attachment.afterPropId
+        ? { propId: attachment.afterPropId, stringId: attachment.afterStringId ?? null }
+        : null;
+    // A choice that no longer names a string on this output falls back to the first light.
+    const after = chosenAfter && (chosenAfter.propId === p.id
+      ? siblings.some((a) => !chosenAfter.stringId || isAttachmentFor(a, p, chosenAfter.stringId))
+      : followers.some((q) => q.id === chosenAfter.propId))
+      ? chosenAfter
+      : null;
+    const place = after
+      ? { startIndex: null, afterPropId: after.propId, ...(after.stringId ? { afterStringId: after.stringId } : {}) }
+      : { startIndex: 0, afterPropId: null };
+    const attachmentFor = (): PropAttachment | null => light && output
+      ? {
+        propId: p.id,
+        lightId: light.id,
+        outputId: output.id,
+        startIndex: after ? null : 0,
+        afterPropId: after?.propId ?? null,
+        ...(many ? { stringId } : {}),
+        ...(after?.stringId ? { afterStringId: after.stringId } : {}),
+      }
+      : null;
+    const next = attachmentFor();
+    const withThis = next ? [...s.attachments.filter((a) => !isAttachmentFor(a, p, stringId)), next] : s.attachments;
+    // Segments the prop's other strings already hold on this controller, so the controller's limit counts them.
+    const siblingRanges = light
+      ? own.reduce((sum, a) => {
+        if (isAttachmentFor(a, p, stringId) || a.lightId !== light.id) return sum;
+        const out = outputs.find((o) => o.id === a.outputId);
+        const planned = out
+          ? planPropPlacement({
+            prop: p, output: out, lightName: light.name, stringId: attachmentStringId(a, p),
+            place: { startIndex: a.startIndex, afterPropId: a.afterPropId, afterStringId: a.afterStringId ?? null },
+            props: s.props, attachments: withThis,
+          })
+          : null;
+        return sum + (planned?.ok ? planned.segments.length : 0);
+      }, 0)
+      : 0;
     const plan = light && output
       ? planPropPlacement({
         prop: p,
         output,
         lightName: light.name,
-        place: after ? { startIndex: null, afterPropId: after } : { startIndex: 0, afterPropId: null },
+        stringId,
+        place,
         props: s.props,
-        attachments: s.attachments,
+        attachments: withThis,
         maxSegments: light.lastSnapshot?.maxSegments ?? null,
-        otherRangeCount: Math.max(0, (light.elementCount ?? 0) - p.elementIds.length),
+        otherRangeCount: Math.max(0, (light.elementCount ?? 0) - p.elementIds.length) + siblingRanges,
       })
       : null;
     const blinking = c.blinking || init.sessions.some((x) => x.lightId === lightId && x.kind === "blink");
     async function apply() {
-      if (!light || !output || !plan?.ok) return;
+      if (!light || !output || !plan?.ok || !next) return;
       s.ctrl = { ...s.ctrl, busy: true, notice: null };
       render();
       if (blinking) await postJson(`/api/lights/${light.id}/blink/end`, {});
       const res = await postJson<{ prop?: Prop; message?: string; summary?: string; apply?: { matched?: boolean; message?: string } }>(`/api/props/${p.id}/attach`, {
         lightId: light.id,
         outputId: output.id,
-        startIndex: after ? null : 0,
-        afterPropId: after,
+        startIndex: next.startIndex,
+        afterPropId: next.afterPropId,
+        ...(many ? { stringId } : {}),
+        ...(next.afterStringId ? { afterStringId: next.afterStringId } : {}),
         apply: true,
       });
       if (!res.ok) {
@@ -2922,9 +2987,17 @@ export function YardEditor(init: YardEditorProps) {
           ...(local ? { label: local.label } : {}),
         });
       }
-      s.attachments = [...s.attachments.filter((a) => a.propId !== p.id), { propId: p.id, lightId: light.id, outputId: output.id, startIndex: after ? null : 0, afterPropId: after }];
+      // This string's row is replaced. The prop's other strings keep theirs, on the same controller.
+      s.attachments = [...s.attachments.filter((a) => a.propId !== p.id || (a.lightId === light.id && !isAttachmentFor(a, p, stringId))), next];
+      const left = unattachedStrings(p, s.attachments);
       const readback = res.data.apply?.message ?? res.data.message;
-      s.ctrl = { ...s.ctrl, busy: false, blinking: false, applied: res.data.apply?.matched === true, notice: readback ?? "The controller did not report a readback. Not treating this as done." };
+      // Carry on to the next string waiting, on the same controller and output.
+      s.ctrl = {
+        ...s.ctrl, busy: false, blinking: false, applied: res.data.apply?.matched === true,
+        lightId: light.id, outputId: output.id, afterPropId: null, afterStringId: null,
+        stringId: left[0]?.id ?? stringId,
+        notice: readback ?? "The controller did not report a readback. Not treating this as done.",
+      };
       render();
     }
     async function blink() {
@@ -2948,23 +3021,45 @@ export function YardEditor(init: YardEditorProps) {
             <>
               <div className="grid2">
                 <label className="f">Controller
-                  <select value={lightId} onChange={(e) => { const l = init.lights.find((x) => x.id === e.target.value); s.ctrl = { ...s.ctrl, lightId: e.target.value, outputId: l?.outputs?.[0]?.id ?? "", afterPropId: null, applied: false, notice: null }; render(); }}>
+                  <select value={lightId} onChange={(e) => { const l = init.lights.find((x) => x.id === e.target.value); s.ctrl = { ...s.ctrl, lightId: e.target.value, outputId: l?.outputs?.[0]?.id ?? "", afterPropId: null, afterStringId: null, applied: false, notice: null }; render(); }}>
                     <option value="">Not attached</option>
                     {init.lights.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                   </select>
                 </label>
                 <label className="f">Output
-                  <select value={output?.id ?? ""} disabled={!light} onChange={(e) => { s.ctrl = { ...s.ctrl, lightId, outputId: e.target.value, afterPropId: null, applied: false }; render(); }}>
+                  <select value={output?.id ?? ""} disabled={!light} onChange={(e) => { s.ctrl = { ...s.ctrl, lightId, outputId: e.target.value, afterPropId: null, afterStringId: null, applied: false }; render(); }}>
                     {light ? outputs.map((o) => <option key={o.id} value={o.id}>{o.index + 1}</option>) : <option>—</option>}
                   </select>
                 </label>
               </div>
+              {many ? (
+                <label className="f">String
+                  <select value={stringId} onChange={(e) => { s.ctrl = { ...s.ctrl, stringId: e.target.value, lightId: "", outputId: "", afterPropId: null, afterStringId: null, applied: false, notice: null }; render(); }}>
+                    {strings.map((x, index) => (
+                      <option key={x.id} value={x.id}>
+                        String {index + 1} · {x.ledCount ?? "?"} lights · {own.some((a) => isAttachmentFor(a, p, x.id)) ? "attached" : "not attached"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               {light ? (
                 <>
-                  <label className="f">Where on this output
-                    <select value={after ?? ""} onChange={(e) => { s.ctrl = { ...s.ctrl, lightId, outputId: output?.id ?? "", afterPropId: e.target.value || null, applied: false }; render(); }}>
+                  <label className="f">Where on this output{many ? ` (string ${stringNo})` : ""}
+                    <select
+                      value={after ? `${after.propId}\u0000${after.stringId ?? ""}` : ""}
+                      onChange={(e) => {
+                        const [propId, sid] = e.target.value.split("\u0000");
+                        s.ctrl = { ...s.ctrl, lightId, outputId: output?.id ?? "", afterPropId: propId || null, afterStringId: sid || null, applied: false };
+                        render();
+                      }}
+                    >
                       <option value="">From the first light</option>
-                      {followers.map((q) => <option key={q.id} value={q.id}>After {q.label}</option>)}
+                      {siblings.map((a) => {
+                        const id = attachmentStringId(a, p);
+                        return <option key={`own-${id}`} value={`${p.id}\u0000${id}`}>After string {strings.findIndex((x) => x.id === id) + 1}</option>;
+                      })}
+                      {followers.map((q) => <option key={q.id} value={`${q.id}\u0000`}>After {q.label}</option>)}
                     </select>
                   </label>
                   <div className="readback"><strong>What gets written</strong><br />{plan ? (plan.ok ? plan.summary : plan.message) : "Pick an output."}

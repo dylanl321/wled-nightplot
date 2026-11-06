@@ -5,7 +5,7 @@
 import { parseHexColor } from "./live.ts";
 import { resolveLookTarget, type Look, type LookStyle } from "./look.ts";
 import { layoutStrings } from "./prop/layout.ts";
-import { outputStartForAttachment } from "./prop/design.ts";
+import { isAttachmentFor, outputStartForAttachment } from "./prop/design.ts";
 import { pathEdgeIndexRanges } from "./prop/sections.ts";
 import type { Prop, PropAttachment } from "./prop/types.ts";
 import { layoutLightPoints, type LayoutLightPoint } from "./prop/space.ts";
@@ -67,10 +67,9 @@ export function yardLiveColour(input: {
   feed: readonly YardLiveFeed[];
 }): string | null {
   const prop = input.props.find((row) => row.id === input.propId);
-  const attachment = input.attachments.find((row) => row.propId === input.propId);
-  if (!prop?.layout || !attachment) return null;
-  const first = layoutStrings(prop.layout)[0]?.id ?? "s1";
-  if (input.stringId !== first) return null;
+  if (!prop?.layout) return null;
+  const attachment = input.attachments.find((row) => isAttachmentFor(row, prop, input.stringId));
+  if (!attachment) return null;
   const row = input.feed.find((item) => item.lightId === attachment.lightId);
   if (!row || row.leds == null) return null;
   const output = input.outputs.find((item) => item.lightId === attachment.lightId && item.outputId === attachment.outputId);

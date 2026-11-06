@@ -13,3 +13,9 @@ The numbers stay in step with the drawing. Height, split height, and tip spacing
 **Even tips again** puts the tree back to an even Y from those whole-tree numbers.
 
 The length stored on each run is the string length along that piece: the coil up a trunk, the short lead into a junction, or the back path down the far side. The height of a trunk is the height of its end, for a later effect that follows height.
+
+## Attaching every string
+
+A split tree can have several strings, one per wire-in. Each string is attached on its own: in the prop's **Controller** fold, pick the **String**, then the controller, the output, and where it starts. A string can start from the first light of an output, after another prop, or after another string of the same tree. The strings may sit on different outputs. Apply writes the Segments for every string attached so far, and the fold then moves on to the next string still waiting.
+
+Each string is checked on its own: it needs its own lights to fit on its output, not the whole tree's. A string that is not attached yet stays on the prop, and its lights are not sent or put in the Look's light map until it is. A tree whose strings all sit side by side on one Light is sorted as one tree, so Upward runs up the whole tree. Not Hardware Done.

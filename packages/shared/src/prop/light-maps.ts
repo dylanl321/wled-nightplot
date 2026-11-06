@@ -13,8 +13,8 @@
  */
 
 import type { Element, Light } from "../lights.ts";
-import { lookIncludesProp, resolveLookTarget, type Look, type LookMapPlan } from "../look.ts";
-import { attachmentForLegacy, outputStartForAttachment } from "./design.ts";
+import { lookIncludesProp, resolveLookTarget, type Look, type LookMapPlan, type StringStart } from "../look.ts";
+import { attachmentForLegacy, attachmentStringId, outputStartForAttachment, propStrings } from "./design.ts";
 import { countLayout } from "./layout.ts";
 import { buildMotionMaps, type MotionChoice, type MotionMapLookInput, type MotionMapProp, type MotionMapSlot } from "./motion-map.ts";
 import type { Prop, PropAttachment } from "./types.ts";
@@ -59,6 +59,40 @@ function motionsFor(look: Look, props: readonly Prop[]): MotionMapLookInput {
   return { id: look.id, motions, joined };
 }
 
+/**
+ * Where each attached string of the Light's Props starts, in the Light's
+ * combined light numbers. Strings whose start cannot be read are left out.
+ * Looks use this to put each string's sections where it really sits.
+ */
+export function stringStartsFor(input: {
+  light: Pick<Light, "id" | "outputs">;
+  props: readonly Prop[];
+  allProps?: readonly Prop[];
+  elements: readonly Element[];
+  attachments: readonly PropAttachment[];
+}): StringStart[] {
+  const allProps = input.allProps ?? input.props;
+  const out: StringStart[] = [];
+  for (const prop of input.props) {
+    let list = input.attachments.filter((row) => row.propId === prop.id && row.lightId === input.light.id);
+    let chain = input.attachments;
+    if (list.length === 0) {
+      const owns = input.elements.some((row) => prop.elementIds.includes(row.id));
+      const legacy = owns ? attachmentForLegacy({ id: prop.id, lightId: input.light.id, elementIds: prop.elementIds }, input.elements, input.light) : null;
+      if (!legacy) continue;
+      list = [legacy];
+      chain = [...input.attachments, legacy];
+    }
+    for (const attachment of list) {
+      const onOutput = outputStartForAttachment({ attachment, props: allProps, attachments: chain });
+      if (onOutput === null) continue;
+      const base = input.light.outputs?.find((row) => row.id === attachment.outputId)?.start ?? 0;
+      out.push({ propId: prop.id, stringId: attachmentStringId(attachment, prop), start: base + onOutput });
+    }
+  }
+  return out;
+}
+
 export function planLightMaps(input: {
   light: Pick<Light, "id" | "ledCount" | "outputs">;
   /** The Props on this Light. */
@@ -76,20 +110,27 @@ export function planLightMaps(input: {
   const blocks: { propId: string; start: number; count: number }[] = [];
   let hasWireframe = false;
 
-  /** First light of a Prop on this Light, from its attachment, else from its Segments. Null when it has neither. */
-  const startOf = (prop: Prop): { start: number } | { message: string } | null => {
-    let attachment = input.attachments.find((row) => row.propId === prop.id && row.lightId === input.light.id) ?? null;
-    let chain = input.attachments;
-    if (!attachment) {
-      const owns = input.elements.some((row) => prop.elementIds.includes(row.id));
-      const legacy = owns ? attachmentForLegacy({ id: prop.id, lightId: input.light.id, elementIds: prop.elementIds }, input.elements, input.light) : null;
-      if (!legacy) return null;
-      attachment = legacy;
-      chain = [...input.attachments, legacy];
-    }
+  /** The attachments of a Prop on this Light, one per string. A Prop saved before strings were attached one by one has a legacy first-string one, from its Segments. */
+  const attachmentsOn = (prop: Prop): { list: PropAttachment[]; chain: readonly PropAttachment[] } => {
+    const own = input.attachments.filter((row) => row.propId === prop.id && row.lightId === input.light.id);
+    if (own.length > 0) return { list: own, chain: input.attachments };
+    const owns = input.elements.some((row) => prop.elementIds.includes(row.id));
+    const legacy = owns ? attachmentForLegacy({ id: prop.id, lightId: input.light.id, elementIds: prop.elementIds }, input.elements, input.light) : null;
+    return legacy ? { list: [legacy], chain: [...input.attachments, legacy] } : { list: [], chain: input.attachments };
+  };
+
+  /** First light of one attached string on this Light. */
+  const startOfString = (prop: Prop, attachment: PropAttachment, chain: readonly PropAttachment[]): { start: number } | { message: string } => {
     const onOutput = outputStartForAttachment({ attachment, props: allProps, attachments: chain });
     if (onOutput === null) return { message: `Nightplot cannot tell where ${prop.label} starts on this Light. Attach it again. Nothing was sent.` };
-    return { start: (input.light.outputs?.find((row) => row.id === attachment!.outputId)?.start ?? 0) + onOutput };
+    return { start: (input.light.outputs?.find((row) => row.id === attachment.outputId)?.start ?? 0) + onOutput };
+  };
+
+  /** First light of a Prop (its first attached string) on this Light, from its attachment, else from its Segments. Null when it has neither. */
+  const startOf = (prop: Prop): { start: number } | { message: string } | null => {
+    const { list, chain } = attachmentsOn(prop);
+    const first = list.find((row) => attachmentStringId(row, prop) === propStrings(prop)[0]?.id) ?? list[0];
+    return first ? startOfString(prop, first, chain) : null;
   };
 
   for (const prop of input.props) {
@@ -116,21 +157,54 @@ export function planLightMaps(input: {
         wireframe: hasWireframe,
       };
     }
-    const placed = startOf(prop);
-    if (placed === null) continue;
-    if ("message" in placed) return { ok: false, message: placed.message, notes, wireframe: hasWireframe };
-    const start = placed.start;
-    if (start + count > input.light.ledCount) {
-      return {
-        ok: false,
-        message: `${prop.label} needs lights ${start + 1} to ${start + count} and this Light has ${input.light.ledCount}. Attach it again. Nothing was sent.`,
-        notes,
-        wireframe: hasWireframe,
-      };
+    const { list, chain } = attachmentsOn(prop);
+    if (list.length === 0) continue;
+    const strings = propStrings(prop);
+    const attachedStrings: { stringId: string; start: number; count: number }[] = [];
+    for (const string of strings) {
+      const attachment = list.find((row) => attachmentStringId(row, prop) === string.id);
+      if (!attachment) continue;
+      const placed = startOfString(prop, attachment, chain);
+      if ("message" in placed) return { ok: false, message: placed.message, notes, wireframe: hasWireframe };
+      const stringCount = string.ledCount ?? 0;
+      if (placed.start + stringCount > input.light.ledCount) {
+        return {
+          ok: false,
+          message: `${prop.label}${strings.length > 1 ? `, string ${strings.indexOf(string) + 1},` : ""} needs lights ${placed.start + 1} to ${placed.start + stringCount} and this Light has ${input.light.ledCount}. Attach it again. Nothing was sent.`,
+          notes,
+          wireframe: hasWireframe,
+        };
+      }
+      attachedStrings.push({ stringId: string.id, start: placed.start, count: stringCount });
     }
-    mapped.push({ prop, start, ledCount: count });
+    if (attachedStrings.length === 0) continue;
+    const all = attachedStrings.length === strings.length;
+    if (!all) {
+      const missing = strings.filter((string) => !attachedStrings.some((row) => row.stringId === string.id));
+      notes.push(`${prop.label}: ${missing.length === 1 ? "one string is" : `${missing.length} strings are`} not attached, so ${missing.length === 1 ? "its" : "their"} lights are left out of the map.`);
+    }
+    const lowest = Math.min(...attachedStrings.map((row) => row.start));
+    mapped.push({
+      prop,
+      start: lowest,
+      ...(all ? { ledCount: count } : {}),
+      ...(strings.length > 1 ? { strings: attachedStrings.map((row) => ({ stringId: row.stringId, start: row.start })) } : {}),
+    });
     drawn.push(prop);
-    blocks.push({ propId: prop.id, start, count });
+    // One block per run of neighbouring lights, so a gap between strings is never a segment.
+    const spans = attachedStrings.filter((row) => row.count > 0).sort((x, y) => x.start - y.start);
+    let from = -1;
+    let to = -1;
+    for (const span of spans) {
+      if (from >= 0 && span.start === to) {
+        to = span.start + span.count;
+        continue;
+      }
+      if (from >= 0) blocks.push({ propId: prop.id, start: from, count: to - from });
+      from = span.start;
+      to = span.start + span.count;
+    }
+    if (from >= 0) blocks.push({ propId: prop.id, start: from, count: to - from });
   }
 
   if (mapped.length === 0) return { ok: true, plan: null, writes: [], notes };

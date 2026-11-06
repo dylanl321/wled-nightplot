@@ -6,7 +6,7 @@
 
 import type { Element, Light, LightOutput } from "../lights.ts";
 import { legacyOutputId } from "../outputs.ts";
-import { assignStableRunIds, countLayout, layoutFromMeasurements, layoutStrings, migratePlacedLights, stampEdgeNames, wellHouseEdgeLabel, wellHouseEdgeOrder, windowSideNames, type PropLayout } from "./layout.ts";
+import { assignStableRunIds, countLayout, edgeLightCount, layoutFromMeasurements, layoutStrings, migratePlacedLights, stampEdgeNames, wellHouseEdgeLabel, wellHouseEdgeOrder, windowSideNames, type PropLayout } from "./layout.ts";
 import { splitTreeLayout } from "./split-tree.ts";
 import { defaultSections, isLegacyWellHouseLayout, sectionIndexRanges } from "./sections.ts";
 import { defaultWireframeSpec } from "./wireframe.ts";
@@ -511,76 +511,150 @@ export type PlacementPlan =
   | { ok: true; absoluteStart: number; segments: PropSegmentDraft[]; summary: string }
   | { ok: false; message: string };
 
+/** One string of a prop and how many lights it holds. Null when the count is unknown. */
+export type PropStringInfo = { id: string; ledCount: number | null };
+
 /**
+ * The strings a prop can attach, in wire order. A prop with a drawing has the
+ * drawing's strings. A prop with none (a migrated one) has a single string.
+ * A single-string prop counts its design's lights, so it reads as it always did.
+ */
+export function propStrings(prop: Pick<Prop, "layout" | "design">): PropStringInfo[] {
+  const layout = prop.layout;
+  if (!layout) return [{ id: "s1", ledCount: prop.design?.ledCount ?? null }];
+  const strings = layoutStrings(layout);
+  if (strings.length === 1 && typeof prop.design?.ledCount === "number") {
+    return [{ id: strings[0]!.id, ledCount: prop.design.ledCount }];
+  }
+  return strings.map((string) => ({
+    id: string.id,
+    ledCount: string.run.reduce((sum, edge) => sum + (edge.kind === "lit" ? edgeLightCount(layout, edge) : 0), 0),
+  }));
+}
+
+/** The string an attachment is for. Absent means the first string. */
+export function attachmentStringId(
+  attachment: Pick<PropAttachment, "stringId">,
+  prop: Pick<Prop, "layout" | "design"> | undefined,
+): string {
+  return attachment.stringId ?? (prop ? propStrings(prop)[0]?.id : undefined) ?? "s1";
+}
+
+/** The attachments saved for one prop, one per string. */
+export function attachmentsOfProp(attachments: readonly PropAttachment[], propId: string): PropAttachment[] {
+  return attachments.filter((row) => row.propId === propId);
+}
+
+/** The strings of a prop that have no attachment yet. */
+export function unattachedStrings(
+  prop: Pick<Prop, "id" | "layout" | "design">,
+  attachments: readonly PropAttachment[],
+): PropStringInfo[] {
+  const have = new Set(attachmentsOfProp(attachments, prop.id).map((row) => attachmentStringId(row, prop)));
+  return propStrings(prop).filter((string) => !have.has(string.id));
+}
+
+type StringKey = string;
+
+function stringKey(propId: string, stringId: string): StringKey {
+  return `${propId}\u0000${stringId}`;
+}
+
+/** True when this attachment is the one for `stringId` of `prop`. */
+export function isAttachmentFor(
+  attachment: PropAttachment,
+  prop: Pick<Prop, "id" | "layout" | "design">,
+  stringId: string,
+): boolean {
+  return attachment.propId === prop.id && attachmentStringId(attachment, prop) === stringId;
+}
+
+/**
+ * Plan one string of a prop on an output. Each string has its own fit, start
+ * and Segments, so a prop with several strings is planned once per string.
+ * `stringId` absent means the first string.
+ *
  * One WLED segment per section range. A section with several ranges becomes
  * several segments that share its name and colour. Folding those into one
- * segment with a ledmap is a later slice.
+ * segment with a ledmap is the motion map's job.
  */
 export function planPropPlacement(input: {
   prop: Prop;
   output: Pick<LightOutput, "id" | "index" | "start" | "ledCount">;
   lightName: string;
-  place: { startIndex: number | null; afterPropId: string | null };
+  /** Which string. Absent is the first string. */
+  stringId?: string;
+  place: { startIndex: number | null; afterPropId: string | null; afterStringId?: string | null };
   props: readonly Prop[];
   attachments: readonly PropAttachment[];
   /** WLED `leds.maxseg` when the controller reported one. Unknown does not refuse. */
   maxSegments?: number | null;
-  /** Ranges already saved on this controller, not counting this prop. */
+  /** Ranges already saved on this controller, not counting this string. */
   otherRangeCount?: number;
 }): PlacementPlan {
-  const count = input.prop.design?.ledCount;
-  if (count === null || count === undefined) {
+  const strings = propStrings(input.prop);
+  const stringId = input.stringId ?? strings[0]!.id;
+  const info = strings.find((row) => row.id === stringId);
+  if (!info) return { ok: false, message: `${input.prop.label} has no string ${stringId}. Nothing was planned.` };
+  const count = info.ledCount;
+  const named = strings.length > 1 ? `${input.prop.label}, string ${strings.findIndex((row) => row.id === stringId) + 1},` : input.prop.label;
+  if (count === null) {
     return { ok: false, message: "This prop's light count is unknown. Nothing was planned." };
   }
-  if (count < 1) return { ok: false, message: "This prop has no lights to place." };
+  if (count < 1) return { ok: false, message: strings.length > 1 ? `${named} has no lights to place.` : "This prop has no lights to place." };
   const resolved = resolveStartIndex({
     outputId: input.output.id,
     place: input.place,
     props: input.props,
     attachments: input.attachments,
-    selfId: input.prop.id,
+    selfKey: stringKey(input.prop.id, stringId),
   });
   if (!resolved.ok) return resolved;
   if (resolved.startIndex + count > input.output.ledCount) {
     return {
       ok: false,
-      message: `${input.lightName} has ${input.output.ledCount} lights on output ${input.output.index + 1}. ${input.prop.label} needs ${count}. Nothing will be sent.`,
+      message: `${input.lightName} has ${input.output.ledCount} lights on output ${input.output.index + 1}. ${named} needs ${count}. Nothing will be sent.`,
     };
   }
   const absoluteStart = input.output.start + resolved.startIndex;
-  const segments = segmentsForProp(input.prop, absoluteStart, input.output.id);
+  const segments = segmentsForProp(input.prop, stringId, absoluteStart, input.output.id);
   if (segments.length === 0) return { ok: false, message: "This prop has no edges to write." };
   const others = input.otherRangeCount ?? 0;
   if (typeof input.maxSegments === "number" && others + segments.length > input.maxSegments) {
     return {
       ok: false,
-      message: `${input.lightName} can hold ${input.maxSegments} ranges. ${input.prop.label} needs ${segments.length}${others > 0 ? `, and ${others} are already saved` : ""}. Nothing will be sent.`,
+      message: `${input.lightName} can hold ${input.maxSegments} ranges. ${named} needs ${segments.length}${others > 0 ? `, and ${others} are already saved` : ""}. Nothing will be sent.`,
     };
   }
-  const where = input.place.afterPropId
-    ? `after ${input.props.find((row) => row.id === input.place.afterPropId)?.label ?? "the previous prop"}`
+  const followed = input.place.afterPropId;
+  const where = followed
+    ? followed === input.prop.id
+      ? "after another string of this prop"
+      : `after ${input.props.find((row) => row.id === followed)?.label ?? "the previous prop"}`
     : "from the first light";
-  const extraStrings = input.prop.layout ? Math.max(0, layoutStrings(input.prop.layout).length - 1) : 0;
-  const extra = extraStrings > 0
-    ? ` ${extraStrings === 1 ? "Another string stays on the prop" : `${extraStrings} other strings stay on the prop`} until you attach it to an output.`
+  const waiting = unattachedStrings(input.prop, input.attachments).filter((row) => row.id !== stringId).length;
+  const extra = waiting > 0
+    ? ` ${waiting === 1 ? "Another string stays on the prop" : `${waiting} other strings stay on the prop`} until you attach ${waiting === 1 ? "it" : "them"} to an output.`
     : "";
+  const which = strings.length > 1 ? `string ${strings.findIndex((row) => row.id === stringId) + 1} of ${strings.length}, ` : "";
   return {
     ok: true,
     absoluteStart,
     segments,
-    summary: `${count} lights on ${input.lightName} · output ${input.output.index + 1}, ${where}.${extra}`,
+    summary: `${which}${count} lights on ${input.lightName} · output ${input.output.index + 1}, ${where}.${extra}`,
   };
 }
 
-function segmentsForProp(prop: Prop, absoluteStart: number, outputId: string): PropSegmentDraft[] {
+function segmentsForProp(prop: Prop, stringId: string, absoluteStart: number, outputId: string): PropSegmentDraft[] {
+  const single = propStrings(prop).length === 1;
+  const firstId = propStrings(prop)[0]!.id;
   if (prop.layout && prop.sections && prop.sections.length > 0) {
-    const firstId = layoutStrings(prop.layout)[0]?.id ?? "s1";
     const reports = sectionIndexRanges(prop.layout, prop.sections);
     const fromSections: PropSegmentDraft[] = [];
     for (const report of reports) {
       for (const range of report.ranges) {
         if (range.stop <= range.start) continue;
-        if ((range.stringId ?? firstId) !== firstId) continue;
+        if (!single && (range.stringId ?? firstId) !== stringId) continue;
         fromSections.push({
           label: `${prop.label} · ${report.name}`,
           start: absoluteStart + range.start,
@@ -592,7 +666,10 @@ function segmentsForProp(prop: Prop, absoluteStart: number, outputId: string): P
     }
     if (fromSections.length > 0) return fromSections;
   }
-  const edges = prop.design?.edges ?? [];
+  const ownEdges = !single && prop.layout
+    ? new Set((layoutStrings(prop.layout).find((string) => string.id === stringId)?.run ?? []).map((edge) => edge.id))
+    : null;
+  const edges = (prop.design?.edges ?? []).filter((item) => !ownEdges || ownEdges.has(item.id));
   const fromEdges: PropSegmentDraft[] = [];
   let cursor = absoluteStart;
   for (const item of edges) {
@@ -614,30 +691,36 @@ export function outputStartForAttachment(input: {
   props: readonly Prop[];
   attachments: readonly PropAttachment[];
 }): number | null {
+  const own = input.props.find((row) => row.id === input.attachment.propId);
   const resolved = resolveStartIndex({
     outputId: input.attachment.outputId,
-    place: { startIndex: input.attachment.startIndex, afterPropId: input.attachment.afterPropId },
+    place: {
+      startIndex: input.attachment.startIndex,
+      afterPropId: input.attachment.afterPropId,
+      afterStringId: input.attachment.afterStringId ?? null,
+    },
     props: input.props,
     attachments: input.attachments,
-    selfId: input.attachment.propId,
+    selfKey: stringKey(input.attachment.propId, attachmentStringId(input.attachment, own)),
   });
   return resolved.ok ? resolved.startIndex : null;
 }
 
 function resolveStartIndex(input: {
   outputId: string;
-  place: { startIndex: number | null; afterPropId: string | null };
+  place: { startIndex: number | null; afterPropId: string | null; afterStringId?: string | null };
   props: readonly Prop[];
   attachments: readonly PropAttachment[];
-  selfId: string;
+  selfKey: StringKey;
 }): { ok: true; startIndex: number } | { ok: false; message: string } {
   if (input.place.afterPropId) {
     const followed = occupiedEnd({
       propId: input.place.afterPropId,
+      stringId: input.place.afterStringId ?? null,
       outputId: input.outputId,
       props: input.props,
       attachments: input.attachments,
-      seen: new Set([input.selfId]),
+      seen: new Set([input.selfKey]),
     });
     if (!followed.ok) return followed;
     return { ok: true, startIndex: followed.end };
@@ -648,30 +731,56 @@ function resolveStartIndex(input: {
   return { ok: true, startIndex: input.place.startIndex };
 }
 
+/** First free light after a string. With no string named, after the string on this output that ends furthest. */
 function occupiedEnd(input: {
   propId: string;
+  stringId: string | null;
   outputId: string;
   props: readonly Prop[];
   attachments: readonly PropAttachment[];
-  seen: Set<string>;
+  seen: ReadonlySet<StringKey>;
 }): { ok: true; end: number } | { ok: false; message: string } {
-  if (input.seen.has(input.propId)) {
-    return { ok: false, message: "Those props chain in a loop. Pick a start that does not circle back." };
+  const prop = input.props.find((row) => row.id === input.propId);
+  const onOutput = input.attachments.filter((row) => row.propId === input.propId && row.outputId === input.outputId);
+  const wanted = input.stringId
+    ? onOutput.filter((row) => attachmentStringId(row, prop) === input.stringId)
+    : onOutput;
+  if (wanted.length === 0) return { ok: false, message: "That prop is not on this output. Nothing was planned." };
+  let best: number | null = null;
+  let failure: { ok: false; message: string } | null = null;
+  for (const attachment of wanted) {
+    const id = attachmentStringId(attachment, prop);
+    const key = stringKey(input.propId, id);
+    if (input.seen.has(key)) {
+      failure ??= { ok: false, message: "Those props chain in a loop. Pick a start that does not circle back." };
+      continue;
+    }
+    const count = prop ? propStrings(prop).find((row) => row.id === id)?.ledCount : undefined;
+    if (count === null || count === undefined) {
+      failure ??= { ok: false, message: "The prop you chose to follow has an unknown light count. Nothing was planned." };
+      continue;
+    }
+    const seen = new Set(input.seen).add(key);
+    const start = attachment.afterPropId
+      ? occupiedEnd({
+          propId: attachment.afterPropId,
+          stringId: attachment.afterStringId ?? null,
+          outputId: input.outputId,
+          props: input.props,
+          attachments: input.attachments,
+          seen,
+        })
+      : attachment.startIndex === null
+        ? { ok: false as const, message: "The prop you chose to follow has no start. Nothing was planned." }
+        : { ok: true as const, end: attachment.startIndex };
+    if (!start.ok) {
+      failure ??= start;
+      continue;
+    }
+    best = Math.max(best ?? 0, start.end + count);
   }
-  input.seen.add(input.propId);
-  const attachment = input.attachments.find((row) => row.propId === input.propId && row.outputId === input.outputId);
-  if (!attachment) return { ok: false, message: "That prop is not on this output. Nothing was planned." };
-  const count = input.props.find((row) => row.id === input.propId)?.design?.ledCount;
-  if (count === null || count === undefined) {
-    return { ok: false, message: "The prop you chose to follow has an unknown light count. Nothing was planned." };
-  }
-  const start = attachment.afterPropId
-    ? occupiedEnd({ ...input, propId: attachment.afterPropId })
-    : attachment.startIndex === null
-      ? { ok: false as const, message: "The prop you chose to follow has no start. Nothing was planned." }
-      : { ok: true as const, end: attachment.startIndex };
-  if (!start.ok) return start;
-  return { ok: true, end: start.end + count };
+  if (best === null) return failure ?? { ok: false, message: "That prop is not on this output. Nothing was planned." };
+  return { ok: true, end: best };
 }
 
 export function propAttachmentLabel(

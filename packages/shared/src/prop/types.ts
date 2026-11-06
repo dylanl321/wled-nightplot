@@ -188,9 +188,16 @@ export type PropDesign = {
 };
 
 /**
- * Where a designed prop sits on a controller. Absent means not attached.
- * `startIndex` is the first light on that output, or null when this prop
- * starts after another prop on the same output.
+ * Where one string of a designed prop sits on a controller. Absent means not
+ * attached. `startIndex` is the first light of the string on that output, or
+ * null when it starts after another string on the same output.
+ *
+ * A prop has one attachment per string, each with its own output and start.
+ * `stringId` names the string; absent means the prop's first string, which is
+ * how every attachment saved before strings were attached one by one reads.
+ * `afterStringId` picks which string of `afterPropId` to follow; absent follows
+ * the string on this output that ends furthest. A string may follow another
+ * string of its own prop.
  */
 export type PropAttachment = {
   propId: string;
@@ -198,6 +205,8 @@ export type PropAttachment = {
   outputId: string;
   startIndex: number | null;
   afterPropId: string | null;
+  stringId?: string;
+  afterStringId?: string;
 };
 
 export type Prop = {
@@ -538,6 +547,8 @@ export function isPropAttachment(value: unknown): value is PropAttachment {
   const afterOk = row.afterPropId === null || (typeof row.afterPropId === "string" && row.afterPropId.length > 0);
   if (!indexOk || !afterOk) return false;
   if ((row.startIndex === null) === (row.afterPropId === null)) return false;
+  const named = (value: unknown) => value === undefined || (typeof value === "string" && value.length > 0);
+  if (!named(row.stringId) || !named(row.afterStringId)) return false;
   return typeof row.propId === "string" && row.propId.length > 0 &&
     typeof row.lightId === "string" && row.lightId.length > 0 &&
     typeof row.outputId === "string" && row.outputId.length > 0;

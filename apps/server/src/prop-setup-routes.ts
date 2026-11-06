@@ -13,6 +13,10 @@ import {
   pinLookProps,
   planPropPlacement,
   validateDeclaredRangesForLight,
+  attachmentStringId,
+  attachmentsOfProp,
+  isAttachmentFor,
+  propStrings,
   defaultWireframeSpec,
   parseWireframeSpec,
   type DraftRange,
@@ -20,6 +24,7 @@ import {
   type Light,
   type Prop,
   type PropAttachment,
+  type PropSegmentDraft,
   type PropMeasurements,
   type WledSnapshot,
 } from "@nightplot/shared";
@@ -287,6 +292,13 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     const outputId = typeof row?.outputId === "string" ? row.outputId : "";
     const startIndex = typeof row?.startIndex === "number" ? row.startIndex : null;
     const afterPropId = typeof row?.afterPropId === "string" && row.afterPropId ? row.afterPropId : null;
+    const afterStringId = afterPropId && typeof row?.afterStringId === "string" && row.afterStringId ? row.afterStringId : null;
+    const strings = propStrings(prop);
+    // Absent means the first string, which is what every payload before strings were attached one by one meant.
+    if (row?.stringId !== undefined && (typeof row.stringId !== "string" || !strings.some((item) => item.id === row.stringId))) {
+      return c.json({ error: "invalid", message: `${prop.label} has no such string. Nothing was sent.` }, 422);
+    }
+    const stringId = typeof row?.stringId === "string" ? row.stringId : strings[0]!.id;
     const apply = row?.apply === true;
     if ((startIndex === null) === (afterPropId === null)) {
       return c.json({ error: "invalid", message: "Choose the start of this output, or a prop to follow. Nothing was sent." }, 400);
@@ -297,16 +309,62 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     const output = (light.outputs ?? []).find((item) => item.id === outputId);
     if (!output) return c.json({ error: "invalid", message: "That output is not on this controller. Nothing was sent." }, 422);
     const props = deps.store.loadProps();
-    const attachments = deps.store.loadAttachments();
+    const stored_ = deps.store.loadAttachments();
+    const already = attachmentsOfProp(stored_, prop.id);
+    // A prop lives on one Light: its Segments and its map are written there.
+    const elsewhere = already.find((item) => item.lightId !== light.id && !isAttachmentFor(item, prop, stringId));
+    if (elsewhere) {
+      const where = deps.store.findById(elsewhere.lightId)?.name ?? "another controller";
+      return c.json({
+        error: "wont-fit",
+        message: `Another string of ${prop.label} is on ${where}. Attach every string of a prop to the same controller. Nothing was sent.`,
+      }, 422);
+    }
+    const attachment: PropAttachment = {
+      propId: prop.id,
+      lightId: light.id,
+      outputId: output.id,
+      startIndex,
+      afterPropId,
+      ...(strings.length > 1 || row?.stringId !== undefined ? { stringId } : {}),
+      ...(afterStringId ? { afterStringId } : {}),
+    };
+    // This string replaces its own row; the prop's other strings keep theirs.
+    const attachments = [...stored_.filter((item) => !isAttachmentFor(item, prop, stringId)), attachment];
     const plan = planPropPlacement({
       prop,
       output,
       lightName: light.name,
-      place: { startIndex, afterPropId },
+      stringId,
+      place: { startIndex, afterPropId, afterStringId },
       props,
       attachments,
     });
     if (!plan.ok) return c.json({ error: "wont-fit", message: plan.message }, 422);
+    // Strings already attached keep their Segments, planned again so one write covers the whole prop.
+    const siblings: PropSegmentDraft[] = [];
+    for (const other of already) {
+      if (isAttachmentFor(other, prop, stringId)) continue;
+      const otherOutput = (light.outputs ?? []).find((item) => item.id === other.outputId);
+      const replanned = otherOutput
+        ? planPropPlacement({
+            prop,
+            output: otherOutput,
+            lightName: light.name,
+            stringId: attachmentStringId(other, prop),
+            place: { startIndex: other.startIndex, afterPropId: other.afterPropId, afterStringId: other.afterStringId ?? null },
+            props,
+            attachments,
+          })
+        : null;
+      if (!replanned?.ok) {
+        return c.json({
+          error: "wont-fit",
+          message: `${replanned ? replanned.message : `${prop.label} has a string on an output ${light.name} no longer has.`} Attach that string again first. Nothing was sent.`,
+        }, 422);
+      }
+      siblings.push(...replanned.segments);
+    }
 
     if (prop.kind === "wireframe" && !(prop.sections && prop.sections.length > 0)) {
       const whole = !afterPropId && startIndex === 0 && output.start === 0 &&
@@ -339,7 +397,7 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     const palette = deps.palette();
     const previousIds = new Set(prop.elementIds);
     const kept = deps.store.elementsFor(light.id).filter((element) => !previousIds.has(element.id));
-    const created: Element[] = plan.segments.map((segment, index) => ({
+    const created: Element[] = [...siblings, ...plan.segments].map((segment, index) => ({
       id: randomUUID(),
       lightId: light.id,
       label: segment.label,
@@ -356,13 +414,6 @@ export function registerPropSetupRoutes(app: Hono, deps: PropSetupDeps) {
     if (issues.length > 0) {
       return c.json({ error: issues[0]!.code, message: issues[0]!.message, issues }, 422);
     }
-    const attachment: PropAttachment = {
-      propId: prop.id,
-      lightId: light.id,
-      outputId: output.id,
-      startIndex,
-      afterPropId,
-    };
     const next: Prop = { ...prop, lightId: light.id, elementIds: created.map((element) => element.id) };
     if (!apply) {
       deps.store.attachProp(next, attachment, merged);

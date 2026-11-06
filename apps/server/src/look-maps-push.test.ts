@@ -6,6 +6,8 @@ import {
   defaultWireframeSpec,
   layoutFromMeasurements,
   parseLedmapJson,
+  propStrings,
+  type PropLayout,
   type BackupDocument,
   type Element,
   type Light,
@@ -335,5 +337,69 @@ describe("pushing Looks with motion maps to a fixture Light", () => {
     expect(up.slice(0, 60)).toEqual(base.slice(0, 60));
     expect(up.slice(60)).not.toEqual(base.slice(60));
     expect(presetsOn(box)["1"]!.seg).toEqual(expect.arrayContaining([expect.objectContaining({ start: 60, stop: 60 + BUSH_LIGHTS })]));
+  });
+
+  it("writes both strings of a split tree, each on its own output, and puts the second in the map", async () => {
+    const { box, light: base, snap, before } = await boxLight(200);
+    const light = {
+      ...base,
+      outputs: [
+        { id: "out-a", index: 0, start: 0, ledCount: 100 },
+        { id: "out-b", index: 1, start: 100, ledCount: 100 },
+      ],
+    } as Light;
+    const s1 = [
+      { id: "e1", from: "c1", to: "c2", kind: "lit" as const },
+      { id: "e2", from: "c2", to: "c3", kind: "lit" as const },
+    ];
+    const s2 = [
+      { id: "e3", from: "c4", to: "c5", kind: "lit" as const },
+      { id: "e5", from: "c5", to: "c6", kind: "lit" as const },
+    ];
+    const layout: PropLayout = {
+      source: "trace", units: "m", pitchM: 0.1, startOffsetM: 0,
+      corners: [
+        { id: "c1", x: 0, y: 0 }, { id: "c2", x: 0, y: 1 }, { id: "c3", x: -0.5, y: 1.5 },
+        { id: "c4", x: 0.6, y: 0.2 }, { id: "c5", x: 0.6, y: 1.2 }, { id: "c6", x: 1, y: 1.8 },
+      ],
+      run: s1,
+      strings: [{ id: "s1", startId: "c1", run: s1 }, { id: "s2", startId: "c4", run: s2 }],
+    };
+    const [one, two] = propStrings({ layout, design: undefined }).map((row) => row.ledCount!) as [number, number];
+    const tree: Prop = {
+      id: "tree", lightId: light.id, label: "Tree", kind: "custom", elementIds: ["ta", "tb"], layout,
+      sections: [
+        { id: "left", name: "Left", edgeIds: ["e1", "e2"], pinnedRanges: [] },
+        { id: "right", name: "Right", edgeIds: ["e3", "e5"], pinnedRanges: [] },
+      ],
+    };
+    const elements: Element[] = [
+      { id: "ta", lightId: light.id, label: "Tree · Left", start: 5, stop: 5 + one },
+      { id: "tb", lightId: light.id, label: "Tree · Right", start: 110, stop: 110 + two },
+    ];
+    const attachments: PropAttachment[] = [
+      { propId: "tree", lightId: light.id, outputId: "out-a", startIndex: 5, afterPropId: null, stringId: "s1" },
+      { propId: "tree", lightId: light.id, outputId: "out-b", startIndex: 10, afterPropId: null, stringId: "s2" },
+    ];
+    const { value } = deps({ props: [tree], elements, attachments });
+    const result = await push(value, light, snap, documentOf([look("up", 1, "tree", "up")]));
+    expect(result.status).toBe("matched");
+    expect(box.ledmapSlots()).toEqual([0, 1]);
+    const up = parseLedmapJson(box.ledmap(1)!)!;
+    expect(up).toHaveLength(200);
+    expect(new Set(up).size).toBe(200);
+    // Lights outside both strings keep their place. Upward is sorted across the whole tree, so the lights of both
+    // strings fill the two runs between them, and the second string is part of the map.
+    const inStrings = (value: number) => (value >= 5 && value < 5 + one) || (value >= 110 && value < 110 + two);
+    expect(up.slice(0, 5)).toEqual([0, 1, 2, 3, 4]);
+    expect(up.slice(5 + one, 110)).toEqual(Array.from({ length: 110 - 5 - one }, (_, i) => 5 + one + i));
+    expect([...up.slice(5, 5 + one), ...up.slice(110, 110 + two)].every(inStrings)).toBe(true);
+    expect(up.slice(110, 110 + two)).not.toEqual(Array.from({ length: two }, (_, i) => 110 + i));
+    expect(up.slice(110 + two)).toEqual(Array.from({ length: 200 - 110 - two }, (_, i) => 110 + two + i));
+    // Segments reach both strings and nothing between them.
+    const seg = presetsOn(box)["1"]!.seg!;
+    expect(seg.some((row) => row.start >= 110 && row.stop <= 110 + two)).toBe(true);
+    expect(seg.every((row) => (row.start >= 5 && row.stop <= 5 + one) || (row.start >= 110 && row.stop <= 110 + two))).toBe(true);
+    expect(box.presets()).not.toBe(before);
   });
 });
