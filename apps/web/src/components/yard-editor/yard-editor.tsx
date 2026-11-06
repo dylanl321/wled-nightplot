@@ -179,6 +179,25 @@ function writeStored(key: string, value: string) {
   }
 }
 
+function parseNumber(text: string): number | null {
+  const n = Number.parseFloat(String(text).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * A number field. It lives outside the editor function so a save-status
+ * re-render does not throw away the digits being typed. An inner component
+ * would be a new type every render and remount this field.
+ */
+function NumRow({ id, label, value, onCommit }: { id: string; label: string; value: string; onCommit: (v: number) => void }) {
+  return (
+    <label className="f">
+      {label}
+      <CommitField id={id} inputMode="decimal" value={value} onCommit={(text) => { const v = parseNumber(text); if (v != null) onCommit(v); }} />
+    </label>
+  );
+}
+
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 const KEY_ROWS: [string, string][] = [
@@ -288,10 +307,6 @@ export function YardEditor(init: YardEditorProps) {
   const fromU = (v: number) => (s.units === "ft" ? v * METRES_PER_FOOT : v);
   const uLabel = () => (s.units === "ft" ? "ft" : "m");
   const tapWord = () => (s.phone ? "Tap" : "Click");
-  const parse = (v: string) => {
-    const n = Number.parseFloat(String(v).replace(",", "."));
-    return Number.isFinite(n) ? n : null;
-  };
 
   // ---------- drawable props ----------
   const placements = () => new Map(yardPlacements(s.props.filter((p) => p.id !== s.placing?.id)).map((row) => [row.propId, row]));
@@ -2609,15 +2624,6 @@ export function YardEditor(init: YardEditorProps) {
     />
   );
 
-  function NumRow({ id, label, value, onCommit }: { id: string; label: string; value: string; onCommit: (v: number) => void }) {
-    return (
-      <label className="f">
-        {label}
-        <CommitField id={id} inputMode="decimal" value={value} onCommit={(text) => { const v = parse(text); if (v != null) onCommit(v); }} />
-      </label>
-    );
-  }
-
   function yardSummary() {
     const total = s.props.reduce((sum, p) => sum + (p.layout ? countLayout(p.layout).total : p.design?.ledCount ?? 0), 0);
     const attached = s.props.filter((p) => s.attachments.some((a) => a.propId === p.id)).length;
@@ -3189,7 +3195,7 @@ export function YardEditor(init: YardEditorProps) {
         <label className="f">Length ({uLabel()})
           <span className="stepper">
             <button type="button" aria-label={`Shorter by ${stepText}`} onClick={() => nudge(-1)}>−</button>
-            <CommitField id="ye-rlen" inputMode="decimal" value={String(+toU(r.lengthM).toFixed(2))} onCommit={(text, alt) => { const v = parse(text); if (v != null && v > 0) edit((x) => setRunLength(x, r.edge.id, fromU(v), { onlyPoint: alt === true })); }} />
+            <CommitField id="ye-rlen" inputMode="decimal" value={String(+toU(r.lengthM).toFixed(2))} onCommit={(text, alt) => { const v = parseNumber(text); if (v != null && v > 0) edit((x) => setRunLength(x, r.edge.id, fromU(v), { onlyPoint: alt === true })); }} />
             <button type="button" aria-label={`Longer by ${stepText}`} onClick={() => nudge(1)}>+</button>
           </span>
         </label>
