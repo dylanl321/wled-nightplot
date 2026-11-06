@@ -3,6 +3,7 @@
  * Preview, and not Apply. When a live read is missing, the caller must say so.
  */
 import { parseHexColor } from "./live.ts";
+import { lookPreviewOrder } from "./look-order.ts";
 import { resolveLookTarget, type Look, type LookStyle } from "./look.ts";
 import { layoutStrings } from "./prop/layout.ts";
 import { isAttachmentFor, outputStartForAttachment } from "./prop/design.ts";
@@ -23,14 +24,19 @@ export function lookFrame(input: { look: Look; props: readonly Prop[]; t: number
   for (const prop of input.props) {
     if (!prop.layout) continue;
     const lights = layoutLightPoints(prop.layout);
+    // When the Look gives this Prop a motion map, group and order the lights as the map does,
+    // so the frame matches the controller. Otherwise they run along the wire.
+    const order = lookPreviewOrder(input.look, prop);
     const groups = new Map<string, LayoutLightPoint[]>();
-    for (const light of lights) {
-      const section = sectionAt(prop, light);
+    lights.forEach((light, drawnIndex) => {
+      const placed = order?.lights[drawnIndex];
+      const section = placed ? (placed.sectionId ? { id: placed.sectionId } : undefined) : sectionAt(prop, light);
       const key = section?.id ?? "";
       const list = groups.get(key) ?? [];
-      list.push(light);
+      if (placed) list[placed.mapped && placed.rev ? placed.of - 1 - placed.at : placed.at] = light;
+      else list.push(light);
       groups.set(key, list);
-    }
+    });
     for (const [key, group] of groups) {
       const section = key ? prop.sections?.find((row) => row.id === key) : undefined;
       const target = resolveLookTarget(input.look, {

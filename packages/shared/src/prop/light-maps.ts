@@ -36,7 +36,8 @@ function isIdentity(map: readonly number[]): boolean {
   return map.every((value, index) => value === index);
 }
 
-function motionsFor(look: Look, props: readonly Prop[]): MotionMapLookInput {
+/** The motions a Look asks of these Props, as the map builder takes them. The push and the yard preview both read this. */
+export function motionsFor(look: Look, props: readonly Prop[]): MotionMapLookInput {
   const motions: MotionChoice[] = [];
   const joined: string[] = [];
   for (const prop of props) {
