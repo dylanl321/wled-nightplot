@@ -1,8 +1,8 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { defaultWireframeSpec, type Prop } from "@nightplot/shared";
+import { defaultWireframeSpec, propStrings, type Prop } from "@nightplot/shared";
 import { createApp } from "./app.ts";
 import { FileBackupStore } from "./store/backup-store.ts";
 import { FileLightsStore } from "./store/lights-store.ts";
@@ -110,6 +110,127 @@ describe("prop-first setup", () => {
       expect.objectContaining({ propId: fitProp.id, lightId: light.id, startIndex: 0 }),
     ]);
     expect(store.loadProps().find((prop) => prop.id === roofProp.id)?.lightId).toBeUndefined();
+  });
+});
+
+describe("attaching every string of a prop", () => {
+  const s1 = [
+    { id: "e1", from: "c1", to: "c2", kind: "lit" as const },
+    { id: "e2", from: "c2", to: "c3", kind: "lit" as const },
+  ];
+  const s2 = [
+    { id: "e3", from: "c4", to: "c5", kind: "lit" as const },
+    { id: "e5", from: "c5", to: "c6", kind: "lit" as const },
+  ];
+  const layout = {
+    source: "trace" as const, units: "m" as const, pitchM: 0.1, startOffsetM: 0,
+    corners: [
+      { id: "c1", x: 0, y: 0 }, { id: "c2", x: 0, y: 1 }, { id: "c3", x: -0.5, y: 1.5 },
+      { id: "c4", x: 0.6, y: 0.2 }, { id: "c5", x: 0.6, y: 1.2 }, { id: "c6", x: 1, y: 1.8 },
+    ],
+    run: s1,
+    strings: [{ id: "s1", startId: "c1", run: s1 }, { id: "s2", startId: "c4", run: s2 }],
+  };
+  const sections = [
+    { id: "left", name: "Left", edgeIds: ["e1", "e2"], pinnedRanges: [] },
+    { id: "right", name: "Right", edgeIds: ["e3", "e5"], pinnedRanges: [] },
+  ];
+  const json = (body: unknown) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+  async function setup() {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-strings-"));
+    const store = new FileLightsStore(join(dir, "lights.json"));
+    let segments = [{ start: 0, stop: 100 }];
+    const write = vi.fn(async (_target: unknown, body: { seg?: { start: number; stop: number }[] }) => {
+      const next = (body.seg ?? []).filter((row) => row.stop > row.start).map((row) => ({ start: row.start, stop: row.stop }));
+      if (next.length > 0) segments = next;
+      return true;
+    });
+    const app = createApp({
+      store,
+      settings: new FileSettingsStore(join(dir, "settings.json")),
+      backups: new FileBackupStore(join(dir, "backups")),
+      probe: async () => ({ kind: "found", snapshot: { ...base, ledCount: 100, segments } }),
+      collect: async () => [],
+      write,
+      readLive: async () => null,
+      readCfg: async () => ({ id: { name: "Garage" }, hw: { led: { ins: [{ len: 100 }] } } }),
+      writeCfg: async () => true,
+      readNativeFiles: async () => ({ cfgJson: "{}", presetsJson: "{}" }),
+      readLedmap: async () => null,
+      writeLedmap: async () => {},
+      now: () => new Date("2026-11-07T20:00:00.000Z"),
+    });
+    const enrolled = await app.request("/api/lights", json({ host: "192.168.1.40" }));
+    const light = (await enrolled.json() as { light: { id: string; outputs: { id: string }[] } }).light;
+    const made = await app.request("/api/props", json({ label: "Tree", kind: "custom", unit: "m", pitchMm: 100, layout, sections }));
+    const prop = (await made.json() as { prop: Prop }).prop;
+    return { store, app, write, light, prop, output: light.outputs[0]!.id };
+  }
+
+  it("attaches each string with its own start and keeps the other string's row and Segments", async () => {
+    const { store, app, light, prop, output } = await setup();
+    const [one, two] = propStrings(prop).map((row) => row.ledCount!) as [number, number];
+    const first = await app.request(`/api/props/${prop.id}/attach`, json({ lightId: light.id, outputId: output, startIndex: 5, stringId: "s1", apply: false }));
+    expect(first.status).toBe(200);
+    expect((await first.json() as { summary: string }).summary).toMatch(/Another string stays on the prop/);
+    const second = await app.request(`/api/props/${prop.id}/attach`, json({ lightId: light.id, outputId: output, startIndex: 50, stringId: "s2", apply: false }));
+    expect(second.status).toBe(200);
+    expect((await second.json() as { summary: string }).summary).not.toMatch(/stays on the prop/);
+    expect(store.loadAttachments()).toEqual([
+      expect.objectContaining({ propId: prop.id, startIndex: 5, stringId: "s1" }),
+      expect.objectContaining({ propId: prop.id, startIndex: 50, stringId: "s2" }),
+    ]);
+    const ranges = store.elementsFor(light.id).map((row) => [row.label, row.start, row.stop]);
+    expect(ranges).toEqual([["Tree · Left", 5, 5 + one], ["Tree · Right", 50, 50 + two]]);
+    // Attaching string 1 again moves only string 1.
+    const moved = await app.request(`/api/props/${prop.id}/attach`, json({ lightId: light.id, outputId: output, startIndex: 20, stringId: "s1", apply: false }));
+    expect(moved.status).toBe(200);
+    expect(store.loadAttachments().map((row) => [row.stringId, row.startIndex])).toEqual([["s2", 50], ["s1", 20]]);
+    expect(store.elementsFor(light.id).map((row) => [row.label, row.start])).toEqual([["Tree · Right", 50], ["Tree · Left", 20]]);
+    expect(store.loadProps().find((row) => row.id === prop.id)?.elementIds).toHaveLength(2);
+  });
+
+  it("sends the Segments of every attached string on Apply", async () => {
+    const { app, write, light, prop, output } = await setup();
+    const [one, two] = propStrings(prop).map((row) => row.ledCount!) as [number, number];
+    await app.request(`/api/props/${prop.id}/attach`, json({ lightId: light.id, outputId: output, startIndex: 0, stringId: "s1", apply: false }));
+    const applied = await app.request(`/api/props/${prop.id}/attach`, json({ lightId: light.id, outputId: output, startIndex: null, afterPropId: prop.id, afterStringId: "s1", stringId: "s2", apply: true }));
+    expect(applied.status).toBe(200);
+    expect((await applied.json() as { apply?: { matched?: boolean } }).apply?.matched).toBe(true);
+    const sent = write.mock.calls.flatMap(([, body]) => body.seg ?? []).filter((row) => row.stop > row.start).map((row) => [row.start, row.stop]);
+    expect(sent).toEqual(expect.arrayContaining([[0, one], [one, one + two]]));
+  });
+
+  it("refuses a string that does not fit, an unknown string, and one on another controller's output", async () => {
+    const { app, store, light, prop, output } = await setup();
+    const tooFar = await app.request(`/api/props/${prop.id}/attach`, json({ lightId: light.id, outputId: output, startIndex: 95, stringId: "s2", apply: false }));
+    expect(tooFar.status).toBe(422);
+    expect((await tooFar.json() as { message: string }).message).toMatch(/string 2.*Nothing will be sent/);
+    const unknown = await app.request(`/api/props/${prop.id}/attach`, json({ lightId: light.id, outputId: output, startIndex: 0, stringId: "s9", apply: false }));
+    expect(unknown.status).toBe(422);
+    expect(store.loadAttachments()).toEqual([]);
+  });
+
+  it("reads a payload with no string id as the first string, and stores it the way it always was", async () => {
+    const { app, store, light, output } = await setup();
+    const made = await app.request("/api/props", json({ label: "Eave", kind: "roofline", unit: "m", pitchMm: 100, measurements: { shape: "roofline", length: 1 } }));
+    const eave = (await made.json() as { prop: Prop }).prop;
+    const attached = await app.request(`/api/props/${eave.id}/attach`, json({ lightId: light.id, outputId: output, startIndex: 0, apply: false }));
+    expect(attached.status).toBe(200);
+    expect(store.loadAttachments()).toEqual([{ propId: eave.id, lightId: light.id, outputId: output, startIndex: 0, afterPropId: null }]);
+  });
+
+  it("loads an old attachment row with no string id and loses nothing", async () => {
+    const { app, store, light, prop, output } = await setup();
+    await app.request(`/api/props/${prop.id}/attach`, json({ lightId: light.id, outputId: output, startIndex: 3, stringId: "s2", apply: false }));
+    const raw = JSON.parse(readFileSync(join(dirname((store as unknown as { filePath: string }).filePath), "lights.json"), "utf8"));
+    raw.attachments = raw.attachments.map((row: Record<string, unknown>) => {
+      const { stringId: _drop, ...rest } = row;
+      return rest;
+    });
+    writeFileSync((store as unknown as { filePath: string }).filePath, JSON.stringify(raw));
+    expect(store.loadAttachments()).toEqual([{ propId: prop.id, lightId: light.id, outputId: output, startIndex: 3, afterPropId: null }]);
   });
 });
 

@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { Light } from "@nightplot/shared";
+import type { Light, Prop, PropAttachment } from "@nightplot/shared";
 import { FileLightsStore } from "./lights-store.ts";
 
 const base: Light = {
@@ -207,5 +207,57 @@ describe("lights store ledProductId", () => {
     const saved = JSON.parse(readFileSync(file, "utf8")) as { props: { design: { measurements: { shape: string } } }[]; attachments: unknown[] };
     expect(saved.props[0]?.design.measurements.shape).toBe("legacy");
     expect(saved.attachments).toHaveLength(1);
+  });
+});
+
+describe("lights store attachments, one per string", () => {
+  const prop = (id: string): Prop => ({
+    id, label: id, kind: "custom", elementIds: [],
+    design: { unit: "m", pitchMm: 100, ledProductId: null, measurements: { shape: "custom" }, ledCount: 10, edges: [] },
+  });
+  const row = (propId: string, extra: Partial<PropAttachment> = {}): PropAttachment => ({
+    propId, lightId: base.id, outputId: "out", startIndex: 0, afterPropId: null, ...extra,
+  });
+
+  function storeWith() {
+    const dir = mkdtempSync(join(tmpdir(), "nightplot-lights-"));
+    const file = join(dir, "lights.json");
+    const store = new FileLightsStore(file);
+    store.upsert(base);
+    return { store, file };
+  }
+
+  it("keeps a row per string through a save and a reload, and a re-attach replaces only its own string", () => {
+    const { store, file } = storeWith();
+    const tree = prop("tree");
+    store.attachProp(tree, row("tree", { stringId: "s1" }), []);
+    store.attachProp(tree, row("tree", { stringId: "s2", startIndex: 30 }), []);
+    store.attachProp(tree, row("tree", { stringId: "s1", startIndex: 4 }), []);
+    const reloaded = new FileLightsStore(file).loadAttachments();
+    expect(reloaded.map((item) => [item.stringId, item.startIndex]).sort()).toEqual([["s1", 4], ["s2", 30]]);
+  });
+
+  it("keeps an old row with no string id exactly as it was", () => {
+    const { store, file } = storeWith();
+    store.attachProp(prop("eave"), row("eave", { startIndex: 7 }), []);
+    expect(new FileLightsStore(file).loadAttachments()).toEqual([row("eave", { startIndex: 7 })]);
+  });
+
+  it("accepts two strings of one prop in a backup, and refuses the same string twice", () => {
+    const { store } = storeWith();
+    const lights = [base];
+    const props = [prop("tree")];
+    expect(store.validBackup({ lights, elements: [], props, attachments: [row("tree", { stringId: "s1" }), row("tree", { stringId: "s2" })] })).toBe(true);
+    expect(store.validBackup({ lights, elements: [], props, attachments: [row("tree", { stringId: "s1" }), row("tree", { stringId: "s1" })] })).toBe(false);
+    expect(store.validBackup({ lights, elements: [], props, attachments: [row("tree", { stringId: "" })] })).toBe(false);
+  });
+
+  it("moves a follower into the place of the string it followed when that prop is deleted", () => {
+    const { store, file } = storeWith();
+    store.attachProp(prop("tree"), row("tree", { stringId: "s1", startIndex: 5 }), []);
+    store.attachProp(prop("tree"), row("tree", { stringId: "s2", startIndex: 40 }), []);
+    store.attachProp(prop("bush"), row("bush", { startIndex: null, afterPropId: "tree", afterStringId: "s2" }), []);
+    store.deleteDesignedProp("tree");
+    expect(new FileLightsStore(file).loadAttachments()).toEqual([row("bush", { startIndex: 40 })]);
   });
 });

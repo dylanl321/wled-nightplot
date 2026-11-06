@@ -407,6 +407,9 @@ export type LookMapPlan = {
   blocks: readonly { propId: string; start: number; count: number }[];
 };
 
+/** Where one attached string of a prop starts on the Light, in the Light's combined light numbers. */
+export type StringStart = { propId: string; stringId: string; start: number };
+
 export type PropSectionPlan = {
   targets: LookTarget[];
   /** Plain reasons the preset differs from what the sections ask for. */
@@ -420,9 +423,11 @@ export type PropSectionPlan = {
  * no section names stay a plain Prop target. A wireframe Prop keeps its own
  * groups and is not planned here.
  */
-export function propSectionPlan(prop: Prop, own: readonly Element[]): PropSectionPlan | null {
+export function propSectionPlan(prop: Prop, own: readonly Element[], starts?: readonly StringStart[]): PropSectionPlan | null {
   if (!prop.layout || !prop.sections?.length || prop.wireframe || own.length === 0) return null;
   const firstId = layoutStrings(prop.layout)[0]?.id ?? "s1";
+  const stringIds = layoutStrings(prop.layout).map((string) => string.id);
+  const mine = (starts ?? []).filter((row) => row.propId === prop.id);
   const reports = sectionIndexRanges(prop.layout, prop.sections);
   const notes: string[] = [];
   const pieces: { start: number; stop: number; report: (typeof reports)[number] }[] = [];
@@ -431,14 +436,26 @@ export function propSectionPlan(prop: Prop, own: readonly Element[]): PropSectio
       notes.push(`${prop.label} · ${report.name}: ${report.errors.join(" ")} It was not sent as its own segment.`);
       continue;
     }
-    const onFirst = report.ranges.filter((range) => range.stop > range.start && (range.stringId ?? firstId) === firstId);
-    if (onFirst.length < report.ranges.filter((range) => range.stop > range.start).length) {
-      notes.push(`${prop.label} · ${report.name} has lights on another string. Only the first string is on this Light's segments, so those lights were not sent.`);
+    const live = report.ranges.filter((range) => range.stop > range.start);
+    // With attachments, each string has its own origin. Without, only the first string's Segments are known.
+    const originOf = (range: (typeof live)[number]): number | null => {
+      const id = stringIds.length === 1 ? stringIds[0]! : range.stringId ?? firstId;
+      if (mine.length === 0) return id === firstId ? 0 : null;
+      return mine.find((row) => row.stringId === id)?.start ?? null;
+    };
+    const onFirst = live.filter((range) => originOf(range) !== null);
+    if (onFirst.length < live.length) {
+      notes.push(mine.length > 0
+        ? `${prop.label} · ${report.name} has lights on a string that is not attached. Attach that string to an output; until then those lights were not sent.`
+        : `${prop.label} · ${report.name} has lights on another string. Only the first string is on this Light's segments, so those lights were not sent.`);
     }
     if (onFirst.length > 1) {
       notes.push(`${prop.label} · ${report.name} is ${onFirst.length} separate ranges, so it is sent as ${onFirst.length} segments and an effect restarts in each. Pick a motion for it to run one effect across them in position order.`);
     }
-    for (const range of onFirst) pieces.push({ start: range.start, stop: range.stop, report });
+    for (const range of onFirst) {
+      const at = originOf(range)!;
+      pieces.push({ start: at + range.start, stop: at + range.stop, report });
+    }
     for (const warning of report.warnings) {
       const line = `${prop.label}: ${warning} WLED draws the later segment on top.`;
       if (!notes.includes(line)) notes.push(line);
@@ -447,7 +464,7 @@ export function propSectionPlan(prop: Prop, own: readonly Element[]): PropSectio
   if (pieces.length === 0) return null;
   const spanStart = Math.min(...own.map((row) => row.start));
   const spanStop = Math.max(...own.map((row) => row.stop));
-  const origin = spanStart - Math.min(...pieces.map((piece) => piece.start));
+  const origin = mine.length > 0 ? 0 : spanStart - Math.min(...pieces.map((piece) => piece.start));
   const targets: LookTarget[] = [];
   let clipped = false;
   for (const piece of pieces.sort((a, b) => a.start - b.start)) {
@@ -485,6 +502,8 @@ export function lookTargets(input: {
   ledCount: number;
   elements: readonly Element[];
   props: readonly Prop[];
+  /** Where each attached string starts. Absent reads the first string from the Segments. */
+  stringStarts?: readonly StringStart[];
 }): LookTarget[] {
   const elements = input.elements.filter((row) => Number.isInteger(row.start) && Number.isInteger(row.stop) && row.stop > row.start);
   if (elements.length === 0) {
@@ -497,7 +516,7 @@ export function lookTargets(input: {
     const prop = input.props.find((row) => row.elementIds.includes(element.id)) ?? null;
     if (prop && planned.has(prop.id)) continue;
     if (prop) {
-      const plan = propSectionPlan(prop, elements.filter((row) => prop.elementIds.includes(row.id)));
+      const plan = propSectionPlan(prop, elements.filter((row) => prop.elementIds.includes(row.id)), input.stringStarts);
       if (plan) {
         planned.add(prop.id);
         out.push(...plan.targets);
@@ -514,9 +533,10 @@ export function lookSectionNotes(input: {
   ledCount: number;
   elements: readonly Element[];
   props: readonly Prop[];
+  stringStarts?: readonly StringStart[];
 }): string[] {
   const elements = input.elements.filter((row) => Number.isInteger(row.start) && Number.isInteger(row.stop) && row.stop > row.start);
-  return input.props.flatMap((prop) => propSectionPlan(prop, elements.filter((row) => prop.elementIds.includes(row.id)))?.notes ?? []);
+  return input.props.flatMap((prop) => propSectionPlan(prop, elements.filter((row) => prop.elementIds.includes(row.id)), input.stringStarts)?.notes ?? []);
 }
 
 function plainTarget(element: Element, prop: Prop | null): LookTarget {
@@ -580,6 +600,7 @@ export function lookTargetsForLook(look: Look, input: {
   ledCount: number;
   elements: readonly Element[];
   props: readonly Prop[];
+  stringStarts?: readonly StringStart[];
 }): LookTarget[] {
   const base = lookTargets(input);
   const extras: LookTarget[] = [];
@@ -623,41 +644,47 @@ export function mapTargetsForLook(
   const base = plan.result.maps.find((row) => row.slot === 0)!.map;
   const own = plan.result.maps.find((row) => row.slot === entry.slot)!.map;
   let out = [...targets];
-  for (const block of plan.blocks) {
-    let same = true;
-    for (let at = block.start; at < block.start + block.count; at += 1) {
-      if (own[at] !== base[at]) {
-        same = false;
-        break;
+  const propIds = [...new Set(plan.blocks.map((row) => row.propId))];
+  for (const propId of propIds) {
+    const blocks = plan.blocks.filter((row) => row.propId === propId);
+    const same = blocks.every((block) => {
+      for (let at = block.start; at < block.start + block.count; at += 1) {
+        if (own[at] !== base[at]) return false;
       }
-    }
+      return true;
+    });
     if (same) continue;
-    const prop = targets.find((row) => row.prop?.id === block.propId)?.prop;
+    const prop = targets.find((row) => row.prop?.id === propId)?.prop;
     if (!prop) continue;
     const mapped: LookTarget[] = [];
-    const sections = entry.sections.filter((row) => row.propId === block.propId);
-    for (const section of sections) {
-      const color = prop.sections?.find((row) => row.id === section.sectionId)?.color;
-      mapped.push({
-        start: section.start,
-        stop: section.stop,
-        prop,
-        sectionId: section.sectionId,
-        ...(color ? { sectionColor: color } : {}),
-        ...(section.motion !== "wire" ? { mapRev: section.rev } : {}),
-      });
+    // A prop whose strings sit apart has one block per run of neighbouring lights.
+    for (const block of blocks) {
+      const end = block.start + block.count;
+      const sections = entry.sections.filter((row) => row.propId === propId && row.start >= block.start && row.stop <= end);
+      for (const section of sections) {
+        const color = prop.sections?.find((row) => row.id === section.sectionId)?.color;
+        mapped.push({
+          start: section.start,
+          stop: section.stop,
+          prop,
+          sectionId: section.sectionId,
+          ...(color ? { sectionColor: color } : {}),
+          ...(section.motion !== "wire" ? { mapRev: section.rev } : {}),
+        });
+      }
+      const rest = entry.rests.find((row) => row.propId === propId && row.start >= block.start && row.stop <= end) ??
+        entry.rests.find((row) => row.propId === propId);
+      let cursor = block.start;
+      for (const section of [...sections].sort((a, b) => a.start - b.start)) {
+        if (section.start > cursor) mapped.push(restTarget(prop, cursor, section.start, rest));
+        cursor = Math.max(cursor, section.stop);
+      }
+      if (cursor < end) mapped.push(restTarget(prop, cursor, end, rest));
     }
-    const rest = entry.rests.find((row) => row.propId === block.propId);
-    let cursor = block.start;
-    for (const section of [...sections].sort((a, b) => a.start - b.start)) {
-      if (section.start > cursor) mapped.push(restTarget(prop, cursor, section.start, rest));
-      cursor = Math.max(cursor, section.stop);
-    }
-    if (cursor < block.start + block.count) mapped.push(restTarget(prop, cursor, block.start + block.count, rest));
     mapped.sort((x, y) => x.start - y.start);
     let placed = false;
     out = out.flatMap((row) => {
-      if (row.prop?.id !== block.propId) return [row];
+      if (row.prop?.id !== propId) return [row];
       if (placed) return [];
       placed = true;
       return mapped;
@@ -673,7 +700,7 @@ function restTarget(prop: Prop, start: number, stop: number, rest: { motion: Sha
 /** Targets and map slot for one Look as they will be sent: physical ranges, or map positions. */
 export function lookPresetTargets(
   look: Look,
-  geometry: { ledCount: number; elements: readonly Element[]; props: readonly Prop[] },
+  geometry: { ledCount: number; elements: readonly Element[]; props: readonly Prop[]; stringStarts?: readonly StringStart[] },
   plan?: LookMapPlan | null,
 ): { targets: LookTarget[]; slot: number } {
   return mapTargetsForLook(look, lookTargetsForLook(look, geometry), plan);
@@ -773,7 +800,7 @@ export function buildManagedPresets(input: {
   playlists: readonly LookPlaylist[];
   targets: readonly LookTarget[];
   rgbw: boolean;
-  geometry?: { ledCount: number; elements: readonly Element[]; props: readonly Prop[] };
+  geometry?: { ledCount: number; elements: readonly Element[]; props: readonly Prop[]; stringStarts?: readonly StringStart[] };
   /** The Light's motion maps. Without it every Look runs on map 0 in physical ranges. */
   maps?: LookMapPlan | null;
 }): Record<string, unknown> {

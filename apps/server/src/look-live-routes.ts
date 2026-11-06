@@ -27,7 +27,7 @@ import {
 import type { Hono } from "hono";
 import { mapLimit } from "./discovery/map-limit.ts";
 import type { LookRouteDeps } from "./look-routes.ts";
-import { readLooks } from "./look-routes.ts";
+import { readLooks, stringStartsOnLight } from "./look-routes.ts";
 import type { ReadWledJsonFn, WledSegWrite, WriteStateFn } from "./wled/live.ts";
 
 export type LookLiveDeps = LookRouteDeps & {
@@ -132,7 +132,7 @@ export function registerLookLiveRoutes(app: Hono, deps: LookLiveDeps) {
       snap = refreshed.live;
       if (!snap || current.reachability !== "online") return { lightId: light.id, lightName: light.name, status: "failed", detail: "Didn't answer. Nothing was sent." };
     }
-    const geometry = { ledCount: current.ledCount, elements: deps.store.elementsFor(current.id), props: deps.store.propsFor(current.id) };
+    const geometry = { ledCount: current.ledCount, elements: deps.store.elementsFor(current.id), props: deps.store.propsFor(current.id), stringStarts: stringStartsOnLight(deps.store, current) };
     const preset = buildLookPreset(look, lookTargetsForLook(look, geometry), current.rgbw);
     const seg = preset.seg as WledSegWrite[];
     if (typeof snap?.maxSegments === "number" && seg.length > snap.maxSegments) {
@@ -239,7 +239,7 @@ export function registerLookLiveRoutes(app: Hono, deps: LookLiveDeps) {
       const playlist = live?.playlist;
       if (typeof live?.maxSegments === "number") maxSegmentsSeen.set(light.id, live.maxSegments);
       // Segments each Look needs here, counted the way Send counts them.
-      const geometry = { ledCount: light.ledCount, elements: deps.store.elementsFor(light.id), props: deps.store.propsFor(light.id) };
+      const geometry = { ledCount: light.ledCount, elements: deps.store.elementsFor(light.id), props: deps.store.propsFor(light.id), stringStarts: stringStartsOnLight(deps.store, light) };
       const segments = Object.fromEntries(document.looks.map((look) => [look.id, mergeFollowingSections(look, lookTargetsForLook(look, geometry)).length]));
       return {
         lightId: light.id,
@@ -277,7 +277,7 @@ export function registerLookLiveRoutes(app: Hono, deps: LookLiveDeps) {
     const lit = native.seg.filter((segment) => segment.stop > segment.start);
     const main = lit.find((segment) => segment.on !== false) ?? lit[0];
     if (!main) return c.json({ error: "unreadable", message: `${light.name} has no segments to copy.` }, 422);
-    const geometry = { ledCount: light.ledCount, elements: deps.store.elementsFor(light.id), props: deps.store.propsFor(light.id) };
+    const geometry = { ledCount: light.ledCount, elements: deps.store.elementsFor(light.id), props: deps.store.propsFor(light.id), stringStarts: stringStartsOnLight(deps.store, light) };
     const props = geometry.props.map((prop) => {
       const owned = geometry.elements.filter((element) => prop.elementIds.includes(element.id));
       const first = owned.sort((a, b) => a.start - b.start)[0];

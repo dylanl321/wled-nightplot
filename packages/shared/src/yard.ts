@@ -18,7 +18,7 @@ import {
   type LookPlaylist,
 } from "./look.ts";
 import type { Element, Light } from "./lights.ts";
-import { planLightMaps } from "./prop/light-maps.ts";
+import { planLightMaps, stringStartsFor } from "./prop/light-maps.ts";
 import type { Prop, PropAttachment } from "./prop/types.ts";
 import { compileWireframe, ledmapsMatch, parseLedmapJson } from "./prop/wireframe.ts";
 import type { ProvisionRead } from "./provision.ts";
@@ -439,6 +439,13 @@ export function buildYardCheckRow(input: {
     ledCount: input.light.ledCount,
     elements: input.elements,
     props: input.props,
+    stringStarts: stringStartsFor({
+      light: input.light,
+      props: input.props,
+      ...(input.allProps ? { allProps: input.allProps } : {}),
+      elements: input.elements,
+      attachments: input.attachments ?? [],
+    }),
   });
   // Presets name the light maps a push wrote, so what a push would write now includes them.
   const mapPlan = planLightMaps({
