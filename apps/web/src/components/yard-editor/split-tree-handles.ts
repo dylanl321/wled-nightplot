@@ -1,12 +1,12 @@
 /**
- * Handles for designing a split tree on the canvas. Joints, wrap meets,
- * back-path knees, and the + that forks a tip. Positions are CSS pixels.
+ * Handles for designing a split tree on the canvas: the joints, the trunk
+ * body (to carry a limb), and the + that forks a tip. Positions are CSS pixels.
  */
 
-import type { PropLayout, SplitHop, SplitTrunk } from "@nightplot/shared";
+import type { PropLayout, SplitTrunk } from "@nightplot/shared";
 import type { View } from "./stage";
 
-export type SplitHandleKind = "base" | "fork" | "tip" | "branch" | "meet" | "turn" | "sprout";
+export type SplitHandleKind = "base" | "fork" | "tip" | "branch" | "sprout";
 
 export type SplitHandle = {
   id: string;
@@ -14,12 +14,9 @@ export type SplitHandle = {
   x: number;
   y: number;
   trunkId: string;
-  stringId?: string;
-  fromId?: string;
-  toId?: string;
 };
 
-const ORDER: readonly SplitHandleKind[] = ["sprout", "turn", "meet", "tip", "fork", "base", "branch"];
+const ORDER: readonly SplitHandleKind[] = ["sprout", "tip", "fork", "base", "branch"];
 
 function reach(kind: SplitHandleKind, phone: boolean): number {
   if (kind === "sprout") return phone ? 28 : 22;
@@ -38,7 +35,6 @@ export function collectSplitHandles(
   view: View,
   layout: PropLayout,
   trunks: readonly SplitTrunk[],
-  hops: readonly SplitHop[],
   phone: boolean,
 ): SplitHandle[] {
   const handles: SplitHandle[] = [];
@@ -57,10 +53,7 @@ export function collectSplitHandles(
       y: end.y,
       trunkId: trunk.id,
     });
-    if (fork) {
-      const meet = screenAt(view, layout, `c-meet-${trunk.id}`);
-      if (meet) handles.push({ id: `meet:${trunk.id}`, kind: "meet", x: meet.x, y: meet.y, trunkId: trunk.id });
-    } else {
+    if (!fork) {
       const dx = end.x - start.x;
       const dy = end.y - start.y;
       const len = Math.hypot(dx, dy) || 1;
@@ -103,21 +96,6 @@ export function collectSplitHandles(
       });
     }
   }
-  for (const hop of hops) {
-    if (!hop.back) continue;
-    const knee = screenAt(view, layout, `c-${hop.fromId}-down`);
-    if (!knee) continue;
-    handles.push({
-      id: `turn:${hop.stringId}:${hop.fromId}:${hop.toId}`,
-      kind: "turn",
-      x: knee.x,
-      y: knee.y,
-      trunkId: hop.fromId,
-      stringId: hop.stringId,
-      fromId: hop.fromId,
-      toId: hop.toId,
-    });
-  }
   return handles;
 }
 
@@ -135,7 +113,7 @@ export function hitSplitHandle(handles: readonly SplitHandle[], px: number, py: 
 
 type HandleColours = { pick: string; card: string; fg: string; primary: string };
 
-/** Circles for crotches, diamonds for tips, rings for where the wraps meet, + to fork. */
+/** Circles for crotches, diamonds for tips, + to fork. */
 export function drawSplitHandles(
   ctx: CanvasRenderingContext2D,
   handles: readonly SplitHandle[],
@@ -152,7 +130,7 @@ export function drawSplitHandles(
     const on = selected === handle.id || (trunk === handle.trunkId && (handle.kind === "fork" || handle.kind === "tip" || handle.kind === "base"));
     const r = (phone ? 16 : 12) + (on ? 3 : 0);
     ctx.beginPath();
-    if (handle.kind === "tip" || handle.kind === "turn") {
+    if (handle.kind === "tip") {
       ctx.moveTo(handle.x, handle.y - r);
       ctx.lineTo(handle.x + r, handle.y);
       ctx.lineTo(handle.x, handle.y + r);
@@ -161,15 +139,7 @@ export function drawSplitHandles(
     } else {
       ctx.arc(handle.x, handle.y, handle.kind === "sprout" ? r - 2 : r, 0, Math.PI * 2);
     }
-    if (handle.kind === "meet" || handle.kind === "turn") {
-      ctx.fillStyle = colours.card;
-      ctx.fill();
-      ctx.strokeStyle = handle.kind === "meet" ? "#3ddeb8" : "#f4f0e6";
-      ctx.lineWidth = on ? 4 : 3;
-      ctx.setLineDash(handle.kind === "turn" ? [4, 3] : []);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    } else if (handle.kind === "sprout") {
+    if (handle.kind === "sprout") {
       ctx.fillStyle = colours.card;
       ctx.fill();
       ctx.strokeStyle = colours.primary;

@@ -1,15 +1,27 @@
 /**
- * A split tree is a trunk that forks, drawn front-on (spread left to right,
- * height up). The skeleton is a tree of trunk segments, not one polyline.
- * Each segment has a thickness and a wrap: a linear string coiled up the
- * trunk, the same idea as a spiral around one post. A string cannot teleport
- * to a sibling. After it finishes a trunk it takes a back path down the far
- * side, then up the next trunk. A hop that does not meet by walking the
- * tree is a dark run (`kind: "wire"`).
+ * A split tree is a trunk that forks. The skeleton is flat, drawn front-on
+ * (spread left to right, height up), and that is what you edit. The lights
+ * are not flat: they coil round each trunk the way a string is really put
+ * up, so every corner of the coil carries a depth (`z`, toward the street).
+ * The editor draws the front view; the street view and the shape reader see
+ * the coil as round.
  *
- * Length stored on a run is the string length along that piece. Trunk
- * heights, split height and tip spacing stay in the prop's unit. A string's
- * spacing stays in millimetres; leftover string length is metres.
+ * How a string goes up a real tree, and so how it is drawn:
+ *  - It wraps up a trunk at the wrap gap, round a trunk as thick as `around`.
+ *    Branches are thinner than the trunk they grow from.
+ *  - At a fork it carries straight on, wrapping up the next branch.
+ *  - It cannot jump to a sibling. When it is done with one branch it runs
+ *    straight back down the back of that branch to the fork, then wraps up
+ *    the next one.
+ *  - A move that cannot be walked down the tree is a dark jump (`wire`).
+ *
+ * With no strings set, the tree is one string walked in that order: up the
+ * trunk, up the left branch, back down, up the next. Strings set by hand
+ * cover the trunks they name, in order, and any trunk left over is drawn as
+ * its own loose coil.
+ *
+ * Geometry is in the prop's unit; layout corners are metres. A string's
+ * spacing stays in millimetres.
  */
 
 import {
@@ -26,8 +38,6 @@ import {
   addPoseBranch,
   forkPoseNode,
   movePoseJoint,
-  movePoseMeet,
-  movePoseTurn,
   poseSummary,
   poseTips,
   scalePoseHeight,
@@ -48,8 +58,6 @@ export {
   addPoseBranch,
   forkPoseNode,
   movePoseJoint,
-  movePoseMeet,
-  movePoseTurn,
   poseSummary,
   poseTips,
   scalePoseHeight,
@@ -68,14 +76,16 @@ export type SplitTrunk = {
   /** Prop units. 0 is the centre line. */
   x0: number;
   x1: number;
-  /** Prop units. Wider at the root, narrower at a tip. */
+  /** Metres. Thickest at the ground; each branch is thinner than the one it grows from. */
   radius0: number;
   radius1: number;
-  /** Whole turns of the wrap that climbs this trunk. */
+  /** Turns of the wrap up this trunk, at the wrap gap. */
   turns: number;
+  /** Where the wrap starts round the trunk, in radians. A branch carries on from where its parent's wrap ended. */
+  phase0: number;
   /** Metres of string to coil up the trunk. */
   lengthM: number;
-  /** Metres along the wood, tip to root. */
+  /** Metres along the wood, root to tip. */
   woodM: number;
   /** Metres of vertical rise. */
   riseM: number;
@@ -88,9 +98,13 @@ export type SplitTreeSpec = {
   spacing: number;
   trunks: number;
   levels: SplitTreeLevels;
+  /** Around the main trunk at the ground, prop units. Absent uses {@link splitWrapDefaults}. */
+  around?: number;
+  /** Rise from one wrap to the next, prop units. Absent uses {@link splitWrapDefaults}. */
+  gap?: number;
   trunkTo?: readonly SplitTreeTrunkEnd[];
   strings?: readonly SplitTreeString[];
-  /** Placed joints and wrap junctions. Absent while the tree is still the even starting shape. */
+  /** Joints placed by hand. Absent while the tree is still the even starting shape. */
   pose?: SplitPose;
 };
 
@@ -117,31 +131,25 @@ export type SplitHop = {
   toId: string;
   /** The two pieces do not meet by walking the tree, so the string jumps in the dark. */
   dark: boolean;
-  /** The string goes back down the far side before the next trunk. */
+  /** The string runs back down the back of the branch before the next one. */
   back: boolean;
 };
 
-type Half = {
-  trunkId: string;
-  index: number;
-  edgeId: string;
-  fromId: string;
-  toId: string;
-  wrapLengthM: number;
-  name: string;
-};
-
-type Piece =
-  | { kind: "half"; half: Half; lights: number }
-  | { kind: "back"; edgeId: string; trunkId: string; fromId: string; toId: string; wrapLengthM: number; lights: number }
-  | { kind: "link"; edgeId: string; fromId: string; toId: string; name: string; wrapLengthM: number; lights: number }
-  | { kind: "wire"; edgeId: string; fromId: string; toId: string };
-
 const EPS = 1e-6;
-/** Body radius over the coil, so a rim of trunk shows around the lights. */
-const BODY = 1.12;
-/** Back path sits well outside the trunk, so the return reads beside the wrap. */
-const BACK = 2.4;
+/** Coil corners per turn: left edge, front, right edge, back. */
+const PER_TURN = 4;
+/** Fine steps per coil corner when measuring the real length of the wrap. */
+const MEASURE_STEPS = 8;
+const MAX_TURNS = 200;
+/** Body radius over the coil, so a rim of wood shows round the lights. */
+const BODY = 1.15;
+/** A branch starts this much thinner than the end of the trunk it grows from. */
+const BRANCH_THIN = 0.8;
+/** A trunk narrows this much along its own length; a tip narrows more. */
+const TAPER_FORK = 0.85;
+const TAPER_TIP = 0.6;
+/** The id of the one string the tree is drawn as when no strings are set. */
+export const SPLIT_WALK_ID = "walk";
 
 function round(value: number): number {
   return Math.round(value * 1e6) / 1e6;
@@ -151,264 +159,88 @@ function toMetres(units: LayoutUnits, value: number): number {
   return value * (units === "ft" ? METRES_PER_FOOT : 1);
 }
 
+/** A small ornamental tree: a foot around, wrapped every 6 in (30 cm and 15 cm). Prop units. */
+export function splitWrapDefaults(units: LayoutUnits): { around: number; gap: number } {
+  return units === "ft" ? { around: 1, gap: 0.5 } : { around: 0.3, gap: 0.15 };
+}
+
+function wrapSizes(spec: Pick<SplitTreeSpec, "units" | "around" | "gap">): { aroundM: number; gapM: number } {
+  const fallback = splitWrapDefaults(spec.units);
+  const around = spec.around != null && spec.around > 0 ? spec.around : fallback.around;
+  const gap = spec.gap != null && spec.gap > 0 ? spec.gap : fallback.gap;
+  return { aroundM: toMetres(spec.units, around), gapM: toMetres(spec.units, gap) };
+}
+
 function tipX(index: number, tips: number, spacing: number): number {
   return (index - (tips - 1) / 2) * spacing;
 }
 
 function forkX(start: number, count: number, tips: number, spacing: number): number {
-  const first = tipX(start, tips, spacing);
-  const last = tipX(start + count - 1, tips, spacing);
-  return (first + last) / 2;
+  return (tipX(start, tips, spacing) + tipX(start + count - 1, tips, spacing)) / 2;
 }
 
-function baseRadius(height: number, spacing: number): number {
-  return Math.min(height * 0.09, spacing * 0.22);
-}
+type Bone = { id: string; parentId: string | null; from: number; to: number; x0: number; x1: number };
 
-function turnsFor(wood: number, radius: number): number {
-  const gap = Math.max(radius * 1.2, wood / 6);
-  return Math.min(6, Math.max(3, Math.round(wood / gap)));
-}
-
-/**
- * The trunks, parents first. Null when the numbers cannot make a tree.
- * A trunk id stays put when the tip count and the fork depth still produce it.
- */
-export function splitTreeTrunks(spec: SplitTreeSpec): SplitTrunk[] | null {
-  if (spec.pose) {
-    const placed = trunksFromPose(spec);
-    if (placed) return placed;
-  }
+/** The even starting skeleton from the whole-tree numbers. Null when they cannot make a tree. */
+function evenBones(spec: SplitTreeSpec): Bone[] | null {
   const tips = Math.round(spec.trunks);
-  const { height, split, spacing, units } = spec;
+  const { height, split, spacing } = spec;
   if (!Number.isInteger(tips) || tips < SPLIT_TREE_TRUNKS_MIN || tips > SPLIT_TREE_TRUNKS_MAX) return null;
   if (!(height > 0) || !(split > 0) || !(spacing > 0) || split >= height - EPS) return null;
   const levels: SplitTreeLevels = spec.levels === 2 && tips >= 3 ? 2 : 1;
-  const nodes: Omit<SplitTrunk, "lengthM" | "riseM" | "woodM" | "radius0" | "radius1" | "turns">[] = [
-    { id: "t0", parentId: null, from: 0, to: split, x0: 0, x1: 0 },
-  ];
+  const bones: Bone[] = [{ id: "t0", parentId: null, from: 0, to: split, x0: 0, x1: 0 }];
   if (levels === 1) {
     for (let index = 0; index < tips; index += 1) {
-      nodes.push({
-        id: `t0.${index}`,
-        parentId: "t0",
-        from: split,
-        to: height,
-        x0: 0,
-        x1: tipX(index, tips, spacing),
-      });
+      bones.push({ id: `t0.${index}`, parentId: "t0", from: split, to: height, x0: 0, x1: tipX(index, tips, spacing) });
     }
   } else {
     const left = Math.ceil(tips / 2);
-    const right = tips - left;
     const second = split + (height - split) / 2;
-    addSide(nodes, "t0.0", 0, left, second, tips, spacing, split, height);
-    addSide(nodes, "t0.1", left, right, second, tips, spacing, split, height);
+    addSide(bones, "t0.0", 0, left, second, tips, spacing, split, height);
+    addSide(bones, "t0.1", left, tips - left, second, tips, spacing, split, height);
   }
-  applyEnds(nodes, spec.trunkTo ?? [], height);
-  const root = baseRadius(height, spacing);
-  const kept = nodes.filter((node) => node.to > node.from + EPS);
-  const hasChild = new Set(kept.map((node) => node.parentId).filter((id): id is string => id != null));
-  return kept.map((node) => {
-    const wood = Math.hypot(node.x1 - node.x0, node.to - node.from);
-    const depth = node.id.split(".").length - 1;
-    const radius0 = root * 0.55 ** depth;
-    const radius1 = radius0 * (hasChild.has(node.id) ? 0.75 : 0.48);
-    const turns = turnsFor(wood, radius0);
-    const rise = toMetres(units, node.to - node.from);
-    const woodM = toMetres(units, wood);
-    const lengthM = helixLength(node, radius0, radius1, turns, units);
-    return {
-      ...node,
-      from: round(node.from),
-      to: round(node.to),
-      x0: round(node.x0),
-      x1: round(node.x1),
-      radius0: round(radius0),
-      radius1: round(radius1),
-      turns,
-      riseM: round(rise),
-      woodM: round(woodM),
-      lengthM: round(lengthM),
-    };
-  });
+  applyEnds(bones, spec.trunkTo ?? [], height);
+  return bones.filter((bone) => bone.to > bone.from + EPS);
 }
 
-function addSide(
-  nodes: Omit<SplitTrunk, "lengthM" | "riseM" | "woodM" | "radius0" | "radius1" | "turns">[],
-  id: string,
-  tipStart: number,
-  count: number,
-  second: number,
-  tips: number,
-  spacing: number,
-  split: number,
-  height: number,
-): void {
+function addSide(bones: Bone[], id: string, tipStart: number, count: number, second: number, tips: number, spacing: number, split: number, height: number): void {
   const x1 = count === 1 ? tipX(tipStart, tips, spacing) : forkX(tipStart, count, tips, spacing);
   const forks = count > 1;
-  nodes.push({ id, parentId: "t0", from: split, to: forks ? second : height, x0: 0, x1 });
+  bones.push({ id, parentId: "t0", from: split, to: forks ? second : height, x0: 0, x1 });
   if (!forks) return;
   for (let index = 0; index < count; index += 1) {
-    nodes.push({
-      id: `${id}.${index}`,
-      parentId: id,
-      from: second,
-      to: height,
-      x0: x1,
-      x1: tipX(tipStart + index, tips, spacing),
-    });
+    bones.push({ id: `${id}.${index}`, parentId: id, from: second, to: height, x0: x1, x1: tipX(tipStart + index, tips, spacing) });
   }
 }
 
-function applyEnds(
-  nodes: { id: string; parentId: string | null; from: number; to: number; x0: number; x1: number }[],
-  ends: readonly SplitTreeTrunkEnd[],
-  height: number,
-): void {
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const hasChild = new Set(nodes.map((node) => node.parentId).filter((id): id is string => id != null));
+function applyEnds(bones: Bone[], ends: readonly SplitTreeTrunkEnd[], height: number): void {
+  const byId = new Map(bones.map((bone) => [bone.id, bone]));
+  const hasChild = new Set(bones.map((bone) => bone.parentId).filter((id): id is string => id != null));
   for (const end of ends) {
-    const node = byId.get(end.id);
-    if (!node || node.id === "t0") continue;
-    const minStep = Math.max((height - node.from) * 0.02, 1e-3);
-    const cap = hasChild.has(node.id) ? height - minStep : height;
-    if (!(end.to > node.from) || !(cap > node.from)) continue;
-    node.to = Math.min(Math.max(end.to, node.from + minStep), cap);
+    const bone = byId.get(end.id);
+    if (!bone || bone.id === "t0") continue;
+    const minStep = Math.max((height - bone.from) * 0.02, 1e-3);
+    const cap = hasChild.has(bone.id) ? height - minStep : height;
+    if (!(end.to > bone.from) || !(cap > bone.from)) continue;
+    bone.to = Math.min(Math.max(end.to, bone.from + minStep), cap);
   }
-  for (const node of nodes) {
-    if (!node.parentId) continue;
-    const parent = byId.get(node.parentId);
+  for (const bone of bones) {
+    const parent = bone.parentId ? byId.get(bone.parentId) : undefined;
     if (!parent) continue;
-    node.from = parent.to;
-    node.x0 = parent.x1;
-    if (node.to <= node.from + EPS) node.to = Math.min(height, node.from + Math.max((height - node.from) * 0.5, 1e-3));
+    bone.from = parent.to;
+    bone.x0 = parent.x1;
+    if (bone.to <= bone.from + EPS) bone.to = Math.min(height, bone.from + Math.max((height - bone.from) * 0.5, 1e-3));
   }
 }
 
-type Axis = { x: number; y: number };
-type Sample = Axis & { z: number };
-
-function axisAt(trunk: SplitTrunk, t: number, units: LayoutUnits): Axis {
-  return {
-    x: toMetres(units, trunk.x0 + (trunk.x1 - trunk.x0) * t),
-    y: toMetres(units, trunk.from + (trunk.to - trunk.from) * t),
-  };
-}
-
-/** Screen perpendicular that points away from the centre line, so the coil crosses the trunk. */
-function outward(trunk: SplitTrunk, units: LayoutUnits): { px: number; py: number; length: number } {
-  const a = axisAt(trunk, 0, units);
-  const b = axisAt(trunk, 1, units);
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const length = Math.hypot(dx, dy) || 1e-6;
-  let px = -dy / length;
-  let py = dx / length;
-  const side = Math.sign(trunk.x0 + trunk.x1) || 1;
-  if (px * side < 0) {
-    px = -px;
-    py = -py;
-  }
-  return { px, py, length };
-}
-
-function radiusAt(trunk: SplitTrunk, t: number, units: LayoutUnits): number {
-  return toMetres(units, trunk.radius0 + (trunk.radius1 - trunk.radius0) * t);
-}
-
-function helixAt(trunk: SplitTrunk, t: number, units: LayoutUnits): Sample {
-  const center = axisAt(trunk, t, units);
-  const frame = outward(trunk, units);
-  const radius = radiusAt(trunk, t, units);
-  const angle = 2 * Math.PI * trunk.turns * t;
-  const across = Math.cos(angle);
-  return {
-    x: center.x + frame.px * radius * across,
-    y: center.y + frame.py * radius * across,
-    z: radius * Math.sin(angle),
-  };
-}
-
-function helixLength(
-  node: { x0: number; x1: number; from: number; to: number; id: string; parentId: string | null },
-  radius0: number,
-  radius1: number,
-  turns: number,
-  units: LayoutUnits,
-  t0 = 0,
-  t1 = 1,
-): number {
-  const trunk = { ...node, radius0, radius1, turns, lengthM: 0, woodM: 0, riseM: 0 };
-  const steps = Math.max(12, turns * 48);
-  let total = 0;
-  let previous = helixAt(trunk, t0, units);
-  for (let step = 1; step <= steps; step += 1) {
-    const point = helixAt(trunk, t0 + (t1 - t0) * (step / steps), units);
-    total += Math.hypot(point.x - previous.x, point.y - previous.y, point.z - previous.z);
-    previous = point;
-  }
-  return total;
-}
-
-/** Keep the coil on the wood and stop it short of a fork, so the wraps do not pile up there. */
-function coilSpan(trunk: { x0: number; x1: number; from: number; to: number; radius0: number; radius1: number; parentId: string | null }, hasChild: boolean): { t0: number; t1: number } {
-  const wood = Math.hypot(trunk.x1 - trunk.x0, trunk.to - trunk.from) || 1e-6;
-  const radius = Math.max(trunk.radius0, trunk.radius1, 1e-3);
-  const dt = Math.min(0.42, (radius * 1.75) / wood);
-  const t0 = trunk.parentId ? Math.min(0.42, dt) : 0;
-  const t1 = hasChild ? Math.max(t0 + 0.28, 1 - dt) : 1;
-  return { t0, t1 };
-}
-
-function meetCornerId(forkId: string): string {
-  return `c-meet-${forkId}`;
-}
-
-/** Where the wraps join at a fork, in metres. A placed meet wins; otherwise it sits off the wood. */
-export function splitMeetPoint(trunk: SplitTrunk, spec: SplitTreeSpec): { x: number; y: number } {
-  const joint = axisAt(trunk, 1, spec.units);
-  const placed = spec.pose?.meets.find((meet) => meet.forkId === trunk.id);
-  if (placed) {
-    return {
-      x: round(joint.x + toMetres(spec.units, placed.x)),
-      y: round(joint.y + toMetres(spec.units, placed.y)),
-    };
-  }
-  const frame = outward(trunk, spec.units);
-  const radius = radiusAt(trunk, 1, spec.units);
-  return {
-    x: round(joint.x + frame.px * radius * 2.2),
-    y: round(joint.y + frame.py * radius * 2.2),
-  };
-}
-
-/**
- * The even starting tree, as joints. Dragging, forking, or placing a meet
- * stores the result and the numbers follow it.
- */
-export function defaultSplitPose(spec: SplitTreeSpec): SplitPose | null {
-  const trunks = splitTreeTrunks({ ...spec, pose: undefined });
-  if (!trunks || trunks.length === 0) return null;
-  const root = trunks[0]!;
-  const nodes: SplitPoseNode[] = [{ id: "base", parentId: null, x: round(root.x0), y: round(root.from) }];
-  for (const trunk of trunks) {
-    nodes.push({ id: trunk.id, parentId: trunk.parentId ?? "base", x: round(trunk.x1), y: round(trunk.to) });
-  }
-  return { nodes, meets: [], turns: [] };
-}
-
-function trunksFromPose(spec: SplitTreeSpec): SplitTrunk[] | null {
-  const pose = spec.pose;
-  if (!pose) return null;
+/** The skeleton from placed joints, parents first. */
+function posedBones(pose: SplitPose): Bone[] | null {
   const ids = new Map(pose.nodes.map((node) => [node.id, node]));
   if (!ids.has("base") || !ids.has("t0")) return null;
+  const rest = pose.nodes.filter((node) => node.id !== "base");
   const ordered: SplitPoseNode[] = [];
   const seen = new Set<string>(["base"]);
-  const rest = pose.nodes.filter((node) => node.id !== "base");
-  let guard = 0;
-  while (ordered.length < rest.length && guard < 48) {
-    guard += 1;
+  for (let guard = 0; ordered.length < rest.length && guard < 48; guard += 1) {
     for (const node of rest) {
       if (seen.has(node.id) || !node.parentId || !seen.has(node.parentId)) continue;
       ordered.push(node);
@@ -416,62 +248,112 @@ function trunksFromPose(spec: SplitTreeSpec): SplitTrunk[] | null {
     }
   }
   if (ordered.length !== rest.length || ordered.length < 2) return null;
-  const root = baseRadius(spec.height, spec.spacing);
-  const hasChild = new Set(ordered.map((node) => node.parentId).filter((id): id is string => id != null && id !== "base"));
-  const trunks: SplitTrunk[] = [];
+  const bones: Bone[] = [];
   for (const node of ordered) {
-    const parent = ids.get(node.parentId!);
-    if (!parent) return null;
-    const wood = Math.hypot(node.x - parent.x, node.y - parent.y);
-    if (!(wood > 1e-3)) return null;
-    const depth = node.id.split(".").length - 1;
-    const radius0 = root * 0.55 ** depth;
-    const radius1 = radius0 * (hasChild.has(node.id) ? 0.75 : 0.48);
-    const turns = turnsFor(wood, radius0);
-    const partial = {
+    const parent = ids.get(node.parentId!)!;
+    if (!(Math.hypot(node.x - parent.x, node.y - parent.y) > 1e-3)) return null;
+    bones.push({
       id: node.id,
       parentId: node.parentId === "base" ? null : node.parentId,
       from: parent.y,
       to: node.y,
       x0: parent.x,
       x1: node.x,
-    };
-    const span = coilSpan({ ...partial, radius0, radius1 }, hasChild.has(node.id));
-    const lengthM = helixLength(partial, radius0, radius1, turns, spec.units, span.t0, span.t1);
-    trunks.push({
-      id: node.id,
-      parentId: partial.parentId,
-      from: round(parent.y),
-      to: round(node.y),
-      x0: round(parent.x),
-      x1: round(node.x),
+    });
+  }
+  return bones;
+}
+
+/**
+ * The trunks, parents first, with their thickness and wrap. Null when the
+ * numbers cannot make a tree. A trunk id stays put while the tip count and
+ * fork depth still produce it.
+ */
+export function splitTreeTrunks(spec: SplitTreeSpec): SplitTrunk[] | null {
+  const bones = (spec.pose ? posedBones(spec.pose) : null) ?? evenBones({ ...spec, pose: undefined });
+  if (!bones || bones.length === 0) return null;
+  const { aroundM, gapM } = wrapSizes(spec);
+  const hasChild = new Set(bones.map((bone) => bone.parentId).filter((id): id is string => id != null));
+  const done = new Map<string, SplitTrunk>();
+  const trunks: SplitTrunk[] = [];
+  for (const bone of bones) {
+    const parent = bone.parentId ? done.get(bone.parentId) : undefined;
+    const radius0 = parent ? parent.radius1 * BRANCH_THIN : aroundM / (2 * Math.PI);
+    const radius1 = radius0 * (hasChild.has(bone.id) ? TAPER_FORK : TAPER_TIP);
+    const woodM = toMetres(spec.units, Math.hypot(bone.x1 - bone.x0, bone.to - bone.from));
+    const turns = Math.min(MAX_TURNS, Math.max(0.5, woodM / gapM));
+    const phase0 = parent ? (parent.phase0 + 2 * Math.PI * parent.turns) % (2 * Math.PI) : 0;
+    const partial = { ...bone, radius0, radius1, turns, phase0 };
+    const trunk: SplitTrunk = {
+      id: bone.id,
+      parentId: bone.parentId,
+      from: round(bone.from),
+      to: round(bone.to),
+      x0: round(bone.x0),
+      x1: round(bone.x1),
       radius0: round(radius0),
       radius1: round(radius1),
-      turns,
-      riseM: round(toMetres(spec.units, Math.abs(node.y - parent.y))),
-      woodM: round(toMetres(spec.units, wood)),
-      lengthM: round(lengthM),
-    });
+      turns: round(turns),
+      phase0,
+      riseM: round(toMetres(spec.units, Math.abs(bone.to - bone.from))),
+      woodM: round(woodM),
+      lengthM: round(coilLength(partial, spec.units, 0, 1)),
+    };
+    done.set(trunk.id, trunk);
+    trunks.push(trunk);
   }
   return trunks;
 }
 
-function helixStops(trunk: SplitTrunk, units: LayoutUnits, t0: number, t1: number): { t: number; at: number }[] {
-  const halves = trunk.turns * 2;
-  const steps = Math.max(24, trunk.turns * 64);
-  const cum: number[] = [0];
-  let previous = helixAt(trunk, t0, units);
+/** The even starting tree, as joints. Dragging or forking stores the result and the numbers follow it. */
+export function defaultSplitPose(spec: SplitTreeSpec): SplitPose | null {
+  const bones = evenBones({ ...spec, pose: undefined });
+  if (!bones || bones.length === 0) return null;
+  const root = bones[0]!;
+  const nodes: SplitPoseNode[] = [{ id: "base", parentId: null, x: round(root.x0), y: round(root.from) }];
+  for (const bone of bones) nodes.push({ id: bone.id, parentId: bone.parentId ?? "base", x: round(bone.x1), y: round(bone.to) });
+  return { nodes };
+}
+
+type Point3 = { x: number; y: number; z: number };
+type CoilShape = Bone & { radius0: number; radius1: number; turns: number; phase0: number };
+
+function axisAt(trunk: Bone, t: number, units: LayoutUnits): { x: number; y: number } {
+  return {
+    x: toMetres(units, trunk.x0 + (trunk.x1 - trunk.x0) * t),
+    y: toMetres(units, trunk.from + (trunk.to - trunk.from) * t),
+  };
+}
+
+/**
+ * A point on the coil. Angle 0 is the left edge of the trunk seen from the
+ * street, a quarter turn is the front (toward the street), half is the right
+ * edge, three quarters the back.
+ */
+function coilAt(trunk: CoilShape, t: number, units: LayoutUnits): Point3 {
+  const centre = axisAt(trunk, t, units);
+  const dx = toMetres(units, trunk.x1 - trunk.x0);
+  const dy = toMetres(units, trunk.to - trunk.from);
+  const length = Math.hypot(dx, dy) || 1;
+  // Across the trunk, pointing to the right of the way it grows.
+  const nx = dy / length;
+  const ny = -dx / length;
+  const radius = trunk.radius0 + (trunk.radius1 - trunk.radius0) * t;
+  const angle = trunk.phase0 + 2 * Math.PI * trunk.turns * t;
+  const across = -Math.cos(angle) * radius;
+  return { x: centre.x + nx * across, y: centre.y + ny * across, z: Math.sin(angle) * radius };
+}
+
+function coilLength(trunk: CoilShape, units: LayoutUnits, t0: number, t1: number): number {
+  const steps = Math.max(12, Math.ceil(trunk.turns * PER_TURN * MEASURE_STEPS * (t1 - t0)));
+  let total = 0;
+  let previous = coilAt(trunk, t0, units);
   for (let step = 1; step <= steps; step += 1) {
-    const point = helixAt(trunk, t0 + (t1 - t0) * (step / steps), units);
-    cum.push(cum[cum.length - 1]! + Math.hypot(point.x - previous.x, point.y - previous.y, point.z - previous.z));
+    const point = coilAt(trunk, t0 + ((t1 - t0) * step) / steps, units);
+    total += Math.hypot(point.x - previous.x, point.y - previous.y, point.z - previous.z);
     previous = point;
   }
-  const stops: { t: number; at: number }[] = [];
-  for (let k = 0; k <= halves; k += 1) {
-    const index = Math.round((k / halves) * steps);
-    stops.push({ t: t0 + (t1 - t0) * (k / halves), at: cum[index] ?? 0 });
-  }
-  return stops;
+  return total;
 }
 
 /** A short name for the trunk list. */
@@ -488,305 +370,227 @@ export function splitTrunkLabel(trunk: SplitTrunk, trunks: readonly SplitTrunk[]
   return child ? `Branch ${index + 1}` : `Trunk ${index + 1}`;
 }
 
+/** The trunk a run belongs to: a coil piece, the run back down it, or the lead onto it. */
 export function trunkIdFromEdge(edgeId: string): string | null {
-  const wrap = /^e-(t\d+(?:\.\d+)*)(?:-(?:\d+|back|meet|in))?$/.exec(edgeId);
-  if (wrap?.[1]) return wrap[1];
-  const link = /^e-link-(t\d+(?:\.\d+)*)-(t\d+(?:\.\d+)*)(?:-in)?$/.exec(edgeId);
+  const own = /^e-(t\d+(?:\.\d+)*)(?:-(?:\d+|back(?:-\d+)?))?$/.exec(edgeId);
+  if (own?.[1]) return own[1];
+  const link = /^e-link-(t\d+(?:\.\d+)*)-(t\d+(?:\.\d+)*)(?:-\d+)?$/.exec(edgeId);
   return link?.[2] ?? null;
 }
 
-type Remain = { metres: number; lights: number } | null;
+/** One piece of the coil: a quarter turn. */
+type Quarter = { trunkId: string; edgeId: string; fromId: string; toId: string; lengthM: number; name: string };
 
-function remainOf(string: SplitTreeString): Remain {
-  if (string.ledCount == null || !(string.pitchMm > 0)) return null;
-  return { metres: (string.ledCount * string.pitchMm) / 1000, lights: string.ledCount };
+type Piece = {
+  edge: LayoutEdge;
+  /** Metres of string, for lights. Zero on a dark jump. */
+  lengthM: number;
+  /** The trunk whose coverage this piece counts toward, for coil pieces only. */
+  trunkId?: string;
+};
+
+type Plan = {
+  trunks: SplitTrunk[];
+  quarters: Map<string, Quarter[]>;
+  corners: Map<string, LayoutCorner>;
+  /** Pieces of each string, in order, with lights already set for a string set by hand. */
+  runs: { id: string; pieces: Piece[] }[];
+  owned: Set<string>;
+  claims: Map<string, TrunkStringCover[]>;
+  hops: SplitHop[];
+};
+
+function setCorner(corners: Map<string, LayoutCorner>, id: string, point: { x: number; y: number; z?: number }): void {
+  const z = point.z != null ? round(point.z) : 0;
+  corners.set(id, { id, x: round(point.x), y: round(point.y), ...(Math.abs(z) > EPS ? { z } : {}) });
+}
+
+function buildCoils(trunks: readonly SplitTrunk[], units: LayoutUnits, corners: Map<string, LayoutCorner>): Map<string, Quarter[]> {
+  const quarters = new Map<string, Quarter[]>();
+  for (const trunk of trunks) {
+    const count = Math.max(2, Math.round(trunk.turns * PER_TURN));
+    const label = splitTrunkLabel(trunk, trunks);
+    for (let k = 0; k <= count; k += 1) setCorner(corners, `c-${trunk.id}-w${k}`, coilAt(trunk, k / count, units));
+    const rows: Quarter[] = [];
+    for (let k = 0; k < count; k += 1) {
+      const wrap = Math.floor(k / PER_TURN) + 1;
+      const named = k === 0 ? label : `${label} wrap ${wrap}`;
+      rows.push({
+        trunkId: trunk.id,
+        edgeId: k === 0 ? `e-${trunk.id}` : `e-${trunk.id}-${k + 1}`,
+        fromId: `c-${trunk.id}-w${k}`,
+        toId: `c-${trunk.id}-w${k + 1}`,
+        lengthM: round(Math.max(1e-6, coilLength(trunk, units, k / count, (k + 1) / count))),
+        name: named.length > 40 ? label : named,
+      });
+    }
+    quarters.set(trunk.id, rows);
+  }
+  return quarters;
+}
+
+/** Joints on the centre line, for the editor's handles. Not on any run. */
+function putJoints(trunks: readonly SplitTrunk[], units: LayoutUnits, corners: Map<string, LayoutCorner>): void {
+  for (const trunk of trunks) {
+    const startId = trunk.parentId ? `c-${trunk.parentId}` : "c-base";
+    if (!corners.has(startId)) setCorner(corners, startId, axisAt(trunk, 0, units));
+    setCorner(corners, `c-${trunk.id}`, axisAt(trunk, 1, units));
+  }
+}
+
+/** Where a string reaches the bottom of a trunk, coming down its back. */
+function backCorner(trunk: SplitTrunk, units: LayoutUnits, corners: Map<string, LayoutCorner>): string {
+  const id = `c-${trunk.id}-back`;
+  if (!corners.has(id)) setCorner(corners, id, { ...axisAt(trunk, 0, units), z: -trunk.radius0 });
+  return id;
 }
 
 function ancestors(trunk: SplitTrunk, byId: Map<string, SplitTrunk>): SplitTrunk[] {
   const chain: SplitTrunk[] = [];
-  let cursor: SplitTrunk | undefined = trunk;
-  while (cursor) {
-    chain.push(cursor);
-    cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined;
-  }
+  for (let cursor: SplitTrunk | undefined = trunk; cursor; cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined) chain.push(cursor);
   return chain;
 }
 
-function lowestCommon(a: SplitTrunk, b: SplitTrunk, byId: Map<string, SplitTrunk>): SplitTrunk {
-  const seen = new Set(ancestors(a, byId).map((trunk) => trunk.id));
-  for (const trunk of ancestors(b, byId)) if (seen.has(trunk.id)) return trunk;
-  return byId.get("t0") ?? a;
+/** Trunks in the order one string would wrap them: each trunk, then its branches left to right. */
+export function splitWalkOrder(trunks: readonly SplitTrunk[]): string[] {
+  const order: string[] = [];
+  const visit = (id: string) => {
+    order.push(id);
+    trunks.filter((row) => row.parentId === id).sort((a, b) => a.x1 - b.x1).forEach((child) => visit(child.id));
+  };
+  const root = trunks.find((trunk) => !trunk.parentId);
+  if (root) visit(root.id);
+  return order;
 }
 
-function descent(from: SplitTrunk, ancestorId: string, byId: Map<string, SplitTrunk>): SplitTrunk[] {
-  const path: SplitTrunk[] = [];
-  let cursor: SplitTrunk | undefined = from;
-  while (cursor && cursor.id !== ancestorId) {
-    path.push(cursor);
-    cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined;
-  }
-  return path;
-}
-
-type Plan = {
-  trunks: SplitTrunk[];
-  halves: Map<string, Half[]>;
-  corners: Map<string, LayoutCorner>;
-  pieces: Map<string, Piece[]>;
-  claims: Map<string, TrunkStringCover[]>;
-  hops: SplitHop[];
-  units: LayoutUnits;
-};
-
-function buildHalves(trunks: readonly SplitTrunk[], units: LayoutUnits, corners: Map<string, LayoutCorner>): Map<string, Half[]> {
-  const halves = new Map<string, Half[]>();
-  const hasChild = new Set(trunks.map((trunk) => trunk.parentId).filter((id): id is string => id != null));
-  for (const trunk of trunks) {
-    const span = coilSpan(trunk, hasChild.has(trunk.id));
-    const stops = helixStops(trunk, units, span.t0, span.t1);
-    const label = splitTrunkLabel(trunk, trunks);
-    stops.forEach((stop, index) => {
-      const id = `c-${trunk.id}-w${index}`;
-      const point = helixAt(trunk, stop.t, units);
-      corners.set(id, { id, x: round(point.x), y: round(point.y) });
-    });
-    const rows: Half[] = [];
-    for (let index = 0; index < stops.length - 1; index += 1) {
-      const wrap = Math.floor(index / 2) + 1;
-      const side = index % 2 === 0 ? "front" : "far";
-      const named = index === 0 ? label : `${label} wrap ${wrap} ${side}`;
-      rows.push({
-        trunkId: trunk.id,
-        index,
-        edgeId: index === 0 ? `e-${trunk.id}` : `e-${trunk.id}-${index + 1}`,
-        fromId: `c-${trunk.id}-w${index}`,
-        toId: `c-${trunk.id}-w${index + 1}`,
-        wrapLengthM: round(Math.max(1e-6, stops[index + 1]!.at - stops[index]!.at)),
-        name: named.length > 40 ? label : named,
-      });
-    }
-    halves.set(trunk.id, rows);
-  }
-  return halves;
-}
-
-function putAxis(trunks: readonly SplitTrunk[], units: LayoutUnits, corners: Map<string, LayoutCorner>): void {
-  for (const trunk of trunks) {
-    const start = axisAt(trunk, 0, units);
-    const end = axisAt(trunk, 1, units);
-    const startId = trunk.parentId ? `c-${trunk.parentId}` : "c-base";
-    if (!corners.has(startId)) corners.set(startId, { id: startId, x: round(start.x), y: round(start.y) });
-    const endId = `c-${trunk.id}`;
-    corners.set(endId, { id: endId, x: round(end.x), y: round(end.y) });
-  }
-}
-
-function kneePoint(trunk: SplitTrunk, fork: SplitTrunk | undefined, spec: SplitTreeSpec, stringId: string, toId: string): Axis {
-  const placed = spec.pose?.turns.find((turn) => turn.stringId === stringId && turn.fromId === trunk.id && turn.toId === toId);
-  if (placed) {
-    const anchor = fork ?? trunk;
-    const joint = axisAt(anchor, fork ? 1 : 0, spec.units);
-    return {
-      x: round(joint.x + toMetres(spec.units, placed.x)),
-      y: round(joint.y + toMetres(spec.units, placed.y)),
-    };
-  }
-  return sidePoint(trunk, 0, BACK, spec.units);
-}
-
-function sidePoint(trunk: SplitTrunk, t: number, scale: number, units: LayoutUnits): Axis {
-  const center = axisAt(trunk, t, units);
-  const frame = outward(trunk, units);
-  const radius = radiusAt(trunk, t, units) * scale;
-  return { x: round(center.x + frame.px * radius), y: round(center.y + frame.py * radius) };
-}
-
-/**
- * How much of each trunk the strings cover, and which hops are dark or a back path.
- * Strings are used in list order. One string that names two trunks uses the first before the second.
- */
-export function splitTreeCoverage(spec: SplitTreeSpec): { trunks: SplitTrunk[]; cover: TrunkCover[]; hops: SplitHop[] } | null {
-  const plan = prepare(spec);
-  if (!plan) return null;
-  return { trunks: plan.trunks, cover: coverOf(plan), hops: plan.hops };
-}
-
-function coverOf(plan: Plan): TrunkCover[] {
-  return plan.trunks.map((trunk) => {
-    const halves = plan.halves.get(trunk.id) ?? [];
-    const openM = round(halves.filter((half) => !halfOwned(plan, half.edgeId)).reduce((sum, half) => sum + half.wrapLengthM, 0));
-    const strings = plan.claims.get(trunk.id) ?? [];
-    const coveredM = round(Math.max(0, trunk.lengthM - openM));
-    return { trunkId: trunk.id, lengthM: trunk.lengthM, coveredM, openM, strings };
-  });
-}
-
-function halfOwned(plan: Plan, edgeId: string): boolean {
-  for (const pieces of plan.pieces.values()) {
-    if (pieces.some((piece) => piece.kind === "half" && piece.half.edgeId === edgeId)) return true;
-  }
-  return false;
+function distance(corners: Map<string, LayoutCorner>, fromId: string, toId: string): number {
+  const a = corners.get(fromId);
+  const b = corners.get(toId);
+  if (!a || !b) return 0;
+  return Math.hypot(b.x - a.x, b.y - a.y, (b.z ?? 0) - (a.z ?? 0));
 }
 
 function prepare(spec: SplitTreeSpec): Plan | null {
   const trunks = splitTreeTrunks(spec);
   if (!trunks) return null;
   const corners = new Map<string, LayoutCorner>();
-  putAxis(trunks, spec.units, corners);
-  const halves = buildHalves(trunks, spec.units, corners);
-  for (const trunk of trunks) {
-    if (!trunks.some((row) => row.parentId === trunk.id)) continue;
-    const meet = splitMeetPoint(trunk, spec);
-    const id = meetCornerId(trunk.id);
-    corners.set(id, { id, x: meet.x, y: meet.y });
-  }
+  putJoints(trunks, spec.units, corners);
+  const quarters = buildCoils(trunks, spec.units, corners);
   const byId = new Map(trunks.map((trunk) => [trunk.id, trunk]));
-  const pieces = new Map<string, Piece[]>();
+  const owned = new Set<string>();
+  const usedIds = new Set<string>();
   const claims = new Map<string, TrunkStringCover[]>();
   const hops: SplitHop[] = [];
-  const owned = new Set<string>();
-  const leadUsed = new Set<string>();
-  for (const string of spec.strings ?? []) {
+  const runs: Plan["runs"] = [];
+  const freshId = (base: string) => {
+    let id = base;
+    for (let n = 2; usedIds.has(id); n += 1) id = `${base}-${n}`;
+    usedIds.add(id);
+    return id;
+  };
+
+  const explicit = (spec.strings ?? []).length > 0;
+  const strings: SplitTreeString[] = explicit
+    ? [...(spec.strings ?? [])]
+    : [{ id: SPLIT_WALK_ID, ledProductId: null, pitchMm: 0, ledCount: null, trunkIds: splitWalkOrder(trunks) }];
+
+  for (const string of strings) {
     const path = string.trunkIds.filter((id, index) => byId.has(id) && string.trunkIds.indexOf(id) === index);
     if (path.length === 0) continue;
-    const remain = remainOf(string);
-    if (!remain) {
-      for (const trunkId of path) pushClaim(claims, trunkId, { stringId: string.id, coveredM: 0, lights: 0, remainingM: null });
-      continue;
-    }
-    const run: Piece[] = [];
     const pitchM = string.pitchMm / 1000;
-    const spend = (lengthM: number): number => {
-      if (remain.lights <= 0 || !(lengthM > 0)) return 0;
-      const capacity = Math.max(1, Math.round(lengthM / pitchM));
-      const lights = Math.min(remain.lights, capacity);
-      remain.lights -= lights;
-      remain.metres = round(Math.max(0, remain.metres - lights * pitchM));
+    // Lights are only set per piece for a string with its own spacing. The walk uses the prop's spacing.
+    let left = explicit && string.ledCount != null ? string.ledCount : Infinity;
+    let along = 0;
+    const pieces: Piece[] = [];
+    const lightsFor = (lengthM: number): number | undefined => {
+      if (!explicit || !(pitchM > 0)) return undefined;
+      const lights = Math.min(left, Math.max(0, Math.round((along + lengthM) / pitchM) - Math.round(along / pitchM)));
+      left -= lights;
       return lights;
     };
-    const take = (trunkId: string): { halves: { half: Half; lights: number }[]; reached: boolean } => {
-      const rows = halves.get(trunkId) ?? [];
-      const taken: { half: Half; lights: number }[] = [];
-      for (const half of rows) {
-        if (owned.has(half.edgeId) || remain.lights <= 0) continue;
-        const lights = spend(half.wrapLengthM);
-        if (lights <= 0) break;
-        owned.add(half.edgeId);
-        taken.push({ half, lights });
-      }
-      const last = rows[rows.length - 1];
-      return { halves: taken, reached: Boolean(last && taken.some((row) => row.half.edgeId === last.edgeId)) };
+    const lit = (id: string, fromId: string, toId: string, name: string, lengthM: number, trunkId?: string) => {
+      const lights = lightsFor(lengthM);
+      along += lengthM;
+      pieces.push({
+        edge: { id, from: fromId, to: toId, kind: "lit", name, wrapLengthM: round(Math.max(1e-6, lengthM)), ...(lights != null ? { lockedLights: lights } : {}) },
+        lengthM,
+        ...(trunkId ? { trunkId } : {}),
+      });
     };
-    const ensure = (id: string, at: Axis) => {
-      if (!corners.has(id)) corners.set(id, { id, x: at.x, y: at.y });
+    const wire = (id: string, fromId: string, toId: string) => {
+      pieces.push({ edge: { id, from: fromId, to: toId, kind: "wire", name: "Dark jump" }, lengthM: 0 });
     };
-    const link = (fromId: string, toId: string, name: string, edgeId: string) => {
-      const from = corners.get(fromId);
-      const to = corners.get(toId);
-      if (!from || !to || fromId === toId) return;
-      const length = Math.hypot(to.x - from.x, to.y - from.y);
-      if (!(length > 1e-4)) return;
-      run.push({ kind: "link", edgeId, fromId, toId, name, wrapLengthM: round(length), lights: spend(length) });
-    };
-    let pending: { fromId: string; wire: boolean; name: string; edgeId: string } | null = null;
+    const out = () => left <= 0;
+
+    let cursor: string | null = null;
+    let previous: SplitTrunk | null = null;
+    let finished = false;
     for (let index = 0; index < path.length; index += 1) {
-      const trunkId = path[index]!;
-      const from = byId.get(trunkId)!;
-      const rows = (halves.get(trunkId) ?? []).filter((half) => !owned.has(half.edgeId));
+      const trunk = byId.get(path[index]!)!;
+      const rows = (quarters.get(trunk.id) ?? []).filter((row) => !owned.has(row.edgeId));
       const first = rows[0];
-      if (pending && first) {
-        if (pending.wire) run.push({ kind: "wire", edgeId: pending.edgeId, fromId: pending.fromId, toId: first.fromId });
-        else link(pending.fromId, first.fromId, pending.name, pending.edgeId);
-      }
-      pending = null;
-      const taken = take(trunkId);
-      const lights = taken.halves.reduce((sum, row) => sum + row.lights, 0);
-      pushClaim(claims, trunkId, {
-        stringId: string.id,
-        coveredM: round(lights * pitchM),
-        lights,
-        remainingM: round(remain.metres),
-      });
-      for (const row of taken.halves) run.push({ kind: "half", half: row.half, lights: row.lights });
-      const nextId = path[index + 1];
-      if (!nextId) continue;
-      const to = byId.get(nextId)!;
-      const endId = run.length > 0 ? pieceEnd(run[run.length - 1]!) : null;
-      if (!endId) {
-        hops.push({ stringId: string.id, fromId: trunkId, toId: nextId, dark: true, back: false });
-        continue;
-      }
-      if (!taken.reached) {
-        hops.push({ stringId: string.id, fromId: trunkId, toId: nextId, dark: true, back: false });
-        if (remain.lights > 0) pending = { fromId: endId, wire: true, name: "Dark jump", edgeId: `w-${string.id}-${index + 1}` };
-        continue;
-      }
-      if (to.parentId === from.id) {
-        hops.push({ stringId: string.id, fromId: trunkId, toId: nextId, dark: false, back: false });
-        const meet = meetCornerId(from.id);
-        if (corners.has(meet)) {
-          const meetEdge = leadUsed.has(`e-${from.id}-meet`) ? `e-link-${from.id}-${to.id}` : `e-${from.id}-meet`;
-          const inEdge = leadUsed.has(`e-${to.id}-in`) ? `e-link-${from.id}-${to.id}-in` : `e-${to.id}-in`;
-          leadUsed.add(meetEdge);
-          leadUsed.add(inEdge);
-          link(endId, meet, "Onto the branch", meetEdge);
-          pending = { fromId: meet, wire: false, name: "Onto the branch", edgeId: inEdge };
+      if (cursor && previous && first) {
+        const label = splitTrunkLabel(trunk, trunks);
+        if (!finished) {
+          hops.push({ stringId: string.id, fromId: previous.id, toId: trunk.id, dark: true, back: false });
+          wire(freshId(`w-${string.id}-${index}`), cursor, first.fromId);
+        } else if (trunk.parentId === previous.id) {
+          hops.push({ stringId: string.id, fromId: previous.id, toId: trunk.id, dark: false, back: false });
+          lit(freshId(`e-link-${previous.id}-${trunk.id}`), cursor, first.fromId, `Onto ${label}`.slice(0, 40), distance(corners, cursor, first.fromId));
         } else {
-          pending = { fromId: endId, wire: false, name: "Onto the branch", edgeId: `e-link-${from.id}-${to.id}` };
+          // Run back down the back of each trunk until the fork the next one grows from.
+          const chain = ancestors(previous, byId);
+          const stop = chain.findIndex((row) => row.id === trunk.parentId);
+          if (stop <= 0) {
+            hops.push({ stringId: string.id, fromId: previous.id, toId: trunk.id, dark: true, back: false });
+            wire(freshId(`w-${string.id}-${index}`), cursor, first.fromId);
+          } else {
+            hops.push({ stringId: string.id, fromId: previous.id, toId: trunk.id, dark: false, back: true });
+            for (const down of chain.slice(0, stop)) {
+              if (out()) break;
+              const bottom = backCorner(down, spec.units, corners);
+              lit(freshId(`e-${down.id}-back`), cursor, bottom, "Back down", distance(corners, cursor, bottom));
+              cursor = bottom;
+            }
+            if (!out()) lit(freshId(`e-link-${chain[stop - 1]!.id}-${trunk.id}`), cursor, first.fromId, `Onto ${label}`.slice(0, 40), distance(corners, cursor, first.fromId));
+          }
         }
+      }
+      if (out() || rows.length === 0) {
+        // Used up, or another string already covers this trunk: nothing of this string lands here.
+        pushClaim(claims, trunk.id, { stringId: string.id, coveredM: 0, lights: 0, remainingM: remainingM(string, left, pitchM) });
         continue;
       }
-      const shared = lowestCommon(from, to, byId);
-      const down = to.parentId === shared.id ? descent(from, shared.id, byId) : [];
-      if (down.length === 0) {
-        hops.push({ stringId: string.id, fromId: trunkId, toId: nextId, dark: true, back: false });
-        pending = { fromId: endId, wire: true, name: "Dark jump", edgeId: `w-${string.id}-${index + 1}` };
-        continue;
+      let lights = 0;
+      let covered = 0;
+      for (const row of rows) {
+        if (out()) break;
+        owned.add(row.edgeId);
+        usedIds.add(row.edgeId);
+        lit(row.edgeId, row.fromId, row.toId, row.name, row.lengthM, trunk.id);
+        const placed = pieces[pieces.length - 1]!.edge.lockedLights;
+        lights += placed ?? 0;
+        covered += row.lengthM;
+        cursor = row.toId;
       }
-      let cursor = endId;
-      down.forEach((trunk, step) => {
-        const topId = `c-${trunk.id}-down-top`;
-        ensure(topId, sidePoint(trunk, 1, BACK, spec.units));
-        const fromName = step === 0 ? down[0]!.id : down[step - 1]!.id;
-        link(cursor, topId, "Back down", `e-link-${fromName}-${trunk.id}-out`);
-        const downId = `c-${trunk.id}-down`;
-        const fork = trunk.parentId ? byId.get(trunk.parentId) : undefined;
-        ensure(downId, kneePoint(trunk, fork, spec, string.id, nextId));
-        const fromCorner = corners.get(topId);
-        const toCorner = corners.get(downId);
-        const length = fromCorner && toCorner ? Math.hypot(toCorner.x - fromCorner.x, toCorner.y - fromCorner.y) : trunk.woodM;
-        run.push({
-          kind: "back",
-          edgeId: `e-${trunk.id}-back`,
-          trunkId: trunk.id,
-          fromId: topId,
-          toId: downId,
-          wrapLengthM: round(Math.max(1e-6, length)),
-          lights: spend(length),
-        });
-        cursor = downId;
+      const all = quarters.get(trunk.id) ?? [];
+      finished = cursor === all[all.length - 1]?.toId;
+      pushClaim(claims, trunk.id, {
+        stringId: string.id,
+        coveredM: round(explicit && pitchM > 0 ? lights * pitchM : covered),
+        lights,
+        remainingM: remainingM(string, left, pitchM),
       });
-      hops.push({ stringId: string.id, fromId: trunkId, toId: nextId, dark: false, back: true });
-      pending = { fromId: cursor, wire: false, name: "Across the fork", edgeId: `e-link-${down[down.length - 1]!.id}-${to.id}` };
+      previous = trunk;
     }
-    if (run.length > 0) pieces.set(string.id, run);
+    if (pieces.length > 0) runs.push({ id: string.id, pieces });
   }
-  return { trunks, halves, corners, pieces, claims, hops, units: spec.units };
+  return { trunks, quarters, corners, runs, owned, claims, hops };
 }
 
-function pieceEnd(piece: Piece): string {
-  switch (piece.kind) {
-    case "half":
-      return piece.half.toId;
-    case "back":
-    case "link":
-    case "wire":
-      return piece.toId;
-    default: {
-      const never: never = piece;
-      return never;
-    }
-  }
+function remainingM(string: SplitTreeString, left: number, pitchM: number): number | null {
+  if (string.ledCount == null || !Number.isFinite(left) || !(pitchM > 0)) return null;
+  return round(Math.max(0, left) * pitchM);
 }
 
 function pushClaim(claims: Map<string, TrunkStringCover[]>, trunkId: string, row: TrunkStringCover): void {
@@ -794,133 +598,58 @@ function pushClaim(claims: Map<string, TrunkStringCover[]>, trunkId: string, row
   const index = list.findIndex((have) => have.stringId === row.stringId);
   if (index >= 0) {
     const have = list[index]!;
-    list[index] = {
-      stringId: row.stringId,
-      coveredM: round(have.coveredM + row.coveredM),
-      lights: have.lights + row.lights,
-      remainingM: row.remainingM,
-    };
+    list[index] = { stringId: row.stringId, coveredM: round(have.coveredM + row.coveredM), lights: have.lights + row.lights, remainingM: row.remainingM };
   } else list.push(row);
   claims.set(trunkId, list);
 }
 
-/** The drawing: a thick trunk per segment, a coil up each one, and back paths where a string continues. */
+/**
+ * How much of each trunk the strings cover, and which hops are dark or run back down.
+ * Strings are used in list order. A string that names two trunks wraps the first before the second.
+ */
+export function splitTreeCoverage(spec: SplitTreeSpec): { trunks: SplitTrunk[]; cover: TrunkCover[]; hops: SplitHop[] } | null {
+  const plan = prepare(spec);
+  if (!plan) return null;
+  const cover = plan.trunks.map((trunk) => {
+    const rows = plan.quarters.get(trunk.id) ?? [];
+    const openM = round(rows.filter((row) => !plan.owned.has(row.edgeId)).reduce((sum, row) => sum + row.lengthM, 0));
+    const strings = (plan.claims.get(trunk.id) ?? []).filter((row) => row.stringId !== SPLIT_WALK_ID);
+    return { trunkId: trunk.id, lengthM: trunk.lengthM, coveredM: round(Math.max(0, trunk.lengthM - openM)), openM, strings };
+  });
+  return { trunks: plan.trunks, cover, hops: plan.hops.filter((hop) => hop.stringId !== SPLIT_WALK_ID) };
+}
+
+/** The drawing: a tapered body per trunk, the coil round each one, and the runs back down where a string continues. */
 export function splitTreeLayout(spec: SplitTreeSpec & { pitchM: number }): PropLayout | null {
   const plan = prepare(spec);
   if (!plan || !(spec.pitchM > 0)) return null;
-  const runs = new Map<string, LayoutEdge[]>();
-  const edgeFor = (piece: Piece): LayoutEdge => {
-    switch (piece.kind) {
-      case "half":
-        return {
-          id: piece.half.edgeId,
-          from: piece.half.fromId,
-          to: piece.half.toId,
-          kind: "lit",
-          name: piece.half.name,
-          wrapLengthM: piece.half.wrapLengthM,
-          lockedLights: piece.lights,
-        };
-      case "back":
-        return {
-          id: piece.edgeId,
-          from: piece.fromId,
-          to: piece.toId,
-          kind: "lit",
-          name: "Back down",
-          wrapLengthM: piece.wrapLengthM,
-          lockedLights: piece.lights,
-        };
-      case "link":
-        return {
-          id: piece.edgeId,
-          from: piece.fromId,
-          to: piece.toId,
-          kind: "lit",
-          name: piece.name,
-          wrapLengthM: piece.wrapLengthM,
-          lockedLights: piece.lights,
-        };
-      case "wire":
-        return { id: piece.edgeId, from: piece.fromId, to: piece.toId, kind: "wire", name: "Dark jump" };
-      default: {
-        const never: never = piece;
-        return never;
-      }
-    }
-  };
-  for (const [id, run] of plan.pieces) runs.set(id, run.map(edgeFor));
+  const strings: LayoutString[] = plan.runs.map((run) => ({ id: run.id, startId: run.pieces[0]!.edge.from, run: run.pieces.map((piece) => piece.edge) }));
+  // Coil no string reaches: its own loose run, so it still shows and can be put in a section.
   for (const trunk of plan.trunks) {
-    const loose = (plan.halves.get(trunk.id) ?? []).filter((half) => !halfOwned(plan, half.edgeId));
+    const loose = (plan.quarters.get(trunk.id) ?? []).filter((row) => !plan.owned.has(row.edgeId));
     if (loose.length === 0) continue;
-    runs.set(`sk-${trunk.id}`, loose.map((half) => ({
-      id: half.edgeId,
-      from: half.fromId,
-      to: half.toId,
-      kind: "lit" as const,
-      name: half.name,
-      wrapLengthM: half.wrapLengthM,
-    })));
+    strings.push({
+      id: `sk-${trunk.id}`,
+      startId: loose[0]!.fromId,
+      run: loose.map((row) => ({ id: row.edgeId, from: row.fromId, to: row.toId, kind: "lit" as const, name: row.name, wrapLengthM: row.lengthM })),
+    });
   }
-  const usedEdges = new Set<string>();
-  for (const run of runs.values()) for (const edge of run) usedEdges.add(edge.id);
-  const leadEdge = (id: string, fromId: string, toId: string): LayoutEdge | null => {
-    const from = plan.corners.get(fromId);
-    const to = plan.corners.get(toId);
-    if (!from || !to) return null;
-    const length = Math.hypot(to.x - from.x, to.y - from.y);
-    if (!(length > 1e-4)) return null;
-    return { id, from: fromId, to: toId, kind: "lit", name: "Meet", wrapLengthM: round(length) };
-  };
-  for (const trunk of plan.trunks) {
-    const halves = plan.halves.get(trunk.id) ?? [];
-    const first = halves[0];
-    const last = halves[halves.length - 1];
-    if (!first || !last) continue;
-    const incoming: LayoutEdge[] = [];
-    const outgoing: LayoutEdge[] = [];
-    if (trunk.parentId && !usedEdges.has(`e-${trunk.id}-in`)) {
-      const lead = leadEdge(`e-${trunk.id}-in`, meetCornerId(trunk.parentId), first.fromId);
-      if (lead) incoming.push(lead);
-    }
-    const meetId = meetCornerId(trunk.id);
-    if (plan.corners.has(meetId) && !usedEdges.has(`e-${trunk.id}-meet`)) {
-      const lead = leadEdge(`e-${trunk.id}-meet`, last.toId, meetId);
-      if (lead) outgoing.push(lead);
-    }
-    if (incoming.length + outgoing.length === 0) continue;
-    const key = `sk-${trunk.id}`;
-    runs.set(key, [...incoming, ...(runs.get(key) ?? []), ...outgoing]);
-    for (const edge of [...incoming, ...outgoing]) usedEdges.add(edge.id);
-  }
-  const layoutStrings: LayoutString[] = [];
-  const push = (id: string) => {
-    const run = runs.get(id);
-    if (!run || run.length === 0) return;
-    layoutStrings.push({ id, startId: run[0]!.from, run });
-  };
-  for (const string of spec.strings ?? []) push(string.id);
-  for (const trunk of plan.trunks) push(`sk-${trunk.id}`);
-  if (layoutStrings.length === 0) return null;
+  if (strings.length === 0) return null;
   const bodies: LayoutBody[] = plan.trunks.map((trunk) => {
     const start = axisAt(trunk, 0, spec.units);
     const end = axisAt(trunk, 1, spec.units);
-    return {
-      id: trunk.id,
-      x0: round(start.x),
-      y0: round(start.y),
-      x1: round(end.x),
-      y1: round(end.y),
-      r0: round(radiusAt(trunk, 0, spec.units) * BODY),
-      r1: round(radiusAt(trunk, 1, spec.units) * BODY),
-    };
+    return { id: trunk.id, x0: round(start.x), y0: round(start.y), x1: round(end.x), y1: round(end.y), r0: round(trunk.radius0 * BODY), r1: round(trunk.radius1 * BODY) };
   });
+  const { aroundM, gapM } = wrapSizes(spec);
+  const per = toMetres(spec.units, 1);
   const params: Record<string, number> = {
     height: spec.height,
     split: spec.split,
     spacing: spec.spacing,
     trunks: Math.round(spec.trunks),
     levels: spec.levels === 2 ? 2 : 1,
+    around: round(aroundM / per),
+    gap: round(gapM / per),
   };
   const layout: PropLayout = {
     source: "template",
@@ -929,8 +658,8 @@ export function splitTreeLayout(spec: SplitTreeSpec & { pitchM: number }): PropL
     pitchM: spec.pitchM,
     startOffsetM: 0,
     corners: [...plan.corners.values()],
-    run: layoutStrings[0]!.run,
-    strings: layoutStrings,
+    run: strings[0]!.run,
+    strings,
     bodies,
   };
   return assignStableRunIds(layout);
@@ -938,36 +667,37 @@ export function splitTreeLayout(spec: SplitTreeSpec & { pitchM: number }): PropL
 
 const SECTION_COLOURS = ["#ffb000", "#3d8bfd", "#ff5a5a", "#3dd68c", "#c084fc", "#38bdf8", "#fb7185", "#fbbf24"];
 
+function genericName(name: string | undefined): boolean {
+  return !name || name === "Back down" || name.startsWith("Onto ") || name.includes(" wrap ");
+}
+
 /**
- * Keep a section on its trunk when a rebuild splits that trunk into pieces.
- * A lit run with no section yet gets the trunk's section. A back path stays
- * on the trunk it runs down.
+ * One section per trunk, kept when a rebuild splits that trunk into new
+ * pieces. A run with no section yet joins its trunk's. A run back down a
+ * trunk stays with that trunk; the lead onto a branch joins the branch.
  */
 export function groupSplitTreeSections(layout: PropLayout, sections: readonly PropSection[]): PropSection[] {
   const lit = (layout.strings ?? []).flatMap((string) => string.run).filter((edge) => edge.kind === "lit");
   const present = new Set(lit.map((edge) => edge.id));
-  const next: PropSection[] = sections.map((section) => ({
-    ...section,
-    edgeIds: section.edgeIds.filter((id) => present.has(id)),
-  }));
+  const next: PropSection[] = sections.map((section) => ({ ...section, edgeIds: section.edgeIds.filter((id) => present.has(id)) }));
   for (const edge of lit) {
     const trunk = trunkIdFromEdge(edge.id);
     if (!trunk) continue;
     let index = next.findIndex((section) => (
       section.id === `section.${trunk}` || section.edgeIds.includes(`e-${trunk}`) || section.edgeIds.includes(edge.id)
     ));
-    const generic = edge.name === "Back down" || edge.name === "Across the fork" || edge.name === "Onto the branch" || edge.name === "Meet" || edge.name?.includes(" wrap ");
+    const generic = genericName(edge.name);
     if (index < 0) {
       next.push({
         id: `section.${trunk}`,
-        name: generic ? "Trunk" : edge.name ?? "Trunk",
+        name: generic ? "Trunk" : edge.name!,
         edgeIds: [],
         pinnedRanges: [],
         color: SECTION_COLOURS[next.length % SECTION_COLOURS.length],
       });
       index = next.length - 1;
-    } else if (next[index]!.name === "Trunk" && edge.name && !generic) {
-      next[index] = { ...next[index]!, name: edge.name };
+    } else if (next[index]!.name === "Trunk" && !generic) {
+      next[index] = { ...next[index]!, name: edge.name! };
     }
     const section = next[index]!;
     if (!section.edgeIds.includes(edge.id)) section.edgeIds.push(edge.id);

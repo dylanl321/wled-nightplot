@@ -109,6 +109,8 @@ export function compilePropDesign(input: {
         spacing: input.measurements.spacing,
         trunks: input.measurements.trunks,
         levels: input.measurements.levels,
+        ...(input.measurements.around != null ? { around: input.measurements.around } : {}),
+        ...(input.measurements.gap != null ? { gap: input.measurements.gap } : {}),
         trunkTo: input.measurements.trunkTo,
         strings: input.measurements.strings,
         pose: input.measurements.pose,
@@ -194,6 +196,8 @@ function measurementParams(measurements: PropMeasurements): Record<string, numbe
         spacing: measurements.spacing,
         trunks: measurements.trunks,
         levels: measurements.levels,
+        ...(measurements.around != null ? { around: measurements.around } : {}),
+        ...(measurements.gap != null ? { gap: measurements.gap } : {}),
       };
     case "custom":
     case "legacy":
@@ -698,15 +702,27 @@ export function propShapeChanged(prop: Pick<Prop, "kind" | "layout" | "design">)
   if (shape === "custom" || shape === "legacy") return false;
   const params = layout.template?.params;
   if (!params) return false;
-  const template = layoutFromMeasurements({ units: layout.units, pitchM: layout.pitchM, shape, params });
+  const measured = design.measurements;
+  const template = measured.shape === "split-tree"
+    // A split tree is rebuilt from everything it stores: its joints and its strings.
+    ? splitTreeLayout({
+        units: layout.units,
+        pitchM: layout.pitchM,
+        height: measured.height,
+        split: measured.split,
+        spacing: measured.spacing,
+        trunks: measured.trunks,
+        levels: measured.levels,
+        ...(measured.around != null ? { around: measured.around } : {}),
+        ...(measured.gap != null ? { gap: measured.gap } : {}),
+        trunkTo: measured.trunkTo,
+        strings: measured.strings,
+        pose: measured.pose,
+      })
+    : layoutFromMeasurements({ units: layout.units, pitchM: layout.pitchM, shape, params });
   if (!template) return false;
   const ids = (value: PropLayout) => layoutStrings(value).flatMap((string) => string.run).filter((edge) => edge.kind !== "wire").map((edge) => edge.id).sort();
   const want = ids(template);
   const have = ids(layout);
-  if (shape === "split-tree") {
-    // A string that shares a trunk adds a piece. The trunk's own run stays.
-    const present = new Set(have);
-    return want.some((id) => !present.has(id));
-  }
   return want.length !== have.length || want.some((id, index) => id !== have[index]);
 }

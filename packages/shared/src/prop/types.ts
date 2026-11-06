@@ -90,15 +90,17 @@ export type PropMeasurements =
       split: number;
       spacing: number;
       levels: 1 | 2;
+      /** Around the main trunk at the ground, in the prop's unit. Branches get thinner from there. Absent on older saves. */
+      around?: number;
+      /** Up from one wrap to the next on the same side, in the prop's unit. Absent on older saves. */
+      gap?: number;
       /** End heights, in the prop's unit, kept when that trunk id still exists. */
       trunkTo?: SplitTreeTrunkEnd[];
       /** Strings on the trunks. Absent until one is assigned. */
       strings?: SplitTreeString[];
       /**
-       * The tree as placed by hand. Joints are where trunks meet and where
-       * tips end. Meets are where the wraps join, off the wood. Turns are
-       * where a string leaves one branch for the next. Absent on a tree that
-       * is still the even starting shape.
+       * The tree as placed by hand: where trunks meet and where tips end.
+       * Absent on a tree that is still the even starting shape.
        */
       pose?: SplitPose;
     }
@@ -139,20 +141,14 @@ export type SplitPoseNode = {
   y: number;
 };
 
-/**
- * Where the wraps meet at a fork, as an offset from that fork.
- * (0, 0) would sit on the wood. A placed meet keeps the coils from piling up there.
- */
+/** Older saves only. The wrap now runs straight into the next branch, so this is read and ignored. */
 export type SplitPoseMeet = {
   forkId: string;
   x: number;
   y: number;
 };
 
-/**
- * Where a string turns off one trunk toward the next, as an offset from the
- * fork it is leaving. The back path runs to this point, then onto the next branch.
- */
+/** Older saves only. A string now comes back down the back of the branch, so this is read and ignored. */
 export type SplitPoseTurn = {
   stringId: string;
   fromId: string;
@@ -161,11 +157,13 @@ export type SplitPoseTurn = {
   y: number;
 };
 
-/** A split tree someone has moved, forked, or whose wrap junctions they have placed. */
+/** A split tree someone has moved or forked. */
 export type SplitPose = {
   nodes: SplitPoseNode[];
-  meets: SplitPoseMeet[];
-  turns: SplitPoseTurn[];
+  /** Older saves only. Ignored. */
+  meets?: SplitPoseMeet[];
+  /** Older saves only. Ignored. */
+  turns?: SplitPoseTurn[];
 };
 
 export type PropEdge = {
@@ -381,6 +379,10 @@ function isSplitTreeMeasurements(row: { shape?: unknown }): boolean {
   if (levels !== 1 && levels !== 2) return false;
   if (!isPositive(height) || !isPositive(split) || !isPositive((row as { spacing?: unknown }).spacing)) return false;
   if ((split as number) >= (height as number)) return false;
+  const around = (row as { around?: unknown }).around;
+  const gap = (row as { gap?: unknown }).gap;
+  if (around !== undefined && (!isPositive(around) || (around as number) > 100)) return false;
+  if (gap !== undefined && (!isPositive(gap) || (gap as number) > 100)) return false;
   const ends = (row as { trunkTo?: unknown }).trunkTo;
   if (ends !== undefined && (!Array.isArray(ends) || ends.length > 32 || !ends.every(isSplitTreeTrunkEnd))) return false;
   const strings = (row as { strings?: unknown }).strings;
@@ -434,8 +436,8 @@ function isSplitPose(value: unknown): value is SplitPose {
   }
   const tips = row.nodes.filter((node) => node.id !== "base" && !row.nodes!.some((other) => other.parentId === node.id));
   if (tips.length < SPLIT_TREE_TRUNKS_MIN || tips.length > SPLIT_TREE_TRUNKS_MAX) return false;
-  if (!Array.isArray(row.meets) || row.meets.length > 24 || !row.meets.every((meet) => isSplitPoseMeet(meet, have))) return false;
-  if (!Array.isArray(row.turns) || row.turns.length > 24 || !row.turns.every((turn) => isSplitPoseTurn(turn, have))) return false;
+  if (row.meets !== undefined && (!Array.isArray(row.meets) || row.meets.length > 24 || !row.meets.every((meet) => isSplitPoseMeet(meet, have)))) return false;
+  if (row.turns !== undefined && (!Array.isArray(row.turns) || row.turns.length > 24 || !row.turns.every((turn) => isSplitPoseTurn(turn, have)))) return false;
   return true;
 }
 
