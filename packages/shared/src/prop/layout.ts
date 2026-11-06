@@ -77,6 +77,22 @@ export type LayoutFace = {
   cornerIds: string[];
 };
 
+/**
+ * A tapered trunk or branch drawn behind the lights. Metres, y up.
+ * A split tree sets one per segment so the preview reads as wood, not a hairline.
+ */
+export type LayoutBody = {
+  id: string;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  /** Radius at the start, metres. */
+  r0: number;
+  /** Radius at the end, metres. */
+  r1: number;
+};
+
 /** One physical string. Indexes on this string start at 0, in `run` order. */
 export type LayoutString = {
   id: string;
@@ -103,6 +119,8 @@ export type PropLayout = {
    */
   strings?: LayoutString[];
   faces?: LayoutFace[];
+  /** Trunk silhouettes for a split tree. Absent on every other shape. */
+  bodies?: LayoutBody[];
   /** Known lights on the real string, when one has been measured. */
   stringLights?: number;
   /**
@@ -150,7 +168,17 @@ export function isPropLayout(value: unknown): value is PropLayout {
   }
   if (row.stringLights !== undefined && (!Number.isInteger(row.stringLights) || row.stringLights < 0)) return false;
   if (row.retiredIds !== undefined && (!Array.isArray(row.retiredIds) || !row.retiredIds.every((id) => typeof id === "string"))) return false;
+  if (row.bodies !== undefined && (!Array.isArray(row.bodies) || !row.bodies.every(isBody))) return false;
   return true;
+}
+
+function isBody(value: unknown): value is LayoutBody {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Partial<LayoutBody>;
+  const nums = [row.x0, row.y0, row.x1, row.y1, row.r0, row.r1];
+  return typeof row.id === "string" && row.id.length > 0 &&
+    nums.every((n) => typeof n === "number" && Number.isFinite(n)) &&
+    (row.r0 ?? 0) > 0 && (row.r1 ?? 0) > 0;
 }
 
 function isCorner(value: unknown): value is LayoutCorner {

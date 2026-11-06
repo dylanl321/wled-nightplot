@@ -550,6 +550,7 @@ export {
   type StringLight,
   convertSize,
   spreadLights,
+  type LayoutBody,
   type LayoutCorner,
   type LengthEdit,
   type PropLayout,

@@ -70,8 +70,8 @@ export function SplitTreePanel({ draft, onChange }: {
       </div>
       <p className="note">
         {split.levels === 2
-          ? "The main trunk splits in two, then those branches split to fill the trunk count. Tip spacing is the distance between neighbouring tips."
-          : "One trunk splits into the others at the split height. Tip spacing is the distance between neighbouring tips. Fork again lets a branch split too."}
+          ? "The main trunk stands on the ground and forks. Each of those branches forks again. Lights wrap up a trunk. Tip spacing is how far apart the tips are, along the ground."
+          : "The main trunk stands on the ground and forks. Lights wrap up each trunk. A string that continues onto the next trunk runs back down the far side, then up that one. Tip spacing is the distance along the ground between neighbouring tips."}
       </p>
       {planned.trunks.map((trunk) => (
         <TrunkCard
@@ -82,7 +82,7 @@ export function SplitTreePanel({ draft, onChange }: {
           products={products}
           unit={unit}
           cover={planned.cover.find((row) => row.trunkId === trunk.id)}
-          hops={planned.hops.filter((hop) => hop.stringId && hop.dark)}
+          hops={planned.hops}
           onChange={onChange}
         />
       ))}
@@ -97,7 +97,7 @@ function TrunkCard({ trunk, trunks, draft, products, unit, cover, hops, onChange
   products: readonly LedProduct[];
   unit: "ft" | "m";
   cover: TrunkCover | undefined;
-  hops: { stringId: string; toId: string; dark: boolean }[];
+  hops: { stringId: string; fromId: string; toId: string; dark: boolean; back: boolean }[];
   onChange: (next: Draft) => void;
 }) {
   const label = splitTrunkLabel(trunk, trunks);
@@ -107,7 +107,7 @@ function TrunkCard({ trunk, trunks, draft, products, unit, cover, hops, onChange
     <div className="trunk">
       <div className="hrow">
         <strong>{label}</strong>
-        <span className="meta">{formatLength(trunk.lengthM, unit)} along the trunk{open}</span>
+        <span className="meta">{formatLength(trunk.lengthM, unit)} of wrap{open}</span>
       </div>
       <label className="f">Ends at ({unit === "ft" ? "ft" : "m"})
         <CommitField
@@ -129,7 +129,7 @@ function TrunkCard({ trunk, trunks, draft, products, unit, cover, hops, onChange
           draft={draft}
           products={products}
           cover={cover?.strings.find((row) => row.stringId === string.id)}
-          hop={hops.find((row) => row.stringId === string.id)}
+          hop={hops.find((row) => row.stringId === string.id && (row.fromId === trunk.id || row.toId === trunk.id))}
           onChange={onChange}
         />
       ))}
@@ -145,21 +145,23 @@ function StringRow({ string, trunk, trunks, draft, products, cover, hop, onChang
   draft: Draft;
   products: readonly LedProduct[];
   cover: { coveredM: number; lights: number; remainingM: number | null } | undefined;
-  hop: { toId: string } | undefined;
+  hop: { fromId: string; toId: string; dark: boolean; back: boolean } | undefined;
   onChange: (next: Draft) => void;
 }) {
   const first = string.trunkIds[0] === trunk.id;
   const length = string.ledCount != null && string.pitchMm > 0 ? formatPhysicalLength(string.ledCount * string.pitchMm) : null;
   const others = trunks.filter((row) => !string.trunkIds.includes(row.id));
   const note = coverNote(cover);
-  const hopLabel = hop ? splitTrunkLabel(trunks.find((row) => row.id === hop.toId) ?? trunk, trunks) : null;
+  const hopTarget = hop ? trunks.find((row) => row.id === (hop.fromId === trunk.id ? hop.toId : hop.fromId)) : undefined;
+  const hopLabel = hopTarget ? splitTrunkLabel(hopTarget, trunks) : null;
+  const hopSentence = hop && hopLabel ? hopSentenceFor(hop, hopLabel, hop.fromId === trunk.id) : "";
   if (!first) {
     const from = trunks.find((row) => row.id === string.trunkIds[0]);
     return (
       <p className="note">
         {stringLabel(string, products)} continues from {from ? splitTrunkLabel(from, trunks) : "another trunk"}.
         {note ? ` ${note}` : ""}
-        {hopLabel ? ` Dark jump to ${hopLabel}.` : ""}
+        {hopSentence}
       </p>
     );
   }
@@ -213,7 +215,7 @@ function StringRow({ string, trunk, trunks, draft, products, cover, hop, onChang
       <p className="note">
         {length ? `${length} of string.` : "Set how many lights. Length stays in metres."}
         {note ? ` ${note}` : ""}
-        {hopLabel ? ` Dark jump to ${hopLabel}.` : ""}
+        {hopSentence}
       </p>
       {string.trunkIds.slice(1).map((id) => {
         const other = trunks.find((row) => row.id === id);
@@ -251,6 +253,12 @@ function stringLabel(string: SplitTreeString, products: readonly LedProduct[]): 
 function formatCm(pitchMm: number): string {
   const cm = pitchMm / 10;
   return Number.isInteger(cm) ? String(cm) : String(+cm.toFixed(2));
+}
+
+function hopSentenceFor(hop: { dark: boolean; back: boolean }, label: string, leaving: boolean): string {
+  if (hop.back) return leaving ? ` Wraps back down the far side, then up ${label}.` : ` Comes back down the far side from ${label}.`;
+  if (hop.dark) return leaving ? ` Dark jump to ${label}. These trunks do not meet.` : ` Dark jump from ${label}.`;
+  return leaving ? ` The wrap continues up ${label}.` : "";
 }
 
 function coverNote(cover: { coveredM: number; remainingM: number | null } | undefined): string {
